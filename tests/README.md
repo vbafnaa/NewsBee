@@ -9,7 +9,9 @@
 
 Mirror the relevant project and module names within each test category as tests
 are implemented. Keep cross-component tests here rather than hiding them inside
-one component. A test runner and fixture formats are not selected yet.
+one component. pytest runs offline unit and integration tests by default.
+pytest-playwright exercises the review page and reader-to-API boundary using
+isolated test servers. Commands and prerequisites are in the root README.
 
 Prioritize integration coverage of orchestration and source-agent pipelines,
 connector outputs and story processing, editorial checks and review, approved

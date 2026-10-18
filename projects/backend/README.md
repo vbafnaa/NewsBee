@@ -1,8 +1,8 @@
 # Local backend
 
 One modular backend owns Stage 1 workflows and exposes one local API. Modules
-are logical boundaries, not independently deployed services. This is a folder
-skeleton, not a runnable application or a choice of framework.
+are logical boundaries, not independently deployed services. The FastAPI app
+is `api\app.py`; run it through the repository's local launcher.
 
 ## Entry points
 
@@ -54,5 +54,13 @@ Cross-project data contracts belong in the repository's `shared\contracts\`,
 not here. Local health-view and telemetry configuration belongs in the repository's
 `observability\`; instrumentation code belongs here.
 
-No essential-news thresholds, review policy, model, storage implementation,
-or API endpoints are defined by this scaffold.
+SQLite and evidence files are initialized at startup. `shared\storage\database.py`
+owns connection handling and the initial schema version; module-owned tables
+must preserve explicit ownership as workflows are implemented.
+
+The worker entry point is `modules\orchestration\worker.py`. It persists heartbeats
+but does not claim, execute, or retry jobs yet. The initial job table is reserved
+infrastructure, not a functioning queue.
+
+No essential-news thresholds, review policy, or model are defined by this scaffold.
+See the root README for setup, endpoints, configuration, and known limits.
