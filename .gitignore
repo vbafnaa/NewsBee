@@ -1,0 +1,19 @@
+# Local Copilot state; shared repository instructions remain tracked.
+.copilot/
+
+# Temporary files and directories
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Editor swap and backup files
+*.swp
+*.swo
+*~
+*.bak
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
