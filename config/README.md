@@ -15,5 +15,9 @@ connector implementations live under
 Infrastructure settings are validated in
 `projects\backend\shared\configuration\settings.py`; environment variables and
 ignored runtime paths are documented in the root README. Community, source,
-and editorial-policy formats remain undecided. No example communities or
-editorial defaults are implied.
+and editorial-policy formats are not general-purpose schemas yet.
+`communities\capitol-hill-seattle.json` records the initial location and coverage
+limitation. `sources\spl-capitol-hill.json` is the one enabled, validated source:
+the official RSS feed, strict branch venue URL, local-only usage, and unresolved
+redistribution permission. Changing the source requires deliberate onboarding,
+not supplying an arbitrary URL to the worker. No editorial defaults are implied.

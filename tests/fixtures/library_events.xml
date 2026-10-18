@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>Synthetic library fixture, not real events</title>
+<item>
+  <title>Example neighborhood workshop</title>
+  <link>https://www.spl.org/event-calendar?eventid=fixture-1</link>
+  <guid>fixture-1</guid>
+  <category>2026/11/03 (Tue)</category>
+  <description><![CDATA[Tuesday, November 3, 2026, 3 &ndash; 4pm <br/>
+  <img src="https://example.invalid/do-not-save.jpg"/>
+  <br/><b>Location Link</b>: <a href="https://www.spl.org/hours-and-locations/capitol-hill-branch">Capitol Hill Branch</a>
+  <br/><b>Room Location</b>: Meeting Room
+  <br/><b>Detailed Description</b>: PRIVATE_DESCRIPTION_MARKER_DO_NOT_STORE
+  ]]></description>
+</item>
+<item>
+  <title>Example other branch event</title>
+  <link>https://www.spl.org/event-calendar?eventid=fixture-2</link>
+  <guid>fixture-2</guid>
+  <category>2026/11/04 (Wed)</category>
+  <description><![CDATA[Wednesday, November 4, 2026, noon <br/>
+  <b>Location Link</b>: <a href="https://www.spl.org/hours-and-locations/central-library">Central Library</a>
+  ]]></description>
+</item>
+</channel></rss>

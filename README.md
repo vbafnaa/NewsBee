@@ -3,15 +3,59 @@ CSE589 UW Entrepreneurship Prototyping
 
 ## Stage 1: local prototype
 
-The native infrastructure scaffold runs a FastAPI backend, a heartbeat worker,
+The native prototype runs a FastAPI backend, a local ingestion worker,
 an Astro reader website, a backend-rendered review/health console, and Mailpit.
 SQLite stores local state; evidence stays in local files. Ollama is accessed
 through a replaceable adapter. No Docker or cloud account is required.
 
-**Not implemented yet:** scraping, edition generation, editorial/review decisions,
-publication, and email composition. The worker records heartbeats but does not
-execute jobs. The site explicitly reports that no editions exist. Health checks
+**Not implemented yet:** general web scraping, edition generation, editorial/review
+decisions, publication, and email composition. The worker executes only the
+approved local library-event ingestion job. The site reports that no editions
+exist. Health checks
 report infrastructure availability, not editorial readiness.
+
+## First source: Capitol Hill Branch events
+
+The first connector reads the library's official
+[branch-filtered RSS feed](https://www.trumba.com/calendars/kalendaro.rss?filterview=LocationCAP),
+not AllEvents or library HTML pages. It covers **Capitol Hill Branch programming
+only**, not all events in Capitol Hill, Seattle.
+
+With the stack running, use a second terminal:
+
+```text
+uv run --locked python scripts/dev.py ingest-events
+uv run --locked python scripts/dev.py events
+```
+
+The first command queues a manual run; the second prints the latest 20 ingestion
+jobs and up to 200 retained event records. If the stack is stopped, queued jobs
+wait until the worker starts. There is no scheduled polling. Enqueuing the same
+source while a job is pending/running returns that job instead of creating another.
+Use the health page for aggregate job counts; per-job errors, results, and duration
+are available through the `events` command and logs.
+
+**Local evaluation only; redistribution permission remains unresolved.** Retained
+fields are title, source ID/link, source calendar date and schedule wording,
+venue/room, and retrieval metadata. Descriptions and images are neither retained
+nor published, and no model is invoked. The raw feed is processed in memory and
+discarded; selective JSON evidence under `.local/data/evidence/spl-capitol-hill/`
+includes a response hash, retrieval time, and the allowed facts only. Do not
+commit real source data or use it as test fixtures.
+
+Each event's venue link must explicitly identify the Capitol Hill Branch.
+Other venues and explicitly identified library-wide closure notices without
+venues are counted and skipped; other missing required fields fail the run.
+Dates/times are not inferred: source schedule text is preserved rather than
+guessing a timezone or end time. The feed's returned window is used as-is; this
+is not a claim of complete weekly coverage. The same source ID and calendar date
+update one record on replay; missing events are not automatically canceled or
+deleted. Changes to an event's date may create another occurrence record.
+
+HTTP/network failures and rate limits are retried at most three attempts, with
+bounded backoff. Invalid feed data fails without retry. Jobs have renewable
+90-second leases; after an interrupted worker's lease expires, a restarted worker
+can reclaim the job, up to the same attempt limit. Publication stays disabled.
 
 ## Quick start
 
@@ -49,9 +93,17 @@ uv run --locked python scripts/dev.py stop
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
 | Review and health page | http://127.0.0.1:8000/review |
+| Read-only ingestion inspection | http://127.0.0.1:8000/review/ingestion |
 | API documentation | http://127.0.0.1:8000/docs |
 | Mailpit inbox | http://127.0.0.1:8025 |
 | Mailpit SMTP | `127.0.0.1:1025` |
+
+The ingestion inspection page displays up to 200 retained events (ordered by
+event date) and the latest 20 ingestion jobs, including outcomes and last-attempt
+errors. Use **Refresh inspection** to reload current records. It is read-only:
+it does not enqueue jobs, edit facts, generate stories, or publish content.
+Source links and retrieval timestamps support manual verification; retained
+records are local evaluation data, not a public edition.
 
 All launched services bind to loopback. Do not expose them to a network; no
 authentication or production hardening is implemented. Ports must be free;
@@ -67,7 +119,10 @@ evaluation before selection. Tests use a fake model, not real inference.
 
 The health page reports Ollama as unavailable when it cannot be reached, or
 not configured when reachable without a selected model. This means overall
-health is intentionally degraded until a model is explicitly configured.
+all-service health is intentionally degraded until a model is explicitly configured.
+Ingestion readiness is shown separately and does not require Ollama or Mailpit.
+Historical failures remain visible alongside the latest ingestion result; a past
+failed run does not mean the current worker or latest run is failing.
 Once approved and installed in Ollama, set `NEWSBEE_OLLAMA_MODEL` to its exact
 installed name before starting the stack.
 
@@ -104,8 +159,10 @@ npm --prefix projects/website run check
 npm --prefix projects/website run build
 ```
 
-Default tests use temporary SQLite databases, mocked Ollama responses, and
-SMTP fixtures. Browser tests start isolated local test servers and build the
+Default tests use temporary SQLite databases, synthetic event XML, mocked HTTP
+and Ollama responses, and SMTP fixtures. They cover filtering, fact-only retention,
+replay deduplication, lease recovery, retries, and schema upgrades.
+Browser tests start isolated local test servers and build the
 website; they do not need Ollama or Mailpit. Real source/model evaluations are
 not implemented and must be explicitly invoked when added.
 
