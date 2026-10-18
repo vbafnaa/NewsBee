@@ -1,0 +1,22 @@
+{
+  "properties": {
+    "status": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Status",
+      "type": "string"
+    },
+    "editions": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Editions",
+      "type": "array"
+    }
+  },
+  "title": "EditionsResponse",
+  "type": "object"
+}

@@ -18,3 +18,22 @@ temp/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local tooling, runtime data, logs, and editor state
+.local/
+.vs/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+
+# Frontend dependencies and generated output
+node_modules/
+dist/
+.astro/
+playwright-report/
+test-results/

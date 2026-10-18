@@ -12,5 +12,8 @@ credentials, downloaded evidence, or models. Source-agent pipelines and
 connector implementations live under
 `projects\backend\modules\source_connectors\`.
 
-Configuration formats, validation, local secret handling, and runtime data paths
-are not chosen yet. No example communities or editorial defaults are implied.
+Infrastructure settings are validated in
+`projects\backend\shared\configuration\settings.py`; environment variables and
+ignored runtime paths are documented in the root README. Community, source,
+and editorial-policy formats remain undecided. No example communities or
+editorial defaults are implied.

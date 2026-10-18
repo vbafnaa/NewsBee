@@ -4,9 +4,11 @@ Home for versioned data contracts exchanged by the backend, reader website,
 and review console. Examples of future contract areas are published editions,
 stories with attribution, and review requests.
 
-Keep one authoritative definition per contract. Contract format, validation,
-and any code generation will be chosen before implementation. Do not add
-parallel hand-maintained copies in each project.
+`health.py` contains authoritative Pydantic definitions for the infrastructure
+health and empty editions responses. The adjacent `*.schema.json` files are
+generated for language-neutral consumers, not hand-maintained copies.
+Regenerate them with `uv run --locked python scripts/dev.py contracts`;
+integration tests detect schema drift.
 
 Backend-only module interfaces belong in
 `projects\backend\shared\contracts\`. HTTP-specific request and response concerns

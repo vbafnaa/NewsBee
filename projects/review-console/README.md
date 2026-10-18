@@ -5,9 +5,11 @@ review decisions, audits, and corrections. Consume the local backend API;
 publication checks and review state remain owned by backend editorial modules.
 
 Cross-project contracts belong in `shared\contracts\` at the repository root.
-UI code belongs within this project once its technology is confirmed.
-This separate folder is a logical UI boundary, not a decision to require
-another server, frontend framework, or independently deployed service.
+Jinja renders `templates\index.html` through the backend's `/review` route.
+`static\health.js` fetches the same health API other clients use. This separate
+folder is a logical UI boundary, not another server or independently deployed
+service. No frontend build step is needed.
 
 Keep presentation lightweight and defer detailed UX design. This project is
-not runnable yet.
+served by the local backend; see the root README. Only the health view is
+implemented, not editorial review actions.
