@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "ComponentHealth": {
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "unavailable",
+            "not_configured"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "detail"
+      ],
+      "title": "ComponentHealth",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "status": {
+      "enum": [
+        "ok",
+        "degraded"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "components": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ComponentHealth"
+      },
+      "title": "Components",
+      "type": "object"
+    },
+    "jobs": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Jobs"
+    },
+    "last_completed_job_at": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Completed Job At"
+    },
+    "pipelines": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Pipelines",
+      "type": "string"
+    },
+    "held_reviews": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Held Reviews"
+    },
+    "publication": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Publication",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "components"
+  ],
+  "title": "HealthReport",
+  "type": "object"
+}

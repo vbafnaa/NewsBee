@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Newsbee local health</title>
+    <link rel="stylesheet" href="/review/static/style.css">
+    <script src="/review/static/health.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1>Newsbee local health</h1>
+      <p>Private development environment. No production publishing or email delivery.</p>
+      <p id="summary" role="status">Checking local services...</p>
+      <button id="refresh" type="button">Refresh health</button>
+      <h2>Services</h2>
+      <ul id="services"></ul>
+      <h2>Jobs</h2>
+      <pre id="jobs">Not checked</pre>
+      <p id="completed">Last completed job: not checked</p>
+      <h2>Editorial workflows</h2>
+      <p>Pipeline execution, review queues, publication, and email generation are not implemented.</p>
+      <p>No editions yet. No local model is selected by default.</p>
+      <a href="http://127.0.0.1:8025">Open local Mailpit inbox</a>
+    </main>
+  </body>
+</html>

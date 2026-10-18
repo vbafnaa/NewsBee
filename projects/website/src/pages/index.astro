@@ -1,0 +1,43 @@
+---
+const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Newsbee local preview</title>
+  </head>
+  <body>
+    <main>
+      <h1>Newsbee</h1>
+      <p>Local reader preview</p>
+      <p id="edition-status" role="status" data-api-url={apiUrl}>Checking local editions...</p>
+      <p>Stories, communities, and publication workflows have not been implemented.</p>
+    </main>
+    <script>
+      const status = document.querySelector<HTMLParagraphElement>("#edition-status");
+      if (status) {
+        try {
+          const response = await fetch(`${status.dataset.apiUrl}/api/editions`, {
+            signal: AbortSignal.timeout(5000),
+          });
+          if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+          const data = await response.json();
+          if (data.status !== "not_implemented" || !Array.isArray(data.editions)
+              || data.editions.length !== 0) {
+            throw new Error("Unsupported editions contract");
+          }
+          status.textContent = "No editions yet. Publishing is not implemented.";
+        } catch (error) {
+          status.textContent = `Editions unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      }
+    </script>
+    <style>
+      main { font-family: system-ui, sans-serif; margin: 3rem auto; max-width: 48rem; padding: 1rem; }
+    </style>
+  </body>
+</html>
