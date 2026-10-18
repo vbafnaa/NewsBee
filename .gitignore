@@ -1,5 +1,6 @@
-# Local Copilot state; shared repository instructions remain tracked.
+# Local Copilot state and personal development preferences
 .copilot/
+/AGENTS.md
 
 # Temporary files and directories
 *.tmp
