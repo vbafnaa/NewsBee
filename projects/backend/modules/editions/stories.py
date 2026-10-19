@@ -60,6 +60,8 @@ def collapse(events: list[dict]) -> list[Story]:
     for event in events:
         facts = event["facts"]
         key = story_key(facts["title"])
+        if facts.get("kind", "event") != "event":
+            key = f"{facts['kind']}:{facts['event_date']}:{key}"
         story = stories.get(key)
         if story is None:
             identity = hashlib.sha256(key.encode()).hexdigest()[:12]

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from projects.backend.shared.model_inference.ollama import OllamaRuntime
 
 logger = logging.getLogger(__name__)
-RANKING_POLICY = "newsworthiness_v1"
+RANKING_POLICY = "newsworthiness_v2"
 WEIGHTS = {"civic": 3, "appeal": 2, "special": 1}
 BATCH_SIZE = 12
 DESCRIPTION_PREVIEW = 280
@@ -67,11 +67,11 @@ def score(rating: Rating) -> int:
 
 
 def fallback_rating(candidate: dict) -> Rating:
-    """No model judgement: only the rule signal (one-off beats recurring) is used."""
+    """Protect meeting coverage; use recurrence alone for discretionary event ratings."""
     return Rating(
         id=candidate["id"],
         category="other",
-        civic=0,
+        civic=3 if candidate.get("kind", "event") != "event" else 0,
         appeal=0,
         special=0 if candidate["occurrences"] > 1 else 1,
     )
@@ -127,7 +127,8 @@ async def _rate_batch(runtime: OllamaRuntime, batch: list[dict]) -> tuple[dict, 
 async def rank(runtime: OllamaRuntime, candidates: list[dict]) -> tuple[list[dict], dict]:
     """Candidates (id, title, description, occurrences, venues, first_date) -> ranked list.
 
-    Ties break by rule: one-off before recurring, then earliest date, then title.
+    Meetings precede discretionary events. Within each group, scores apply; ties break
+    by rule: one-off before recurring, then earliest date, then title.
     Each ranked item has rated_by 'model' or 'rule' (the batch failed or skipped it).
     """
     ratings: dict[str, Rating] = {}
@@ -155,6 +156,7 @@ async def rank(runtime: OllamaRuntime, candidates: list[dict]) -> tuple[list[dic
             for item in candidates
         ),
         key=lambda item: (
+            item.get("kind", "event") == "event",
             -item["score"],
             item["occurrences"] > 1,
             item["first_date"],

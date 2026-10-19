@@ -15,6 +15,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
     />
   </head>
   <body>
+    <a class="skip-link" href="#edition">Skip to this week's stories</a>
     <main data-api-url={apiUrl}>
       <header class="masthead">
         <div class="ears">
@@ -52,6 +53,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         </div>
       </header>
       <p id="edition-status" role="status">Loading locations...</p>
+      <button id="retry" type="button" hidden>Try again</button>
       <section id="expansion" aria-labelledby="expansion-title" hidden>
         <p class="eyebrow">Your town deserves its own front page</p>
         <h2 id="expansion-title"></h2>
@@ -67,13 +69,19 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         <p id="signup-status" role="status"></p>
       </section>
       <article id="edition" aria-label="Edition" hidden>
+        <p id="edition-freshness" role="status"></p>
+        <aside id="corrections" aria-label="Corrections" hidden></aside>
+        <details class="coverage">
+          <summary>About this edition and its sources</summary>
+          <ul id="edition-coverage"></ul>
+        </details>
         <h2 id="edition-headline"></h2>
         <p id="edition-intro" class="deck"></p>
         <div id="edition-lead"></div>
         <div id="edition-items" class="columns"></div>
         <footer>
           <p id="edition-window"></p>
-          <p>Compiled automatically from local listings. Check the original event before you go.</p>
+          <p>Compiled automatically from library listings and public meeting records, not independent reporting. Check the original source for changes before attending.</p>
         </footer>
       </article>
     </main>
@@ -81,11 +89,24 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       type Listing = { location_id: string; location_name: string; edition_id: string | null };
       type Town = { id: string; name: string };
       type Item = {
+        story_id: string | null;
         headline: string;
         blurb: string;
         when_where: string;
         source_url: string | null;
         rank: number | null;
+        kind: "event" | "meeting_preview" | "meeting_outcome";
+        source_name: string;
+      };
+      type Edition = {
+        headline: string;
+        intro: string;
+        window_start: string;
+        window_end: string;
+        published_at: number;
+        items: Item[];
+        coverage: string[];
+        corrections: { reason: string; created_at: number }[];
       };
 
       const main = document.querySelector("main")!;
@@ -100,6 +121,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       const onboarded = document.querySelector<HTMLDivElement>("#onboarded-editions")!;
       const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
       const article = document.querySelector<HTMLElement>("#edition")!;
+      const retry = document.querySelector<HTMLButtonElement>("#retry")!;
       const expansion = document.querySelector<HTMLElement>("#expansion")!;
       const signupForm = document.querySelector<HTMLFormElement>("#expansion-form")!;
       const signupEmail = document.querySelector<HTMLInputElement>("#signup-email")!;
@@ -137,10 +159,17 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       function story(item: Item, lead: boolean, repeatsFront = false) {
         const section = document.createElement("section");
         section.className = lead ? `story lead${repeatsFront ? " repeats-front" : ""}` : "story";
+        if (item.story_id) section.id = `story-${item.story_id}`;
         section.append(text("h3", item.headline), text("p", item.blurb, "blurb"));
         section.append(text("p", item.when_where, "when-where"));
+        const labels = {
+          event: "Library event",
+          meeting_preview: "Upcoming public meeting",
+          meeting_outcome: "Recorded meeting outcome",
+        };
+        section.append(text("p", `${labels[item.kind]} · Source: ${item.source_name}`, "attribution"));
         if (item.source_url?.startsWith("https://")) {
-          const link = text("a", "Original event") as HTMLAnchorElement;
+          const link = text("a", "Original source") as HTMLAnchorElement;
           link.href = item.source_url;
           link.rel = "noreferrer";
           section.append(link);
@@ -148,7 +177,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         return section;
       }
 
-      function masthead(listing: Listing | undefined, edition?: any) {
+      function masthead(listing: Listing | undefined, edition?: Edition) {
         document.querySelector("#edition-name")!.textContent = listing
           ? `The ${place(listing.location_name)} Edition`
           : "Community News";
@@ -323,6 +352,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
 
       async function show(town: Town) {
         article.hidden = true;
+        retry.hidden = true;
         expansion.hidden = true;
         signupStatus.textContent = "";
         signupForm.reset();
@@ -343,14 +373,28 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         }
         status.textContent = "Loading edition...";
         try {
-          const edition = await getJson(`/api/editions/${encodeURIComponent(locationId)}`);
+          const edition: Edition = await getJson(`/api/editions/${encodeURIComponent(locationId)}`);
           if (selected?.id !== locationId) return;
           masthead(listing, edition);
           document.querySelector("#edition-headline")!.textContent = edition.headline;
           document.querySelector("#edition-intro")!.textContent = edition.intro;
           document.querySelector("#edition-window")!.textContent =
-            `Events from ${edition.window_start} to ${edition.window_end}.`;
-          const items = edition.items as Item[];
+            `Upcoming listings: ${edition.window_start} to ${edition.window_end}. Meeting outcomes may cover the preceding week.`;
+          const now = new Date();
+          const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          document.querySelector("#edition-freshness")!.textContent =
+            edition.window_end < today ? "Past edition: these listings may no longer be current." : "";
+          document.querySelector("#edition-coverage")!.replaceChildren(
+            ...edition.coverage.map((message) => text("li", message)),
+          );
+          const corrections = document.querySelector<HTMLElement>("#corrections")!;
+          corrections.hidden = edition.corrections.length === 0;
+          corrections.replaceChildren(
+            ...edition.corrections.map((notice) =>
+              text("p", `Correction (${new Date(notice.created_at * 1000).toLocaleDateString("en-US")}): ${notice.reason}`),
+            ),
+          );
+          const items = edition.items;
           const ranked = items.filter((item) => item.rank !== null);
           const lead = ranked.length
             ? ranked.reduce((best, item) => (item.rank! < best.rank! ? item : best))
@@ -364,9 +408,15 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
           article.hidden = false;
           status.textContent = "";
         } catch (error) {
-          if (selected?.id === locationId) status.textContent = `Edition unavailable: ${failure(error)}`;
+          if (selected?.id !== locationId) return;
+          status.textContent = `Edition unavailable: ${failure(error)}`;
+          retry.hidden = false;
         }
       }
+      retry.addEventListener("click", () => {
+        if (selected && listings.has(selected.id)) show(selected);
+        else window.location.reload();
+      });
 
       try {
         const data = await getJson("/api/editions");
@@ -399,6 +449,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         pickerToggle.disabled = false;
       } catch (error) {
         status.textContent = `Editions unavailable: ${failure(error)}`;
+        retry.hidden = false;
       }
     </script>
     <style is:global>
@@ -417,6 +468,9 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         --display: "Playfair Display", Georgia, serif;
       }
       * { box-sizing: border-box; }
+      .skip-link { position: absolute; left: -10000px; }
+      .skip-link:focus { position: static; padding: 0.5rem; background: white; }
+      :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
       body {
         margin: 0;
         background: #d9d2c3;
@@ -611,6 +665,12 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       .signup-note { font-size: 0.8rem; color: var(--muted); }
       #edition-status { text-align: center; font-style: italic; color: var(--muted); }
       #edition-status:empty { display: none; }
+      #edition-freshness, #corrections { color: var(--accent); }
+      #edition-freshness:empty { display: none; }
+      .coverage, .attribution { font-size: 0.8rem; color: var(--muted); }
+      .coverage summary { cursor: pointer; }
+      #retry { display: block; margin: 1rem auto; padding: 0.5rem 1rem; }
+      #retry[hidden] { display: none; }
       #edition-headline {
         margin: 1.5rem 0 0.4rem;
         text-align: center;
@@ -651,7 +711,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         grid-template-columns: 1fr 1.4fr;
         column-gap: 2rem;
       }
-      .lead h3 { grid-row: span 3; font-size: 2.3rem; line-height: 1.1; margin: 0; }
+      .lead h3 { grid-row: span 4; font-size: 2.3rem; line-height: 1.1; margin: 0; }
       .lead .blurb { font-size: 1.15rem; }
       .repeats-front { display: block; column-count: 2; column-gap: 2rem; column-rule: 1px solid #c9c0ae; }
       .repeats-front h3 {

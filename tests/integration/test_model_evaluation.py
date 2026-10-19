@@ -36,7 +36,7 @@ def test_valid_news_drafts_pass_and_report_is_saved(settings, monkeypatch):
     assert report["front"]["context"]["event_count"] == "7"
     assert len(requests) == 8
     assert all(request["think"] is False for request in requests)
-    assert all(request["options"]["num_gpu"] == 0 for request in requests)
+    assert all("num_gpu" not in request["options"] for request in requests)
     assert all(request["options"]["num_ctx"] == 2048 for request in requests)
     assert all(
         "source_url" not in request["prompt"].split("\nFacts:\n")[-1] for request in requests
