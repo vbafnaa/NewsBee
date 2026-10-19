@@ -1,0 +1,55 @@
+{
+  "WA": {
+    "name": "Washington",
+    "place_suffix": ", Washington",
+    "aliases": [
+      "Washington (state)",
+      "Washington State",
+      "University of Washington",
+      "Seattle",
+      "Tacoma",
+      "Spokane",
+      "Olympia",
+      "Puget Sound",
+      "Mount Rainier",
+      "Mount St. Helens",
+      "Seahawks",
+      "Mariners",
+      "Kraken",
+      "Sounders"
+    ],
+    "locations": {
+      "auburn-wa": {"county": "King County"},
+      "bainbridge-island-wa": {"county": "Kitsap County"},
+      "edmonds-wa": {"county": "Snohomish County"},
+      "issaquah-wa": {"county": "King County"},
+      "vancouver-wa": {"county": "Clark County"}
+    },
+    "newsrooms": [
+      {"name": "Office of the Governor", "feed": "https://governor.wa.gov/rss.xml"},
+      {
+        "name": "Washington State Department of Transportation",
+        "feed": "https://wsdot.wa.gov/about/news-rss.xml"
+      },
+      {"name": "Washington State Attorney General", "feed": "https://www.atg.wa.gov/rss.xml"},
+      {"name": "Washington State Department of Health", "feed": "https://doh.wa.gov/newsroom/rss"}
+    ],
+    "watchlist": [
+      {"article": "Seattle_Seahawks", "about": "The Seattle Seahawks are the National Football League team based in Seattle."},
+      {"article": "Seattle_Mariners", "about": "The Seattle Mariners are the Major League Baseball team based in Seattle."},
+      {"article": "Seattle_Kraken", "about": "The Seattle Kraken are the National Hockey League team based in Seattle."},
+      {"article": "Seattle_Sounders_FC", "about": "Seattle Sounders FC is the Major League Soccer team based in Seattle."},
+      {"article": "Seattle_Storm", "about": "The Seattle Storm are the WNBA basketball team based in Seattle."},
+      {"article": "Seattle_Reign_FC", "about": "Seattle Reign FC is the National Women's Soccer League team based in Seattle."},
+      {"article": "Washington_Huskies_football", "about": "The Washington Huskies are the University of Washington's college football team."},
+      {"article": "Washington_State_Cougars_football", "about": "The Washington State Cougars are Washington State University's college football team."},
+      {"article": "Mount_Rainier", "about": "Mount Rainier is the highest mountain in Washington."},
+      {"article": "Mount_St._Helens", "about": "Mount St. Helens is an active volcano in southwest Washington."},
+      {"article": "Washington_State_Ferries", "about": "Washington State Ferries runs the public ferry system on Puget Sound."},
+      {"article": "Space_Needle", "about": "The Space Needle is an observation tower in Seattle."},
+      {"article": "Washington_State_Fair", "about": "The Washington State Fair is held each year in Puyallup."},
+      {"article": "Snoqualmie_Pass", "about": "Snoqualmie Pass carries Interstate 90 over the Cascade Range."},
+      {"article": "Grey's_Anatomy", "about": "Grey's Anatomy is a medical drama television series set in Seattle."}
+    ]
+  }
+}

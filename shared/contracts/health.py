@@ -104,8 +104,18 @@ class EditionItem(BaseModel):
     event_date: str
     source_url: str | None
     rank: int | None = None
-    kind: Literal["event", "meeting_preview", "meeting_outcome"] = "event"
+    kind: Literal[
+        "event",
+        "meeting_preview",
+        "meeting_outcome",
+        "state_news",
+        "earthquake",
+        "trending_topic",
+        "social_trend",
+    ] = "event"
     source_name: str = "Local source"
+    section: str | None = None
+    local: bool = True
 
 
 class CorrectionNotice(BaseModel):

@@ -165,6 +165,23 @@ PURPOSE = {
         "state, and why it matters to residents, in plain language for someone new to local "
         "government"
     ),
+    "state_news": (
+        "tells neighbours what this official announcement says, naming the agency that made "
+        "it, in plain language. Do not claim it affects the town unless the description says "
+        "so"
+    ),
+    "earthquake": (
+        "tells neighbours calmly and plainly what the U.S. Geological Survey recorded. Do not "
+        "mention damage, injuries, aftershocks or safety advice unless the description does"
+    ),
+    "trending_topic": (
+        "tells neighbours that this topic is drawing unusual attention, using only the "
+        "numbers and facts given. Never guess or suggest why it is trending"
+    ),
+    "social_trend": (
+        "tells neighbours that this topic is trending on Bluesky, using only Bluesky's summary "
+        "and numbers. Never guess or suggest why it is trending, and do not quote anyone"
+    ),
 }
 
 

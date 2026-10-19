@@ -128,3 +128,47 @@ flowchart LR
 - Wikidata websites can be stale (`http://`, old `ci.*` domains) or wrong (Savannah).
 - Agenda item detail (what is being decided) needs a per-platform follow-up call. The
   meeting list alone gives only body, date and location.
+
+## Wider-area connectors for news deserts (built)
+
+When a town has little local news, editions widen to its county and state. Four connectors
+are onboarded, configured per state in `config/state-sources.json`. All are free, keyless,
+public and robots.txt-permitted. See the README for the ranking rules and guardrails.
+
+| Connector | Endpoint | robots.txt | Licence / terms |
+| --- | --- | --- | --- |
+| USGS earthquakes | `earthquake.usgs.gov/fdsnws/event/1/query` | allowed | public domain |
+| State newsrooms (WA) | Governor, WSDOT, AG and DOH RSS | allowed | public agency releases |
+| Wikipedia trending | `wikimedia.org/api/rest_v1/metrics/pageviews` | allowed | CC0 data |
+| Bluesky trending | `api.bsky.app/xrpc/app.bsky.unspecced.getTrends`, `searchPosts` (count only) | allowed | public AppView; no post text stored |
+
+Rejected:
+- NWS alerts: `api.weather.gov` robots.txt is `Disallow: /`, and the `alerts.weather.gov` CAP feeds are retired.
+- `en.wikipedia.org/w/api.php` and `/api/rest_v1`: disallowed by robots.txt.
+- Wikidata SPARQL: frequent timeouts.
+- Google Trends: no official API.
+- X: paid API.
+- Reddit: API terms restrict commercial use.
+- TikTok: research API only.
+
+### Live test, 2026-10-19 (5 onboarded WA locations)
+
+| Connector | Auburn | Bainbridge Island | Edmonds | Issaquah | Vancouver |
+| --- | --- | --- | --- | --- | --- |
+| USGS earthquakes | ingested, 2 (county) | ingested, 2 (county) | ingested, 2 (county) | ingested, 2 (town, within 30 km) | ingested, 0 within 100 km |
+| State newsrooms | 4/4 feeds, 20 statewide, 1 sensitive dropped | same | same | same | same |
+| Wikipedia trending | 15 topics measured, 0 trending | same | same | same | same |
+| Bluesky trending | 25 national trends, 0 tied to WA; 8 town posts counted | 0 tied; 3 counted | 0 tied; 4 counted | 0 tied; 3 counted | 0 tied; 47 counted |
+
+Wikipedia trending needs at least 2x usual views (watchlist articles). This week the
+highest was Snoqualmie Pass at 1.62x (74 views a day), so nothing qualified. No
+state-tied article reached the most-read lists. Town and county article attention was
+0.84x to 1.3x of usual. The newsroom feeds named none of the five towns or counties in
+this fortnight, so all 20 items are statewide, and ceremonial items (appointments) rank
+below practical ones.
+
+Open risks:
+- One state is configured. Each new state needs reviewed newsroom feeds, a watchlist and
+  county mappings.
+- Bluesky trends are national, so state-tied trends will be rare.
+- Wikipedia pageviews lag 1 to 3 days.

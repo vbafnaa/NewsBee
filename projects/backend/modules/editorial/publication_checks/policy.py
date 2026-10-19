@@ -9,14 +9,24 @@ import re
 from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.modules.source_connectors.connectors.meetings import PRIVATE
 
-POLICY = "private_poc_v1"
+POLICY = "private_poc_v2"
 SENSITIVE = re.compile(
     r"\b(alleg(?:ation|ations|ed|edly)|arrest(?:ed|s)?|charged with|suspect(?:s)?|"
     r"(?:sexual assault|domestic violence|eviction) (?:case|hearing|proceedings?)|"
     r"(?:suicide|homicide) investigation|disciplinary|medical records?)\b",
     re.I,
 )
-KINDS = {"event", "meeting_preview", "meeting_outcome"}
+# Wider-area kinds come only from official newsrooms, USGS and public trend counts, and their
+# connectors already drop deaths, crime, violence and politics before these checks run.
+KINDS = {
+    "event",
+    "meeting_preview",
+    "meeting_outcome",
+    "state_news",
+    "earthquake",
+    "trending_topic",
+    "social_trend",
+}
 
 
 def errors(story: dict) -> list[str]:
