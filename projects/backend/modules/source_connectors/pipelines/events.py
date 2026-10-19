@@ -3,9 +3,9 @@ keep only next-7-day events at an in-town branch, add the town's public meetings
 agendas plus the past week's recorded outcomes), and store facts plus evidence.
 
 With NEWSBEE_WIDER_SOURCES on (the default), also add the past fortnight's nearby
-earthquakes, official state newsroom posts, and statewide Wikipedia/Bluesky trends, each
-tagged local/region/state so drafting can fill news-desert editions without crowding out
-town news."""
+earthquakes, official state newsroom posts, and Wikipedia/Bluesky trends about the town, its
+county or places within 50 km (statewide items are dropped), each tagged local/region/nearby
+so drafting can fill news-desert editions without crowding out town news."""
 
 import hashlib
 import json
@@ -103,7 +103,7 @@ def collect(system: dict, client: httpx.Client, start: str, end: str) -> tuple[d
 
 
 def wider(location: dict, client: httpx.Client, today: date, cache_dir) -> list[tuple]:
-    """Nearby hazards, state newsrooms and statewide trends, so news deserts still get an
+    """Nearby hazards, state newsroom posts and trends near the town, so news deserts still get an
     edition. Each returns its own result; none of them fails the location's job."""
     states = regions.load()
     collectors = (

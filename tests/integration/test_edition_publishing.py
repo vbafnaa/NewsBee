@@ -316,7 +316,8 @@ def store_mixed_snapshot(settings, local: int, wider: list[tuple[str, str]]) -> 
             },
         })
     for index, (title, tier) in enumerate(wider):
-        section = {"region": "Around King County", "state": "Around Washington"}[tier]
+        section = {"region": "Around King County", "nearby": "Near Seattle",
+                   "state": "Around Washington"}[tier]
         events.append({
             "source_id": "statenews:wa", "source_event_id": f"n{index}",
             "event_date": "2026-10-28",
@@ -335,14 +336,14 @@ def store_mixed_snapshot(settings, local: int, wider: list[tuple[str, str]]) -> 
 
 
 def test_local_stories_lead_and_wider_news_only_fills_capped_slots(client, settings, monkeypatch):
-    wider = [(f"Statewide road work {i}", "state") for i in range(4)]
+    wider = [(f"Tacoma road work {i}", "nearby") for i in range(4)]
     wider.append(("County ferry update", "region"))
     store_mixed_snapshot(settings, 3, wider)
-    # Rate statewide news highest: local stories must still come first.
+    # Rate nearby news highest: local stories must still come first.
     run, _ = author(settings, monkeypatch, ranking=rate(**{t: {"civic": 3} for t, _ in wider}))
     items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
     assert [item["local"] for item in items] == [True] * 3 + [False] * drafting.MAX_WIDER
-    assert items[3]["headline"] == "Don't miss County ferry update"  # county before state
+    assert items[3]["headline"] == "Don't miss County ferry update"  # county before nearby
     assert items[3]["section"] == "Around King County" and items[0]["section"] is None
     assert items[4]["when_where"] == "Published Wednesday, October 28 by WSDOT."
     summary = json.loads(
@@ -352,10 +353,13 @@ def test_local_stories_lead_and_wider_news_only_fills_capped_slots(client, setti
 
 
 def test_news_desert_edition_is_filled_from_wider_sources(client, settings, monkeypatch):
-    store_mixed_snapshot(settings, 0, [("Snoqualmie Pass closure", "state")])
+    # A retired statewide item from an older snapshot is never written.
+    store_mixed_snapshot(
+        settings, 0, [("Statewide burn ban", "state"), ("Bellevue road closure", "nearby")]
+    )
     run, _ = author(settings, monkeypatch)
     items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
-    assert run.included == 1 and items[0]["section"] == "Around Washington"
+    assert run.included == 1 and items[0]["section"] == "Near Seattle"
     assert items[0]["local"] is False
 
 
