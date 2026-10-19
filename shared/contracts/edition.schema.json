@@ -81,7 +81,11 @@
           "enum": [
             "event",
             "meeting_preview",
-            "meeting_outcome"
+            "meeting_outcome",
+            "state_news",
+            "earthquake",
+            "trending_topic",
+            "social_trend"
           ],
           "title": "Kind",
           "type": "string"
@@ -90,6 +94,23 @@
           "default": "Local source",
           "title": "Source Name",
           "type": "string"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "local": {
+          "default": true,
+          "title": "Local",
+          "type": "boolean"
         }
       },
       "required": [
