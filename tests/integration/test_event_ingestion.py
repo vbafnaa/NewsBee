@@ -16,6 +16,8 @@ from projects.backend.shared.storage.database import SCHEMA_VERSION, connect, in
 from tests import library_world
 from tests.library_world import CALENDAR, FEED_URL, HOMEPAGE, LOCATION_ID
 
+pytestmark = pytest.mark.critical
+
 
 @pytest.fixture
 def onboarded(settings):
@@ -265,7 +267,7 @@ def test_schema_one_upgrades_without_losing_existing_jobs(settings):
     initialize(settings.database)
     with connect(settings.database) as database:
         assert database.execute("SELECT id FROM jobs").fetchone()[0] == "old"
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
 
 
 def test_v4_single_source_data_is_dropped_on_upgrade(settings, ingested_event):
@@ -276,7 +278,7 @@ def test_v4_single_source_data_is_dropped_on_upgrade(settings, ingested_event):
     report = jobs.inspect(settings.database)
     assert report["events"] == [] and report["jobs"] == []
     with connect(settings.database) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert database.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0
 
 

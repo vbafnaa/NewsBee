@@ -5,7 +5,10 @@ and review console. Examples of future contract areas are published editions,
 stories with attribution, and review requests.
 
 `health.py` contains authoritative Pydantic definitions for the infrastructure
-health and empty editions responses. The adjacent `*.schema.json` files are
+health, edition listings and reader editions. Reader items include source name/type and a
+stable story id; editions include coverage disclosures and public correction notices.
+`edition.schema.json` describes the full reader edition separately from `editions.schema.json`
+(the location listing). The adjacent `*.schema.json` files are
 generated for language-neutral consumers, not hand-maintained copies.
 Regenerate them with `uv run --locked python scripts/dev.py contracts`;
 integration tests detect schema drift.

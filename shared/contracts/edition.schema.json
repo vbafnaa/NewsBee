@@ -1,0 +1,174 @@
+{
+  "$defs": {
+    "CorrectionNotice": {
+      "properties": {
+        "story_id": {
+          "title": "Story Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "number"
+        }
+      },
+      "required": [
+        "story_id",
+        "reason",
+        "created_at"
+      ],
+      "title": "CorrectionNotice",
+      "type": "object"
+    },
+    "EditionItem": {
+      "properties": {
+        "story_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Story Id"
+        },
+        "headline": {
+          "title": "Headline",
+          "type": "string"
+        },
+        "blurb": {
+          "title": "Blurb",
+          "type": "string"
+        },
+        "when_where": {
+          "title": "When Where",
+          "type": "string"
+        },
+        "event_date": {
+          "title": "Event Date",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Url"
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank"
+        },
+        "kind": {
+          "default": "event",
+          "enum": [
+            "event",
+            "meeting_preview",
+            "meeting_outcome"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_name": {
+          "default": "Local source",
+          "title": "Source Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "headline",
+        "blurb",
+        "when_where",
+        "event_date",
+        "source_url"
+      ],
+      "title": "EditionItem",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "location_id": {
+      "title": "Location Id",
+      "type": "string"
+    },
+    "location_name": {
+      "title": "Location Name",
+      "type": "string"
+    },
+    "window_start": {
+      "title": "Window Start",
+      "type": "string"
+    },
+    "window_end": {
+      "title": "Window End",
+      "type": "string"
+    },
+    "published_at": {
+      "title": "Published At",
+      "type": "number"
+    },
+    "headline": {
+      "title": "Headline",
+      "type": "string"
+    },
+    "intro": {
+      "title": "Intro",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/EditionItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "coverage": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Coverage",
+      "type": "array"
+    },
+    "corrections": {
+      "items": {
+        "$ref": "#/$defs/CorrectionNotice"
+      },
+      "title": "Corrections",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "location_id",
+    "location_name",
+    "window_start",
+    "window_end",
+    "published_at",
+    "headline",
+    "intro",
+    "items"
+  ],
+  "title": "Edition",
+  "type": "object"
+}

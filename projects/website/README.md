@@ -7,8 +7,11 @@ API; keep editorial and source-processing logic in the backend.
 Cross-project contracts belong in `shared\contracts\` at the repository root.
 Astro renders the minimal reader shell in `src\pages\index.astro`; a small browser
 script lists onboarded locations from `/api/editions` and shows the selected
-location's latest published edition, or "No edition yet." API failures are shown. Keep components lightweight until UX flows
-and designs are supplied.
+location's latest published edition, or "No edition yet." API failures have a retry action.
+Each story identifies its source and whether it is an event, upcoming public meeting or
+recorded outcome. Coverage disclosures, past-edition warnings and visible correction notices
+prevent missing/stale source coverage being presented as a complete account of local news.
+The layout is keyboard-accessible and adapts to mobile widths.
 
 No public hosting, reader accounts, subscriptions, or behavioral analytics are
 scaffolded here. Use the root README's setup and launcher commands.

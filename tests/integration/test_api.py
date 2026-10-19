@@ -2,19 +2,23 @@ import json
 import sqlite3
 import time
 
-from projects.backend.shared.storage.database import connect, heartbeat
-from shared.contracts.health import EditionsResponse, HealthReport
+import pytest
+
+from projects.backend.shared.storage.database import SCHEMA_VERSION, connect, heartbeat
+from shared.contracts.health import Edition, EditionsResponse, HealthReport
 from shared.contracts.metrics import MetricsReport
 
 
+@pytest.mark.critical
 def test_startup_initializes_local_storage(client, settings):
     assert client.get("/api/live").json() == {"status": "ok"}
     assert settings.database.is_file()
     assert settings.evidence_dir.is_dir()
     with connect(settings.database) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
+@pytest.mark.critical
 def test_editions_list_onboarded_locations_without_editions(client, settings):
     from tests import library_world
 
@@ -38,6 +42,7 @@ def test_editions_list_onboarded_locations_without_editions(client, settings):
     }
 
 
+@pytest.mark.critical
 def test_editions_storage_failure_is_503(client, monkeypatch):
     def fail(_):
         raise sqlite3.OperationalError("fixture outage")
@@ -89,12 +94,14 @@ def test_cors_allows_only_local_website(client):
     assert "access-control-allow-origin" not in denied.headers
 
 
+@pytest.mark.critical
 def test_generated_contracts_match_models():
     from projects.backend.shared.configuration.settings import ROOT
 
     for name, model in (
         ("health", HealthReport),
         ("editions", EditionsResponse),
+        ("edition", Edition),
         ("metrics", MetricsReport),
     ):
         schema = ROOT / "shared" / "contracts" / f"{name}.schema.json"
