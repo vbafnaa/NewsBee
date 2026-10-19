@@ -78,7 +78,7 @@ connector and ranking rules:
 
 | Source id | Source | Window | Kept | Ranking |
 | --- | --- | --- | --- | --- |
-| `hazards:usgs` | USGS earthquake catalog | 14 days, 50 km | M3.0+ or 10+ "felt" reports | town tier (≤15 km), magnitude, distance, felt |
+| `hazards:usgs` | USGS earthquake catalog | 14 days, 50 km | M3.0+ or 10+ "felt" reports; quakes near the same place merged into one story | town tier (≤15 km), magnitude, distance, felt |
 | `statenews:wa` | Official state newsroom RSS (Governor, WSDOT, AG, DOH) | 14 days | names the town, county or a nearby place | town, county, nearby; practical over ceremonial; publishers interleaved |
 | `trending:wikipedia:wa` | Wikimedia pageviews: nearby watchlist + state-tied most-read | last 3 days vs prior 2 weeks | ≥2x (watchlist) / ≥1.5x (most-read), 1,000+ views/day | town, county, nearby; biggest spike |
 | `trending:bluesky:wa` | Bluesky public trending topics | today | trend name is the town, county, a nearby place or a nearby watchlist topic; 100+ posts | town, county, nearby; most posts |
