@@ -94,6 +94,36 @@ def test_cors_allows_only_local_website(client):
     assert "access-control-allow-origin" not in denied.headers
 
 
+def test_expansion_signup_preflight(client):
+    response = client.options(
+        "/api/locations/seaside-or/interest",
+        headers={
+            "Origin": "http://127.0.0.1:4321",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:4321"
+
+
+def test_v7_upgrade_preserves_locations_and_adds_expansion_signups(settings):
+    from projects.backend.shared.storage.database import initialize
+    from tests import library_world
+
+    initialize(settings.database)
+    library_world.onboard(settings.database)
+    with connect(settings.database) as database:
+        database.execute("DROP TABLE expansion_signups")
+        database.execute("PRAGMA user_version = 7")
+    initialize(settings.database)
+    initialize(settings.database)
+    with connect(settings.database) as database:
+        assert database.execute("SELECT id FROM locations").fetchone()[0] == "seattle-wa"
+        assert database.execute("SELECT COUNT(*) FROM expansion_signups").fetchone()[0] == 0
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+
+
 @pytest.mark.critical
 def test_generated_contracts_match_models():
     from projects.backend.shared.configuration.settings import ROOT

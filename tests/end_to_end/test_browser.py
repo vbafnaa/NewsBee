@@ -71,14 +71,29 @@ def test_review_displays_real_health_report(page, api_url):
 def forward_api(page, api_url):
     def forward(route):
         path = route.request.url.removeprefix("http://127.0.0.1:8000")
-        route.fulfill(response=page.request.get(f"{api_url}{path}"))
+        route.fulfill(
+            response=page.request.fetch(
+                f"{api_url}{path}",
+                method=route.request.method,
+                data=route.request.post_data,
+                headers={"Content-Type": "application/json"},
+            )
+        )
 
     page.route("http://127.0.0.1:8000/api/**", forward)
 
 
+@pytest.fixture
+def reader_directory(settings):
+    from projects.backend.modules.communities import directory
+    from tests.unit.test_communities import archive
+
+    directory.build(archive(), directory.directory_path(settings.data_dir))
+
+
 @pytest.mark.critical
 def test_reader_selects_location_and_reads_published_edition(
-    page, api_url, website_url, settings, ingested_event, monkeypatch
+    page, api_url, website_url, settings, ingested_event, monkeypatch, reader_directory
 ):
     from projects.backend.modules.communities import locations
     from tests.integration.test_edition_publishing import run_worker
@@ -92,11 +107,14 @@ def test_reader_selects_location_and_reads_published_edition(
     locations.save(settings.database, other)
     forward_api(page, api_url)
     page.goto(website_url)
-    select = page.get_by_label("Location")
-    expect(select).to_have_value("bainbridge-island-wa")
+    toggle = page.get_by_role("button", name="Change edition: Bainbridge Island, WA")
+    expect(toggle).to_be_visible()
+    expect(page.get_by_role("combobox")).to_be_hidden()
     expect(page.get_by_role("status")).to_have_text("No edition yet.")
     expect(page.get_by_role("article", name="Edition")).to_be_hidden()
-    select.select_option(label="Seattle, WA")
+    toggle.click()
+    page.locator("#onboarded-editions").get_by_role("button", name="Seattle, WA").click()
+    expect(page.locator("#edition-toggle")).to_have_attribute("aria-expanded", "false")
     edition = page.get_by_role("article", name="Edition")
     expect(edition.get_by_role("heading", level=2)).to_have_text(
         f"{ingested_event['events'][0]['facts']['title']} this week"
@@ -115,10 +133,11 @@ def test_reader_selects_location_and_reads_published_edition(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
     page.goto(f"{website_url}/?location=seattle-wa")
-    expect(page.get_by_label("Location")).to_have_value("seattle-wa")
+    expect(page.locator("#selected-location")).to_have_text("Seattle, WA")
     expect(page.get_by_role("heading", level=3, name=title)).to_be_visible()
     page.goto(f"{website_url}/?location=unknown")
-    expect(page.get_by_label("Location")).to_have_value("bainbridge-island-wa")
+    expect(page.locator("#edition-status")).to_contain_text("Location unavailable:")
+    expect(page.locator("#selected-location")).to_have_text("Change edition")
     from projects.backend.modules.editions import drafting
     from projects.backend.modules.editorial.corrections import withdrawals
 
@@ -136,11 +155,96 @@ def test_reader_selects_location_and_reads_published_edition(
 
 
 @pytest.mark.critical
-def test_reader_without_locations(page, api_url, website_url):
+def test_reader_without_locations_can_search_and_sign_up(
+    page, api_url, website_url, reader_directory, settings
+):
+    from projects.backend.shared.storage.database import connect
+
     forward_api(page, api_url)
     page.goto(website_url)
-    expect(page.get_by_role("status")).to_have_text("No locations onboarded yet.")
-    expect(page.get_by_label("Location")).to_be_disabled()
+    page.get_by_role("button", name="Change edition", exact=True).click()
+    search = page.get_by_role("combobox", name="Find another town")
+    expect(search).to_be_enabled()
+    search.fill("Sea, OR")
+    expect(page.get_by_role("option", name="Seaside, OR")).to_be_visible()
+    search.press("ArrowDown")
+    expect(search).to_have_attribute("aria-activedescendant", "location-option-0")
+    search.press("Enter")
+    expect(page.locator("#selected-location")).to_have_text("Seaside, OR")
+    expect(page.locator("#edition-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(
+        page.get_by_role("heading", name="We're not in Seaside yet. Let's change that.")
+    ).to_be_visible()
+    expect(page.get_by_role("article", name="Edition")).to_be_hidden()
+    assert page.url.endswith("?location=seaside-or")
+    page.get_by_label("Your email").fill("reader@example.com")
+    page.get_by_role("button", name="Help bring Newsbee here").click()
+    expect(page.locator("#signup-status")).to_contain_text(
+        "You're on the interest list for Seaside, OR"
+    )
+    with connect(settings.database) as database:
+        [row] = database.execute("SELECT * FROM expansion_signups").fetchall()
+        assert (row["location_id"], row["email"]) == ("seaside-or", "reader@example.com")
+    page.reload()
+    expect(page.locator("#selected-location")).to_have_text("Seaside, OR")
+    expect(page.locator("#expansion")).to_be_visible()
+    page.locator("#edition-toggle").click()
+    search.fill("zzzz")
+    expect(page.locator("#location-help")).to_contain_text("No matching towns")
+    expect(page.get_by_role("listbox")).to_be_hidden()
+
+
+def test_reader_switches_from_edition_to_expansion_and_back(
+    page, api_url, website_url, reader_directory, settings, ingested_event, monkeypatch
+):
+    from tests.integration.test_edition_publishing import run_worker
+
+    run_worker(settings, monkeypatch)
+    forward_api(page, api_url)
+    page.goto(f"{website_url}/?location=seattle-wa")
+    edition = page.get_by_role("article", name="Edition")
+    expect(edition).to_be_visible()
+    page.locator("#edition-toggle").click()
+    search = page.get_by_role("combobox", name="Find another town")
+    search.fill("Sea")
+    page.get_by_role("option", name="Seaside, OR").click()
+    expect(edition).to_be_hidden()
+    expect(page.locator("#expansion")).to_be_visible()
+    page.locator("#edition-toggle").click()
+    search.fill("Seattle")
+    page.get_by_role("option", name="Seattle, WA").click()
+    expect(edition).to_be_visible()
+    expect(page.locator("#expansion")).to_be_hidden()
+
+
+def test_reader_search_failure_and_escape(page, api_url, website_url, reader_directory):
+    forward_api(page, api_url)
+    page.goto(website_url)
+    page.locator("#edition-toggle").click()
+    search = page.get_by_role("combobox", name="Find another town")
+    search.fill("Sea")
+    expect(page.get_by_role("option", name="Seattle, WA")).to_be_visible()
+    search.press("ArrowDown")
+    search.press("Escape")
+    expect(page.locator("#edition-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(page.locator("#edition-toggle")).to_be_focused()
+    page.locator("#edition-toggle").click()
+    page.route("**/api/locations/search?*", lambda route: route.abort())
+    search.fill("Seattle")
+    expect(page.locator("#location-help")).to_contain_text("Location search unavailable:")
+    expect(page.locator("#expansion")).to_be_hidden()
+
+
+def test_reader_signup_failure_is_not_success(page, api_url, website_url, reader_directory):
+    forward_api(page, api_url)
+    page.goto(f"{website_url}/?location=seaside-or")
+    page.route("**/api/locations/seaside-or/interest", lambda route: route.abort())
+    page.get_by_label("Your email").fill("reader@example.com")
+    button = page.get_by_role("button", name="Help bring Newsbee here")
+    button.click()
+    expect(page.locator("#signup-status")).to_contain_text("Signup unavailable:")
+    expect(button).to_be_enabled()
+    expect(page.get_by_label("Your email")).to_have_value("reader@example.com")
 
 
 @pytest.mark.critical
@@ -153,7 +257,9 @@ def test_reader_reports_api_failure(page, website_url):
         lambda route: route.fulfill(json={"locations": []}),
     )
     page.get_by_role("button", name="Try again").click()
-    expect(page.get_by_role("status")).to_have_text("No locations onboarded yet.")
+    expect(page.locator("#edition-status")).to_have_text(
+        "Find your community. Open Change edition to search for your town."
+    )
 
 
 def test_review_clears_stale_health_on_api_failure(page, api_url):

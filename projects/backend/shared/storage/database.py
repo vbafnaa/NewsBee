@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 @contextmanager
@@ -116,6 +116,15 @@ def initialize(path: Path) -> None:
                 name TEXT NOT NULL,
                 profile_json TEXT NOT NULL,
                 onboarded_at REAL NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS expansion_signups (
+                location_id TEXT NOT NULL,
+                location_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (location_id, email)
             )"""
         )
         connection.execute(

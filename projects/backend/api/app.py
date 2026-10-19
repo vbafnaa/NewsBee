@@ -41,7 +41,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:4321", "http://localhost:4321"],
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
     app.mount("/review/static", StaticFiles(directory=CONSOLE / "static"), name="review-static")
     app.include_router(router)

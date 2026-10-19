@@ -77,10 +77,11 @@ supplies agendas only.
    by its own rules: library events put one-off events, then practical help, first;
    meetings put the city council first, then sooner meetings and fuller agendas. The model then
    ranks the shortlists together (civic 3 : appeal 2 : one-off 1). Meeting coverage precedes
-   discretionary events and is not suppressed by the one-per-category variety rule.
-3. **Check eligibility**, then **write** up to 5 stories. Missing source context/HTTPS links,
+   discretionary events. Each source gets its best passing story first; published items
+   appear in rank order, with no per-category limit.
+3. **Check eligibility**, then **write** up to 9 stories, with at most 12 attempts.
+   Missing source context/HTTPS links,
    allegations, individual cases and other sensitive patterns are held before writing.
-   Events use one story per category; distinct meetings remain independently eligible.
    Drafts that add unsupported words, repeat
    themselves, stop mid-sentence, drift into non-Latin characters or leave the event's own
    name out of the headline get one retry, then are held for audit at `/review/editions`.

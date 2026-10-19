@@ -267,7 +267,7 @@ def test_schema_one_upgrades_without_losing_existing_jobs(settings):
     initialize(settings.database)
     with connect(settings.database) as database:
         assert database.execute("SELECT id FROM jobs").fetchone()[0] == "old"
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 9
 
 
 def test_v4_single_source_data_is_dropped_on_upgrade(settings, ingested_event):

@@ -2,9 +2,11 @@
 
 Pipeline: snapshot events -> stories (repeats collapsed) -> rank every story by its
 source's rules, keeping the top TOP_PER_SOURCE -> model newsworthiness ranking across sources ->
-write items best-first, at most one per category, until MAX_ENTRIES pass the checks or
-MAX_ATTEMPTS have been written -> edition headline and intro. Held items are excluded and
-never block publishing. A snapshot with no usable events still publishes an edition.
+write items best-first, each source's best story first (falling to its next story if held),
+with no per-category limit, until MAX_ENTRIES pass the checks or MAX_ATTEMPTS have been
+written -> edition headline and
+intro. Items are shown in rank order. Held items are excluded and never block publishing.
+A snapshot with no usable events still publishes an edition.
 """
 
 import hashlib
@@ -39,8 +41,8 @@ from shared.contracts.health import (
 logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "qwen3:4b"
 VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}+{policy.POLICY}"
-MAX_ENTRIES = 5
-MAX_ATTEMPTS = 10
+MAX_ENTRIES = 9
+MAX_ATTEMPTS = 12
 TOP_PER_SOURCE = 5
 
 
@@ -77,13 +79,13 @@ def shortlist(story_list: list[stories.Story]) -> tuple[list[stories.Story], dic
     return chosen, summary
 
 
-def variety_key(candidate: dict) -> str:
-    """One item per model category; rule-rated stories have no category to compare."""
-    if candidate.get("kind", "event") != "event":
-        return f"civic:{candidate['id']}"
-    if candidate["rated_by"] == "model":
-        return candidate["rating"]["category"]
-    return f"unrated:{candidate['id']}"
+def next_candidate(pending: list[dict], source_of: dict[str, str], covered: set[str]) -> dict:
+    """Best-ranked story from a source with nothing in the edition yet; otherwise the
+    best-ranked story left. Only the writing order changes; no story is ruled out."""
+    for candidate in pending:
+        if source_of[candidate["id"]] not in covered:
+            return candidate
+    return pending[0]
 
 
 def story_record(story: stories.Story) -> dict:
@@ -214,9 +216,12 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
         story_list, sources = shortlist(all_stories)
         by_id = {story.id: story for story in story_list}
         withdrawn = withdrawals.for_location(settings.database, location_id)
-        passed: list[tuple[dict, dict]] = []
-        held = attempted = skipped_for_variety = 0
-        used: set[str] = set()
+        source_of = {
+            story.id: source_ranking.source_type(story.first.source_id) for story in story_list
+        }
+        passed: list[tuple[int, dict, dict]] = []
+        held = attempted = 0
+        covered: set[str] = set()
         ranking = None
         try:
             ranked, ranking = await newsworthiness.rank(runtime, candidates(story_list))
@@ -232,13 +237,12 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 ranking["wall_seconds"],
                 json.dumps(sources),
             )
-            for rank, candidate in enumerate(ranked, start=1):
-                if len(passed) >= MAX_ENTRIES or attempted >= MAX_ATTEMPTS:
-                    break
-                key = variety_key(candidate)
-                if key in used:
-                    skipped_for_variety += 1
-                    continue
+            rank_of = {candidate["id"]: rank for rank, candidate in enumerate(ranked, start=1)}
+            pending = list(ranked)
+            while pending and len(passed) < MAX_ENTRIES and attempted < MAX_ATTEMPTS:
+                candidate = next_candidate(pending, source_of, covered)
+                pending.remove(candidate)
+                rank = rank_of[candidate["id"]]
                 story = by_id[candidate["id"]]
                 candidate["community_id"] = location_id
                 eligibility = policy.errors(candidate) + policy.source_errors(
@@ -271,8 +275,8 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                     source_url=story.first.source_url,
                 )
                 if result["disposition"] == "checks_passed":
-                    used.add(key)
-                    passed.append((candidate, result["draft"]))
+                    covered.add(source_of[candidate["id"]])
+                    passed.append((rank, candidate, result["draft"]))
                 else:
                     held += 1
                 with connect(settings.database) as database:
@@ -303,9 +307,10 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
+            passed.sort(key=lambda entry: entry[0])
             week = stories.week_label(snapshot["window_start"], snapshot["window_end"])
-            passed_stories = [candidate for candidate, _ in passed]
-            passed_drafts = [draft for _, draft in passed]
+            passed_stories = [candidate for _, candidate, _ in passed]
+            passed_drafts = [draft for _, _, draft in passed]
             front = await story_writer.write_front(
                 runtime, community, week, passed_stories, passed_drafts
             )
@@ -334,7 +339,6 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             "events": len(events),
             "stories": len(all_stories),
             "ranked": len(story_list),
-            "skipped_for_variety": skipped_for_variety,
             "ranking": ranking,
             "duration_seconds": round(time.monotonic() - started, 3),
             "front": front,
@@ -432,7 +436,7 @@ def listings(path: Path) -> list[EditionListing]:
 
 
 def latest_published(path: Path, location_id: str) -> Edition | None:
-    """The reader-facing edition: front plus items that passed checks, earliest first."""
+    """The reader-facing edition: front plus items that passed checks, best ranked first."""
     location = locations.get(path, location_id)
     with connect(path) as database:
         row = _latest_published_row(database, location_id)
@@ -498,6 +502,7 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
     coverage.insert(
         0, "Private prototype: library listings and public meetings only, not all local news."
     )
+    items.sort(key=lambda item: item.rank if item.rank is not None else float("inf"))
     return Edition(
         id=row["id"],
         location_id=location_id,

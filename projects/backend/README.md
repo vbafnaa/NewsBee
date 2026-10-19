@@ -84,9 +84,10 @@ past 7 days; `connectors\meetings.py` drops procedural and private items and pre
 plain-language sentence on what each public body does.
 `email_previews\delivery.py` records one delivery per subscriber in `config\preview-subscribers.json`
 when an edition publishes and sends via the loopback Mailpit sink; the `send_email_preview` job retries
-only unsent addresses. Schema version 8 adds checked-prose caching, story withdrawals and a
-latest-edition index; version 7 added `email_deliveries`; version 6 added location snapshots
-and edition snapshot IDs. Upgrades from versions 5-7 keep data. Upgrading from older versions
+only unsent addresses. Schema version 9 adds checked-prose caching, story withdrawals and a
+latest-edition index; version 8 added local expansion interest signups; version 7 added
+`email_deliveries`; version 6 added location snapshots and edition snapshot IDs.
+Upgrades from versions 5-8 keep data. Upgrading from older versions
 drops pre-location events, drafts and ingestion jobs. See the root README for retrieval scope
 and limits.
 
