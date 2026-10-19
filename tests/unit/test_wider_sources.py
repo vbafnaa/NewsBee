@@ -37,14 +37,22 @@ STATES = {
         "name": "Washington",
         "place_suffix": ", Washington",
         "aliases": ["Washington state", "Seattle Seahawks"],
+        "ambiguous_places": ["Auburn", "Kent"],
         "locations": {"auburn-wa": {"county": "King County"}},
+        "places": {
+            "Seattle": [47.6062, -122.3321],
+            "Kent": [47.3809, -122.2348],
+            "Mount Rainier": [46.8523, -121.7603],
+        },
         "newsrooms": [
             {"name": "Governor", "feed": "https://gov.example/rss.xml"},
             {"name": "WSDOT", "feed": "https://dot.example/rss.xml"},
         ],
         "watchlist": [
-            {"article": "Mount_Rainier", "about": "Mount Rainier is the state's tallest peak."},
-            {"article": "Seattle_Seahawks", "about": "The Seahawks are Washington's NFL team."},
+            {"article": "Mount_Rainier", "about": "Mount Rainier is the state's tallest peak.",
+             "place": "Mount Rainier"},
+            {"article": "Seattle_Seahawks", "about": "The Seahawks are Washington's NFL team.",
+             "place": "Seattle"},
         ],
     }
 }
@@ -169,11 +177,21 @@ def test_bluesky_adapter_keeps_only_aggregate_fields():
 def test_region_tiers_and_sections():
     place = regions.region(LOCATION, STATES)
     assert (place.town, place.county, place.state_name) == ("Auburn", "King County", "Washington")
-    assert place.tier_for("Auburn road closure") == "local"
+    assert place.nearby == ("Kent", "Seattle"), "Mount Rainier is over 50 km away"
+    assert [entry["article"] for entry in place.nearby_topics] == ["Seattle_Seahawks"]
+    assert place.tier_for("Auburn, WA road closure") == "local"
     assert place.tier_for("A King County levy") == "region"
-    assert place.tier_for("Statewide burn ban") == "state"
-    assert place.section("local", "x") == "Auburn in the news"
-    assert place.section("region", "x") == "Around King County"
+    assert place.tier_for("Seattle ferry delays") == "nearby"
+    assert place.tier_for("Statewide burn ban") is None
+    # Names shared with places elsewhere need the state or county, unless the source is
+    # already in-state.
+    assert place.tier_for("Auburn Tigers win") is None
+    assert place.tier_for("Auburn road closure", qualified=True) == "local"
+    assert place.tier_for("Kent street fair") is None
+    assert place.tier_for("Kent street fair", qualified=True) == "nearby"
+    assert place.section("local") == "Auburn in the news"
+    assert place.section("region") == "Around King County"
+    assert place.section("nearby") == "Near Auburn"
     assert not regions.region({**LOCATION, "id": "x-or"}, STATES).configured
 
 
@@ -184,6 +202,11 @@ def test_reviewed_state_config_is_valid_and_covers_onboarded_locations(tmp_path)
     for location_id in ("auburn-wa", "bainbridge-island-wa", "edmonds-wa", "issaquah-wa",
                         "vancouver-wa"):
         assert wa["locations"][location_id]["county"].endswith("County")
+        assert wa["locations"][location_id]["point"]
+    assert all(entry["place"] in wa["places"] for entry in wa["watchlist"])
+    vancouver = regions.region({"id": "vancouver-wa", "name": "Vancouver, WA"}, states)
+    assert "Portland" in vancouver.nearby and "Seattle" not in vancouver.nearby
+    assert not vancouver.nearby_topics
     bad = tmp_path / "states.json"
     bad.write_text(json.dumps({"WA": {"name": "W", "newsrooms": [
         {"name": "x", "feed": "http://insecure.example"}]}}))
@@ -203,7 +226,8 @@ def test_hazards_keeps_noticeable_quakes_and_tiers_by_distance():
 
     content = json.dumps({"features": [
         feature("near", 3.1, -122.23, 47.31),
-        feature("far", 3.6, -121.5, 47.6),
+        feature("far", 3.6, -122.0, 47.5),
+        feature("too_far", 4.0, -121.5, 47.6),
         feature("small", 2.6, -122.23, 47.31),
         feature("felt", 2.7, -122.3, 47.35, felt=40),
     ]}).encode()
@@ -213,9 +237,9 @@ def test_hazards_keeps_noticeable_quakes_and_tiers_by_distance():
     assert record["status"] == "ingested" and record["event_count"] == 3
     by_id = {fact.source_event_id: fact for fact in facts}
     assert set(by_id) == {"near", "far", "felt"}
-    assert by_id["near"].tier == "local" and by_id["far"].tier == "region"
+    assert by_id["near"].tier == "local" and by_id["far"].tier == "nearby"
     assert "may be revised" in by_id["near"].description
-    assert record["skipped_unusable"] == {"below_threshold": 1}
+    assert record["skipped_unusable"] == {"below_threshold": 1, "too_far": 1}
 
 
 def test_hazards_degrades_without_coordinates_or_when_blocked():
@@ -237,6 +261,9 @@ def test_state_news_filters_window_and_sensitive_items_and_tiers_by_place():
             ("Grants open for Auburn small businesses", "https://gov.example/1", recent, ""),
             ("Governor appoints judge", "https://gov.example/2", recent, "King County seat"),
             ("Suspect arrested in Tacoma", "https://gov.example/3", recent, ""),
+            ("Statewide burn ban begins", "https://gov.example/5", recent, ""),
+            ("Ferry schedule changes in Seattle", "https://gov.example/6", recent, ""),
+            ("Trade agreement signed", "https://gov.example/7", recent, "At a Seattle museum."),
             ("Old announcement", "https://gov.example/4", old, ""),
         ),
         "https://dot.example/rss.xml": 500,
@@ -246,9 +273,11 @@ def test_state_news_filters_window_and_sensitive_items_and_tiers_by_place():
     assert [(fact.title, fact.tier) for fact in facts] == [
         ("Grants open for Auburn small businesses", "local"),
         ("Governor appoints judge", "region"),
+        ("Ferry schedule changes in Seattle", "nearby"),
     ]
     assert facts[1].section == "Around King County" and facts[0].venue == "Governor"
-    assert record["skipped_unusable"] == {"sensitive_topic": 1}
+    assert facts[2].section == "Near Auburn"
+    assert record["skipped_unusable"] == {"sensitive_topic": 1, "not_near_town": 2}
     assert record["skipped_outside_window"] == 1
     assert any("HTTPStatusError" in page for page in record["pages_checked"])
 
@@ -277,7 +306,7 @@ def wiki_routes(**articles) -> dict:
     }
     top = {"items": [{"articles": [
         {"article": "Main_Page", "views": 9, "rank": 1},
-        {"article": "Snoqualmie_Pass", "views": 9, "rank": 2},
+        {"article": "Kent,_Washington", "views": 9, "rank": 2},
         {"article": "List_of_Washington_state_parks", "views": 9, "rank": 3},
         {"article": "Unrelated_Film", "views": 9, "rank": 4},
     ]}]}
@@ -286,21 +315,21 @@ def wiki_routes(**articles) -> dict:
 
 
 def test_wikipedia_trending_qualifies_spikes_and_caches_statewide_calls(tmp_path):
-    states = json.loads(json.dumps(STATES))
-    states["WA"]["aliases"].append("Snoqualmie Pass")
+    states = STATES
     routes = wiki_routes(
-        Mount_Rainier=pageviews(5000),
-        Seattle_Seahawks=pageviews(1200),
-        Snoqualmie_Pass=pageviews(3000),
+        Mount_Rainier=pageviews(6000),
+        Seattle_Seahawks=pageviews(5000),
+        **{"Kent,_Washington": pageviews(3000)},
     )
     routes["https://api.bsky.app/"] = json.dumps({"posts": []}).encode()
     seen: list[str] = []
     record, facts = trending.wikipedia(LOCATION, client(routes, seen), TODAY, tmp_path, states)
     assert record["status"] == "ingested"
     assert [(fact.title, fact.tier, fact.section) for fact in facts] == [
-        ("Mount Rainier", "state", "Trending in Washington"),
-        ("Snoqualmie Pass", "state", "Trending in Washington"),
+        ("Seattle Seahawks", "nearby", "Trending near Auburn"),
+        ("Kent, Washington", "nearby", "Trending near Auburn"),
     ]
+    assert record["skipped_unusable"]["not_near_town"] == 1, "Mount Rainier is too far"
     assert facts[0].signals["ratio"] == 5.0 and facts[0].kind == "trending_topic"
     assert "List_of" not in json.dumps([fact.title for fact in facts])
     statewide = [url for url in seen if "Rainier" in url]
@@ -315,15 +344,19 @@ def test_wikipedia_trending_fails_cleanly_when_unreachable(tmp_path):
     assert not list(tmp_path.iterdir()), "failed statewide results are not cached"
 
 
-def test_bluesky_trends_keep_state_topics_and_drop_politics_and_sensitive():
+def test_bluesky_trends_keep_nearby_topics_and_drop_statewide_politics_and_sensitive():
     trends = {"trends": [
         {"topic": "a", "displayName": "Seattle Seahawks", "category": "sports",
          "postCount": 5000},
-        {"topic": "b", "displayName": "Washington state budget", "category": "politics",
+        {"topic": "b", "displayName": "Seattle city budget", "category": "politics",
          "postCount": 9000},
-        {"topic": "c", "displayName": "Mount Rainier", "description": "Hiker found dead",
+        {"topic": "c", "displayName": "Seattle", "description": "Hiker found dead",
          "category": "other", "postCount": 800},
-        {"topic": "d", "displayName": "Mount Rainier sunrise", "postCount": 20},
+        {"topic": "d", "displayName": "Seattle sunrise", "postCount": 20},
+        {"topic": "f", "displayName": "Auburn", "category": "sports", "postCount": 4000},
+        {"topic": "g", "displayName": "Washington state budget", "postCount": 9000},
+        {"topic": "h", "displayName": "NFL picks", "description": "Seattle Seahawks lead",
+         "postCount": 9000},
         {"topic": "e", "displayName": "Taylor Swift", "postCount": 99999},
     ]}
     routes = {
@@ -334,10 +367,10 @@ def test_bluesky_trends_keep_state_topics_and_drop_politics_and_sensitive():
     }
     record, facts = trending.bluesky_trends(LOCATION, client(routes), TODAY, None, STATES)
     assert [(fact.title, fact.tier, fact.kind) for fact in facts] == [
-        ("Seattle Seahawks", "state", "social_trend")
+        ("Seattle Seahawks", "nearby", "social_trend")
     ]
     assert record["skipped_unusable"] == {
-        "not_about_the_state": 1, "excluded_topic": 2, "too_few_posts": 1}
+        "not_near_town": 4, "excluded_topic": 2, "too_few_posts": 1}
     assert "0 posts naming Auburn" in record["detail"]
 
 
@@ -375,10 +408,10 @@ def test_hazards_rank_tier_then_magnitude_then_distance():
 
 def test_state_news_ranks_practical_over_ceremonial_and_interleaves_publishers():
     pool = [
-        story("Governor appoints new director", tier="state", venue="Governor"),
-        story("Lane closures on I-5 this weekend", tier="state", venue="WSDOT"),
-        story("Bridge paint project", "2026-10-14", tier="state", venue="WSDOT"),
-        story("Scam warning for consumers", "2026-10-10", tier="state", venue="AG"),
+        story("Governor appoints new director", tier="nearby", venue="Governor"),
+        story("Lane closures on I-5 this weekend", tier="nearby", venue="WSDOT"),
+        story("Bridge paint project", "2026-10-14", tier="nearby", venue="WSDOT"),
+        story("Scam warning for consumers", "2026-10-10", tier="nearby", venue="AG"),
         story("King County grant program", "2026-10-01", tier="region", venue="Governor"),
     ]
     assert ranking.source_type("statenews:wa") == "statenews"
@@ -393,9 +426,9 @@ def test_state_news_ranks_practical_over_ceremonial_and_interleaves_publishers()
 
 def test_trending_ranks_tier_then_strength_and_interleaves_sources():
     pool = [
-        story("Big wiki", tier="state", kind="trending_topic", signals={"ratio": 6.0}),
-        story("Small wiki", tier="state", kind="trending_topic", signals={"ratio": 2.0}),
-        story("Social", tier="state", kind="social_trend", signals={"post_count": 300}),
+        story("Big wiki", tier="nearby", kind="trending_topic", signals={"ratio": 6.0}),
+        story("Small wiki", tier="nearby", kind="trending_topic", signals={"ratio": 2.0}),
+        story("Social", tier="nearby", kind="social_trend", signals={"post_count": 300}),
         story("Town wiki", tier="local", kind="trending_topic", signals={"ratio": 1.6}),
     ]
     assert ranking.source_type("trending:bluesky:wa") == "trending"
@@ -407,6 +440,6 @@ def test_when_where_for_news_names_the_source_and_date():
         "source_event_id": "x", "title": "Ferry update", "event_date": "2026-10-15",
         "schedule_text": "Thursday, October 15, 2026", "venue": "WSDOT", "room": None,
         "source_url": "https://wsdot.example/x", "description": "d", "kind": "state_news",
-        "tier": "state", "section": "Around Washington",
+        "tier": "nearby", "section": "Near Auburn",
     }}])
     assert stories.when_where(item) == "Published Thursday, October 15 by WSDOT."

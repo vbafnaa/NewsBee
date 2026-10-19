@@ -41,12 +41,12 @@ Category = Literal[
 ]
 MEETING_KINDS = frozenset({"meeting_preview", "meeting_outcome"})
 NEWS_KINDS = frozenset({"state_news", "earthquake", "trending_topic", "social_trend"})
-AREAS = {"local": "town", "region": "county", "state": "state"}
+AREAS = {"local": "town", "region": "county", "nearby": "nearby"}
 
 RUBRIC = (
     "Rate each candidate for a community newsletter. Each has a kind (an event, a public "
     "meeting, or news: an official state announcement, an earthquake, or a trending topic) "
-    "and an area (town, county or state). Scores are integers 0-3.\n"
+    "and an area (town, county or nearby). Scores are integers 0-3.\n"
     "civic: practical or civic value to residents (citizenship, emergency preparedness, "
     "safety, tax, legal, job, health or money help, public meetings and decisions, road or "
     "service changes). 0 if none.\n"

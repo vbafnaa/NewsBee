@@ -1,7 +1,8 @@
 """Facts and guardrails shared by the wider-area connectors (hazards, state news, trending).
 
-When a small town has little local news, the edition widens to its region and state. Those
-stories carry a ``tier`` (local, region, state) so editions fill with local stories first,
+When a small town has little local news, the edition widens to its county and nearby places
+(never the whole state). Those stories carry a ``tier`` (local, region, nearby) so editions
+fill with local stories first,
 and a reader-facing ``section`` label so wider stories are never mistaken for town news.
 """
 
@@ -23,9 +24,9 @@ from projects.backend.modules.source_connectors.connectors.common import (
 )
 
 NewsKind = Literal["earthquake", "state_news", "trending_topic", "social_trend"]
-Tier = Literal["local", "region", "state"]
+Tier = Literal["local", "region", "nearby"]
 NEWS_KINDS = frozenset(NewsKind.__args__)
-WIDER_TIERS = frozenset({"region", "state"})
+WIDER_TIERS = frozenset({"region", "nearby"})
 TITLE_MAX = 200
 
 # Topics a family community newsletter should not resurface from wider-area sources:

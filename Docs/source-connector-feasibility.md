@@ -131,7 +131,8 @@ flowchart LR
 
 ## Wider-area connectors for news deserts (built)
 
-When a town has little local news, editions widen to its county and state. Four connectors
+When a town has little local news, editions widen to its county and to reviewed places
+within 50 km; statewide stories are dropped as too far from community news. Four connectors
 are onboarded, configured per state in `config/state-sources.json`. All are free, keyless,
 public and robots.txt-permitted. See the README for the ranking rules and guardrails.
 
@@ -151,7 +152,20 @@ Rejected:
 - Reddit: API terms restrict commercial use.
 - TikTok: research API only.
 
-### Live test, 2026-10-19 (5 onboarded WA locations)
+### Live test, nearby tier (5 onboarded WA locations)
+
+| Connector | Auburn | Bainbridge Island | Edmonds | Issaquah | Vancouver |
+| --- | --- | --- | --- | --- | --- |
+| USGS earthquakes (50 km) | 2 nearby | 0 | 0 | 2 nearby | 0 |
+| State newsrooms | 3 nearby (Tacoma Narrows, I-405 Bellevue, Tacoma AG) | 4 nearby | 2 nearby (I-405 Bellevue, Bothell) | 4 nearby | 0; 20 not near |
+| Wikipedia trending | 0 (15 measured, none ≥2x) | 0 | 0 | 0 | 0 |
+| Bluesky trending | 0 of 25 near | 0 | 0 | 0 | 0 |
+
+All 20 runs ingested. A governor release that only mentioned a Seattle museum in its body
+and an NFL trend whose description mentioned the Seahawks were tagged nearby on the first
+run; nearby places now have to be in the headline or trend name, and both are dropped.
+
+### Live test, 2026-10-19, statewide tier (retired)
 
 | Connector | Auburn | Bainbridge Island | Edmonds | Issaquah | Vancouver |
 | --- | --- | --- | --- | --- | --- |
@@ -170,5 +184,7 @@ below practical ones.
 Open risks:
 - One state is configured. Each new state needs reviewed newsroom feeds, a watchlist and
   county mappings.
-- Bluesky trends are national, so state-tied trends will be rare.
+- Bluesky trends are national, so trends naming a nearby place will be rare.
+- Each nearby place needs reviewed coordinates; towns with few reviewed neighbours (such as
+  Vancouver) get little wider coverage.
 - Wikipedia pageviews lag 1 to 3 days.

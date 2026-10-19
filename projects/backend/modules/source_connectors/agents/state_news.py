@@ -2,7 +2,8 @@
 
 Feeds come from the reviewed config/state-sources.json (governor, transportation, health,
 attorney general and similar public agencies), never from commercial publishers. Items that
-name the town are local; items naming its county are regional; the rest are statewide.
+name the town are local, its county regional, a reviewed place within NEARBY_KM nearby; the
+rest are statewide and dropped, since they are rarely community news.
 Crime cases about individuals, deaths and violence are dropped (see news.SENSITIVE).
 """
 
@@ -54,7 +55,6 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
         return record, []
     fetcher = Fetcher(client, USER_AGENT)
     first = today - timedelta(days=PAST_DAYS)
-    statewide = f"Around {place.state_name}"
     facts: list[NewsFacts] = []
     skipped, failures, digest = Counter(), Counter(), hashlib.sha256()
     for newsroom in place.newsrooms:
@@ -78,11 +78,12 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
                 skipped["outside_window"] += 1
             elif sensitive(item["title"], item["summary"]):
                 skipped["sensitive_topic"] += 1
+            elif (tier := place.item_tier(item["title"], item["summary"], qualified=True)) is None:
+                skipped["not_near_town"] += 1
             elif kept >= MAX_PER_NEWSROOM:
                 skipped["over_limit"] += 1
             else:
                 kept += 1
-                tier = place.tier_for(item["title"], item["summary"])
                 facts.append(
                     NewsFacts(
                         source_event_id=hashlib.sha256(item["id"].encode()).hexdigest()[:16],
@@ -94,7 +95,7 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
                         description=item["summary"],
                         kind="state_news",
                         tier=tier,
-                        section=place.section(tier, statewide),
+                        section=place.section(tier),
                         signals={"publisher": newsroom["name"]},
                     )
                 )
@@ -104,7 +105,8 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
     tiers = Counter(fact.tier for fact in facts)
     record.update(
         detail=f"{ok}/{len(place.newsrooms)} newsrooms read; {len(facts)} items in "
-        f"{PAST_DAYS} days ({tiers['local']} name the town, {tiers['region']} the county)",
+        f"{PAST_DAYS} days near {place.town} ({tiers['local']} name the town, {tiers['region']} "
+        f"the county, {tiers['nearby']} a nearby place)",
         response_sha256=digest.hexdigest() if ok else None,
         event_count=len(facts),
         skipped_outside_window=skipped.pop("outside_window", 0),
