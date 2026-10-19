@@ -216,6 +216,7 @@ def main() -> None:
             "setup-directory",
             "find-location",
             "onboard",
+            "remove-location",
             "ingest-events",
             "events",
             "evaluate-model",
@@ -306,6 +307,14 @@ def location_command(action: str, target: str | None) -> None:
                 f"  {system['name']}: {len(system['branches'])} in-town branches; "
                 f"website {lookup['status']} - {lookup['website'] or lookup['detail']}"
             )
+    elif action == "remove-location":
+        if not target:
+            raise RuntimeError("Usage: remove-location <location id>")
+        try:
+            counts = locations.remove(settings.database, settings.evidence_dir, target)
+        except locations.LocationBusy as error:
+            raise RuntimeError(str(error)) from error
+        print(f"Removed {target} and its stored data: {counts}")
     elif action == "ingest-events":
         queued = orchestrator.enqueue_all(settings.database)
         if not queued:

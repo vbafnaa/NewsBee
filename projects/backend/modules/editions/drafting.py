@@ -1,6 +1,7 @@
 """Author and publish one edition per location snapshot, with no human review step.
 
-Pipeline: snapshot events -> stories (repeats collapsed) -> newsworthiness ranking ->
+Pipeline: snapshot events -> stories (repeats collapsed) -> at most MAX_RANKED stories,
+randomly sampled (seeded by snapshot ID) -> newsworthiness ranking ->
 write items best-first, at most one per category, until MAX_ENTRIES pass the checks or
 MAX_ATTEMPTS have been written -> edition headline and intro. Held items are excluded and
 never block publishing. A snapshot with no usable events still publishes an edition.
@@ -8,6 +9,7 @@ never block publishing. A snapshot with no usable events still publishes an edit
 
 import json
 import logging
+import random
 import time
 import uuid
 from dataclasses import asdict
@@ -30,6 +32,7 @@ DEFAULT_MODEL = "qwen3:4b"
 VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}"
 MAX_ENTRIES = 5
 MAX_ATTEMPTS = 10
+MAX_RANKED = 10
 
 
 def candidates(story_list: list[stories.Story]) -> list[dict]:
@@ -44,6 +47,17 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
         }
         for story in story_list
     ]
+
+
+def sample(story_list: list[stories.Story], seed: str) -> list[stories.Story]:
+    """Bound ranking time: a random subset when there are more stories than MAX_RANKED.
+
+    Seeded by snapshot ID so re-authoring the same snapshot picks the same stories.
+    """
+    if len(story_list) <= MAX_RANKED:
+        return story_list
+    chosen = set(random.Random(seed).sample(range(len(story_list)), MAX_RANKED))
+    return [story for index, story in enumerate(story_list) if index in chosen]
 
 
 def variety_key(candidate: dict) -> str:
@@ -146,7 +160,8 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             model,
             VALIDATION_POLICY,
         )
-        story_list = stories.collapse(events)
+        all_stories = stories.collapse(events)
+        story_list = sample(all_stories, snapshot["id"])
         by_id = {story.id: story for story in story_list}
         passed: list[tuple[dict, dict]] = []
         held = attempted = skipped_for_variety = 0
@@ -155,10 +170,11 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
         try:
             ranked, ranking = await newsworthiness.rank(runtime, candidates(story_list))
             logger.info(
-                "Edition ranking edition_id=%s events=%s stories=%s fallback_ratings=%s "
+                "Edition ranking edition_id=%s events=%s stories=%s ranked=%s fallback_ratings=%s "
                 "wall_seconds=%s",
                 identity,
                 len(events),
+                len(all_stories),
                 len(story_list),
                 ranking["fallback_ratings"],
                 ranking["wall_seconds"],
@@ -204,13 +220,14 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 attempted += 1
                 logger.info(
                     "Edition item edition_id=%s story_id=%s rank=%s score=%s category=%s "
-                    "occurrences=%s disposition=%s errors=%s wall_seconds=%s",
+                    "occurrences=%s attempts=%s disposition=%s errors=%s wall_seconds=%s",
                     identity,
                     story.id,
                     rank,
                     candidate["score"],
                     candidate["rating"]["category"],
                     len(story.occurrences),
+                    result.get("attempts"),
                     result["disposition"],
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
@@ -240,7 +257,8 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             "attempted": attempted,
             "not_attempted": len(story_list) - attempted,
             "events": len(events),
-            "stories": len(story_list),
+            "stories": len(all_stories),
+            "ranked": len(story_list),
             "skipped_for_variety": skipped_for_variety,
             "ranking": ranking,
             "duration_seconds": round(time.monotonic() - started, 3),
@@ -285,6 +303,7 @@ def _run(row) -> EditionRun:
                 "events",
                 "stories",
                 "skipped_for_variety",
+                "ranked",
             )
         },
         ranking_fallback_ratings=(result.get("ranking") or {}).get("fallback_ratings"),

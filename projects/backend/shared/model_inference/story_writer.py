@@ -22,6 +22,7 @@ HEADLINE_MAX = 90
 SUMMARY_MAX = 480
 INTRO_MAX = 300
 KEEP_ALIVE = "10m"
+MAX_RETRIES = 1
 NO_EVENTS_INTRO = "There are no events to report this week."
 
 LIST_MARK = re.compile(r"(^|\s)([-*\u2022\u25cf]|\d+[.)])\s")
@@ -42,7 +43,6 @@ RULES = (
 
 class ItemDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    id: str
     headline: str = Field(min_length=1, max_length=HEADLINE_MAX)
     summary: str = Field(min_length=1, max_length=SUMMARY_MAX)
 
@@ -73,7 +73,7 @@ def story_allowed(story: dict) -> list[str]:
 
 def validate_item(story: dict, draft: ItemDraft) -> list[str]:
     allowed = story_allowed(story)
-    errors = [] if draft.id == story["id"] else ["changed_field:id"]
+    errors = []
     errors += [f"headline:{error}" for error in added_claims(draft.headline, allowed, 1)]
     errors += [
         f"headline:{error}"
@@ -86,13 +86,13 @@ def validate_item(story: dict, draft: ItemDraft) -> list[str]:
 
 
 def item_prompt(story: dict) -> str:
-    data = {key: story.get(key) for key in ("id", "title", "description")}
+    data = {key: story.get(key) for key in ("title", "description")}
     return (
         "You write for a friendly local community newsletter. Write a catchy headline of at "
         f"most {HEADLINE_MAX} characters and a summary of 2 or 3 sentences, at most "
         f"{SUMMARY_MAX} characters, that tells neighbours what happens at this event and why "
         f"it is worth going. If there is no description, write 1 sentence. {RULES} "
-        "Copy id exactly. Output JSON matching this schema:\n"
+        "Output JSON matching this schema:\n"
         f"{json.dumps(ItemDraft.model_json_schema())}\nStory:\n{json.dumps(data)}"
     )
 
@@ -118,20 +118,42 @@ async def _generate(runtime: OllamaRuntime, prompt: str, schema: type[BaseModel]
     )
 
 
+def retry_prompt(story: dict, rejected: dict, errors: list[str]) -> str:
+    return (
+        f"{item_prompt(story)}\nYour previous draft was rejected:\n{json.dumps(rejected)}\n"
+        f"Problems found: {', '.join(errors)}. Rewrite it fixing every problem. "
+        "unsupported_name means a capitalized word not in the story: rephrase so the "
+        "sentence does not start with it. unsupported_claim_word or unsupported_number means "
+        "the word or number is not in the story: remove it."
+    )
+
+
 async def write_item(runtime: OllamaRuntime, story: dict) -> dict:
-    """Return a result dict; any violation or runtime error yields disposition 'held'."""
+    """Return a result dict; any violation or runtime error yields disposition 'held'.
+
+    A draft that fails checks gets exactly one retry with the errors fed back; the
+    retry must pass the same checks. Runtime errors are not retried.
+    """
     started = time.monotonic()
-    result: dict = {"policy": WRITING_POLICY}
+    result: dict = {"policy": WRITING_POLICY, "attempts": 0}
+    prompt = item_prompt(story)
     try:
-        draft, metrics = await _generate(runtime, item_prompt(story), ItemDraft)
-        errors = validate_item(story, draft)
-        result.update(
-            draft=draft.model_dump(),
-            checks_passed=not errors,
-            disposition="held" if errors else "checks_passed",
-            validation_errors=errors,
-            metrics=metrics,
-        )
+        for attempt in range(1 + MAX_RETRIES):
+            result["attempts"] = attempt + 1
+            draft, metrics = await _generate(runtime, prompt, ItemDraft)
+            errors = validate_item(story, draft)
+            if errors and attempt < MAX_RETRIES:
+                result["rejected_first"] = {"draft": draft.model_dump(), "errors": errors}
+                prompt = retry_prompt(story, draft.model_dump(), errors)
+                continue
+            result.update(
+                draft=draft.model_dump(),
+                checks_passed=not errors,
+                disposition="held" if errors else "checks_passed",
+                validation_errors=errors,
+                metrics=metrics,
+            )
+            break
     except (httpx.HTTPError, ValidationError, ValueError) as error:
         logger.exception("Story draft failed story_id=%s", story["id"])
         result.update(
