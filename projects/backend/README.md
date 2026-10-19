@@ -20,6 +20,7 @@ backend storage directly.
 | `source_connectors\connectors\` | Replaceable source-specific scraping and extraction implementations |
 | `story_processing\` | Normalization, deduplication, linking ongoing stories, and evidence reconciliation |
 | `communities\` | Community identity, coverage scope, and location-scoped story candidates |
+| `editions\` | Stage 1 authoring: `stories.py` deduplicates events into stories, `drafting.py` ranks, writes, checks and publishes |
 | `editorial\planning\` | Selecting candidates and planning an edition |
 | `editorial\writing\` | Producing full stories with source attribution |
 | `editorial\publication_checks\` | Evidence and policy checks with explicit publication outcomes |
@@ -42,7 +43,7 @@ sources, not executable scraping logic. Connectors can be reused across communit
 | `configuration\` | Loading and validating backend configuration |
 | `contracts\` | Internal module interfaces and shared backend data types |
 | `storage\` | Persistence and evidence-file adapters |
-| `model_inference\` | Replaceable local model-runtime adapters |
+| `model_inference\` | Local model runtime (`ollama.py`), newsworthiness ranking and story writing with fail-closed checks |
 | `observability\` | Logging, metrics, and tracing instrumentation |
 
 Keep business decisions in their owning modules, not in API routes or a generic
@@ -58,14 +59,20 @@ SQLite and evidence files are initialized at startup. `shared\storage\database.p
 owns connection handling and the initial schema version; module-owned tables
 must preserve explicit ownership as workflows are implemented.
 
-The worker entry point is `modules\orchestration\worker.py`. It claims the manually
-queued library RSS ingestion jobs, maintains heartbeats while ingestion runs,
-and renews job leases. Queue/recovery logic lives in `orchestration\jobs.py`.
-The source pipeline is `source_connectors\pipelines\events.py`; the replaceable
-RSS parser is `source_connectors\connectors\spl_rss.py`. No model is used.
-Database schema version 2 migrates version 1 without deleting existing records.
-Source events are upserted transactionally with job completion; selective JSON
-evidence is stored locally. See the root README for retrieval scope and limits.
+The worker entry point is `modules\orchestration\worker.py`. It claims queued
+per-location ingestion jobs, maintains heartbeats, and renews job leases.
+Queue/recovery logic lives in `orchestration\jobs.py`; `orchestration\orchestrator.py`
+queues one job per onboarded location and summarises status.
+
+Locations (`modules\communities\`): `directory.py` indexes the IMLS public library
+survey, `wikidata.py` resolves each system's official website, `venues.py` matches
+feed venues to in-town branches, and `locations.py` stores onboarded profiles.
+The source agent `source_connectors\agents\library_events.py` discovers a supported
+feed on each website (robots.txt respected, HTTPS only); replaceable parsers live in
+`source_connectors\connectors\` (`trumba_rss`, `ical`, `jsonld`). The pipeline
+`source_connectors\pipelines\events.py` keeps next-7-day events at in-town branches
+and stores them transactionally with job completion. No model is used.
+Schema version 6 adds location snapshots and edition snapshot IDs; upgrades from version 5 keep data. Upgrading from older versions drops pre-location events, drafts and ingestion jobs on upgrade. See the root README for retrieval scope and limits.
 
 No essential-news thresholds, review policy, or model are defined by this scaffold.
 See the root README for setup, endpoints, configuration, and known limits.

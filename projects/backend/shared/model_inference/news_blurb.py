@@ -2,7 +2,8 @@
 
 The check cannot prove a blurb is true. It holds any text that introduces numbers,
 names, or claim vocabulary (price, booking, audience, timing, recurrence and similar)
-not present in the supplied facts. Every included item still needs human review.
+not present in the supplied facts. Held text is never published; it is kept for audit and
+for future training of the connector agents.
 """
 
 import json
@@ -154,10 +155,10 @@ def range_display(items: list[EventFacts]) -> tuple[str, str]:
     return date_display(dates[0]), date_display(dates[-1])
 
 
-def front_context(items: list[EventFacts]) -> dict:
+def front_context(items: list[EventFacts], community: str) -> dict:
     start, end = range_display(items)
     return {
-        "community": "Capitol Hill",
+        "community": community,
         "first_date": start,
         "last_date": end,
         "event_count": str(len(items)),
@@ -184,16 +185,18 @@ def validate_front(context: dict, draft: FrontDraft) -> list[str]:
     ]
 
 
-def fallback_front(context: dict | None) -> FrontDraft:
+NO_EVENTS_INTRO = "There are no events to report this week."
+
+
+def fallback_front(context: dict | None, community: str) -> FrontDraft:
     if context is None:
-        return FrontDraft(
-            headline="Capitol Hill events",
-            intro="No event items passed automatic checks for this window.",
-        )
+        return FrontDraft(headline=f"{community} events", intro=NO_EVENTS_INTRO)
+    venues = context["venues"]
+    where = f" at {', '.join(venues)}" if len(venues) <= 3 else ""
     return FrontDraft(
-        headline=f"Capitol Hill events: {context['first_date']} to {context['last_date']}",
+        headline=f"{community} events: {context['first_date']} to {context['last_date']}",
         intro=(
-            f"{context['event_count']} events at {', '.join(context['venues'])} "
+            f"{context['event_count']} events{where} "
             f"between {context['first_date']} and {context['last_date']}."
         ),
     )
@@ -271,10 +274,10 @@ async def draft_item(runtime: OllamaRuntime, facts: EventFacts) -> dict:
     return result
 
 
-async def draft_front(runtime: OllamaRuntime, items: list[EventFacts]) -> dict:
+async def draft_front(runtime: OllamaRuntime, items: list[EventFacts], community: str) -> dict:
     """Model-written edition headline and intro, or a labelled fixed fallback."""
     started = time.monotonic()
-    context = front_context(items) if items else None
+    context = front_context(items, community) if items else None
     result: dict = {"context": context, "fallback": True, "validation_errors": []}
     if context is None:
         result["fallback_reason"] = "no_items_passed_checks"
@@ -291,7 +294,7 @@ async def draft_front(runtime: OllamaRuntime, items: list[EventFacts]) -> dict:
         if result["fallback"]:
             result["fallback_reason"] = "model_text_held"
     if result["fallback"]:
-        result.update(fallback_front(context).model_dump())
+        result.update(fallback_front(context, community).model_dump())
     result["checks_passed"] = not result["fallback"]
     result["wall_seconds"] = round(time.monotonic() - started, 3)
     return result

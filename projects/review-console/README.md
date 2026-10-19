@@ -11,5 +11,6 @@ folder is a logical UI boundary, not another server or independently deployed
 service. No frontend build step is needed.
 
 Keep presentation lightweight and defer detailed UX design. This project is
-served by the local backend; see the root README. Only the health view is
-implemented, not editorial review actions.
+served by the local backend; see the root README. Pages are read-only: health,
+ingested events, and an edition audit of held items (kept as future training data).
+There is no review or publish action.

@@ -6,8 +6,8 @@ API; keep editorial and source-processing logic in the backend.
 
 Cross-project contracts belong in `shared\contracts\` at the repository root.
 Astro renders the minimal reader shell in `src\pages\index.astro`; a small browser
-script requests the editions API. It distinguishes an unimplemented publication
-workflow from a failed API request. Keep components lightweight until UX flows
+script lists onboarded locations from `/api/editions` and shows the selected
+location's latest published edition, or "No edition yet." API failures are shown. Keep components lightweight until UX flows
 and designs are supplied.
 
 No public hosting, reader accounts, subscriptions, or behavioral analytics are

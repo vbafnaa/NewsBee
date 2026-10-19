@@ -3,7 +3,7 @@ CSE589 UW Entrepreneurship Prototyping
 
 Stage 1 local prototype: FastAPI backend, ingestion worker, Astro reader site, review
 console, SQLite, Mailpit, and Ollama. No Docker or cloud account needed.
-Publishing and email are not implemented yet.
+Editions publish automatically after each ingestion; email is not implemented yet.
 
 ## Setup
 
@@ -21,10 +21,10 @@ Stop with Ctrl+C or `uv run --locked python scripts/dev.py stop`. Logs go to `.l
 
 | Surface | URL |
 | --- | --- |
-| Reader website | http://127.0.0.1:4321 |
+| Reader website (pick a location) | http://127.0.0.1:4321 |
 | Health and review | http://127.0.0.1:8000/review |
 | Ingested events | http://127.0.0.1:8000/review/ingestion |
-| Draft edition | http://127.0.0.1:8000/review/editions |
+| Edition audit (held items) | http://127.0.0.1:8000/review/editions |
 | API docs | http://127.0.0.1:8000/docs |
 | Mailpit | http://127.0.0.1:8025 |
 
@@ -32,22 +32,39 @@ Services bind to localhost only and have no authentication.
 
 ## Commands
 
-Run each command in a second terminal while the stack is running:
+Add a location once (any US city or town), then run the rest in a second terminal while
+the stack is running:
 
 ```text
-uv run --locked python scripts/dev.py ingest-events    # fetch Capitol Hill Branch library events
-uv run --locked python scripts/dev.py events           # list jobs and retained events
-uv run --locked python scripts/dev.py draft-edition    # draft next 7 days' edition (needs Ollama)
-uv run --locked python scripts/dev.py evaluate-model   # test a model on synthetic cases
+uv run --locked python scripts/dev.py setup-directory       # download US library directory
+uv run --locked python scripts/dev.py find-location Seattle # list matching towns and ids
+uv run --locked python scripts/dev.py onboard seattle-wa    # find library systems' websites
+uv run --locked python scripts/dev.py ingest-events         # 7 days of events from tomorrow, all locations
+uv run --locked python scripts/dev.py events                # list jobs and retained events
+uv run --locked python scripts/dev.py author-edition <id>   # re-queue authoring for a location
+uv run --locked python scripts/dev.py evaluate-model        # test a model on synthetic cases
 ```
 
-The model commands need `ollama pull qwen3:1.7b` first. `evaluate-model` also needs
-`NEWSBEE_OLLAMA_MODEL=qwen3:1.7b`. Models are never downloaded automatically.
+Event feeds are found automatically on each library website (Trumba calendar, iCalendar,
+BiblioCommons events, or schema.org events). Systems without a supported feed show as
+`no_feed` on the health page. If a library's website can't be found, add it to
+`config/library-websites.json` and re-run `onboard`.
 
-Drafts are model-written headlines and blurbs. Rule-based checks (`news_blurb_v1`) hold
-any text that adds numbers, times, names, links, or claims (such as price or booking)
-not in the event facts. Checks cannot prove text is true, so every draft needs human
-review. Library data is for local evaluation only; do not commit or redistribute it.
+Authoring needs `ollama pull qwen3:4b` first (`evaluate-model` tests the older blurb
+prompt and needs `NEWSBEE_OLLAMA_MODEL` set). Models are never downloaded automatically.
+
+Each ingestion stores a snapshot (event descriptions are kept locally) and queues
+authoring:
+
+1. **Deduplicate**: repeats of the same event become one story listing every date and branch.
+2. **Rank**: the model scores each story for civic/practical value, broad appeal, and
+   one-off specialness (weighted 3:2:1); rules break ties and stand in if ranking fails.
+3. **Write**: top stories, at most one per category, up to 5, each get a headline and a
+   short prose summary plus fixed When/Where and source link. Checks hold any text that
+   adds facts not in the event, uses lists, or repeats itself; held items are left out and
+   kept for audit at `/review/editions`.
+4. **Front**: a headline about the top story, or "Auburn this week: Oct 19–25".
+No human review step. Library data is for local evaluation only; do not commit or redistribute it.
 
 ## Configuration
 
@@ -57,7 +74,7 @@ Defaults need no setup. Optional environment variables:
 | --- | --- |
 | `NEWSBEE_DATA_DIR` | `.local/data` |
 | `NEWSBEE_OLLAMA_URL` | `http://127.0.0.1:11434` |
-| `NEWSBEE_OLLAMA_MODEL` | unset (`draft-edition` uses `qwen3:1.7b`) |
+| `NEWSBEE_OLLAMA_MODEL` | unset (authoring uses `qwen3:4b`) |
 | `NEWSBEE_MAILPIT_HOST` | `127.0.0.1` |
 | `NEWSBEE_MAILPIT_SMTP_PORT` | `1025` |
 

@@ -26,19 +26,41 @@ async function refreshHealth() {
     document.querySelector("#latest-ingestion").textContent = report.jobs === null
       ? "Latest ingestion unavailable"
       : run === null ? "No ingestion runs yet"
-      : `${run.source_id}: ${run.status} (attempts: ${run.attempts}, job: ${run.id})`
+      : `${run.location_id}: ${run.status} (attempts: ${run.attempts}, job: ${run.id})`
         + (run.event_count === null ? "" : `; events: ${run.event_count}`)
         + (run.skipped_other_venues === null ? "" : `; other venues skipped: ${run.skipped_other_venues}`)
-        + (run.skipped_library_closures === null ? "" : `; closures skipped: ${run.skipped_library_closures}`)
+        + (run.skipped_outside_window === null ? "" : `; outside 7-day window: ${run.skipped_outside_window}`)
         + (run.duration_seconds === null ? "" : `; duration: ${run.duration_seconds}s`)
         + (run.error ? `; last attempt error: ${run.error}` : "");
-    const edition = report.latest_edition_draft;
+    const locations = document.querySelector("#locations");
+    locations.replaceChildren();
+    if (report.locations === null) {
+      locations.textContent = "Location status unavailable";
+    } else if (report.locations.length === 0) {
+      locations.textContent = "No onboarded locations";
+    }
+    for (const location of report.locations ?? []) {
+      const item = document.createElement("li");
+      const latest = location.latest_ingestion;
+      const systems = (latest?.systems ?? [])
+        .map((system) => `${system.name}: ${system.status} (${system.event_count} events)`)
+        .join("; ");
+      item.textContent = `${location.name}: ${location.websites_resolved}/${location.library_systems} websites resolved; `
+        + (latest ? `latest ingestion ${latest.status}` : "not ingested yet")
+        + (location.latest_edition_id ? "; edition published" : "; no edition yet")
+        + (systems ? ` - ${systems}` : "");
+      locations.append(item);
+    }
+    const edition = report.latest_edition;
     document.querySelector("#latest-edition").textContent = report.jobs === null
-      ? "Latest draft edition unavailable"
-      : !edition ? "No draft editions yet"
-      : `${edition.window_start} to ${edition.window_end}: ${edition.status} (model: ${edition.model})`
+      ? "Latest edition unavailable"
+      : !edition ? "No editions yet"
+      : `${edition.community_id}, ${edition.window_start} to ${edition.window_end}: ${edition.status} (model: ${edition.model})`
         + (edition.included === null ? "" : `; included: ${edition.included}`)
         + (edition.held === null ? "" : `; held: ${edition.held}`)
+        + (edition.attempted === null ? "" : `; attempted: ${edition.attempted}`)
+        + (edition.stories === null || edition.stories === undefined ? "" : `; stories: ${edition.stories}`)
+        + (edition.ranking_fallback_ratings ? `; rule-rated: ${edition.ranking_fallback_ratings}` : "")
         + (edition.front_fallback === null || edition.front_fallback === undefined ? ""
           : `; headline: ${edition.front_fallback ? "fixed fallback" : "model"}`)
         + (edition.duration_seconds === null ? "" : `; duration: ${edition.duration_seconds}s`)
@@ -60,8 +82,9 @@ async function refreshHealth() {
     summary.textContent = `Health unavailable: ${error.message}`;
     document.querySelector("#services").replaceChildren();
     document.querySelector("#capabilities").replaceChildren();
+    document.querySelector("#locations").replaceChildren();
     document.querySelector("#latest-ingestion").textContent = "Latest ingestion unavailable";
-    document.querySelector("#latest-edition").textContent = "Latest draft edition unavailable";
+    document.querySelector("#latest-edition").textContent = "Latest edition unavailable";
     document.querySelector("#jobs").textContent = "Unavailable";
     document.querySelector("#completed").textContent = "Last completed job: unavailable";
   } finally {

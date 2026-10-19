@@ -1,19 +1,84 @@
 {
-  "properties": {
-    "status": {
-      "const": "not_implemented",
-      "default": "not_implemented",
-      "title": "Status",
-      "type": "string"
-    },
-    "editions": {
-      "items": {
-        "additionalProperties": {
+  "$defs": {
+    "EditionListing": {
+      "properties": {
+        "location_id": {
+          "title": "Location Id",
           "type": "string"
         },
-        "type": "object"
+        "location_name": {
+          "title": "Location Name",
+          "type": "string"
+        },
+        "edition_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Edition Id"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published At"
+        },
+        "window_start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window Start"
+        },
+        "window_end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window End"
+        }
       },
-      "title": "Editions",
+      "required": [
+        "location_id",
+        "location_name"
+      ],
+      "title": "EditionListing",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "usage": {
+      "const": "local_evaluation_only",
+      "default": "local_evaluation_only",
+      "title": "Usage",
+      "type": "string"
+    },
+    "locations": {
+      "items": {
+        "$ref": "#/$defs/EditionListing"
+      },
+      "title": "Locations",
       "type": "array"
     }
   },
