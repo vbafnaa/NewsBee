@@ -11,6 +11,19 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: #e9e3d8; color: var(--ink); }
 main { width: min(1100px, calc(100% - 2rem)); margin: 2rem auto; }
+.admin-shell { width: min(1440px, calc(100% - 2rem)); min-height: calc(100vh - 4rem); display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 2rem; }
+.sidebar { position: sticky; top: 1rem; display: flex; height: calc(100vh - 2rem); flex-direction: column; padding: 1.2rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); }
+.brand { margin-bottom: .3rem; color: var(--accent); font: 700 1.7rem Georgia, serif; text-decoration: none; }
+.sidebar .eyebrow { margin-bottom: 1.5rem; }
+.sidebar nav { display: grid; gap: .35rem; }
+.sidebar-link { padding: .75rem .8rem; border-radius: .35rem; color: var(--ink); text-decoration: none; font-weight: 600; }
+.sidebar-link:hover { background: #eee8dd; }
+.sidebar-link.active { background: #eadbd4; color: var(--accent); }
+.sidebar-account { display: grid; gap: .8rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line); }
+.sidebar-account > span { overflow: hidden; color: var(--muted); font-size: .85rem; text-overflow: ellipsis; }
+.sidebar-account form button { width: 100%; }
+.admin-content { min-width: 0; }
+.page-heading { margin: .4rem 0 1.5rem; }
 h1, h2, h3, p { margin-top: 0; }
 h1 { margin-bottom: .4rem; font-family: Georgia, serif; font-size: clamp(2rem, 5vw, 3.3rem); }
 h2 { margin-bottom: .35rem; font: 700 1.5rem Georgia, serif; }
@@ -30,6 +43,24 @@ p, small, .muted { color: var(--muted); }
 .government { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .field { display: grid; gap: .4rem; font-size: .9rem; }
 .admin-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 1rem; max-width: 720px; }
+.source-form, .source-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 1rem; }
+.source-url { grid-column: span 2; }
+.source-list { display: grid; gap: .8rem; }
+.folder-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; }
+.folder-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .8rem; border-color: var(--line); background: #fffdf8; color: var(--ink); text-align: left; }
+.folder-card:hover { border-color: #a69d8e; background: #f1ece2; }
+.folder-icon { font-size: 1.6rem; }
+.folder-copy { display: grid; gap: .25rem; }
+.folder-copy small { color: var(--muted); font-weight: 400; }
+.folder-count { min-width: 1.8rem; padding: .2rem .5rem; border-radius: 1rem; background: #eee8dd; color: var(--muted); text-align: center; }
+.source-card { padding: 1rem; border: 1px solid var(--line); border-radius: .45rem; background: #fffdf8; }
+.source-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.source-summary h3 { margin: .25rem 0; }
+.source-summary p { margin: .3rem 0; }
+.source-type { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.source-actions { display: flex; gap: .5rem; }
+.danger { border-color: #9c2f24; background: transparent; color: #8a1d15; }
+.source-edit-form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .admin-list { margin-top: 1.2rem; border-top: 1px solid var(--line); }
 .admin-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 0; border-bottom: 1px solid var(--line); }
 input, select { width: 100%; min-height: 2.6rem; padding: .55rem .7rem; border: 1px solid #b9b0a2; border-radius: .35rem; background: #fff; color: var(--ink); font: inherit; }
@@ -50,7 +81,16 @@ th { font-size: .82rem; }
 .login { max-width: 520px; margin: 15vh auto; padding: 2rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); }
 .login form { margin-top: 1.5rem; }
 @media (max-width: 650px) {
-  .topbar, .topbar-actions, .section-heading, .channel { align-items: flex-start; flex-direction: column; }
+  .admin-shell { grid-template-columns: 1fr; gap: 1rem; }
+  .sidebar { position: static; height: auto; padding: .8rem; }
+  .sidebar .eyebrow { display: none; }
+  .sidebar nav { display: flex; overflow-x: auto; gap: .2rem; }
+  .sidebar-link { white-space: nowrap; }
+  .sidebar-account { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-top: .75rem; padding-top: .75rem; }
+  .sidebar-account form button { width: auto; }
+  .section-heading, .channel, .source-summary { align-items: flex-start; flex-direction: column; }
   .government { grid-template-columns: 1fr; }
-  .admin-form { grid-template-columns: 1fr; }
+  .admin-form, .source-form, .source-edit-form { grid-template-columns: 1fr; }
+  .source-url { grid-column: auto; }
+  .source-actions { flex-direction: row; }
 }

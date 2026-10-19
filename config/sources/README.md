@@ -21,7 +21,8 @@ mongoimport --uri "$env:MONGODB_URI" --db "$env:MONGODB_DATABASE" --collection s
 ```
 
 The journalist site's dashboard reads the library websites, government platforms, and
-state newsroom feeds from these MongoDB documents for display. The seed reflects only the
-three checked-in files listed above. It does not contain onboarded location profiles from
-SQLite or journalist-admin accounts. The running backend does not yet read these MongoDB
-documents for ingestion; runtime source configuration remains file-based.
+state newsroom feeds from these MongoDB documents. Its source-management page can add,
+edit, and remove these entries in MongoDB. Those changes currently affect the journalist
+site's catalog only: backend ingestion still reads the checked-in files. The seed reflects
+only the three files listed above. It does not contain onboarded location profiles from
+SQLite or journalist-admin accounts.
