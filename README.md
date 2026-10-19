@@ -70,33 +70,24 @@ Prefix each with `uv run --locked python scripts/dev.py`:
 If `onboard` can't find a town's library website or meeting platform, add it to
 `config/library-websites.json` or `config/government-sources.json` and re-run it.
 
-### County and nearby sources
+## Sources
 
-Editions also draw on the town's county and reviewed places within 50 km. Statewide stories
-are not used. Each source is free, keyless, public and robots.txt-permitted, with its own
-connector and ranking rules:
+Each source is a separate connector: free, keyless, public and robots.txt-permitted. A failing
+source shows on the health page but never blocks the town's edition.
 
-| Source id | Source | Window | Kept | Ranking |
-| --- | --- | --- | --- | --- |
-| `hazards:usgs` | USGS earthquake catalog | 14 days, 50 km | M3.0+ or 10+ "felt" reports; quakes near the same place merged into one story | town tier (≤15 km), magnitude, distance, felt |
-| `statenews:wa` | Official state newsroom RSS (Governor, WSDOT, AG, DOH) | 14 days | names the town, county or a nearby place | town, county, nearby; practical over ceremonial; publishers interleaved |
-| `trending:wikipedia:wa` | Wikimedia pageviews: nearby watchlist + state-tied most-read | last 3 days vs prior 2 weeks | ≥2x (watchlist) / ≥1.5x (most-read), 1,000+ views/day | town, county, nearby; biggest spike |
-| `trending:bluesky:wa` | Bluesky public trending topics | today | trend name is the town, county, a nearby place or a nearby watchlist topic; 100+ posts | town, county, nearby; most posts |
+| Connector | Pulls | Validation |
+| --- | --- | --- |
+| Library events | Next week's events from the town library's calendar | Size, count and HTTPS-link limits; repeated events merged into one story |
+| Government meetings | Legistar/CivicClerk agendas and outcomes | Same feed limits and HTTPS links |
+| `hazards:usgs` | USGS earthquakes within 50 km, past 14 days | M3.0+ or 10+ felt reports; quakes near the same place merged |
+| `statenews:wa` | State newsroom RSS (Governor, WSDOT, AG, DOH), past 14 days | Must name the town, county or a nearby place; crime and death topics dropped |
+| `trending:wikipedia:wa` | Wikipedia pageview spikes for nearby places | 1.5–2x usual views and 1,000+/day; sensitive topics dropped |
+| `trending:bluesky:wa` | Bluesky trending topics | Must name the town or a nearby place; 100+ posts; no politics; counts only, no post text |
 
-Items are tagged `local` (names the town), `region` (names its county) or `nearby` (names a
-place within 50 km, e.g. Seattle for Edmonds or Portland for Vancouver). Items that name none
-of these are dropped. A nearby place must be in the headline or trend name, not just the body,
-so a passing mention doesn't count. Names shared with other states (Auburn, Vancouver,
-Portland) count from national sources only when the state or county is also named. Local
-stories are written first; county then nearby stories fill at most 4 of the 9 slots, appear
-after local ones, and carry a section label (e.g. "Around King County", "Near Edmonds"). Places,
-coordinates and watchlist places are reviewed in `config/state-sources.json`. Guardrails: deaths,
-crime, violence and self-harm topics are dropped; Bluesky politics trends are excluded; no
-post text or handles are stored (counts only); calls are bounded and statewide results cached
-daily; a failing source shows on the health page but never fails the town's ingestion.
-Per-state sources live in `config/state-sources.json`. Set `NEWSBEE_WIDER_SOURCES=false` to
-turn them off. Not used: NWS alerts and Wikipedia `api.php` (robots.txt disallows), and
-Google Trends, X, Reddit and TikTok (no free, permitted public API).
+Every written story is held if it adds facts not in the source, uses lists, foreign
+characters or unfinished sentences, drops the event's name, or (events and meetings only)
+repeats the date. Wider sources fill at most 4 of 9 slots; turn them off with
+`NEWSBEE_WIDER_SOURCES=false`.
 
 ## Development
 
