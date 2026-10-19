@@ -108,7 +108,7 @@ export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
     .sort({ _id: 1 })
     .toArray();
 
-  return configs.flatMap((config) => {
+  return configs.flatMap<ConfiguredSource>((config): ConfiguredSource[] => {
     if (!isRecord(config.data)) return [];
 
     if (config._id === "library-websites") {
