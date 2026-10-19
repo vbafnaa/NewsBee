@@ -136,6 +136,18 @@
           ],
           "default": null,
           "title": "Duration Seconds"
+        },
+        "front_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Front Fallback"
         }
       },
       "required": [

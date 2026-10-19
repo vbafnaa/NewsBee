@@ -1,4 +1,4 @@
-"""Private draft edition: model-produced event entries gated by the exact fact template."""
+"""Private draft edition: model-written news items gated by the rule-based claim check."""
 
 import json
 import logging
@@ -10,10 +10,11 @@ from pathlib import Path
 import httpx
 
 from projects.backend.shared.configuration.settings import Settings
-from projects.backend.shared.model_inference.fact_template import (
+from projects.backend.shared.model_inference.news_blurb import (
     VALIDATION_POLICY,
     EventFacts,
-    draft_event,
+    draft_front,
+    draft_item,
 )
 from projects.backend.shared.model_inference.ollama import OllamaRuntime
 from projects.backend.shared.storage.database import connect
@@ -24,7 +25,6 @@ DEFAULT_MODEL = "qwen3:1.7b"
 COMMUNITY_ID = "capitol-hill-seattle"
 WINDOW_DAYS = 7
 MAX_ENTRIES = 50
-PURPOSE = "a private local edition preview that a human reviews before any use"
 
 
 def window(today: date) -> tuple[str, str]:
@@ -71,23 +71,28 @@ async def draft_edition(settings: Settings, today: date | None = None) -> Editio
             )
         logger.info(
             "Edition draft started edition_id=%s window=%s..%s events=%s skipped_over_limit=%s "
-            "model=%s",
+            "model=%s policy=%s",
             identity,
             start,
             end,
             len(selected),
             skipped,
             model,
+            VALIDATION_POLICY,
         )
-        counts = {"template_validated": 0, "held": 0}
+        passed: list[EventFacts] = []
+        held = 0
         try:
             for position, event in enumerate(selected):
                 stored = json.loads(event["facts_json"])
                 facts = EventFacts.model_validate(
                     {name: stored.get(name) for name in EventFacts.model_fields}
                 )
-                result = await draft_event(runtime, facts, PURPOSE)
-                counts[result["disposition"]] += 1
+                result = await draft_item(runtime, facts)
+                if result["disposition"] == "checks_passed":
+                    passed.append(facts)
+                else:
+                    held += 1
                 with connect(settings.database) as database:
                     database.execute(
                         "INSERT INTO edition_draft_entries VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -102,7 +107,7 @@ async def draft_edition(settings: Settings, today: date | None = None) -> Editio
                         ),
                     )
                 logger.info(
-                    "Edition entry edition_id=%s source_event_id=%s disposition=%s "
+                    "Edition item edition_id=%s source_event_id=%s disposition=%s "
                     "errors=%s wall_seconds=%s",
                     identity,
                     facts.source_event_id,
@@ -110,24 +115,42 @@ async def draft_edition(settings: Settings, today: date | None = None) -> Editio
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
+            front = await draft_front(runtime, passed)
+            logger.info(
+                "Edition front edition_id=%s fallback=%s errors=%s wall_seconds=%s",
+                identity,
+                front["fallback"],
+                front["validation_errors"] or front.get("error"),
+                front["wall_seconds"],
+            )
         except BaseException as error:
             detail = f"{type(error).__name__}: {error}"
             logger.exception("Edition draft failed edition_id=%s", identity)
             _finish(settings.database, identity, "failed", detail, None)
             raise
         summary = {
-            "included": counts["template_validated"],
-            "held": counts["held"],
+            "included": len(passed),
+            "held": held,
             "skipped_over_limit": skipped,
             "duration_seconds": round(time.monotonic() - started, 3),
+            "front": front,
         }
         _finish(settings.database, identity, "completed", None, summary)
-    logger.info("Edition draft completed edition_id=%s %s", identity, summary)
+    logger.info(
+        "Edition draft completed edition_id=%s included=%s held=%s front_fallback=%s "
+        "duration_seconds=%s",
+        identity,
+        summary["included"],
+        held,
+        front["fallback"],
+        summary["duration_seconds"],
+    )
     return latest_draft(settings.database)
 
 
 def _run(row) -> EditionDraftRun:
     result = json.loads(row["result_json"]) if row["result_json"] else {}
+    front = result.get("front")
     return EditionDraftRun(
         id=row["id"],
         community_id=row["community_id"],
@@ -136,6 +159,7 @@ def _run(row) -> EditionDraftRun:
         model=row["model"],
         status=row["status"],
         error=row["error"],
+        front_fallback=front["fallback"] if front else None,
         **{
             key: result.get(key)
             for key in ("included", "held", "skipped_over_limit", "duration_seconds")
@@ -165,9 +189,11 @@ def inspect_drafts(path: Path) -> dict:
                     (runs[0]["id"],),
                 )
             ]
+            result = json.loads(runs[0]["result_json"]) if runs[0]["result_json"] else {}
             latest = {
                 "run": _run(runs[0]).model_dump(),
                 "validation_policy": runs[0]["validation_policy"],
+                "front": result.get("front"),
                 "included": [entry for entry in entries if entry["disposition"] != "held"],
                 "held": [entry for entry in entries if entry["disposition"] == "held"],
             }

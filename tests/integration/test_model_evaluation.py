@@ -4,88 +4,106 @@ import httpx
 import pytest
 from anyio.from_thread import start_blocking_portal
 
-from projects.backend.shared.model_inference.evaluation import (
-    EvaluationFacts,
-    approved_summary,
-    evaluate,
-)
+from projects.backend.shared.model_inference.evaluation import evaluate
+from tests import fakes
+
+TARGET = "projects.backend.shared.model_inference.evaluation"
+INJECTIONS = {
+    "invented-time": (" It starts at 7pm.", "blurb:unsupported_number:7"),
+    "invented-price": (" Admission is free.", "blurb:unsupported_claim_word:free"),
+    "invented-name": (" Maria leads it.", "blurb:unsupported_name:Maria"),
+    "invented-booking": (" Registration required.", "blurb:unsupported_claim_word:registration"),
+}
 
 
-@pytest.mark.parametrize(
-    "outcome", ["valid", "mismatch", "invalid-json", "http-error", "truncated", "injected-claim"]
-)
-def test_evaluation_adapter_and_saved_report(settings, monkeypatch, outcome):
-    requests = []
-
-    def respond(request):
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "fixture:small"}]})
-        body = json.loads(request.content)
-        requests.append(body)
-        facts = json.loads(body["prompt"].split("\nFacts:\n")[1])
-        draft = {**facts, "summary": approved_summary(EvaluationFacts.model_validate(facts))}
-        if outcome == "injected-claim" and facts["source_event_id"] == "synthetic-003":
-            draft["summary"] = "Admission is free."
-        if outcome == "mismatch":
-            draft["venue"] = "Invented venue"
-        if outcome == "http-error":
-            return httpx.Response(500)
-        return httpx.Response(
-            200,
-            json={
-                "response": "not JSON" if outcome == "invalid-json" else json.dumps(draft),
-                "done": True,
-                "done_reason": "length" if outcome == "truncated" else "stop",
-                "total_duration": 100,
-                "load_duration": 10,
-                "prompt_eval_count": 100,
-                "eval_count": 50,
-                "eval_duration": 80,
-            },
-        )
-
-    client_type = httpx.AsyncClient
-    monkeypatch.setattr(
-        "projects.backend.shared.model_inference.evaluation.httpx.AsyncClient",
-        lambda **kwargs: client_type(transport=httpx.MockTransport(respond), **kwargs),
-    )
+def run(settings, monkeypatch, **fake):
+    requests = fakes.install(monkeypatch, TARGET, installed="fixture:small", **fake)
     settings.ollama_model = "fixture:small"
     with start_blocking_portal() as portal:
         path, passed = portal.call(evaluate, settings)
-    assert passed == (outcome == "valid")
-    report = json.loads(path.read_text())
+    return json.loads(path.read_text()), passed, requests
+
+
+def test_valid_news_drafts_pass_and_report_is_saved(settings, monkeypatch):
+    report, passed, requests = run(settings, monkeypatch)
+    assert passed is True
     assert report["manual_review_required"] is True
     assert report["scope"] == "synthetic_local_evaluation_only"
-    assert len(report["cases"]) == 5
-    assert report["validation_policy"] == "exact_fact_template_v1"
-    if outcome == "injected-claim":
-        assert [case["checks_passed"] for case in report["cases"]] == [
-            True,
-            True,
-            False,
-            True,
-            True,
-        ]
-        assert report["cases"][2]["validation_errors"] == ["summary_not_exact_fact_template"]
-        assert report["cases"][2]["disposition"] == "held"
-    else:
-        assert all(case["checks_passed"] == passed for case in report["cases"])
-    assert all("wall_seconds" in case for case in report["cases"])
-    assert all(request["format"]["properties"]["summary"] for request in requests)
+    assert report["validation_policy"] == "news_blurb_v1"
+    assert len(report["cases"]) == 7
+    assert all(case["disposition"] == "checks_passed" for case in report["cases"])
+    assert report["front"]["checks_passed"] is True and report["front"]["fallback"] is False
+    assert report["front"]["context"]["event_count"] == "7"
+    assert len(requests) == 8
     assert all(request["think"] is False for request in requests)
     assert all(request["options"]["num_gpu"] == 0 for request in requests)
     assert all(request["options"]["num_ctx"] == 2048 for request in requests)
-    if outcome == "mismatch":
-        assert report["cases"][0]["validation_errors"] == ["changed_field:venue"]
-    if outcome == "valid":
-        assert report["cases"][1]["draft"]["room"] is None
+    assert all(
+        "source_url" not in request["prompt"].split("\nFacts:\n")[-1] for request in requests
+    )
+    assert {"blurb", "headline"} <= set(requests[0]["format"]["properties"])
+
+
+@pytest.mark.parametrize("outcome", sorted(INJECTIONS))
+def test_invented_claims_are_held(settings, monkeypatch, outcome):
+    addition, error = INJECTIONS[outcome]
+
+    def item(facts):
+        draft = fakes.valid_item(facts)
+        if facts["source_event_id"] == "synthetic-006":
+            draft["blurb"] += addition
+        return draft
+
+    report, passed, _ = run(settings, monkeypatch, item=item)
+    assert passed is False
+    held = [case for case in report["cases"] if case["disposition"] == "held"]
+    assert [case["case_id"] for case in held] == ["tempts-audience-claims"]
+    assert error in held[0]["validation_errors"]
+
+
+def test_held_front_uses_labelled_fallback(settings, monkeypatch):
+    report, passed, _ = run(
+        settings,
+        monkeypatch,
+        front=lambda _: {"headline": "Fun for kids", "intro": "Something for everyone."},
+    )
+    front = report["front"]
+    assert passed is False
+    assert front["fallback"] is True and front["fallback_reason"] == "model_text_held"
+    assert front["rejected"]["headline"] == "Fun for kids"
+    assert "headline:unsupported_claim_word:kids" in front["validation_errors"]
+    assert front["headline"].startswith("Capitol Hill events: ")
+
+
+@pytest.mark.parametrize(
+    ("outcome", "fake", "error"),
+    [
+        ("invalid-json", {"item": lambda _: "not JSON"}, "ValidationError"),
+        ("http-error", {"status": 500}, "HTTPStatusError"),
+        ("truncated", {"done_reason": "length"}, "ValueError"),
+    ],
+)
+def test_generation_failures_are_held(settings, monkeypatch, outcome, fake, error):
+    report, passed, _ = run(settings, monkeypatch, **fake)
+    assert passed is False
+    assert all(case["disposition"] == "held" for case in report["cases"])
+    assert all(case["error"].startswith(error) for case in report["cases"])
+
+
+def test_changed_identity_is_held(settings, monkeypatch):
+    report, passed, _ = run(
+        settings,
+        monkeypatch,
+        item=lambda facts: {**fakes.valid_item(facts), "source_event_id": "x"},
+    )
+    assert passed is False
+    assert all("changed_field:source_event_id" in c["validation_errors"] for c in report["cases"])
 
 
 def test_evaluation_requires_configured_model(settings, monkeypatch):
-    client_type = httpx.AsyncClient
     monkeypatch.setattr(
-        "projects.backend.shared.model_inference.evaluation.httpx.AsyncClient",
-        lambda **kwargs: client_type(
+        f"{TARGET}.httpx.AsyncClient",
+        lambda **kwargs: fakes.REAL_ASYNC_CLIENT(
             transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"models": []})),
             **kwargs,
         ),
