@@ -16,7 +16,6 @@ type Job = {
   error: string | null;
 };
 type Channel = { id: string; name: string; url: string; enabled: boolean; mode: string };
-type AdminAccount = { email: string; enabled: boolean };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/admin/${path}`, {
@@ -36,29 +35,20 @@ export default function Dashboard() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([]);
-  const [adminAccountsLoaded, setAdminAccountsLoaded] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [locationData, jobData, channelData, adminData] = await Promise.all([
+      const [locationData, jobData, channelData] = await Promise.all([
         request<{ locations: Location[] }>("locations"),
         request<{ jobs: Job[] }>("jobs"),
         request<{ channels: Channel[] }>("channels"),
-        fetch("/api/journalist-admins", { cache: "no-store" }).then(async (response) => {
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-          return data as { accounts: AdminAccount[] };
-        }),
       ]);
       setLocations(locationData.locations);
       setJobs(jobData.jobs);
       setChannels(channelData.channels);
-      setAdminAccounts(adminData.accounts);
-      setAdminAccountsLoaded(true);
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -120,65 +110,10 @@ export default function Dashboard() {
     }
   }
 
-  async function addAdmin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/journalist-admins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: String(formData.get("admin-email") ?? "") }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-      setNotice(`Admin access enabled for ${data.account.email}.`);
-      form.reset();
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <>
       {error && <p className="alert" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <h2>Administrator access</h2>
-            <p>Only listed accounts can sign in to this journalist workspace.</p>
-          </div>
-        </div>
-        <form className="admin-form" onSubmit={(event) => void addAdmin(event)}>
-          <label className="field" htmlFor="admin-email">
-            <span>Google account email</span>
-            <input id="admin-email" name="admin-email" type="email" autoComplete="email"
-              placeholder="editor@example.com" required maxLength={254} />
-          </label>
-          <button type="submit" disabled={busy}>Add administrator</button>
-        </form>
-        <div className="admin-list">
-          {adminAccounts.map((account) => (
-            <div className="admin-row" key={account.email}>
-              <span>{account.email}</span>
-              <span className={account.enabled ? "state active" : "state"}>
-                {account.enabled ? "Can sign in" : "Disabled"}
-              </span>
-            </div>
-          ))}
-          {adminAccounts.length === 0 && (
-            <p>{adminAccountsLoaded ? "No administrator accounts found." : "Loading administrator accounts..."}</p>
-          )}
-        </div>
-      </section>
 
       <section className="panel">
         <div className="section-heading">

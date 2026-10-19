@@ -5,6 +5,7 @@ the MongoDB `journalist_admins` collection. The browser calls this site's same-o
 proxy; it never receives `ADMIN_API_TOKEN`. The site checks the account list at sign-in and
 on every protected page/API request, so disabling an account revokes its access immediately.
 The backend independently checks the matching `NEWSBEE_ADMIN_API_TOKEN`.
+Administrator management is available on the protected `/administrators` page.
 
 Set these environment variables before running or deploying:
 
@@ -24,7 +25,7 @@ Provision an account by inserting a document into the `journalist_admins` collec
 ```
 
 Create a unique index on `email` and store addresses in lowercase. Only documents with
-`enabled: true` are authorized; the dashboard can add or re-enable an account. Set
+`enabled: true` are authorized; the administrators page can add or re-enable an account. Set
 `enabled` to `false` or remove the document to revoke access. The MongoDB database user
 should have only the permissions needed to read and update this collection.
 

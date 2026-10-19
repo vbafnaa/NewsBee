@@ -1,0 +1,372 @@
+[
+    {
+        "_id":  "library-websites",
+        "config_path":  "config/library-websites.json",
+        "data":  {
+                     "WA0060":  {
+                                    "name":  "Kitsap Regional Library",
+                                    "website":  "https://www.krl.org/"
+                                },
+                     "WA0058":  {
+                                    "name":  "Fort Vancouver Regional Library District",
+                                    "website":  "https://www.fvrl.org/"
+                                }
+                 }
+    },
+    {
+        "_id":  "government-sources",
+        "config_path":  "config/government-sources.json",
+        "data":  {
+                     "auburn-wa":  {
+                                       "platform":  "civicclerk",
+                                       "tenant":  "auburnwa"
+                                   }
+                 }
+    },
+    {
+        "_id":  "state-sources",
+        "config_path":  "config/state-sources.json",
+        "data":  {
+                     "WA":  {
+                                "name":  "Washington",
+                                "place_suffix":  ", Washington",
+                                "aliases":  [
+                                                "Washington (state)",
+                                                "Washington State",
+                                                "University of Washington",
+                                                "Seattle",
+                                                "Tacoma",
+                                                "Spokane",
+                                                "Olympia",
+                                                "Puget Sound",
+                                                "Mount Rainier",
+                                                "Mount St. Helens",
+                                                "Seahawks",
+                                                "Mariners",
+                                                "Kraken",
+                                                "Sounders"
+                                            ],
+                                "ambiguous_places":  [
+                                                         "Auburn",
+                                                         "Vancouver",
+                                                         "Kent",
+                                                         "Redmond",
+                                                         "Kirkland",
+                                                         "Bellevue",
+                                                         "Everett",
+                                                         "Kingston",
+                                                         "Shoreline",
+                                                         "Ridgefield",
+                                                         "Portland",
+                                                         "North Bend",
+                                                         "Covington",
+                                                         "Sumner",
+                                                         "Camas",
+                                                         "Battle Ground"
+                                                     ],
+                                "locations":  {
+                                                  "auburn-wa":  {
+                                                                    "county":  "King County",
+                                                                    "point":  [
+                                                                                  47.3073,
+                                                                                  -122.2285
+                                                                              ]
+                                                                },
+                                                  "bainbridge-island-wa":  {
+                                                                               "county":  "Kitsap County",
+                                                                               "point":  [
+                                                                                             47.6262,
+                                                                                             -122.5212
+                                                                                         ]
+                                                                           },
+                                                  "edmonds-wa":  {
+                                                                     "county":  "Snohomish County",
+                                                                     "point":  [
+                                                                                   47.8107,
+                                                                                   -122.3774
+                                                                               ]
+                                                                 },
+                                                  "issaquah-wa":  {
+                                                                      "county":  "King County",
+                                                                      "point":  [
+                                                                                    47.5301,
+                                                                                    -122.0326
+                                                                                ]
+                                                                  },
+                                                  "vancouver-wa":  {
+                                                                       "county":  "Clark County",
+                                                                       "point":  [
+                                                                                     45.6387,
+                                                                                     -122.6615
+                                                                                 ]
+                                                                   }
+                                              },
+                                "places":  {
+                                               "Seattle":  [
+                                                               47.6062,
+                                                               -122.3321
+                                                           ],
+                                               "Tacoma":  [
+                                                              47.2529,
+                                                              -122.4443
+                                                          ],
+                                               "Bellevue":  [
+                                                                47.6101,
+                                                                -122.2015
+                                                            ],
+                                               "Redmond":  [
+                                                               47.674,
+                                                               -122.1215
+                                                           ],
+                                               "Kirkland":  [
+                                                                47.6815,
+                                                                -122.2087
+                                                            ],
+                                               "Renton":  [
+                                                              47.4829,
+                                                              -122.2171
+                                                          ],
+                                               "Kent":  [
+                                                            47.3809,
+                                                            -122.2348
+                                                        ],
+                                               "Federal Way":  [
+                                                                   47.3223,
+                                                                   -122.3126
+                                                               ],
+                                               "Auburn":  [
+                                                              47.3073,
+                                                              -122.2285
+                                                          ],
+                                               "Puyallup":  [
+                                                                47.1854,
+                                                                -122.2929
+                                                            ],
+                                               "Sumner":  [
+                                                              47.2032,
+                                                              -122.2404
+                                                          ],
+                                               "Enumclaw":  [
+                                                                47.2043,
+                                                                -121.9915
+                                                            ],
+                                               "Covington":  [
+                                                                 47.3582,
+                                                                 -122.1221
+                                                             ],
+                                               "Maple Valley":  [
+                                                                    47.3926,
+                                                                    -122.0465
+                                                                ],
+                                               "Sammamish":  [
+                                                                 47.6163,
+                                                                 -122.0356
+                                                             ],
+                                               "Issaquah":  [
+                                                                47.5301,
+                                                                -122.0326
+                                                            ],
+                                               "Snoqualmie":  [
+                                                                  47.5287,
+                                                                  -121.8254
+                                                              ],
+                                               "North Bend":  [
+                                                                  47.4957,
+                                                                  -121.7868
+                                                              ],
+                                               "Snoqualmie Pass":  [
+                                                                       47.4245,
+                                                                       -121.4132
+                                                                   ],
+                                               "Mercer Island":  [
+                                                                     47.5707,
+                                                                     -122.2221
+                                                                 ],
+                                               "Bothell":  [
+                                                               47.7623,
+                                                               -122.2054
+                                                           ],
+                                               "Lynnwood":  [
+                                                                47.8209,
+                                                                -122.3151
+                                                            ],
+                                               "Edmonds":  [
+                                                               47.8107,
+                                                               -122.3774
+                                                           ],
+                                               "Shoreline":  [
+                                                                 47.7557,
+                                                                 -122.3415
+                                                             ],
+                                               "Mountlake Terrace":  [
+                                                                         47.7882,
+                                                                         -122.3087
+                                                                     ],
+                                               "Mukilteo":  [
+                                                                47.9445,
+                                                                -122.3046
+                                                            ],
+                                               "Everett":  [
+                                                               47.979,
+                                                               -122.2021
+                                                           ],
+                                               "Bainbridge Island":  [
+                                                                         47.6262,
+                                                                         -122.5212
+                                                                     ],
+                                               "Bremerton":  [
+                                                                 47.5673,
+                                                                 -122.6326
+                                                             ],
+                                               "Poulsbo":  [
+                                                               47.7359,
+                                                               -122.6465
+                                                           ],
+                                               "Port Orchard":  [
+                                                                    47.5404,
+                                                                    -122.6363
+                                                                ],
+                                               "Silverdale":  [
+                                                                  47.6448,
+                                                                  -122.6946
+                                                              ],
+                                               "Kingston":  [
+                                                                47.7987,
+                                                                -122.4982
+                                                            ],
+                                               "Vancouver":  [
+                                                                 45.6387,
+                                                                 -122.6615
+                                                             ],
+                                               "Camas":  [
+                                                             45.5871,
+                                                             -122.3995
+                                                         ],
+                                               "Washougal":  [
+                                                                 45.5826,
+                                                                 -122.3534
+                                                             ],
+                                               "Battle Ground":  [
+                                                                     45.781,
+                                                                     -122.5334
+                                                                 ],
+                                               "Ridgefield":  [
+                                                                  45.8151,
+                                                                  -122.7429
+                                                              ],
+                                               "Portland":  [
+                                                                45.5152,
+                                                                -122.6784
+                                                            ],
+                                               "Mount Rainier":  [
+                                                                     46.8523,
+                                                                     -121.7603
+                                                                 ],
+                                               "Mount St. Helens":  [
+                                                                        46.1912,
+                                                                        -122.1944
+                                                                    ],
+                                               "Pullman":  [
+                                                               46.7313,
+                                                               -117.1796
+                                                           ]
+                                           },
+                                "newsrooms":  [
+                                                  {
+                                                      "name":  "Office of the Governor",
+                                                      "feed":  "https://governor.wa.gov/rss.xml"
+                                                  },
+                                                  {
+                                                      "name":  "Washington State Department of Transportation",
+                                                      "feed":  "https://wsdot.wa.gov/about/news-rss.xml"
+                                                  },
+                                                  {
+                                                      "name":  "Washington State Attorney General",
+                                                      "feed":  "https://www.atg.wa.gov/rss.xml"
+                                                  },
+                                                  {
+                                                      "name":  "Washington State Department of Health",
+                                                      "feed":  "https://doh.wa.gov/newsroom/rss"
+                                                  }
+                                              ],
+                                "watchlist":  [
+                                                  {
+                                                      "article":  "Seattle_Seahawks",
+                                                      "about":  "The Seattle Seahawks are the National Football League team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Seattle_Mariners",
+                                                      "about":  "The Seattle Mariners are the Major League Baseball team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Seattle_Kraken",
+                                                      "about":  "The Seattle Kraken are the National Hockey League team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Seattle_Sounders_FC",
+                                                      "about":  "Seattle Sounders FC is the Major League Soccer team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Seattle_Storm",
+                                                      "about":  "The Seattle Storm are the WNBA basketball team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Seattle_Reign_FC",
+                                                      "about":  "Seattle Reign FC is the National Women\u0027s Soccer League team based in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Washington_Huskies_football",
+                                                      "about":  "The Washington Huskies are the University of Washington\u0027s college football team.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Washington_State_Cougars_football",
+                                                      "about":  "The Washington State Cougars are Washington State University\u0027s college football team.",
+                                                      "place":  "Pullman"
+                                                  },
+                                                  {
+                                                      "article":  "Mount_Rainier",
+                                                      "about":  "Mount Rainier is the highest mountain in Washington.",
+                                                      "place":  "Mount Rainier"
+                                                  },
+                                                  {
+                                                      "article":  "Mount_St._Helens",
+                                                      "about":  "Mount St. Helens is an active volcano in southwest Washington.",
+                                                      "place":  "Mount St. Helens"
+                                                  },
+                                                  {
+                                                      "article":  "Washington_State_Ferries",
+                                                      "about":  "Washington State Ferries runs the public ferry system on Puget Sound.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Space_Needle",
+                                                      "about":  "The Space Needle is an observation tower in Seattle.",
+                                                      "place":  "Seattle"
+                                                  },
+                                                  {
+                                                      "article":  "Washington_State_Fair",
+                                                      "about":  "The Washington State Fair is held each year in Puyallup.",
+                                                      "place":  "Puyallup"
+                                                  },
+                                                  {
+                                                      "article":  "Snoqualmie_Pass",
+                                                      "about":  "Snoqualmie Pass carries Interstate 90 over the Cascade Range.",
+                                                      "place":  "Snoqualmie Pass"
+                                                  },
+                                                  {
+                                                      "article":  "Grey\u0027s_Anatomy",
+                                                      "about":  "Grey\u0027s Anatomy is a medical drama television series set in Seattle.",
+                                                      "place":  "Seattle"
+                                                  }
+                                              ]
+                            }
+                 }
+    }
+]

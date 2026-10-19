@@ -19,6 +19,9 @@ p, small, .muted { color: var(--muted); }
 .topbar, .section-heading, .channel { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .topbar { margin-bottom: 1.5rem; }
 .topbar form { display: flex; align-items: center; gap: .8rem; }
+.topbar-actions { display: flex; align-items: center; gap: 1rem; }
+.nav-button { display: inline-flex; min-height: 2.6rem; align-items: center; padding: .55rem .9rem; border: 1px solid #a69d8e; border-radius: .35rem; color: var(--ink); text-decoration: none; font-weight: 650; }
+.nav-button:hover { background: var(--paper); }
 .eyebrow { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .panel { margin: 1rem 0; padding: 1.4rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); }
 .panel > p, .section-heading p { margin-bottom: 0; }
@@ -47,7 +50,7 @@ th { font-size: .82rem; }
 .login { max-width: 520px; margin: 15vh auto; padding: 2rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--paper); }
 .login form { margin-top: 1.5rem; }
 @media (max-width: 650px) {
-  .topbar, .section-heading, .channel { align-items: flex-start; flex-direction: column; }
+  .topbar, .topbar-actions, .section-heading, .channel { align-items: flex-start; flex-direction: column; }
   .government { grid-template-columns: 1fr; }
   .admin-form { grid-template-columns: 1fr; }
 }
