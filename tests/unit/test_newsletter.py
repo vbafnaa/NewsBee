@@ -258,6 +258,21 @@ def test_item_checks_headline():
     } <= set(errors)
 
 
+@pytest.mark.parametrize("kind", ["state_news", "earthquake", "trending_topic", "social_trend"])
+def test_news_stories_may_mention_dates(kind):
+    story = {**STORY, "kind": kind}
+    text = "Build robots from Monday through October 19."
+    errors = story_writer.validate_item(story, draft(summary=text, headline="Robots on Monday"))
+    assert not [error for error in errors if "repeats_when_where" in error]
+    prompt = story_writer.item_prompt(story)
+    assert story_writer.DATE_RULE not in prompt
+
+
+def test_event_prompts_still_forbid_dates():
+    assert story_writer.DATE_RULE in story_writer.item_prompt(STORY)
+    assert story_writer.DATE_RULE in story_writer.item_prompt({**STORY, "kind": "meeting_preview"})
+
+
 def test_item_checks_allow_names_and_numbers():
     text = "Maria Lopez leads two sessions for 6 teams. Build robots."
     assert story_writer.validate_item(STORY, draft(summary=text)) == []
