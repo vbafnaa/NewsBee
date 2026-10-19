@@ -102,6 +102,7 @@ class EditionItem(BaseModel):
     when_where: str
     event_date: str
     source_url: str | None
+    rank: int | None = None
 
 
 class Edition(BaseModel):

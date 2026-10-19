@@ -144,6 +144,7 @@ def test_ingestion_snapshot_is_authored_and_published(
             "when_where": f"When: {schedule}. Where: {facts['venue']}, {facts['room']}.",
             "event_date": "2026-11-03",
             "source_url": facts["source_url"],
+            "rank": 1,
         }
     ]
     health = client.get("/api/health").json()
