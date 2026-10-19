@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     ollama_model: str | None = None
     mailpit_host: str = "127.0.0.1"
     mailpit_smtp_port: int = Field(default=1025, ge=1, le=65535)
+    website_url: str = "http://127.0.0.1:4321"
+    subscribers_file: Path = ROOT / "config" / "preview-subscribers.json"
     heartbeat_interval: float = Field(default=2, ge=0.1, le=10)
     heartbeat_max_age: float = Field(default=15, ge=15)
 
@@ -46,6 +48,13 @@ class Settings(BaseSettings):
         if value not in {"127.0.0.1", "localhost", "::1"}:
             raise ValueError("Stage 1 email is restricted to a loopback mail sink")
         return value
+
+    @field_validator("website_url")
+    @classmethod
+    def http_website(cls, value: str) -> str:
+        if urlsplit(value).scheme not in {"http", "https"}:
+            raise ValueError("Website URL must be http or https")
+        return value.rstrip("/")
 
     @property
     def database(self) -> Path:

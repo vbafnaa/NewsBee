@@ -233,6 +233,18 @@
           ],
           "default": null,
           "title": "Front Fallback"
+        },
+        "email_fallback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email Fallback"
         }
       },
       "required": [
@@ -245,6 +257,47 @@
         "error"
       ],
       "title": "EditionRun",
+      "type": "object"
+    },
+    "EmailDelivery": {
+      "description": "Email-preview delivery for one location's most recently emailed edition.",
+      "properties": {
+        "edition_id": {
+          "title": "Edition Id",
+          "type": "string"
+        },
+        "location_id": {
+          "title": "Location Id",
+          "type": "string"
+        },
+        "sent": {
+          "default": 0,
+          "title": "Sent",
+          "type": "integer"
+        },
+        "pending": {
+          "default": 0,
+          "title": "Pending",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "errors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "edition_id",
+        "location_id"
+      ],
+      "title": "EmailDelivery",
       "type": "object"
     },
     "IngestionRun": {
@@ -536,6 +589,21 @@
         }
       ],
       "default": null
+    },
+    "email_deliveries": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/EmailDelivery"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Email Deliveries"
     },
     "jobs": {
       "anyOf": [

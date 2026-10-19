@@ -91,8 +91,13 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         if (listings.size === 0) {
           status.textContent = "No locations onboarded yet.";
         } else {
+          const requested = new URLSearchParams(location.search).get("location");
+          if (requested && listings.has(requested)) select.value = requested;
           select.disabled = false;
-          select.addEventListener("change", () => show(select.value));
+          select.addEventListener("change", () => {
+            history.replaceState(null, "", `?location=${encodeURIComponent(select.value)}`);
+            show(select.value);
+          });
           await show(select.value);
         }
       } catch (error) {
