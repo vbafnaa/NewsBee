@@ -54,7 +54,8 @@ async function adminAccountsCollection() {
 }
 
 export async function listAdminAccounts() {
-  const accounts = await adminAccountsCollection()
+  const collection = await adminAccountsCollection();
+  const accounts = await collection
     .find({}, { projection: { _id: 0, email: 1, enabled: 1 } })
     .sort({ email: 1 })
     .toArray();
