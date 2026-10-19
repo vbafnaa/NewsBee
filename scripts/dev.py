@@ -307,6 +307,13 @@ def location_command(action: str, target: str | None) -> None:
                 f"  {system['name']}: {len(system['branches'])} in-town branches; "
                 f"website {lookup['status']} - {lookup['website'] or lookup['detail']}"
             )
+        government = profile["government"]
+        source = (
+            f"{government['platform']}:{government['tenant']}"
+            if government["tenant"]
+            else government["detail"]
+        )
+        print(f"  Public meetings: {government['status']} - {source}")
     elif action == "remove-location":
         if not target:
             raise RuntimeError("Usage: remove-location <location id>")

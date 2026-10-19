@@ -1,5 +1,6 @@
 """Ingest one onboarded location: run the library events agent for every library system,
-keep only next-7-day events at an in-town branch, and store facts plus evidence."""
+keep only next-7-day events at an in-town branch, add the town's public meetings (upcoming
+agendas plus the past week's recorded outcomes), and store facts plus evidence."""
 
 import hashlib
 import json
@@ -15,7 +16,7 @@ import httpx
 from projects.backend.modules.communities import locations
 from projects.backend.modules.communities.venues import match_branch
 from projects.backend.modules.orchestration import jobs
-from projects.backend.modules.source_connectors.agents import library_events
+from projects.backend.modules.source_connectors.agents import government_meetings, library_events
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.storage import snapshots
 from projects.backend.shared.storage.database import connect
@@ -95,12 +96,17 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
         location = locations.get(settings.database, job["source_id"])
     except LookupError as error:
         raise ValueError(str(error)) from error
-    start, end = window(today or date.today())
+    today = today or date.today()
+    start, end = window(today)
     systems, retained = [], []
     for system in location["systems"]:
         result, kept = collect(system, client, start, end)
         systems.append(result)
-        retained += [(system, event, branch) for event, branch in kept]
+        retained += [(source_id(system), event, branch) for event, branch in kept]
+    if location.get("government"):
+        result, meetings = government_meetings.collect(location, client, today, (start, end))
+        systems.append(result)
+        retained += [(result["source_id"], meeting, None) for meeting in meetings]
     retrieved = datetime.now(UTC).isoformat()
     envelope = {
         "location_id": location["id"],
@@ -110,8 +116,8 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
         "usage": "local_evaluation_only",
         "redistribution_permission": "unresolved",
         "events": [
-            {"source_id": source_id(system), "branch": branch, **event.model_dump()}
-            for system, event, branch in retained
+            {"source_id": source, "branch": branch, **event.model_dump()}
+            for source, event, branch in retained
         ],
     }
     evidence_dir = settings.evidence_dir / location["id"]
@@ -136,7 +142,7 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
             ).fetchone()
             if owned is None:
                 raise RuntimeError(f"Lost job lease: {job['id']}")
-            for system, event, branch in retained:
+            for source, event, branch in retained:
                 database.execute(
                     """INSERT INTO source_events VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(source_id, source_event_id, event_date) DO UPDATE SET
@@ -144,7 +150,7 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
                         facts_json = excluded.facts_json, retrieved_at = excluded.retrieved_at,
                         evidence_path = excluded.evidence_path""",
                     (
-                        source_id(system),
+                        source,
                         event.source_event_id,
                         event.event_date,
                         location["id"],
@@ -160,12 +166,12 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
                 (start, end),
                 [
                     {
-                        "source_id": source_id(system),
+                        "source_id": source,
                         "source_event_id": event.source_event_id,
                         "event_date": event.event_date,
                         "facts": {**event.model_dump(), "branch": branch},
                     }
-                    for system, event, branch in retained
+                    for source, event, branch in retained
                 ],
                 systems,
                 summary["evidence_path"],

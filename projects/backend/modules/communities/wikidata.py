@@ -1,4 +1,4 @@
-"""Resolve a library system's official website from Wikidata (property P856).
+"""Resolve an official website (library system or town) from Wikidata (property P856).
 
 A Wikidata item counts only if its English label equals the system name, it lists a
 website, and its coordinates are within MAX_DISTANCE_KM of the directory's address.
@@ -43,7 +43,13 @@ def https_origin(url: str) -> str | None:
 
 def lookup_website(client: httpx.Client, system: dict) -> dict:
     """Return {'status': 'resolved'|'unresolved', 'website', 'wikidata_id', 'detail'}."""
-    name = system["name"]
+    return lookup(client, system["name"], system.get("latitude"), system.get("longitude"))
+
+
+def lookup(
+    client: httpx.Client, name: str, latitude: float | None, longitude: float | None
+) -> dict:
+    """Official website of the item labelled exactly `name` near the given coordinates."""
     found = client.get(
         API,
         params={
@@ -75,7 +81,7 @@ def lookup_website(client: httpx.Client, system: dict) -> dict:
         headers=HEADERS,
     )
     response.raise_for_status()
-    if system.get("latitude") is None or system.get("longitude") is None:
+    if latitude is None or longitude is None:
         return _unresolved("Directory has no coordinates to confirm the Wikidata match")
     candidates: dict[str, str] = {}
     for identity, entity in response.json().get("entities", {}).items():
@@ -84,9 +90,7 @@ def lookup_website(client: httpx.Client, system: dict) -> dict:
         coordinates = _values(claims, "P625")
         websites = [https_origin(value) for value in _values(claims, "P856")]
         nearby = any(
-            distance_km(
-                system["latitude"], system["longitude"], point["latitude"], point["longitude"]
-            )
+            distance_km(latitude, longitude, point["latitude"], point["longitude"])
             <= MAX_DISTANCE_KM
             for point in coordinates
         )

@@ -7,6 +7,7 @@ import pytest
 
 from projects.backend.modules.communities import directory, locations, wikidata
 from projects.backend.modules.communities.venues import match_branch
+from projects.backend.modules.source_connectors.agents import government_meetings
 from projects.backend.shared.storage.database import initialize
 
 SYSTEMS = [
@@ -253,6 +254,41 @@ def test_committed_website_overrides_are_valid():
         "name": "Kitsap Regional Library",
         "website": "https://www.krl.org/",
     }
+
+
+def test_onboarding_records_the_government_meeting_source(tmp_path, index):
+    database = tmp_path / "newsbee.sqlite3"
+    initialize(database)
+    with httpx.Client(transport=wikidata_transport({}, [])) as client:
+        found = locations.onboard(tmp_path, database, "seattle-wa", client, {}, {})
+        assert found["government"]["status"] == "unresolved_website"
+        reviewed = {"seattle-wa": {"platform": "legistar", "tenant": "seattle"}}
+        profile = locations.onboard(tmp_path, database, "seattle-wa", client, {}, reviewed)
+    assert (profile["government"]["status"], profile["government"]["tenant"]) == (
+        "override",
+        "seattle",
+    )
+    assert locations.get(database, "seattle-wa")["government"] == profile["government"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[]",
+        '{"x": {"platform": "primegov", "tenant": "x"}}',
+        '{"x": {"platform": "legistar", "tenant": "Bad Name"}}',
+    ],
+)
+def test_government_override_file_is_validated(tmp_path, content):
+    path = tmp_path / "government-sources.json"
+    assert government_meetings.overrides(path) == {}
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match="government-sources.json"):
+        government_meetings.overrides(path)
+
+
+def test_committed_government_overrides_are_valid():
+    assert isinstance(government_meetings.overrides(), dict)
 
 
 BRANCHES = [
