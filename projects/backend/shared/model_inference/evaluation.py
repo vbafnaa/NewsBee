@@ -14,7 +14,7 @@ from projects.backend.shared.model_inference.news_blurb import (
     draft_front,
     draft_item,
 )
-from projects.backend.shared.model_inference.ollama import OllamaRuntime
+from projects.backend.shared.model_inference.runtime import configured_model, create_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ async def evaluate(settings: Settings, fixture: Path | None = None) -> tuple[Pat
         raise ValueError("Model evaluation requires at least one synthetic case")
     results = []
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
-        runtime = OllamaRuntime(client, settings.ollama_url, settings.ollama_model)
+        runtime = create_runtime(settings, client)
         health = await runtime.health()
         if health.status != "ok":
             raise RuntimeError(health.detail)
@@ -53,7 +53,7 @@ async def evaluate(settings: Settings, fixture: Path | None = None) -> tuple[Pat
             front["validation_errors"] or front.get("error"),
         )
     report = {
-        "model": settings.ollama_model,
+        "model": configured_model(settings),
         "created_at": datetime.now(UTC).isoformat(),
         "scope": "synthetic_local_evaluation_only",
         "manual_review_required": True,

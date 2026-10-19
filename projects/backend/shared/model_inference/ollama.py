@@ -17,20 +17,33 @@ class GenerateResponse(BaseModel):
 class StructuredGeneration(GenerateResponse):
     done: bool
     done_reason: str | None = None
-    total_duration: int
-    load_duration: int
-    prompt_eval_count: int
-    eval_count: int
-    eval_duration: int
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_count: int | None = None
+    eval_count: int | None = None
+    eval_duration: int | None = None
 
 
 class ModelRuntime(Protocol):
+    provider: str
+
     async def health(self) -> ComponentHealth: ...
 
     async def generate(self, prompt: str) -> str: ...
 
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: dict,
+        num_ctx: int = 2048,
+        num_predict: int = 512,
+        keep_alive: str | int = 0,
+    ) -> "StructuredGeneration": ...
+
 
 class OllamaRuntime:
+    provider = "ollama"
+
     def __init__(self, client: httpx.AsyncClient, url: str, model: str | None) -> None:
         self.client = client
         self.url = url

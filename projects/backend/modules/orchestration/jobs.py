@@ -198,3 +198,14 @@ def inspect(path: Path) -> dict:
         "usage": "local_evaluation_only",
         "redistribution_permission": "unresolved",
     }
+
+
+def recent(path: Path, limit: int = 50) -> list[dict]:
+    with connect(path) as database:
+        rows = database.execute(
+            "SELECT id, kind, source_id AS location_id, status, attempts, created_at, "
+            "started_at, completed_at, error FROM jobs "
+            "ORDER BY created_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]

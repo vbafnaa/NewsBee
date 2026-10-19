@@ -88,6 +88,27 @@ def onboard(
         profile["government"]["tenant"],
         profile["government"]["detail"],
     )
+    existing = None
+    if database.is_file():
+        try:
+            existing = get(database, identity)
+        except LookupError:
+            pass
+    if existing:
+        old_systems = {system["fscskey"]: system for system in existing["systems"]}
+        for system in profile["systems"]:
+            old = old_systems.get(system["fscskey"])
+            if old and old.get("website_lookup", {}).get("detail") == (
+                "Managed in Journalist site"
+            ):
+                system["website"] = old.get("website")
+                system["website_lookup"] = old["website_lookup"]
+        old_government = existing.get("government") or {}
+        if old_government.get("detail") in {
+            "Managed in Journalist site",
+            "Disabled in Journalist site",
+        }:
+            profile["government"] = old_government
     save(database, profile)
     return profile
 
@@ -99,6 +120,51 @@ def save(database: Path, profile: dict) -> None:
             "VALUES (?, ?, ?, ?)",
             (profile["id"], profile["name"], json.dumps(profile), time.time()),
         )
+
+
+def update_sources(
+    database: Path,
+    identity: str,
+    websites: dict[str, str | None],
+    government: dict | None,
+) -> dict:
+    profile = get(database, identity)
+    systems = {system["fscskey"]: system for system in profile["systems"]}
+    if systems.keys() != websites.keys():
+        raise ValueError("Source settings must include exactly the location's library systems")
+    for key, system in systems.items():
+        website = websites[key]
+        system["website"] = website
+        system["website_lookup"] = {
+            "status": "override" if website else "unresolved_website",
+            "website": website,
+            "wikidata_id": None,
+            "detail": "Managed in Journalist site",
+        }
+    profile["government"] = (
+        {
+            "status": "override",
+            "platform": government["platform"],
+            "tenant": government["tenant"],
+            "website": None,
+            "wikidata_id": None,
+            "pages_checked": [],
+            "detail": "Managed in Journalist site",
+        }
+        if government
+        else {
+            "status": "no_platform",
+            "platform": None,
+            "tenant": None,
+            "website": None,
+            "wikidata_id": None,
+            "pages_checked": [],
+            "detail": "Disabled in Journalist site",
+        }
+    )
+    save(database, profile)
+    logger.info("Location sources updated location_id=%s", identity)
+    return profile
 
 
 def get(database: Path, identity: str) -> dict:

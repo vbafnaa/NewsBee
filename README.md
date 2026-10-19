@@ -35,11 +35,13 @@ uv run --locked python scripts/dev.py up
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
+| Journalist admin | http://127.0.0.1:3000 (start separately; Google OAuth must be configured) |
 | Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
-Localhost only, no authentication. Logs go to `.local/logs/`.
+The local API and reader are localhost-only. The journalist admin requires Google OAuth and
+an administrator email allowlist; see `projects/journalist-site/README.md`.
 
 ## Commands
 
@@ -90,13 +92,22 @@ uv run --locked python scripts/dev.py browser
 uv run --locked ruff check .
 ```
 
+To run the journalist admin separately, configure the Google OAuth and backend variables
+listed in `projects/journalist-site/README.md`, then run `npm install` and `npm run dev`
+from `projects/journalist-site`.
+
 Run `scripts/dev.py contracts` after changing `shared/contracts`. Optional settings
 (`NEWSBEE_DATA_DIR`, `NEWSBEE_OLLAMA_URL`, `NEWSBEE_OLLAMA_MODEL`, ...) all have defaults.
+Set `NEWSBEE_MODEL_PROVIDER=gemini` and `NEWSBEE_GEMINI_API_KEY` to use Gemini instead of
+the default local Ollama model. See
+[production architecture decisions](Docs/production-architecture-decisions.md) for the selected
+Vercel, MongoDB Atlas, Google Drive, admin authentication, and worker-hosting direction.
 
 | Folder | Holds |
 | --- | --- |
 | `projects/backend` | API, pipeline modules, shared adapters ([map](projects/backend/README.md)) |
-| `projects/website` | Minimal reader site |
+| `projects/reader-site` | Astro reader site |
+| `projects/journalist-site` | Authenticated Next.js operations console |
 | `projects/review-console` | Minimal review and health pages |
 | `shared/contracts` | Contracts shared between projects |
 | `config` | Library website and government platform overrides, preview subscribers, policies |
