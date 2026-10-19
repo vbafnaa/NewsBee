@@ -65,18 +65,18 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
             status="unavailable", detail="Cannot inspect heartbeat without database access"
         )
     try:
-        components[model.provider] = await model.health()
+        components["ollama"] = await model.health()
     except (httpx.HTTPError, ValueError, KeyError, TypeError, ValidationError) as error:
-        detail = f"{model.provider} health check: {type(error).__name__}: {error}"
-        logger.warning("Model health check failed provider=%s: %s", model.provider, detail)
-        components[model.provider] = ComponentHealth(status="unavailable", detail=detail)
+        detail = f"Ollama at {settings.ollama_url}: {type(error).__name__}: {error}"
+        logger.warning("Ollama health check failed: %s", detail)
+        components["ollama"] = ComponentHealth(status="unavailable", detail=detail)
     try:
         components["mailpit"] = await asyncio.to_thread(check_mailpit, settings)
     except (OSError, smtplib.SMTPException) as error:
         logger.warning("Mailpit health check failed: %s", error)
         components["mailpit"] = ComponentHealth(status="unavailable", detail=str(error))
     ingestion_ready = all(components[name].status == "ok" for name in ("api", "database", "worker"))
-    model_status = components[model.provider].status
+    model_status = components["ollama"].status
     capabilities = {
         "ingestion": CapabilityReadiness(
             status="ready" if ingestion_ready else "unavailable",
@@ -85,8 +85,8 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         "ai": CapabilityReadiness(
             status="ready" if model_status == "ok" else model_status,
             detail=(
-                "Model-runtime availability only. The worker uses the configured provider "
-                "and retries while it is unavailable."
+                "API model-runtime availability only. The worker authors editions with its "
+                "own default model and retries while Ollama is unavailable."
             ),
         ),
         "email_sink": CapabilityReadiness(

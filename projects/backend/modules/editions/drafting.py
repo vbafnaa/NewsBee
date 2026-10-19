@@ -31,8 +31,7 @@ from projects.backend.modules.source_connectors import ranking as source_ranking
 from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.model_inference import newsworthiness, story_writer
-from projects.backend.shared.model_inference.ollama import ModelRuntime
-from projects.backend.shared.model_inference.runtime import configured_model, create_runtime
+from projects.backend.shared.model_inference.ollama import OllamaRuntime
 from projects.backend.shared.storage import snapshots
 from projects.backend.shared.storage.database import connect
 from shared.contracts.health import (
@@ -141,7 +140,7 @@ async def checked_item(settings: Settings, runtime: OllamaRuntime, candidate: di
 
 
 class ModelNotReady(RuntimeError):
-    """The configured model runtime is unavailable; authoring can be retried later."""
+    """The local model runtime is unavailable; authoring can be retried later."""
 
 
 class NoSnapshot(LookupError):
@@ -166,15 +165,13 @@ def published_for(path: Path, snapshot_id: str) -> str | None:
     return row["id"] if row else None
 
 
-async def _check_model(runtime: ModelRuntime, model: str) -> None:
+async def _check_model(runtime: OllamaRuntime, model: str) -> None:
     try:
         health = await runtime.health()
     except httpx.HTTPError as error:
-        raise ModelNotReady(f"{runtime.provider} is unreachable: {error}") from error
+        raise ModelNotReady(f"Ollama unreachable: {error}. Start Ollama.") from error
     if health.status != "ok":
-        raise ModelNotReady(
-            f"{health.detail}. Check the configured {runtime.provider} model {model}."
-        )
+        raise ModelNotReady(f"{health.detail}. Start Ollama and pull {model} first.")
 
 
 async def author_edition(settings: Settings, location_id: str) -> EditionRun:
@@ -190,11 +187,11 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
         )
         return run_by_id(settings.database, existing)
     community = location["name"].split(",")[0]
-    model = configured_model(settings) or DEFAULT_MODEL
+    model = settings.ollama_model or DEFAULT_MODEL
     events = snapshots.events(settings.database, snapshot["id"])
     started = time.monotonic()
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
-        runtime = create_runtime(settings, client, model)
+        runtime = OllamaRuntime(client, settings.ollama_url, model)
         if events:
             await _check_model(runtime, model)
         identity = str(uuid.uuid4())

@@ -15,7 +15,7 @@ from datetime import date
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from projects.backend.shared.model_inference.ollama import ModelRuntime
+from projects.backend.shared.model_inference.ollama import OllamaRuntime
 
 logger = logging.getLogger(__name__)
 VALIDATION_POLICY = "news_blurb_v1"
@@ -210,7 +210,7 @@ def front_prompt(context: dict) -> str:
     )
 
 
-async def _generate(runtime: ModelRuntime, prompt: str, schema: type[BaseModel]):
+async def _generate(runtime: OllamaRuntime, prompt: str, schema: type[BaseModel]):
     generation = await runtime.generate_structured(prompt, schema.model_json_schema())
     if not generation.done or generation.done_reason == "length":
         raise ValueError("Generation did not finish within the output budget")
@@ -219,7 +219,7 @@ async def _generate(runtime: ModelRuntime, prompt: str, schema: type[BaseModel])
     )
 
 
-async def draft_item(runtime: ModelRuntime, facts: EventFacts) -> dict:
+async def draft_item(runtime: OllamaRuntime, facts: EventFacts) -> dict:
     """Return a result dict; any violation or runtime error yields disposition 'held'."""
     started = time.monotonic()
     result: dict = {
@@ -249,7 +249,7 @@ async def draft_item(runtime: ModelRuntime, facts: EventFacts) -> dict:
     return result
 
 
-async def draft_front(runtime: ModelRuntime, items: list[EventFacts], community: str) -> dict:
+async def draft_front(runtime: OllamaRuntime, items: list[EventFacts], community: str) -> dict:
     """Model-written edition headline and intro, or a labelled fixed fallback."""
     started = time.monotonic()
     context = front_context(items, community) if items else None

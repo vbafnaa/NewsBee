@@ -34,7 +34,6 @@ __pycache__/
 # Frontend dependencies and generated output
 node_modules/
 dist/
-.next/
 .astro/
 playwright-report/
 test-results/

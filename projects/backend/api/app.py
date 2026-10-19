@@ -7,13 +7,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from projects.backend.api.routes.admin import router as admin_router
 from projects.backend.api.routes.console import router as console_router
 from projects.backend.api.routes.editions import router as editions_router
 from projects.backend.api.routes.infrastructure import router
 from projects.backend.api.routes.locations import router as locations_router
 from projects.backend.shared.configuration.settings import ROOT, Settings
-from projects.backend.shared.model_inference.runtime import create_runtime
+from projects.backend.shared.model_inference.ollama import OllamaRuntime
 from projects.backend.shared.observability.logging import configure_logging
 from projects.backend.shared.storage.database import initialize
 
@@ -31,7 +30,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         configuration.evidence_dir.mkdir(parents=True, exist_ok=True)
         async with httpx.AsyncClient(timeout=2, trust_env=False) as client:
             app.state.settings = configuration
-            app.state.model = create_runtime(configuration, client)
+            app.state.model = OllamaRuntime(
+                client, configuration.ollama_url, configuration.ollama_model
+            )
             logger.info("Local API started; editions publish locally, production email disabled")
             yield
         logger.info("Local API stopped")
@@ -39,13 +40,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Newsbee local API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=configuration.cors_origins,
-        allow_methods=["GET", "POST", "PATCH"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_origins=["http://127.0.0.1:4321", "http://localhost:4321"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
     app.mount("/review/static", StaticFiles(directory=CONSOLE / "static"), name="review-static")
     app.include_router(router)
-    app.include_router(admin_router)
     app.include_router(editions_router)
     app.include_router(console_router)
     app.include_router(locations_router)

@@ -26,8 +26,6 @@ def settings(tmp_path: Path, monkeypatch) -> Settings:
 @pytest.fixture
 def model():
     class FakeModel:
-        provider = "ollama"
-
         async def health(self) -> ComponentHealth:
             return ComponentHealth(status="not_configured", detail="No test model selected")
 

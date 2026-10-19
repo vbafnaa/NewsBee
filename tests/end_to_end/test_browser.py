@@ -42,7 +42,7 @@ def website_url():
     npm = shutil.which("npm")
     if not npm:
         pytest.fail("npm required; run local setup first")
-    website = ROOT / "projects" / "reader-site"
+    website = ROOT / "projects" / "website"
     subprocess.run([npm, "run", "build"], cwd=website, check=True)
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=website / "dist")
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
