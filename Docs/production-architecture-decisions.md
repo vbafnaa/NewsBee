@@ -7,7 +7,7 @@ This records the selected direction for moving the local prototype toward produc
 
 | Area | Direction |
 | --- | --- |
-| Reader website | Keep Astro in `projects/website`; deploy independently, including on Vercel. |
+| Reader website | Keep Astro in `projects/reader-site`; deploy independently, including on Vercel. |
 | Journalist/admin website | Next.js with TypeScript in `projects/journalist-site`; Google sign-in restricted to enabled accounts in MongoDB Atlas. |
 | Admin capabilities, first release | Manage onboarded library and government source settings, view the reader output channel, trigger ingestion, and inspect job status. |
 | Structured application data | MongoDB Atlas is the selected hosted database direction. |
@@ -30,7 +30,7 @@ idempotent serverless tasks.
 
 ## Current implementation status
 
-- The reader is Astro in `projects/website`.
+- The reader is Astro in `projects/reader-site`.
 - The journalist site checks the MongoDB `journalist_admins` collection at sign-in and for
   every protected page/API request. Account documents contain a lowercase `email` and
   `enabled: true`; administrators can add or re-enable accounts from the dashboard, and

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 ROOT = Path(__file__).resolve().parents[1]
-WEBSITE = ROOT / "projects" / "website"
+WEBSITE = ROOT / "projects" / "reader-site"
 LOCAL = ROOT / ".local"
 LOCK = LOCAL / "stack.lock"
 STOP = LOCAL / "stop.request"
