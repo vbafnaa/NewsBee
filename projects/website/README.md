@@ -6,7 +6,10 @@ API; keep editorial and source-processing logic in the backend.
 
 Cross-project contracts belong in `shared\contracts\` at the repository root.
 Astro renders the minimal reader shell in `src\pages\index.astro`; a small browser
-script searches `/api/locations/search` for autocomplete suggestions from the local
+script opens the first onboarded town by default (or the town in a `?location=` link).
+A compact top-right edition dropdown lists onboarded towns and marks the current
+selection. Its "Find another town" input searches `/api/locations/search` for
+autocomplete suggestions from the local
 US public-library directory (towns with library venues, not a worldwide geocoder).
 Type at least two letters; add `, ST` to narrow by state. Suggestions support mouse,
 touch, and arrow-key/Enter selection. `/api/editions` determines whether the selected
