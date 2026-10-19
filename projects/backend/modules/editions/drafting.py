@@ -44,6 +44,7 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
             "occurrences": len(story.occurrences),
             "venues": story.venues,
             "first_date": story.first.event_date,
+            "kind": story.kind,
         }
         for story in story_list
     ]

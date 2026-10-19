@@ -93,15 +93,18 @@ class LinkParser(HTMLParser):
 class Fetcher:
     """HTTPS-only GETs with bounded size, bounded redirects and robots.txt checks."""
 
-    def __init__(self, client: httpx.Client) -> None:
+    def __init__(self, client: httpx.Client, user_agent: str = USER_AGENT) -> None:
         self.client = client
+        self.user_agent = user_agent
         self.robots: dict[str, RobotFileParser] = {}
 
     def allowed(self, url: str) -> bool:
         origin = f"https://{urlsplit(url).netloc}"
         if origin not in self.robots:
             rules = RobotFileParser()
-            response = self.client.get(f"{origin}/robots.txt", headers={"User-Agent": USER_AGENT})
+            response = self.client.get(
+                f"{origin}/robots.txt", headers={"User-Agent": self.user_agent}
+            )
             if response.status_code in {401, 403} or response.status_code >= 500:
                 rules.disallow_all = True
             elif response.status_code >= 300:
@@ -109,7 +112,7 @@ class Fetcher:
             else:
                 rules.parse(response.text.splitlines())
             self.robots[origin] = rules
-        return self.robots[origin].can_fetch(USER_AGENT, url)
+        return self.robots[origin].can_fetch(self.user_agent, url)
 
     def get(self, url: str, limit: int, accept: str) -> tuple[str, bytes]:
         for _ in range(MAX_REDIRECTS + 1):
@@ -118,7 +121,7 @@ class Fetcher:
             if not self.allowed(url):
                 raise DiscoveryBlockedError(f"robots.txt disallows {url}")
             with self.client.stream(
-                "GET", url, headers={"User-Agent": USER_AGENT, "Accept": accept}
+                "GET", url, headers={"User-Agent": self.user_agent, "Accept": accept}
             ) as response:
                 if response.is_redirect:
                     url = urljoin(url, response.headers.get("location", ""))
