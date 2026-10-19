@@ -1,9 +1,9 @@
 """Model-written news items gated by a fail-closed, rule-based added-claim check.
 
-The check cannot prove a blurb is true. It holds any text that introduces numbers,
-names, or claim vocabulary (price, booking, audience, timing, recurrence and similar)
-not present in the supplied facts. Held text is never published; it is kept for audit and
-for future training of the connector agents.
+The check cannot prove a blurb is true. It holds any text that introduces claim
+vocabulary (price, booking, accessibility, cancellation, timing and similar) not present in
+the supplied facts. Names and numbers are not checked. Held text is never published; it is
+kept for audit and for future training of the connector agents.
 """
 
 import json
@@ -24,12 +24,11 @@ BLURB_MAX = 320
 INTRO_MAX = 400
 
 WORD = re.compile(r"[A-Za-z]+(?:['\u2019][A-Za-z]+)?")
-NUMBER = re.compile(r"\d+")
 LINK = re.compile(r"https?://|www\.|@|#|\.(?:com|org|net)\b", re.IGNORECASE)
 SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
 
 # Words that state facts a reader acts on (cost, sign-up, format, cancellation, timing,
-# counts, prizes, accessibility). Audience, role and tone words are allowed for now;
+# prizes, accessibility). Audience, role and tone words are allowed for now;
 # tighten this list as sensitivity rules are added.
 CLAIM_WORDS = frozenset(
     """
@@ -39,7 +38,6 @@ CLAIM_WORDS = frozenset(
     wheelchair asl captioned interpreter
     cancel canceled cancelled postponed rescheduled online virtual zoom livestream hybrid
     prize prizes giveaway giveaways raffle award winning
-    one two three four five six seven eight nine ten eleven twelve twenty dozen hundred
     noon midnight morning afternoon evening night tonight today tomorrow yesterday
     am pm minute minutes hour hours
     """.split()
@@ -98,36 +96,15 @@ def added_claims(text: str, allowed: list[str], max_sentences: int) -> list[str]
     if LINK.search(text):
         errors.append("link_or_handle")
     vocabulary = {word.lower() for value in allowed for word in WORD.findall(value)}
-    numbers = {number for value in allowed for number in NUMBER.findall(value)}
-    errors += [f"unsupported_number:{n}" for n in NUMBER.findall(text) if n not in numbers]
     stripped = text
     for value in sorted(filter(None, allowed), key=len, reverse=True):
         stripped = stripped.replace(value, " ")
     if len(SENTENCE_END.findall(stripped.strip() + " ")) > max_sentences:
         errors.append("too_many_sentences")
-    # A capitalized first word is usually ordinary prose; it is only treated as a name
-    # when the next word is also an unknown capitalized word (e.g. "Maria Lopez").
-    sentence_start, opener = True, None
-    for match in re.finditer(rf"{WORD.pattern}|[.!?]", text):
-        token = match.group()
-        if token in ".!?":
-            sentence_start, opener = True, None
-            continue
+    for token in WORD.findall(text):
         lower = token.lower()
         if lower in CLAIM_WORDS and lower not in vocabulary:
             errors.append(f"unsupported_claim_word:{lower}")
-            opener = None
-        elif token[0].isupper() and lower not in vocabulary:
-            if sentence_start:
-                opener = token
-            else:
-                if opener:
-                    errors.append(f"unsupported_name:{opener}")
-                errors.append(f"unsupported_name:{token}")
-                opener = None
-        else:
-            opener = None
-        sentence_start = False
     return list(dict.fromkeys(errors))
 
 

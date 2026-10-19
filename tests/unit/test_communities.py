@@ -154,6 +154,8 @@ def test_search_api_returns_candidates(client, settings):
 
 def wikidata_transport(entities: dict, search_ids: list[str]) -> httpx.MockTransport:
     def respond(request):
+        if request.url.host != "www.wikidata.org":
+            return httpx.Response(404)
         if request.url.params["action"] == "wbsearchentities":
             hits = [{"id": key, "label": "Seattle Public Library"} for key in search_ids]
             return httpx.Response(200, json={"search": hits})

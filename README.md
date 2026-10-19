@@ -35,7 +35,7 @@ uv run --locked python scripts/dev.py up
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
-| Health and review | http://127.0.0.1:8000/review |
+| Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
@@ -69,10 +69,14 @@ supplies agendas only.
 ## Authoring
 
 1. **Deduplicate** repeated events into one story.
-2. **Rank** up to 10 randomly sampled stories (civic 3 : appeal 2 : one-off 1).
-3. **Write** up to 5 stories, one per category. Drafts that add facts or repeat
-   themselves get one retry, then are held for audit at `/review/editions`.
-4. **Front** headline about the top story.
+2. **Rank** in two steps. Each source type shortlists its own top 5 (from at most 10 randomly
+   sampled) by its own rules: library events put one-off events, then practical help, first;
+   meetings put the city council first, then sooner meetings and fuller agendas. The model then
+   ranks the shortlists together (civic 3 : appeal 2 : one-off 1).
+3. **Write** up to 5 stories, one per category. Drafts that add facts, repeat
+   themselves, stop mid-sentence, drift into non-Latin characters or leave the event's own
+   name out of the headline get one retry, then are held for audit at `/review/editions`.
+4. **Front** headline naming the top story (same checks and one retry, else a fixed fallback).
 5. **Email** a preview (headline, intro, a teaser blurb and a link to the website) to the
    test subscribers for that location in `config/preview-subscribers.json`. Failed sends
    retry and show on the health page.

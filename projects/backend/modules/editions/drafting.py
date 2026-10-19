@@ -1,7 +1,8 @@
 """Author and publish one edition per location snapshot, with no human review step.
 
-Pipeline: snapshot events -> stories (repeats collapsed) -> at most MAX_RANKED stories,
-randomly sampled (seeded by snapshot ID) -> newsworthiness ranking ->
+Pipeline: snapshot events -> stories (repeats collapsed) -> per source type, at most
+SAMPLE_PER_SOURCE stories randomly sampled (seeded by snapshot ID), ranked by that source's
+own rules, keeping the top TOP_PER_SOURCE -> model newsworthiness ranking across sources ->
 write items best-first, at most one per category, until MAX_ENTRIES pass the checks or
 MAX_ATTEMPTS have been written -> edition headline and intro. Held items are excluded and
 never block publishing. A snapshot with no usable events still publishes an edition.
@@ -19,6 +20,7 @@ import httpx
 
 from projects.backend.modules.communities import locations
 from projects.backend.modules.editions import stories
+from projects.backend.modules.source_connectors import ranking as source_ranking
 from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.model_inference import newsworthiness, story_writer
@@ -32,7 +34,8 @@ DEFAULT_MODEL = "qwen3:4b"
 VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}"
 MAX_ENTRIES = 5
 MAX_ATTEMPTS = 10
-MAX_RANKED = 10
+SAMPLE_PER_SOURCE = 10
+TOP_PER_SOURCE = 5
 
 
 def candidates(story_list: list[stories.Story]) -> list[dict]:
@@ -51,14 +54,33 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
 
 
 def sample(story_list: list[stories.Story], seed: str) -> list[stories.Story]:
-    """Bound ranking time: a random subset when there are more stories than MAX_RANKED.
+    """A random subset when a source has more than SAMPLE_PER_SOURCE stories, for variety.
 
     Seeded by snapshot ID so re-authoring the same snapshot picks the same stories.
     """
-    if len(story_list) <= MAX_RANKED:
+    if len(story_list) <= SAMPLE_PER_SOURCE:
         return story_list
-    chosen = set(random.Random(seed).sample(range(len(story_list)), MAX_RANKED))
+    chosen = set(random.Random(seed).sample(range(len(story_list)), SAMPLE_PER_SOURCE))
     return [story for index, story in enumerate(story_list) if index in chosen]
+
+
+def shortlist(story_list: list[stories.Story], seed: str) -> tuple[list[stories.Story], dict]:
+    """Each source type's best stories by its own rules, so every source can compete."""
+    groups: dict[str, list[stories.Story]] = {}
+    for story in story_list:
+        groups.setdefault(source_ranking.source_type(story.first.source_id), []).append(story)
+    chosen: list[stories.Story] = []
+    summary: dict[str, dict] = {}
+    for kind in sorted(groups):
+        sampled = sample(groups[kind], f"{seed}:{kind}")
+        top = source_ranking.rank(kind, sampled)[:TOP_PER_SOURCE]
+        chosen += top
+        summary[kind] = {
+            "stories": len(groups[kind]),
+            "sampled": len(sampled),
+            "shortlisted": len(top),
+        }
+    return chosen, summary
 
 
 def variety_key(candidate: dict) -> str:
@@ -162,7 +184,7 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             VALIDATION_POLICY,
         )
         all_stories = stories.collapse(events)
-        story_list = sample(all_stories, snapshot["id"])
+        story_list, sources = shortlist(all_stories, snapshot["id"])
         by_id = {story.id: story for story in story_list}
         passed: list[tuple[dict, dict]] = []
         held = attempted = skipped_for_variety = 0
@@ -170,15 +192,17 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
         ranking = None
         try:
             ranked, ranking = await newsworthiness.rank(runtime, candidates(story_list))
+            ranking["sources"] = sources
             logger.info(
                 "Edition ranking edition_id=%s events=%s stories=%s ranked=%s fallback_ratings=%s "
-                "wall_seconds=%s",
+                "wall_seconds=%s sources=%s",
                 identity,
                 len(events),
                 len(all_stories),
                 len(story_list),
                 ranking["fallback_ratings"],
                 ranking["wall_seconds"],
+                json.dumps(sources),
             )
             for rank, candidate in enumerate(ranked, start=1):
                 if len(passed) >= MAX_ENTRIES or attempted >= MAX_ATTEMPTS:

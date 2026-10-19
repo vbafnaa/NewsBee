@@ -262,6 +262,19 @@ def test_discovery_guesses_tenants_and_tolerates_unknown_ones():
     assert nothing["status"] == "no_platform" and nothing["website"] == world.WEBSITE
 
 
+def test_discovery_guesses_tenants_when_the_town_website_is_unknown():
+    table = {
+        world.key(civicclerk.confirm_url("exampletownwa")): httpx.Response(200, json={"value": []}),
+    }
+    found = discover(table, wiki=world.wikidata(label="Elsewhere"))
+    assert (found["status"], found["platform"], found["tenant"]) == (
+        "detected",
+        "civicclerk",
+        "exampletownwa",
+    )
+    assert found["website"] is None and "guessed" in found["detail"]
+
+
 def test_discovery_respects_primegov_robots():
     table = {
         world.WEBSITE: page('<a href="https://exampletown.primegov.com/public/portal">'),
@@ -276,6 +289,7 @@ def test_discovery_respects_primegov_robots():
 def test_discovery_records_failures_without_raising():
     unresolved = discover({}, wiki=world.wikidata(label="Elsewhere"))
     assert unresolved["status"] == "unresolved_website" and unresolved["website"] is None
+    assert "guessed" in unresolved["detail"]
     failed = discover({world.WEBSITE: httpx.Response(503)})
     assert failed["status"] == "failed" and "503" in failed["detail"]
     override = discover({}, override={"platform": "legistar", "tenant": "reviewed"})
