@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def initialize(path: Path) -> None:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION}:
+        if version not in range(SCHEMA_VERSION + 1):
             raise RuntimeError(f"Unsupported database schema version: {version}")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS worker_heartbeat (
@@ -166,6 +166,27 @@ def initialize(path: Path) -> None:
                 sent_at REAL,
                 PRIMARY KEY (edition_id, address)
             )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS story_cache (
+                cache_key TEXT PRIMARY KEY,
+                community_id TEXT NOT NULL,
+                result_json TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS story_withdrawals (
+                community_id TEXT NOT NULL,
+                story_id TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                source_refs_json TEXT NOT NULL DEFAULT '[]',
+                PRIMARY KEY (community_id, story_id)
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS editions_latest "
+            "ON edition_drafts (community_id, status, completed_at DESC)"
         )
         if 0 < version < 5:
             # v5 keys events and drafts by onboarded location; single-source data is dropped.

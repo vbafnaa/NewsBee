@@ -22,7 +22,7 @@ Current scaffold endpoints:
 | `GET /api/live` | API liveness only |
 | `GET /api/health` | Dependency checks, heartbeat, and job counts; HTTP 503 when degraded |
 | `GET /api/editions` | Onboarded locations and their latest edition, if any |
-| `GET /api/editions/{location_id}` | Latest published edition (404 if none) |
+| `GET /api/editions/{location_id}` | Latest published edition, sources, coverage and corrections (404 if none); withdrawn stories excluded |
 | `GET /review` | Server-rendered health console |
 
 No mutation endpoints or public API stability guarantees are introduced.

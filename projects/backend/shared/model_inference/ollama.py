@@ -88,7 +88,6 @@ class OllamaRuntime:
                 "options": {
                     "num_ctx": num_ctx,
                     "num_predict": num_predict,
-                    "num_gpu": 0,
                     "temperature": 0,
                     "seed": 42,
                 },

@@ -6,6 +6,8 @@ import pytest
 from projects.backend.modules.orchestration.worker import run
 from projects.backend.shared.storage.database import connect, initialize, snapshot
 
+pytestmark = pytest.mark.critical
+
 
 def test_worker_persists_heartbeat_and_survives_restart(settings):
     initialize(settings.database)
