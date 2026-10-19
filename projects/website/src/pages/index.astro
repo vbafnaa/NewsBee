@@ -23,16 +23,41 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         </div>
         <p class="title">Newsbee</p>
         <p class="subtitle" id="edition-name">Community News</p>
+        <div class="picker">
+          <label for="location">Find your local edition</label>
+          <div class="location-field">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.5" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m15.5 15.5 5 5" />
+            </svg>
+            <input id="location" type="text" role="combobox" aria-autocomplete="list"
+              aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
+              placeholder="Enter your town or city" autocomplete="off" maxlength="80" disabled />
+            <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
+          </div>
+          <p id="location-help" aria-live="polite">A little closer to home. Search a US town, e.g. Seattle, WA.</p>
+        </div>
         <div class="dateline">
           <span id="edition-week">&nbsp;</span>
-          <span class="picker">
-            <label for="location">Location</label>
-            <select id="location" disabled></select>
-          </span>
           <span id="edition-published">&nbsp;</span>
         </div>
       </header>
       <p id="edition-status" role="status">Loading locations...</p>
+      <section id="expansion" aria-labelledby="expansion-title" hidden>
+        <p class="eyebrow">Your town deserves its own front page</p>
+        <h2 id="expansion-title"></h2>
+        <p>Every community has stories worth telling. Help bring local events, civic updates,
+          and a little more connection to yours.</p>
+        <form id="expansion-form">
+          <label for="signup-email">Your email</label>
+          <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" required />
+          <button type="submit">Help bring Newsbee here</button>
+          <p class="signup-note">Join the interest list for this town. Your email and requested town
+            are saved locally for this prototype; no emails are sent automatically.</p>
+        </form>
+        <p id="signup-status" role="status"></p>
+      </section>
       <article id="edition" aria-label="Edition" hidden>
         <h2 id="edition-headline"></h2>
         <p id="edition-intro" class="deck"></p>
@@ -46,6 +71,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
     </main>
     <script>
       type Listing = { location_id: string; location_name: string; edition_id: string | null };
+      type Town = { id: string; name: string };
       type Item = {
         headline: string;
         blurb: string;
@@ -56,10 +82,22 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
 
       const main = document.querySelector("main")!;
       const api = main.dataset.apiUrl;
-      const select = document.querySelector<HTMLSelectElement>("#location")!;
+      const input = document.querySelector<HTMLInputElement>("#location")!;
+      const options = document.querySelector<HTMLUListElement>("#location-options")!;
+      const help = document.querySelector<HTMLParagraphElement>("#location-help")!;
       const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
       const article = document.querySelector<HTMLElement>("#edition")!;
+      const expansion = document.querySelector<HTMLElement>("#expansion")!;
+      const signupForm = document.querySelector<HTMLFormElement>("#expansion-form")!;
+      const signupEmail = document.querySelector<HTMLInputElement>("#signup-email")!;
+      const signupButton = signupForm.querySelector<HTMLButtonElement>("button")!;
+      const signupStatus = document.querySelector<HTMLParagraphElement>("#signup-status")!;
       const listings = new Map<string, Listing>();
+      let selected: Town | undefined;
+      let candidates: Town[] = [];
+      let active = -1;
+      let searchVersion = 0;
+      let searchTimer: ReturnType<typeof setTimeout>;
 
       const text = (tag: string, value: string, className?: string) => {
         const node = document.createElement(tag);
@@ -72,8 +110,10 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       const day = (iso: string, options: Intl.DateTimeFormatOptions) =>
         new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", options);
 
-      async function getJson(path: string) {
-        const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(5000) });
+      async function getJson(path: string, init?: RequestInit) {
+        const response = await fetch(`${api}${path}`, {
+          ...init, signal: AbortSignal.timeout(5000),
+        });
         if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
         return response.json();
       }
@@ -114,18 +154,147 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
           : "\u00a0";
       }
 
-      async function show(locationId: string) {
+      function closeOptions() {
+        clearTimeout(searchTimer);
+        searchVersion++;
+        options.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
+        active = -1;
+      }
+
+      function highlight(index: number) {
+        active = index;
+        Array.from(options.children).forEach((option, i) =>
+          option.setAttribute("aria-selected", String(i === active)),
+        );
+        const option = options.children[active];
+        if (option) {
+          input.setAttribute("aria-activedescendant", option.id);
+          option.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      async function searchTowns() {
+        closeOptions();
+        const query = input.value.trim();
+        if (query.split(",")[0].trim().length < 2) {
+          help.textContent = "Type at least two letters. Add a state, like Seattle, WA.";
+          return;
+        }
+        const version = searchVersion;
+        help.textContent = "Searching towns...";
+        try {
+          const data = await getJson(`/api/locations/search?q=${encodeURIComponent(query)}`);
+          if (version !== searchVersion) return;
+          candidates = data.results as Town[];
+          options.replaceChildren(...candidates.map((town, index) => {
+            const option = text("li", town.name);
+            option.id = `location-option-${index}`;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", "false");
+            option.addEventListener("mousedown", (event) => event.preventDefault());
+            option.addEventListener("click", () => choose(town));
+            return option;
+          }));
+          options.hidden = candidates.length === 0;
+          input.setAttribute("aria-expanded", String(candidates.length > 0));
+          help.textContent = candidates.length
+            ? `${candidates.length} towns found. Use arrow keys and Enter, or select a town.`
+            : "No matching towns in our US library directory. Try a nearby town or add a state.";
+        } catch (error) {
+          if (version === searchVersion) help.textContent = `Location search unavailable: ${failure(error)}`;
+        }
+      }
+
+      async function choose(town: Town, updateUrl = true) {
+        closeOptions();
+        selected = town;
+        input.value = town.name;
+        help.textContent = "A little closer to home. Search a US town, e.g. Seattle, WA.";
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("location", town.id);
+          history.replaceState(null, "", url);
+        }
+        await show(town);
+      }
+
+      input.addEventListener("input", () => {
+        closeOptions();
+        searchTimer = setTimeout(searchTowns, 250);
+      });
+      input.addEventListener("focus", () => {
+        input.select();
+        searchTowns();
+      });
+      input.addEventListener("blur", () => {
+        closeOptions();
+        if (selected) input.value = selected.name;
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeOptions();
+          if (selected) input.value = selected.name;
+        } else if (!options.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+          event.preventDefault();
+          const next = active < 0
+            ? (event.key === "ArrowDown" ? 0 : candidates.length - 1)
+            : (active + (event.key === "ArrowDown" ? 1 : -1) + candidates.length) % candidates.length;
+          highlight(next);
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          if (!options.hidden && active >= 0) choose(candidates[active]);
+          else help.textContent = "Select a town from the suggestions.";
+        }
+      });
+
+      signupForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const town = selected;
+        if (!town || expansion.hidden) return;
+        signupButton.disabled = true;
+        signupStatus.textContent = "Saving your interest...";
+        try {
+          await getJson(`/api/locations/${encodeURIComponent(town.id)}/interest`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: signupEmail.value.trim() }),
+          });
+          if (selected?.id !== town.id) return;
+          signupStatus.textContent = `You're on the interest list for ${town.name}. Thanks for helping Newsbee grow!`;
+          signupForm.reset();
+        } catch (error) {
+          if (selected?.id === town.id) signupStatus.textContent = `Signup unavailable: ${failure(error)}. Please try again.`;
+        } finally {
+          if (selected?.id === town.id) signupButton.disabled = false;
+        }
+      });
+
+      async function show(town: Town) {
         article.hidden = true;
-        const listing = listings.get(locationId);
+        expansion.hidden = true;
+        signupStatus.textContent = "";
+        signupForm.reset();
+        signupButton.disabled = false;
+        const locationId = town.id;
+        const listing = listings.get(town.id);
         masthead(listing);
-        if (!listing?.edition_id) {
+        if (!listing) {
+          document.querySelector("#expansion-title")!.textContent =
+            `We're not in ${place(town.name)} yet. Let's change that.`;
+          status.textContent = "";
+          expansion.hidden = false;
+          return;
+        }
+        if (!listing.edition_id) {
           status.textContent = "No edition yet.";
           return;
         }
         status.textContent = "Loading edition...";
         try {
           const edition = await getJson(`/api/editions/${encodeURIComponent(locationId)}`);
-          if (select.value !== locationId) return;
+          if (selected?.id !== locationId) return;
           masthead(listing, edition);
           document.querySelector("#edition-headline")!.textContent = edition.headline;
           document.querySelector("#edition-intro")!.textContent = edition.intro;
@@ -145,7 +314,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
           article.hidden = false;
           status.textContent = "";
         } catch (error) {
-          status.textContent = `Edition unavailable: ${failure(error)}`;
+          if (selected?.id === locationId) status.textContent = `Edition unavailable: ${failure(error)}`;
         }
       }
 
@@ -154,22 +323,22 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         if (!Array.isArray(data.locations)) throw new Error("Unsupported editions contract");
         for (const listing of data.locations as Listing[]) {
           listings.set(listing.location_id, listing);
-          const option = text("option", listing.location_name) as HTMLOptionElement;
-          option.value = listing.location_id;
-          select.append(option);
         }
-        if (listings.size === 0) {
-          status.textContent = "No locations onboarded yet.";
+        const requested = new URLSearchParams(location.search).get("location");
+        const listing = requested ? listings.get(requested) : data.locations[0] as Listing | undefined;
+        if (listing) {
+          await choose({ id: listing.location_id, name: listing.location_name }, false);
+        } else if (requested) {
+          try {
+            const town = await getJson(`/api/locations/${encodeURIComponent(requested)}`);
+            await choose(town, false);
+          } catch (error) {
+            status.textContent = `Location unavailable: ${failure(error)}. Search for your town above.`;
+          }
         } else {
-          const requested = new URLSearchParams(location.search).get("location");
-          if (requested && listings.has(requested)) select.value = requested;
-          select.disabled = false;
-          select.addEventListener("change", () => {
-            history.replaceState(null, "", `?location=${encodeURIComponent(select.value)}`);
-            show(select.value);
-          });
-          await show(select.value);
+          status.textContent = "Find your community. Search for your town above.";
         }
+        input.disabled = false;
       } catch (error) {
         status.textContent = `Editions unavailable: ${failure(error)}`;
       }
@@ -224,7 +393,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       }
       .dateline {
         display: grid;
-        grid-template-columns: 1fr auto 1fr;
+        grid-template-columns: 1fr 1fr;
         align-items: center;
         gap: 1rem;
         border-top: 1px solid var(--rule);
@@ -235,15 +404,92 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       }
       .dateline > :first-child { text-align: left; }
       .dateline > :last-child { text-align: right; }
-      .picker label { margin-right: 0.4rem; }
-      .picker select {
-        font: inherit;
-        letter-spacing: 0.05em;
+      .picker { max-width: 30rem; margin: 1.4rem auto 1.3rem; text-align: left; }
+      .picker label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font: 700 0.72rem/1.4 var(--serif);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .location-field {
+        position: relative;
+        display: flex;
+        align-items: center;
+        background: #fffaf0;
+        border: 1px solid #a69a85;
+        border-bottom: 2px solid var(--rule);
+        border-radius: 2px;
+        transition: border-color 150ms, box-shadow 150ms;
+      }
+      .location-field:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgb(122 31 31 / 0.12);
+      }
+      .search-icon { flex: 0 0 1.3rem; width: 1.3rem; height: 1.3rem; margin-left: 1rem; color: var(--accent); }
+      .picker input {
+        min-width: 0;
+        width: 100%;
+        font: 1.1rem/1.5 var(--serif);
         background: transparent;
         color: var(--ink);
-        border: 1px solid var(--rule);
-        padding: 0.15rem 0.4rem;
+        border: 0;
+        padding: 0.8rem 1rem 0.8rem 0.7rem;
       }
+      .picker input:focus { outline: none; }
+      .picker input::placeholder { color: #746b5b; font-style: italic; }
+      .picker input:disabled { cursor: wait; opacity: 0.65; }
+      #location-help {
+        margin: 0.6rem 0 0;
+        font: italic 0.78rem/1.5 var(--serif);
+        text-transform: none;
+        letter-spacing: normal;
+        color: var(--muted);
+      }
+      #location-options {
+        position: absolute;
+        z-index: 2;
+        top: calc(100% + 0.35rem);
+        left: -1px;
+        right: -1px;
+        max-height: 18rem;
+        overflow-y: auto;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        background: var(--paper);
+        border: 1px solid #a69a85;
+        border-top: 2px solid var(--accent);
+        border-radius: 2px;
+        box-shadow: 0 8px 20px rgb(28 26 23 / 0.16);
+        text-align: left;
+        text-transform: none;
+        letter-spacing: normal;
+      }
+      #location-options li {
+        padding: 0.7rem 1rem;
+        border-bottom: 1px solid #ded5c3;
+        font: 0.95rem/1.5 var(--serif);
+        cursor: pointer;
+      }
+      #location-options li:last-child { border-bottom: 0; }
+      #location-options li:hover, #location-options [aria-selected="true"] {
+        background: var(--accent);
+        color: var(--paper);
+      }
+      #expansion { max-width: 38rem; margin: 3rem auto; text-align: center; }
+      #expansion h2 { font: 700 2.3rem/1.2 var(--display); }
+      .eyebrow { color: var(--accent); font-style: italic; }
+      #expansion-form { display: grid; gap: 0.65rem; max-width: 28rem; margin: 1.5rem auto; }
+      #expansion-form input, #expansion-form button {
+        padding: 0.7rem;
+        font: inherit;
+        border: 1px solid var(--rule);
+      }
+      #expansion-form button { background: var(--accent); color: var(--paper); cursor: pointer; }
+      #expansion-form button:disabled { opacity: 0.6; cursor: wait; }
+      .signup-note { font-size: 0.8rem; color: var(--muted); }
       #edition-status { text-align: center; font-style: italic; color: var(--muted); }
       #edition-status:empty { display: none; }
       #edition-headline {
@@ -322,6 +568,8 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       @media (max-width: 760px) {
         main { margin: 0; padding: 1rem; }
         .title { font-size: 3.4rem; }
+        .picker { margin: 1.2rem auto; }
+        .picker input { font-size: 1rem; }
         .ears { display: none; }
         .dateline { grid-template-columns: 1fr; text-align: center; }
         .dateline > :first-child, .dateline > :last-child { text-align: center; }

@@ -121,12 +121,7 @@ def test_ingestion_snapshot_is_authored_and_published(
         1,
         0,
     )
-    assert (run.events, run.stories, run.skipped_for_variety, run.ranking_fallback_ratings) == (
-        1,
-        1,
-        0,
-        0,
-    )
+    assert (run.events, run.stories, run.ranked, run.ranking_fallback_ratings) == (1, 1, 1, 0)
     assert run.snapshot_id == snapshot["id"] and run.front_fallback is False
 
     listing = client.get("/api/editions").json()["locations"]
@@ -158,13 +153,14 @@ def test_ingestion_snapshot_is_authored_and_published(
     assert client.post("/review/editions").status_code == 405
 
 
-def test_fill_to_five_skips_held_items_in_rank_order(client, settings, monkeypatch):
-    store_snapshot(settings, 8, sources=("library:WA0001", "meetings:legistar:x"))
+def test_fill_to_nine_skips_held_items(client, settings, monkeypatch):
+    store_snapshot(settings, 15, sources=("library:WA0001", "meetings:legistar:x", "calendar:y"))
     job, _ = run_worker(settings, monkeypatch, story=hold("Story Hour 0", "Story Hour 2"))
     run = drafting.latest_run(settings.database)
     assert job["status"] == "completed"
-    assert (run.included, run.held, run.attempted, run.not_attempted) == (5, 2, 7, 1)
-    assert headlines(client) == [f"Story Hour {i}" for i in (1, 3, 4, 5, 6)]
+    assert (run.included, run.held, run.attempted, run.not_attempted) == (9, 2, 11, 4)
+    shown = headlines(client)
+    assert len(shown) == 9 and not {"Story Hour 0", "Story Hour 2"} & set(shown)
     held = client.get("/review/editions").text.split("Held text (excluded from the edition)")[1]
     assert "Story Hour 0" in held and "summary:unsupported_claim_word:raffle" in held
 
@@ -184,13 +180,24 @@ def test_newsworthiness_orders_items_by_weighted_rubric(client, settings, monkey
     assert edition["headline"] == "Story Hour 3 this week"
 
 
-def test_one_item_per_category(client, settings, monkeypatch):
+def test_categories_do_not_limit_stories(client, settings, monkeypatch):
     store_snapshot(settings, 4)
     same = {"category": "early_learning"}
-    ranking = rate(**{f"Story Hour {i}": same for i in range(3)})
+    ranking = rate(**{f"Story Hour {i}": same for i in range(4)})
     run, _ = author(settings, monkeypatch, ranking=ranking)
+    assert headlines(client) == [f"Story Hour {i}" for i in range(4)]
+    assert (run.included, run.not_attempted, run.skipped_for_variety) == (4, 0, None)
+
+
+def test_each_source_gets_its_best_story_in(client, settings, monkeypatch):
+    monkeypatch.setattr(drafting, "MAX_ENTRIES", 2)
+    store_snapshot(settings, 6, sources=("library:WA0001", "meetings:legistar:x"))
+    ranking = rate(**{f"Story Hour {i}": {"civic": 3} for i in (0, 2, 4)})
+    run, _ = author(settings, monkeypatch, ranking=ranking, story=hold("Story Hour 1"))
+    # Library stories rank higher, but the meeting source still gets a slot: its best
+    # (Story Hour 1) is held, so its next story takes the slot ahead of more library stories.
     assert headlines(client) == ["Story Hour 0", "Story Hour 3"]
-    assert (run.included, run.skipped_for_variety, run.not_attempted) == (2, 2, 2)
+    assert (run.included, run.held) == (2, 1)
 
 
 def test_repeated_events_collapse_into_one_story(client, settings, monkeypatch):
@@ -264,19 +271,19 @@ def test_every_source_reaches_the_cross_source_ranking(client, settings, monkeyp
 
 
 def test_attempts_are_capped_and_edition_still_publishes(client, settings, monkeypatch):
-    assert (drafting.MAX_ENTRIES, drafting.MAX_ATTEMPTS) == (5, 10)
-    store_snapshot(settings, 12, sources=("library:WA0001", "meetings:legistar:x"))
-    titles = [f"Story Hour {i}" for i in range(12)]
+    assert (drafting.MAX_ENTRIES, drafting.MAX_ATTEMPTS) == (9, 12)
+    store_snapshot(settings, 15, sources=("library:WA0001", "meetings:legistar:x", "calendar:y"))
+    titles = [f"Story Hour {i}" for i in range(15)]
     _, requests = run_worker(settings, monkeypatch, story=hold(*titles))
     run = drafting.latest_run(settings.database)
     assert (run.status, run.included, run.held, run.attempted, run.not_attempted) == (
         "completed",
         0,
-        10,
-        10,
-        0,
+        12,
+        12,
+        3,
     )
-    assert len(requests) == 21  # 1 ranking batch + 10 items x (draft + one retry)
+    assert len(requests) == 26  # 2 ranking batches + 12 items x (draft + one retry)
     edition = client.get(f"/api/editions/{LOCATION_ID}").json()
     assert (edition["headline"], edition["intro"], edition["items"]) == (
         "Seattle this week: Nov 1\u20137",
@@ -463,7 +470,7 @@ def test_v5_database_gains_snapshots_and_keeps_editions(tmp_path):
         database.execute("PRAGMA user_version = 5")
     initialize(path)
     with connect(path) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
         row = database.execute("SELECT id, snapshot_id FROM edition_drafts").fetchone()
         assert (row["id"], row["snapshot_id"]) == ("old", None)
         assert database.execute("SELECT COUNT(*) FROM location_snapshots").fetchone()[0] == 0
