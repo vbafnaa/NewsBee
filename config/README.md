@@ -16,8 +16,10 @@ Infrastructure settings are validated in
 `projects\backend\shared\configuration\settings.py`; environment variables and
 ignored runtime paths are documented in the root README. Community, source,
 and editorial-policy formats are not general-purpose schemas yet.
-`communities\capitol-hill-seattle.json` records the initial location and coverage
-limitation. `sources\spl-capitol-hill.json` is the one enabled, validated source:
-the official RSS feed, strict branch venue URL, local-only usage, and unresolved
-redistribution permission. Changing the source requires deliberate onboarding,
-not supplying an arbitrary URL to the worker. No editorial defaults are implied.
+Locations are onboarded with `scripts/dev.py onboard` and stored in the local database,
+not here. No editorial defaults are implied.
+
+`library-websites.json` maps an IMLS FSCS key to a reviewed `{name, website}` for
+library systems Wikidata cannot resolve. The name must match the directory, the
+website must be `https://`, and the entry overrides Wikidata. Re-run `onboard` after
+editing it.

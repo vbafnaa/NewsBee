@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import signal
 import threading
@@ -5,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
+from projects.backend.modules.editions import drafting
 from projects.backend.modules.orchestration import jobs
 from projects.backend.modules.source_connectors.pipelines.events import ingest
 from projects.backend.shared.configuration.settings import Settings
@@ -14,7 +16,7 @@ from projects.backend.shared.storage.database import heartbeat, initialize
 logger = logging.getLogger(__name__)
 
 
-def execute(settings: Settings, job: dict) -> None:
+def execute_ingestion(settings: Settings, job: dict) -> None:
     try:
         with httpx.Client(timeout=20, follow_redirects=False, trust_env=False) as client:
             ingest(settings, job, client)
@@ -26,9 +28,32 @@ def execute(settings: Settings, job: dict) -> None:
         jobs.fail(settings.database, job, error, retryable)
 
 
+def execute_authoring(settings: Settings, job: dict) -> None:
+    try:
+        run = asyncio.run(drafting.author_edition(settings, job["source_id"]))
+    except drafting.ModelNotReady as error:
+        jobs.fail(settings.database, job, error, retryable=True)
+        return
+    except Exception as error:
+        jobs.fail(settings.database, job, error, retryable=False)
+        return
+    jobs.complete(
+        settings.database,
+        job,
+        {"edition_id": run.id, "snapshot_id": run.snapshot_id, "included": run.included},
+    )
+
+
+def execute(settings: Settings, job: dict) -> None:
+    if job["kind"] == jobs.AUTHOR_KIND:
+        execute_authoring(settings, job)
+    else:
+        execute_ingestion(settings, job)
+
+
 def run(settings: Settings, stop: threading.Event) -> None:
     initialize(settings.database)
-    logger.info("Worker starting; local-only event ingestion enabled, publishing disabled")
+    logger.info("Worker starting; local ingestion and automatic edition publishing enabled")
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = None
         job = None

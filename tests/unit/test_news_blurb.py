@@ -133,16 +133,27 @@ def test_claim_words_from_source_text_are_quoted_data_not_new_claims(cases):
 
 def test_front_checks_and_fallback(cases):
     facts = [case.facts for case in cases]
-    context = front_context(facts)
+    context = front_context(facts, "Capitol Hill")
     assert validate_front(context, FrontDraft.model_validate(valid_front(context))) == []
     bad = FrontDraft(headline="Fun for kids", intro="Something for the whole family.")
     errors = validate_front(context, bad)
     assert "headline:unsupported_claim_word:kids" in errors
     assert "intro:unsupported_claim_word:family" in errors
-    fallback = fallback_front(context)
+    fallback = fallback_front(context, "Capitol Hill")
     assert validate_front(context, fallback) == []
     assert str(len(facts)) in fallback.intro
-    assert fallback_front(None).headline == "Capitol Hill events"
+    assert fallback_front(None, "Ballard").headline == "Ballard events"
+
+
+def test_fallback_front_fits_many_venues(cases):
+    facts = [
+        case.facts.model_copy(update={"venue": f"Branch number {index} with a long venue name"})
+        for index, case in enumerate(cases * 20)
+    ]
+    context = front_context(facts, "Seattle")
+    fallback = fallback_front(context, "Seattle")
+    assert "Branch number" not in fallback.intro
+    assert validate_front(context, fallback) == []
 
 
 def test_shape_validation_rejects_extra_missing_wrong_types_and_long_text():

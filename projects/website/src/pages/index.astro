@@ -6,34 +6,97 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>Newsbee local preview</title>
+    <title>Newsbee</title>
   </head>
   <body>
-    <main>
+    <main data-api-url={apiUrl}>
       <h1>Newsbee</h1>
-      <p>Local reader preview</p>
-      <p id="edition-status" role="status" data-api-url={apiUrl}>Checking local editions...</p>
-      <p>Stories, communities, and publication workflows have not been implemented.</p>
+      <label for="location">Location</label>
+      <select id="location" disabled></select>
+      <p id="edition-status" role="status">Loading locations...</p>
+      <article id="edition" aria-label="Edition" hidden>
+        <h2 id="edition-headline"></h2>
+        <p id="edition-intro"></p>
+        <div id="edition-items"></div>
+        <p id="edition-window"></p>
+      </article>
     </main>
     <script>
-      const status = document.querySelector<HTMLParagraphElement>("#edition-status");
-      if (status) {
-        try {
-          const response = await fetch(`${status.dataset.apiUrl}/api/editions`, {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
-          const data = await response.json();
-          if (data.status !== "not_implemented" || !Array.isArray(data.editions)
-              || data.editions.length !== 0) {
-            throw new Error("Unsupported editions contract");
-          }
-          status.textContent = "No editions yet. Publishing is not implemented.";
-        } catch (error) {
-          status.textContent = `Editions unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`;
+      type Listing = { location_id: string; location_name: string; edition_id: string | null };
+      type Item = { headline: string; blurb: string; when_where: string; source_url: string | null };
+
+      const main = document.querySelector("main")!;
+      const api = main.dataset.apiUrl;
+      const select = document.querySelector<HTMLSelectElement>("#location")!;
+      const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
+      const article = document.querySelector<HTMLElement>("#edition")!;
+      const listings = new Map<string, Listing>();
+
+      const text = (tag: string, value: string) => {
+        const node = document.createElement(tag);
+        node.textContent = value;
+        return node;
+      };
+      const failure = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+      async function getJson(path: string) {
+        const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(5000) });
+        if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+        return response.json();
+      }
+
+      async function show(locationId: string) {
+        article.hidden = true;
+        const listing = listings.get(locationId);
+        if (!listing?.edition_id) {
+          status.textContent = "No edition yet.";
+          return;
         }
+        status.textContent = "Loading edition...";
+        try {
+          const edition = await getJson(`/api/editions/${encodeURIComponent(locationId)}`);
+          if (select.value !== locationId) return;
+          document.querySelector("#edition-headline")!.textContent = edition.headline;
+          document.querySelector("#edition-intro")!.textContent = edition.intro;
+          document.querySelector("#edition-window")!.textContent =
+            `Events from ${edition.window_start} to ${edition.window_end}.`;
+          const items = document.querySelector("#edition-items")!;
+          items.replaceChildren(...(edition.items as Item[]).map((item) => {
+            const section = document.createElement("section");
+            section.append(text("h3", item.headline), text("p", item.blurb), text("p", item.when_where));
+            if (item.source_url?.startsWith("https://")) {
+              const link = text("a", "Original event") as HTMLAnchorElement;
+              link.href = item.source_url;
+              link.rel = "noreferrer";
+              section.append(link);
+            }
+            return section;
+          }));
+          article.hidden = false;
+          status.textContent = "";
+        } catch (error) {
+          status.textContent = `Edition unavailable: ${failure(error)}`;
+        }
+      }
+
+      try {
+        const data = await getJson("/api/editions");
+        if (!Array.isArray(data.locations)) throw new Error("Unsupported editions contract");
+        for (const listing of data.locations as Listing[]) {
+          listings.set(listing.location_id, listing);
+          const option = text("option", listing.location_name) as HTMLOptionElement;
+          option.value = listing.location_id;
+          select.append(option);
+        }
+        if (listings.size === 0) {
+          status.textContent = "No locations onboarded yet.";
+        } else {
+          select.disabled = false;
+          select.addEventListener("change", () => show(select.value));
+          await show(select.value);
+        }
+      } catch (error) {
+        status.textContent = `Editions unavailable: ${failure(error)}`;
       }
     </script>
     <style>

@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from projects.backend.api.routes.console import router as console_router
+from projects.backend.api.routes.editions import router as editions_router
 from projects.backend.api.routes.infrastructure import router
+from projects.backend.api.routes.locations import router as locations_router
 from projects.backend.shared.configuration.settings import ROOT, Settings
 from projects.backend.shared.model_inference.ollama import OllamaRuntime
 from projects.backend.shared.observability.logging import configure_logging
@@ -31,7 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.model = OllamaRuntime(
                 client, configuration.ollama_url, configuration.ollama_model
             )
-            logger.info("Local API started; production email and publication are disabled")
+            logger.info("Local API started; editions publish locally, production email disabled")
             yield
         logger.info("Local API stopped")
 
@@ -43,7 +45,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.mount("/review/static", StaticFiles(directory=CONSOLE / "static"), name="review-static")
     app.include_router(router)
+    app.include_router(editions_router)
     app.include_router(console_router)
+    app.include_router(locations_router)
 
     @app.middleware("http")
     async def request_logging(request: Request, call_next):

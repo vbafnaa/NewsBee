@@ -213,12 +213,16 @@ def main() -> None:
             "test",
             "browser",
             "contracts",
+            "setup-directory",
+            "find-location",
+            "onboard",
             "ingest-events",
             "events",
             "evaluate-model",
-            "draft-edition",
+            "author-edition",
         ],
     )
+    parser.add_argument("target", nargs="?", help="Town query or location id, where needed")
     parser.add_argument("--browser", action="store_true", help="Install Chromium during setup")
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):
@@ -238,53 +242,86 @@ def main() -> None:
     elif args.action == "evaluate-model":
         import asyncio
 
-        sys.path.insert(0, str(ROOT))
-        from projects.backend.shared.configuration.settings import Settings
+        settings = app_settings()
         from projects.backend.shared.model_inference.evaluation import evaluate
-        from projects.backend.shared.observability.logging import configure_logging
 
-        configure_logging()
-        path, passed = asyncio.run(evaluate(Settings()))
+        path, passed = asyncio.run(evaluate(settings))
         print(f"Evaluation saved: {path}")
-        print("Human review of every headline and blurb is required; automatic checks do not prove factuality.")
+        print("Human review of every headline and blurb is required.")
+        print("Automatic checks do not prove factuality.")
         if not passed:
             raise RuntimeError("Model evaluation checks failed; inspect the saved report")
-    elif args.action == "draft-edition":
-        import asyncio
-
-        sys.path.insert(0, str(ROOT))
-        from projects.backend.modules.editions.drafting import draft_edition
-        from projects.backend.shared.configuration.settings import Settings
-        from projects.backend.shared.observability.logging import configure_logging
-        from projects.backend.shared.storage.database import initialize
-
-        configure_logging()
-        settings = Settings()
-        initialize(settings.database)
-        run = asyncio.run(draft_edition(settings))
-        print(
-            f"Draft edition {run.window_start} to {run.window_end}: {run.status}; "
-            f"included {run.included}, held {run.held}, skipped over limit "
-            f"{run.skipped_over_limit}."
-        )
-        print("Inspect: http://127.0.0.1:8000/review/editions (human review required)")
     else:
-        sys.path.insert(0, str(ROOT))
-        from projects.backend.modules.orchestration import jobs
-        from projects.backend.modules.source_connectors.pipelines.events import load_source
-        from projects.backend.shared.configuration.settings import Settings
-        from projects.backend.shared.observability.logging import configure_logging
-        from projects.backend.shared.storage.database import initialize
+        try:
+            location_command(args.action, args.target)
+        except LookupError as error:
+            raise RuntimeError(str(error).strip("'\"")) from error
 
-        configure_logging()
-        settings = Settings()
-        initialize(settings.database)
-        if args.action == "ingest-events":
-            source = load_source("spl-capitol-hill")
-            identity = jobs.enqueue(settings.database, source.id)
-            print(f"Ingestion queued: {identity}. Start the local worker with the up command.")
-        else:
-            print(json.dumps(jobs.inspect(settings.database), indent=2))
+
+def app_settings():
+    sys.path.insert(0, str(ROOT))
+    from projects.backend.shared.configuration.settings import Settings
+    from projects.backend.shared.observability.logging import configure_logging
+    from projects.backend.shared.storage.database import initialize
+
+    configure_logging()
+    settings = Settings()
+    initialize(settings.database)
+    return settings
+
+
+def location_command(action: str, target: str | None) -> None:
+    settings = app_settings()
+    import httpx
+
+    from projects.backend.modules.communities import directory, locations
+    from projects.backend.modules.orchestration import jobs, orchestrator
+
+    index = directory.directory_path(settings.data_dir)
+    if action == "setup-directory":
+        print(f"Downloading the IMLS public library survey ({directory.PLS_EDITION})...")
+        with httpx.Client(timeout=120, trust_env=False) as client:
+            counts = directory.build(directory.download(client), index)
+        print(f"Library directory ready: {counts}")
+    elif action == "find-location":
+        if not target:
+            raise RuntimeError('Usage: find-location "<town>[, ST]"')
+        results = directory.search(index, target)
+        for result in results:
+            print(
+                f"{result['id']:<30} {result['name']:<30} "
+                f"{result['branch_count']} branches, {result['system_count']} library systems"
+            )
+        if not results:
+            print("No matching towns with a public library venue.")
+    elif action == "onboard":
+        if not target:
+            raise RuntimeError("Usage: onboard <location id from find-location>")
+        with httpx.Client(timeout=30, trust_env=False) as client:
+            profile = locations.onboard(settings.data_dir, settings.database, target, client)
+        print(f"Onboarded {profile['name']} ({profile['id']}):")
+        for system in profile["systems"]:
+            lookup = system["website_lookup"]
+            print(
+                f"  {system['name']}: {len(system['branches'])} in-town branches; "
+                f"website {lookup['status']} - {lookup['website'] or lookup['detail']}"
+            )
+    elif action == "ingest-events":
+        queued = orchestrator.enqueue_all(settings.database)
+        if not queued:
+            raise RuntimeError("No onboarded locations. Use find-location then onboard first.")
+        for location_id, identity in queued.items():
+            print(f"Ingestion queued for {location_id}: {identity}")
+        print("The local worker (started by the up command) runs queued jobs.")
+    elif action == "author-edition":
+        if target is None:
+            raise RuntimeError("Usage: author-edition <location id>")
+        locations.get(settings.database, target)
+        identity = jobs.enqueue(settings.database, target, jobs.AUTHOR_KIND)
+        print(f"Authoring queued for {target}: {identity} (ingestion queues this automatically).")
+        print("The worker publishes it; view at http://127.0.0.1:4321/")
+    else:
+        print(json.dumps(jobs.inspect(settings.database), indent=2))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def initialize(path: Path) -> None:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1, 2, 3, SCHEMA_VERSION}:
+        if version not in {0, 1, 2, 3, 4, 5, SCHEMA_VERSION}:
             raise RuntimeError(f"Unsupported database schema version: {version}")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS worker_heartbeat (
@@ -79,9 +79,15 @@ def initialize(path: Path) -> None:
                 created_at REAL NOT NULL,
                 completed_at REAL,
                 error TEXT,
-                result_json TEXT
+                result_json TEXT,
+                snapshot_id TEXT
             )"""
         )
+        draft_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(edition_drafts)")
+        }
+        if "snapshot_id" not in draft_columns:
+            connection.execute("ALTER TABLE edition_drafts ADD COLUMN snapshot_id TEXT")
         if version == 3:
             connection.execute(
                 "ALTER TABLE edition_draft_entries RENAME TO edition_draft_entries_v3"
@@ -104,6 +110,48 @@ def initialize(path: Path) -> None:
                 "INSERT INTO edition_draft_entries SELECT * FROM edition_draft_entries_v3"
             )
             connection.execute("DROP TABLE edition_draft_entries_v3")
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS locations (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                profile_json TEXT NOT NULL,
+                onboarded_at REAL NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS location_snapshots (
+                id TEXT PRIMARY KEY,
+                location_id TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                window_start TEXT NOT NULL,
+                window_end TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                event_count INTEGER NOT NULL,
+                systems_json TEXT NOT NULL,
+                evidence_path TEXT NOT NULL
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS location_snapshots_latest "
+            "ON location_snapshots (location_id, created_at)"
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS snapshot_events (
+                snapshot_id TEXT NOT NULL REFERENCES location_snapshots(id),
+                position INTEGER NOT NULL,
+                source_id TEXT NOT NULL,
+                source_event_id TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                facts_json TEXT NOT NULL,
+                PRIMARY KEY (snapshot_id, position)
+            )"""
+        )
+        if 0 < version < 5:
+            # v5 keys events and drafts by onboarded location; single-source data is dropped.
+            connection.execute("DELETE FROM edition_draft_entries")
+            connection.execute("DELETE FROM edition_drafts")
+            connection.execute("DELETE FROM source_events")
+            connection.execute("DELETE FROM jobs WHERE kind = 'ingest_events'")
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

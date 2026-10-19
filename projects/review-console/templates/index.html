@@ -5,19 +5,21 @@
     <meta name="viewport" content="width=device-width">
     <title>Newsbee local health</title>
     <link rel="stylesheet" href="/review/static/style.css">
-    <script src="/review/static/health.js?v=4" defer></script>
+    <script src="/review/static/health.js?v=7" defer></script>
   </head>
   <body>
     <main>
       <h1>Newsbee local health</h1>
-      <p>Private development environment. No production publishing or email delivery.</p>
+      <p>Private development environment. Editions publish to the local website only; no email delivery.</p>
       <p id="summary" role="status">Checking local services...</p>
       <button id="refresh" type="button">Refresh health</button>
       <h2>Capability readiness</h2>
       <ul id="capabilities"></ul>
+      <h2>Locations</h2>
+      <ul id="locations"></ul>
       <h2>Latest ingestion run</h2>
       <p id="latest-ingestion">Not checked</p>
-      <h2>Latest draft edition</h2>
+      <h2>Latest edition run</h2>
       <p id="latest-edition">Not checked</p>
       <h2>Services</h2>
       <ul id="services"></ul>
@@ -28,13 +30,14 @@
       <p id="completed">Last completed job: not checked</p>
       <h2>Local event ingestion</h2>
       <p><a href="/review/ingestion">Inspect retained events and ingestion jobs</a></p>
-      <p>The worker can ingest Capitol Hill Branch event facts from the library RSS feed.
+      <p>The worker ingests next-7-day event facts from library systems in each onboarded location.
         Trigger and inspect jobs using the README commands. Redistribution permission is unresolved.</p>
-      <h2>Editorial workflows</h2>
-      <p><a href="/review/editions">Inspect the private draft edition preview</a></p>
-      <p>Draft editions are generated locally with the draft-edition command (see README).
-        Held entries are excluded. Review queues, publication, and email generation are not
-        implemented.</p>
+      <h2>Editions</h2>
+      <p><a href="http://127.0.0.1:4321/">Read published editions on the local website</a></p>
+      <p><a href="/review/editions">Audit the latest edition run and held items</a></p>
+      <p>Each ingestion snapshot automatically queues authoring; the worker publishes the
+        edition with no review step. Held items are excluded and kept for future training of
+        the connector agents. Email generation is not implemented.</p>
       <a href="http://127.0.0.1:8025">Open local Mailpit inbox</a>
     </main>
   </body>

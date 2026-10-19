@@ -15,8 +15,8 @@ HTTP 503 means at least one dependency is unavailable or not configured.
 HTTP 200 means infrastructure is available, not that publication is safe.
 Capability readiness is reported separately: ingestion requires the API, database,
 and fresh worker heartbeat, but not Ollama or Mailpit. AI readiness checks the
-model runtime only; email-sink readiness checks SMTP only. Publishing stays
-`not_implemented`. These indicators do not establish source availability or
+model runtime only; email-sink readiness checks SMTP only. Publishing is `ready`
+when ingestion is (empty weeks publish without the model). These indicators do not establish source availability or
 editorial quality. The summary leads with ingestion readiness while retaining
 the all-service status and existing HTTP 200/503 behavior.
 
@@ -30,8 +30,9 @@ native formats. Logs contain operational metadata, not story prompts or evidence
 
 Ingestion job results record event count, skipped other venues, duration, and
 selective evidence path. The `events` CLI command exposes recent job results and
-failure messages. The pipeline state is `local_event_ingestion_only`; quality,
-human-workload, and edition-cost measures still require editorial workflows.
+failure messages. The pipeline state is `local_ingestion_and_auto_publish`. The latest
+edition run reports included, held, attempted, and not-attempted counts and duration;
+each location shows whether it has a published edition.
 
 Do not store generated logs, telemetry exports, or runtime state here. No cloud
 monitoring service or separate monitoring stack has been selected.
