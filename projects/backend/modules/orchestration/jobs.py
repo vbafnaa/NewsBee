@@ -11,7 +11,8 @@ from shared.contracts.health import IngestionRun, SystemIngestion
 logger = logging.getLogger(__name__)
 JOB_KIND = "ingest_events"
 AUTHOR_KIND = "author_edition"
-KINDS = (JOB_KIND, AUTHOR_KIND)
+EMAIL_KIND = "send_email_preview"
+KINDS = (JOB_KIND, AUTHOR_KIND, EMAIL_KIND)
 MAX_ATTEMPTS = 3
 LEASE_SECONDS = 90
 
@@ -119,15 +120,15 @@ def claim(path: Path, kind: str | None = None) -> dict | None:
         return dict(database.execute("SELECT * FROM jobs WHERE id = ?", (row["id"],)).fetchone())
 
 
-def renew(path: Path, job: dict) -> None:
+def renew(path: Path, job: dict) -> bool:
+    """Extend the lease; False if the job is no longer running under this claim."""
     with connect(path) as database:
         result = database.execute(
             "UPDATE jobs SET lease_until = ? "
             "WHERE id = ? AND claim_token = ? AND status = 'running'",
             (time.time() + LEASE_SECONDS, job["id"], job["claim_token"]),
         )
-        if result.rowcount != 1:
-            raise RuntimeError(f"Lost job lease: {job['id']}")
+        return result.rowcount == 1
 
 
 def complete(path: Path, job: dict, result: dict) -> None:

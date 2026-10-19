@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width">
     <title>Newsbee local health</title>
     <link rel="stylesheet" href="/review/static/style.css">
-    <script src="/review/static/health.js?v=7" defer></script>
+    <script src="/review/static/health.js?v=8" defer></script>
   </head>
   <body>
     <main>
       <h1>Newsbee local health</h1>
-      <p>Private development environment. Editions publish to the local website only; no email delivery.</p>
+      <p>Private development environment. Editions publish to the local website; email previews go only to local Mailpit.</p>
       <p id="summary" role="status">Checking local services...</p>
       <button id="refresh" type="button">Refresh health</button>
       <h2>Capability readiness</h2>
@@ -21,6 +21,8 @@
       <p id="latest-ingestion">Not checked</p>
       <h2>Latest edition run</h2>
       <p id="latest-edition">Not checked</p>
+      <h2>Email previews</h2>
+      <ul id="email-deliveries"></ul>
       <h2>Services</h2>
       <ul id="services"></ul>
       <h2>Job history totals</h2>
@@ -37,7 +39,8 @@
       <p><a href="/review/editions">Audit the latest edition run and held items</a></p>
       <p>Each ingestion snapshot automatically queues authoring; the worker publishes the
         edition with no review step. Held items are excluded and kept for future training of
-        the connector agents. Email generation is not implemented.</p>
+        the connector agents. Each published edition emails a short preview with a link to the
+        website to the local test subscribers in config\preview-subscribers.json.</p>
       <a href="http://127.0.0.1:8025">Open local Mailpit inbox</a>
     </main>
   </body>

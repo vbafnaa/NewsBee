@@ -80,13 +80,13 @@ def test_natural_wording_passes():
         (" Tickets cost $5.", "blurb:unsupported_number:5"),
         (" Registration is required.", "blurb:unsupported_claim_word:registration"),
         (" RSVP to save a seat.", "blurb:unsupported_claim_word:rsvp"),
-        (" Kids are welcome.", "blurb:unsupported_claim_word:kids"),
-        (" Snacks provided.", "blurb:unsupported_claim_word:snacks"),
-        (" Hosted by Maria Lopez.", "blurb:unsupported_claim_word:hosted"),
+        (" Tickets are limited.", "blurb:unsupported_claim_word:tickets"),
+        (" It is also online.", "blurb:unsupported_claim_word:online"),
+        (" Hosted by Maria Lopez.", "blurb:unsupported_name:Maria"),
         (" Ask Maria.", "blurb:unsupported_name:Maria"),
-        (" Maria brings games.", "blurb:unsupported_name:Maria"),
+        (" Maria Lopez brings games.", "blurb:unsupported_name:Maria"),
         (" It is wheelchair accessible.", "blurb:unsupported_claim_word:wheelchair"),
-        (" This weekly event is back.", "blurb:unsupported_claim_word:weekly"),
+        (" Doors open at noon.", "blurb:unsupported_claim_word:noon"),
         (" Details at example.org/games.", "blurb:link_or_handle"),
         (" The event has been canceled.", "blurb:unsupported_claim_word:canceled"),
     ],
@@ -94,6 +94,11 @@ def test_natural_wording_passes():
 def test_invented_claims_are_held(addition, error):
     errors = validate_item(FACTS, item(blurb=BASE + addition))
     assert error in errors
+
+
+def test_audience_role_and_tone_words_are_allowed():
+    blurb = BASE + " Kids, families and adults bring snacks."
+    assert validate_item(FACTS, item(blurb=blurb)) == []
 
 
 def test_too_many_sentences_and_lines_are_held():
@@ -108,7 +113,7 @@ def test_headline_is_checked_too():
         FACTS, item(headline="Free board games")
     )
     assert "headline:unsupported_name:Saturday" in validate_item(
-        FACTS, item(headline="Saturday games")
+        FACTS, item(headline="Games on Saturday")
     )
 
 
@@ -128,17 +133,17 @@ def test_claim_words_from_source_text_are_quoted_data_not_new_claims(cases):
     case = next(c for c in cases if c.id == "instruction-like-title")
     blurb = f"{case.facts.title} is on Thursday, November 5 at {case.facts.venue}."
     draft = ItemDraft(source_event_id=case.facts.source_event_id, headline="Notice", blurb=blurb)
-    assert validate_item(case.facts, draft) == ["headline:unsupported_name:Notice"]
+    assert validate_item(case.facts, draft) == []
 
 
 def test_front_checks_and_fallback(cases):
     facts = [case.facts for case in cases]
     context = front_context(facts, "Capitol Hill")
     assert validate_front(context, FrontDraft.model_validate(valid_front(context))) == []
-    bad = FrontDraft(headline="Fun for kids", intro="Something for the whole family.")
+    bad = FrontDraft(headline="Fun online", intro="Something for the whole family at noon.")
     errors = validate_front(context, bad)
-    assert "headline:unsupported_claim_word:kids" in errors
-    assert "intro:unsupported_claim_word:family" in errors
+    assert "headline:unsupported_claim_word:online" in errors
+    assert "intro:unsupported_claim_word:noon" in errors
     fallback = fallback_front(context, "Capitol Hill")
     assert validate_front(context, fallback) == []
     assert str(len(facts)) in fallback.intro

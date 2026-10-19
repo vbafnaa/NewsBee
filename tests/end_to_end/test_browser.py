@@ -106,6 +106,13 @@ def test_reader_selects_location_and_reads_published_edition(
         "href", ingested_event["events"][0]["facts"]["source_url"]
     )
     expect(edition).to_contain_text("Events from 2026-11-01 to 2026-11-07.")
+    assert page.url.endswith("?location=seattle-wa")
+
+    page.goto(f"{website_url}/?location=seattle-wa")
+    expect(page.get_by_label("Location")).to_have_value("seattle-wa")
+    expect(page.get_by_role("heading", level=3, name=title)).to_be_visible()
+    page.goto(f"{website_url}/?location=unknown")
+    expect(page.get_by_label("Location")).to_have_value("bainbridge-island-wa")
 
 
 def test_reader_without_locations(page, api_url, website_url):

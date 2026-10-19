@@ -8,6 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from projects.backend.modules.editions.drafting import latest_run as latest_edition_run
+from projects.backend.modules.email_previews.delivery import statuses as email_statuses
 from projects.backend.modules.orchestration.jobs import latest_run
 from projects.backend.modules.orchestration.orchestrator import statuses
 from projects.backend.shared.configuration.settings import Settings
@@ -23,7 +24,7 @@ def check_mailpit(settings: Settings) -> ComponentHealth:
         code, _ = smtp.noop()
         if code != 250:
             raise smtplib.SMTPResponseException(code, b"SMTP health check failed")
-    return ComponentHealth(status="ok", detail="Local SMTP sink is reachable; no email sent")
+    return ComponentHealth(status="ok", detail="Local SMTP sink is reachable")
 
 
 async def collect_health(settings: Settings, model: ModelRuntime) -> HealthReport:
@@ -33,11 +34,13 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
     latest = None
     latest_edition = None
     location_statuses = None
+    deliveries = None
     try:
         last_beat, counts, completed = await asyncio.to_thread(snapshot, settings.database)
         latest = await asyncio.to_thread(latest_run, settings.database)
         latest_edition = await asyncio.to_thread(latest_edition_run, settings.database)
         location_statuses = await asyncio.to_thread(statuses, settings.database)
+        deliveries = await asyncio.to_thread(email_statuses, settings.database)
         components["database"] = ComponentHealth(status="ok", detail="SQLite records readable")
         age = time.time() - last_beat if last_beat is not None else None
         fresh = age is not None and 0 <= age <= settings.heartbeat_max_age
@@ -55,6 +58,7 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         latest = None
         latest_edition = None
         location_statuses = None
+        deliveries = None
         logger.warning("Database health check failed: %s", error)
         components["database"] = ComponentHealth(status="unavailable", detail=str(error))
         components["worker"] = ComponentHealth(
@@ -87,7 +91,10 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         ),
         "email_sink": CapabilityReadiness(
             status="ready" if components["mailpit"].status == "ok" else "unavailable",
-            detail="Local SMTP connectivity only; email composition is not implemented.",
+            detail=(
+                "Each published edition emails a preview to the local test subscribers in "
+                "config\\preview-subscribers.json via Mailpit; failed sends retry."
+            ),
         ),
         "publishing": CapabilityReadiness(
             status="ready" if ingestion_ready else "unavailable",
@@ -104,6 +111,7 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         latest_ingestion=latest,
         locations=location_statuses,
         latest_edition=latest_edition,
+        email_deliveries=deliveries,
         jobs=counts,
         last_completed_job_at=completed,
     )

@@ -177,7 +177,7 @@ def test_grounded_prose_item_passes():
         ("Join us in November to build robots.", "summary:repeats_when_where"),
         ("Build robots. Build robots.", "summary:repeated_sentence"),
         ("Robots take over the lab. Build robots.", "summary:repeats_headline"),
-        ("Build robots. Pizza is served.", "summary:unsupported_claim_word:pizza"),
+        ("Build robots. Win a raffle.", "summary:unsupported_claim_word:raffle"),
         ("Build robots. Admission is free.", "summary:unsupported_claim_word:free"),
         ("Build robots with Maria.", "summary:unsupported_name:Maria"),
         ("Build robots. Ages 6 and up.", "summary:unsupported_number:6"),

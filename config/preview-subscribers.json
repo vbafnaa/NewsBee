@@ -1,0 +1,25 @@
+{
+  "_comment": "Local test subscribers per onboarded location id. Mail goes only to Mailpit.",
+  "locations": {
+    "auburn-wa": [
+      "reader1@auburn-wa.test",
+      "reader2@auburn-wa.test"
+    ],
+    "bainbridge-island-wa": [
+      "reader1@bainbridge-island-wa.test",
+      "reader2@bainbridge-island-wa.test"
+    ],
+    "edmonds-wa": [
+      "reader1@edmonds-wa.test",
+      "reader2@edmonds-wa.test"
+    ],
+    "issaquah-wa": [
+      "reader1@issaquah-wa.test",
+      "reader2@issaquah-wa.test"
+    ],
+    "vancouver-wa": [
+      "reader1@vancouver-wa.test",
+      "reader2@vancouver-wa.test"
+    ]
+  }
+}

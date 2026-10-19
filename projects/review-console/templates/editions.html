@@ -20,6 +20,7 @@
       {% else %}
       {% set run = report.latest.run %}
       {% set front = report.latest.front %}
+      {% set email = report.latest.email %}
       {% if run.error %}<p role="alert">Run error: {{ run.error }}</p>{% endif %}
       <article aria-label="Latest edition">
         {% if front %}
@@ -44,6 +45,12 @@
         <p>No items passed automatic checks.</p>
         {% endfor %}
       </article>
+      {% if email %}
+      <h2>Edition email</h2>
+      <p>{{ email.blurb }}</p>
+      {% if email.fallback %}<p><em>Fixed fallback email blurb: the model text was held
+        ({{ email.fallback_reason }}).</em></p>{% endif %}
+      {% endif %}
       <h2>Run details</h2>
       <p>Location: {{ run.community_id }} | Snapshot: {{ run.snapshot_id or "n/a" }} |
         Window: {{ run.window_start }} to {{ run.window_end }} | Status: {{ run.status }} |
@@ -66,6 +73,14 @@
         {% if front.error %}<p>Generation error: {{ front.error }}</p>{% endif %}
         {% if front.rejected %}<p>Rejected headline: {{ front.rejected.headline }}</p>
         <p>Rejected intro: {{ front.rejected.intro }}</p>{% endif %}
+      </section>
+      {% endif %}
+      {% if email and email.fallback and (email.rejected or email.error) %}
+      <section>
+        <h3>Edition email blurb</h3>
+        {% if email.validation_errors %}<p>Validation errors: {{ email.validation_errors|join(", ") }}</p>{% endif %}
+        {% if email.error %}<p>Generation error: {{ email.error }}</p>{% endif %}
+        {% if email.rejected %}<p>Rejected blurb: {{ email.rejected.blurb }}</p>{% endif %}
       </section>
       {% endif %}
       {% for entry in report.latest.held %}
