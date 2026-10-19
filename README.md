@@ -35,7 +35,7 @@ uv run --locked python scripts/dev.py up
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
-| Health and review | http://127.0.0.1:8000/review |
+| Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
