@@ -392,6 +392,7 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
                 source_url=https_link(
                     result.get("source_url") or result.get("facts", {}).get("source_url")
                 ),
+                rank=(result.get("ranking") or {}).get("rank"),
             )
         )
     return Edition(
