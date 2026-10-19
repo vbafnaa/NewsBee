@@ -4,12 +4,17 @@ Only quakes people may have noticed are kept (magnitude MIN_MAGNITUDE or more, o
 MIN_FELT "Did You Feel It?" reports) within RADIUS_KM. Wording stays factual: no damage
 claims or safety advice beyond what the USGS record says.
 
+Quakes sharing a USGS reference place ("5 km SW of X" and "3 km N of X") become one story
+listing each quake, ranked on the strongest magnitude, closest distance and total felt
+reports, so a cluster never fills the edition with near-identical items.
+
 Weather alerts are not included: api.weather.gov's robots.txt disallows all paths and the
 alerts.weather.gov CAP feeds are retired, so no robots-permitted free source exists yet.
 """
 
 import hashlib
 import logging
+import re
 from datetime import date, timedelta
 
 import httpx
@@ -41,10 +46,82 @@ MIN_MAGNITUDE = 3.0
 MIN_FELT = 10
 MAX_ITEMS = 5
 SECTION = "Earthquakes nearby"
+OFFSET = re.compile(r"^\s*\d+(?:\.\d+)?\s*km\s+[NSEW]{1,3}\s+of\s+", re.IGNORECASE)
 
 
 def noticeable(quake: dict) -> bool:
     return quake["magnitude"] >= MIN_MAGNITUDE or quake["felt"] >= MIN_FELT
+
+
+def reference_place(place: str) -> str:
+    """USGS place without its distance and bearing: "5 km SW of X" -> "X"."""
+    return OFFSET.sub("", place).strip()
+
+
+def group_by_place(quakes: list[dict]) -> list[list[dict]]:
+    """Quakes sharing a reference place, each group strongest first, groups in input order."""
+    groups: dict[str, list[dict]] = {}
+    for quake in quakes:
+        key = reference_place(quake["place"]).lower() or quake["id"]
+        groups.setdefault(key, []).append(quake)
+    return [
+        sorted(group, key=lambda q: (-q["magnitude"], q["distance_km"], -q["felt"]))
+        for group in groups.values()
+    ]
+
+
+def _tier(distance_km: float) -> str:
+    return "local" if distance_km <= LOCAL_KM else "nearby"
+
+
+def _review_note(quakes: list[dict]) -> str:
+    if all(quake["reviewed"] for quake in quakes):
+        return " A USGS seismologist has reviewed the reading" + ("s." if len(quakes) > 1 else ".")
+    if len(quakes) == 1:
+        return " The USGS reading is automatic and may be revised."
+    return " Some USGS readings are automatic and may be revised."
+
+
+def merged_facts(quakes: list[dict], town: str) -> NewsFacts:
+    """One story for several quakes near the same reference place."""
+    strongest = quakes[0]
+    reference = reference_place(strongest["place"]) or "the same area"
+    newest = max(quake["time"] for quake in quakes).date()
+    closest = min(quake["distance_km"] for quake in quakes)
+    felt = sum(quake["felt"] for quake in quakes)
+    listed = "; ".join(
+        f"magnitude {quake['magnitude']} on {published_text(quake['time'].date())}, "
+        f"{quake['place']}, at a depth of {quake['depth_km']} km"
+        + (f", felt by {quake['felt']} people" if quake["felt"] else "")
+        for quake in sorted(quakes, key=lambda q: q["time"])
+    )
+    description = (
+        f"The U.S. Geological Survey recorded {len(quakes)} earthquakes near {reference}, "
+        f"about {closest} km from {town}: {listed}."
+    )
+    if felt:
+        description += f" In total, {felt} people reported feeling them to the USGS."
+    description += _review_note(quakes)
+    return NewsFacts(
+        source_event_id="+".join(sorted(quake["id"] for quake in quakes)),
+        title=f"{len(quakes)} earthquakes up to magnitude {strongest['magnitude']} "
+        f"near {reference}",
+        event_date=newest.isoformat(),
+        schedule_text=published_text(newest),
+        venue=reference,
+        source_url=strongest["url"] or "https://earthquake.usgs.gov/earthquakes/map/",
+        description=description,
+        kind="earthquake",
+        tier=_tier(closest),
+        section=SECTION,
+        signals={
+            "magnitude": strongest["magnitude"],
+            "distance_km": closest,
+            "felt": felt,
+            "depth_km": strongest["depth_km"],
+            "count": len(quakes),
+        },
+    )
 
 
 def facts(quake: dict, town: str) -> NewsFacts:
@@ -56,11 +133,7 @@ def facts(quake: dict, town: str) -> NewsFacts:
     )
     if quake["felt"]:
         description += f" {quake['felt']} people reported feeling it to the USGS."
-    description += (
-        " A USGS seismologist has reviewed the reading."
-        if quake["reviewed"]
-        else " The USGS reading is automatic and may be revised."
-    )
+    description += _review_note([quake])
     day = quake["time"].date()
     return NewsFacts(
         source_event_id=quake["id"],
@@ -71,7 +144,7 @@ def facts(quake: dict, town: str) -> NewsFacts:
         source_url=quake["url"] or "https://earthquake.usgs.gov/earthquakes/map/",
         description=description,
         kind="earthquake",
-        tier="local" if quake["distance_km"] <= LOCAL_KM else "nearby",
+        tier=_tier(quake["distance_km"]),
         section=SECTION,
         signals={
             "magnitude": quake["magnitude"],
@@ -108,10 +181,17 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
     kept = [quake for quake in near if noticeable(quake)]
     skipped = {"too_far": len(quakes) - len(near), "below_threshold": len(near) - len(kept)}
     kept.sort(key=lambda quake: (-quake["magnitude"], quake["distance_km"]))
-    made = [facts(quake, place.town) for quake in kept[:MAX_ITEMS]]
+    groups = group_by_place(kept)
+    made = [
+        facts(group[0], place.town) if len(group) == 1 else merged_facts(group, place.town)
+        for group in groups[:MAX_ITEMS]
+    ]
+    merged = len(kept) - len(groups)
+    if merged:
+        skipped["merged_same_place"] = merged
     record.update(
         detail=f"{len(quakes)} earthquakes of magnitude {QUERY_MAGNITUDE}+ within "
-        f"{RADIUS_KM} km in {PAST_DAYS} days; {len(made)} noticeable",
+        f"{RADIUS_KM} km in {PAST_DAYS} days; {len(kept)} noticeable in {len(made)} stories",
         response_sha256=hashlib.sha256(content).hexdigest(),
         event_count=len(made),
         skipped_unusable={key: value for key, value in skipped.items() if value},

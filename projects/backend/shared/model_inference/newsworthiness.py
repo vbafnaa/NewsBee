@@ -15,7 +15,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from projects.backend.shared.model_inference.ollama import ModelRuntime
+from projects.backend.shared.model_inference.ollama import OllamaRuntime
 
 logger = logging.getLogger(__name__)
 RANKING_POLICY = "newsworthiness_v3"
@@ -117,7 +117,7 @@ def prompt(batch: list[dict]) -> str:
     )
 
 
-async def _rate_batch(runtime: ModelRuntime, batch: list[dict]) -> tuple[dict, dict]:
+async def _rate_batch(runtime: OllamaRuntime, batch: list[dict]) -> tuple[dict, dict]:
     started = time.monotonic()
     report: dict = {"size": len(batch), "fallback": 0}
     ratings: dict[str, Rating] = {}
@@ -147,7 +147,7 @@ async def _rate_batch(runtime: ModelRuntime, batch: list[dict]) -> tuple[dict, d
     return ratings, report
 
 
-async def rank(runtime: ModelRuntime, candidates: list[dict]) -> tuple[list[dict], dict]:
+async def rank(runtime: OllamaRuntime, candidates: list[dict]) -> tuple[list[dict], dict]:
     """Candidates (id, title, description, occurrences, venues, first_date) -> ranked list.
 
     Every source competes on score alone; ties break by rule: one-off before recurring,

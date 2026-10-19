@@ -48,7 +48,7 @@ sources, not executable scraping logic. Connectors can be reused across communit
 | `configuration\` | Loading and validating backend configuration |
 | `contracts\` | Internal module interfaces and shared backend data types |
 | `storage\` | Persistence and evidence-file adapters |
-| `model_inference\` | Selectable local Ollama or Google Gemini runtime, newsworthiness ranking and story writing with fail-closed checks |
+| `model_inference\` | Local model runtime (`ollama.py`), newsworthiness ranking and story writing with fail-closed checks |
 | `observability\` | Logging, metrics, and tracing instrumentation |
 
 Keep business decisions in their owning modules, not in API routes or a generic
