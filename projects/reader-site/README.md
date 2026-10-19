@@ -1,4 +1,4 @@
-# Local reader website
+# Reader website
 
 Home for the minimal Stage 1 website: community editions, full stories, and
 visible source attribution. Consume published content through the local backend
@@ -35,4 +35,5 @@ are scaffolded here. Use the root README's setup and launcher commands, includin
 `setup-directory` before location search.
 `PUBLIC_API_URL` optionally changes the API origin at build/start time; it
 defaults to `http://127.0.0.1:8000`. Cross-origin access is allowed only from the
-default local website origins.
+origins listed in the backend's `NEWSBEE_CORS_ORIGINS` setting (defaulting to the
+two local website origins).

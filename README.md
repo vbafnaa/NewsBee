@@ -48,11 +48,14 @@ uv run --locked python scripts/dev.py ingest-events
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
+| Journalist admin | http://127.0.0.1:3000 (start separately; Google OAuth must be configured) |
 | Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
-Logs go to `.local/logs/`. Everything runs on localhost with no authentication.
+The local API and reader are localhost-only. The journalist admin requires Google OAuth and
+an enabled administrator account in MongoDB; see `projects/journalist-site/README.md`.
+Logs go to `.local/logs/`. The local API and reader do not require authentication.
 
 ## Commands
 
@@ -107,11 +110,23 @@ uv run --locked python scripts/dev.py replay    # Stage 1 replay check
 uv run --locked ruff check .
 ```
 
+To run the journalist admin separately, configure the Google OAuth and backend variables
+listed in `projects/journalist-site/README.md`, then run `npm install` and `npm run dev`
+from `projects/journalist-site`.
+
+Run `scripts/dev.py contracts` after changing `shared/contracts`. Optional settings
+(`NEWSBEE_DATA_DIR`, `NEWSBEE_OLLAMA_URL`, `NEWSBEE_OLLAMA_MODEL`, ...) all have defaults.
+Set `NEWSBEE_MODEL_PROVIDER=gemini` and `NEWSBEE_GEMINI_API_KEY` to use Gemini instead of
+the default local Ollama model. See
+[production architecture decisions](Docs/production-architecture-decisions.md) for the selected
+Vercel, MongoDB Atlas, Google Drive, admin authentication, and worker-hosting direction.
+
 | Folder | Holds |
 | --- | --- |
 | `projects/backend` | API, pipeline modules, shared adapters ([map](projects/backend/README.md)) |
-| `projects/website` | Reader site |
-| `projects/review-console` | Health and review pages |
+| `projects/reader-site` | Astro reader site |
+| `projects/journalist-site` | Authenticated Next.js operations console |
+| `projects/review-console` | Minimal review and health pages |
 | `shared/contracts` | Contracts shared between projects |
 | `config` | Source overrides, preview subscribers, policies |
 | `tests` | Unit, integration, end-to-end ([map](tests/README.md)) |

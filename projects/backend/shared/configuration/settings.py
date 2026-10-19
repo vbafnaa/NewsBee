@@ -11,8 +11,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="NEWSBEE_", extra="ignore")
 
     data_dir: Path = ROOT / ".local" / "data"
+    model_provider: str = "ollama"
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    admin_api_token: str | None = None
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://127.0.0.1:4321", "http://localhost:4321"]
+    )
     mailpit_host: str = "127.0.0.1"
     mailpit_smtp_port: int = Field(default=1025, ge=1, le=65535)
     website_url: str = "http://127.0.0.1:4321"
@@ -21,10 +28,70 @@ class Settings(BaseSettings):
     heartbeat_max_age: float = Field(default=15, ge=15)
     wider_sources: bool = True
 
+    @field_validator("model_provider", mode="before")
+    @classmethod
+    def supported_model_provider(cls, value: str) -> str:
+        provider = value.strip().lower()
+        if provider not in {"ollama", "gemini"}:
+            raise ValueError("Model provider must be 'ollama' or 'gemini'")
+        return provider
+
     @field_validator("ollama_model", mode="before")
     @classmethod
     def empty_model(cls, value: str | None) -> str | None:
         return value.strip() or None if value is not None else None
+
+    @field_validator("gemini_api_key", mode="before")
+    @classmethod
+    def empty_gemini_api_key(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @field_validator("admin_api_token", mode="before")
+    @classmethod
+    def empty_admin_api_token(cls, value: str | None) -> str | None:
+        token = value.strip() or None if value is not None else None
+        if token is not None and len(token) < 32:
+            raise ValueError("Admin API token must contain at least 32 characters")
+        if token is not None and not token.isascii():
+            raise ValueError("Admin API token must contain ASCII characters only")
+        return token
+
+    @field_validator("gemini_model")
+    @classmethod
+    def nonempty_gemini_model(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("Gemini model must not be empty")
+        return model
+
+    @field_validator("cors_origins")
+    @classmethod
+    def trusted_cors_origins(cls, values: list[str]) -> list[str]:
+        origins = []
+        for value in values:
+            origin = value.rstrip("/")
+            url = urlsplit(origin)
+            try:
+                port = url.port
+            except ValueError as error:
+                raise ValueError("CORS origin contains an invalid port") from error
+            if (
+                url.scheme not in {"http", "https"}
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.path
+                or url.query
+                or url.fragment
+                or (
+                    url.scheme == "http"
+                    and url.hostname not in {"127.0.0.1", "localhost", "::1"}
+                )
+                or (port is not None and not 1 <= port <= 65535)
+            ):
+                raise ValueError("CORS origins must be HTTPS or loopback HTTP origins")
+            origins.append(origin)
+        return origins
 
     @field_validator("ollama_url")
     @classmethod
