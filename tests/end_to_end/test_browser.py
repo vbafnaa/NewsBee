@@ -91,6 +91,7 @@ def reader_directory(settings):
     directory.build(archive(), directory.directory_path(settings.data_dir))
 
 
+@pytest.mark.critical
 def test_reader_selects_location_and_reads_published_edition(
     page, api_url, website_url, settings, ingested_event, monkeypatch, reader_directory
 ):
@@ -120,11 +121,16 @@ def test_reader_selects_location_and_reads_published_edition(
     )
     title = ingested_event["events"][0]["facts"]["title"]
     expect(edition.get_by_role("heading", level=3, name=title)).to_be_visible()
-    expect(edition.get_by_role("link", name="Original event")).to_have_attribute(
+    expect(edition.get_by_role("link", name="Original source")).to_have_attribute(
         "href", ingested_event["events"][0]["facts"]["source_url"]
     )
-    expect(edition).to_contain_text("Events from 2026-11-01 to 2026-11-07.")
+    expect(edition).to_contain_text("Upcoming listings: 2026-11-01 to 2026-11-07.")
+    expect(edition).to_contain_text("Source: Example City Library")
+    edition.get_by_text("About this edition and its sources").click()
+    expect(edition).to_contain_text("coverage unavailable (unresolved_website)")
     assert page.url.endswith("?location=seattle-wa")
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
     page.goto(f"{website_url}/?location=seattle-wa")
     expect(page.locator("#selected-location")).to_have_text("Seattle, WA")
@@ -132,8 +138,23 @@ def test_reader_selects_location_and_reads_published_edition(
     page.goto(f"{website_url}/?location=unknown")
     expect(page.locator("#edition-status")).to_contain_text("Location unavailable:")
     expect(page.locator("#selected-location")).to_have_text("Change edition")
+    from projects.backend.modules.editions import drafting
+    from projects.backend.modules.editorial.corrections import withdrawals
+
+    published = drafting.latest_published(settings.database, library_world.LOCATION_ID)
+    withdrawals.withdraw(
+        settings.database,
+        published.id,
+        published.items[0].story_id,
+        "The source listing was incorrect; the story has been withdrawn.",
+    )
+    page.goto(f"{website_url}/?location=seattle-wa")
+    expect(page.get_by_label("Corrections")).to_contain_text("The source listing was incorrect")
+    expect(page.locator(".story")).to_have_count(0)
+    expect(page.locator("#edition-intro")).to_contain_text("does not mean nothing is happening")
 
 
+@pytest.mark.critical
 def test_reader_without_locations_can_search_and_sign_up(
     page, api_url, website_url, reader_directory, settings
 ):
@@ -226,10 +247,19 @@ def test_reader_signup_failure_is_not_success(page, api_url, website_url, reader
     expect(page.get_by_label("Your email")).to_have_value("reader@example.com")
 
 
+@pytest.mark.critical
 def test_reader_reports_api_failure(page, website_url):
     page.route("http://127.0.0.1:8000/api/editions", lambda route: route.abort())
     page.goto(website_url)
     expect(page.get_by_role("status")).to_contain_text("Editions unavailable:")
+    page.route(
+        "http://127.0.0.1:8000/api/editions",
+        lambda route: route.fulfill(json={"locations": []}),
+    )
+    page.get_by_role("button", name="Try again").click()
+    expect(page.locator("#edition-status")).to_have_text(
+        "Find your community. Open Change edition to search for your town."
+    )
 
 
 def test_review_clears_stale_health_on_api_failure(page, api_url):

@@ -22,8 +22,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-m 'not browser and not live'"
+addopts = "-m 'critical and not browser and not live'"
 markers = [
+    "critical: Stage 1 source-to-reader, publication safety, recovery and delivery checks",
     "browser: requires installed Playwright Chromium",
     "live: requires explicitly configured local services",
 ]

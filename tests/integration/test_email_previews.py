@@ -12,6 +12,7 @@ from tests.integration.test_edition_publishing import run_worker, store_snapshot
 from tests.library_world import LOCATION_ID
 
 READERS = ["ana@reader.test", "ben@reader.test"]
+pytestmark = pytest.mark.critical
 
 
 class Mailbox:

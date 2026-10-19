@@ -24,7 +24,10 @@ INTRO_MAX = 300
 EMAIL_MAX = 280
 KEEP_ALIVE = "10m"
 MAX_RETRIES = 1
-NO_EVENTS_INTRO = "There are no events to report this week."
+NO_EVENTS_INTRO = (
+    "No stories are available from the sources checked for this edition. "
+    "This does not mean nothing is happening locally."
+)
 
 LIST_MARK = re.compile(r"(^|\s)([-*\u2022\u25cf]|\d+[.)])\s")
 WHEN_WORDS = re.compile(

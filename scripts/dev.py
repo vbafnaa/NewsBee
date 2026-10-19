@@ -195,12 +195,13 @@ def stop() -> None:
 
 def contracts() -> None:
     sys.path.insert(0, str(ROOT))
-    from shared.contracts.health import EditionsResponse, HealthReport
+    from shared.contracts.health import Edition, EditionsResponse, HealthReport
     from shared.contracts.metrics import MetricsReport
 
     for name, model in (
         ("health", HealthReport),
         ("editions", EditionsResponse),
+        ("edition", Edition),
         ("metrics", MetricsReport),
     ):
         target = ROOT / "shared" / "contracts" / f"{name}.schema.json"
@@ -216,6 +217,9 @@ def main() -> None:
             "up",
             "stop",
             "test",
+            "test-all",
+            "replay",
+            "withdraw-story",
             "browser",
             "contracts",
             "setup-directory",
@@ -230,6 +234,8 @@ def main() -> None:
     )
     parser.add_argument("target", nargs="?", help="Town query or location id, where needed")
     parser.add_argument("--browser", action="store_true", help="Install Chromium during setup")
+    parser.add_argument("--story", help="Story id displayed in the edition audit")
+    parser.add_argument("--reason", help="Public explanation for a story withdrawal")
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):
         raise RuntimeError("Use Python 3.13 via uv.")
@@ -241,8 +247,35 @@ def main() -> None:
         stop()
     elif args.action == "test":
         command([sys.executable, "-m", "pytest"])
+    elif args.action == "test-all":
+        command([sys.executable, "-m", "pytest", "-m", "not browser and not live"])
+    elif args.action == "replay":
+        LOCAL.mkdir(exist_ok=True)
+        command(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                str(ROOT / "tests" / "integration" / "test_stage_one.py"),
+                "-q",
+                f"--junitxml={LOCAL / 'stage-one-replay.xml'}",
+            ]
+        )
+    elif args.action == "withdraw-story":
+        from projects.backend.modules.editorial.corrections.withdrawals import withdraw
+
+        if not args.target or not args.story or not args.reason:
+            raise RuntimeError(
+                'Usage: withdraw-story <edition id> --story <story id> --reason "<public reason>"'
+            )
+        settings = app_settings()
+        try:
+            withdraw(settings.database, args.target, args.story, args.reason)
+        except (LookupError, ValueError) as error:
+            raise RuntimeError(str(error)) from error
+        print("Story withdrawn from reader editions and future authoring; audit evidence retained.")
     elif args.action == "browser":
-        command([sys.executable, "-m", "pytest", "-m", "browser"])
+        command([sys.executable, "-m", "pytest", "-m", "browser and critical"])
     elif args.action == "contracts":
         contracts()
     elif args.action == "evaluate-model":

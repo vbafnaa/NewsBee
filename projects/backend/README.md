@@ -31,6 +31,11 @@ backend storage directly.
 | `email_previews\` | Email previews derived from published editions and delivered only to a local mail sink |
 | `ad_placements\` | Separate ad-slot data and placement boundaries, not advertiser intake or payments |
 
+These are ownership boundaries, not a claim that every module is implemented.
+`editorial\publication_checks\policy.py` implements conservative private-POC eligibility;
+`editorial\corrections\withdrawals.py` implements audited withdrawal and future suppression.
+Review queues, maintained reporting threads, ad slots and release archives remain placeholders.
+
 The source flow is orchestration -> source-agent pipelines -> connectors ->
 story processing. Pipelines compose connector operations; connectors do not
 schedule themselves. `config\sources\` at the repository root describes onboarded
@@ -79,8 +84,15 @@ past 7 days; `connectors\meetings.py` drops procedural and private items and pre
 plain-language sentence on what each public body does.
 `email_previews\delivery.py` records one delivery per subscriber in `config\preview-subscribers.json`
 when an edition publishes and sends via the loopback Mailpit sink; the `send_email_preview` job retries
-only unsent addresses. Schema version 7 adds `email_deliveries`; version 6 added location snapshots
-and edition snapshot IDs; upgrades from versions 5 and 6 keep data. Upgrading from older versions drops pre-location events, drafts and ingestion jobs on upgrade. See the root README for retrieval scope and limits.
+only unsent addresses. Schema version 9 adds checked-prose caching, story withdrawals and a
+latest-edition index; version 8 added local expansion interest signups; version 7 added
+`email_deliveries`; version 6 added location snapshots and edition snapshot IDs.
+Upgrades from versions 5-8 keep data. Upgrading from older versions
+drops pre-location events, drafts and ingestion jobs. See the root README for retrieval scope
+and limits.
 
-No essential-news thresholds, review policy, or model are defined by this scaffold.
+The default authoring model is `qwen3:4b`. Public meetings precede discretionary events;
+full essential-news thresholds, a human-review workflow and ratified publication policy remain
+operating decisions. Routine support events are not excluded just for covering a sensitive
+topic; identifiable cases and allegations are held by conservative checks.
 See the root README for setup, endpoints, configuration, and known limits.
