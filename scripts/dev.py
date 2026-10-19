@@ -196,8 +196,13 @@ def stop() -> None:
 def contracts() -> None:
     sys.path.insert(0, str(ROOT))
     from shared.contracts.health import EditionsResponse, HealthReport
+    from shared.contracts.metrics import MetricsReport
 
-    for name, model in (("health", HealthReport), ("editions", EditionsResponse)):
+    for name, model in (
+        ("health", HealthReport),
+        ("editions", EditionsResponse),
+        ("metrics", MetricsReport),
+    ):
         target = ROOT / "shared" / "contracts" / f"{name}.schema.json"
         target.write_text(json.dumps(model.model_json_schema(), indent=2) + "\n", encoding="utf-8")
 
