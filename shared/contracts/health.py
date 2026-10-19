@@ -25,11 +25,26 @@ class IngestionRun(BaseModel):
     duration_seconds: float | None = None
 
 
+class EditionDraftRun(BaseModel):
+    id: str
+    community_id: str
+    window_start: str
+    window_end: str
+    model: str
+    status: Literal["running", "failed", "completed"]
+    error: str | None
+    included: int | None = None
+    held: int | None = None
+    skipped_over_limit: int | None = None
+    duration_seconds: float | None = None
+
+
 class HealthReport(BaseModel):
     status: Literal["ok", "degraded"]
     components: dict[str, ComponentHealth]
     capabilities: dict[str, CapabilityReadiness]
     latest_ingestion: IngestionRun | None = None
+    latest_edition_draft: EditionDraftRun | None = None
     jobs: dict[str, int] | None = None
     last_completed_job_at: float | None = None
     pipelines: Literal["local_event_ingestion_only"] = "local_event_ingestion_only"

@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from projects.backend.api.dependencies.services import get_settings
+from projects.backend.modules.editions.drafting import inspect_drafts
 from projects.backend.modules.orchestration.jobs import inspect
 from projects.backend.shared.configuration.settings import ROOT, Settings
 
@@ -53,4 +54,18 @@ def ingestion(request: Request, settings: Annotated[Settings, Depends(get_settin
         )
     return templates.TemplateResponse(
         request=request, name="ingestion.html", context={"report": report}
+    )
+
+
+@router.get("/editions", response_class=HTMLResponse)
+def editions(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
+    try:
+        report = inspect_drafts(settings.database)
+    except (sqlite3.Error, OSError, ValueError):
+        logger.exception("Edition draft inspection unavailable")
+        return templates.TemplateResponse(
+            request=request, name="editions.html", context={"report": None}, status_code=503
+        )
+    return templates.TemplateResponse(
+        request=request, name="editions.html", context={"report": report}
     )

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width">
     <title>Newsbee local health</title>
     <link rel="stylesheet" href="/review/static/style.css">
-    <script src="/review/static/health.js?v=2" defer></script>
+    <script src="/review/static/health.js?v=3" defer></script>
   </head>
   <body>
     <main>
@@ -17,6 +17,8 @@
       <ul id="capabilities"></ul>
       <h2>Latest ingestion run</h2>
       <p id="latest-ingestion">Not checked</p>
+      <h2>Latest draft edition</h2>
+      <p id="latest-edition">Not checked</p>
       <h2>Services</h2>
       <ul id="services"></ul>
       <h2>Job history totals</h2>
@@ -29,8 +31,10 @@
       <p>The worker can ingest Capitol Hill Branch event facts from the library RSS feed.
         Trigger and inspect jobs using the README commands. Redistribution permission is unresolved.</p>
       <h2>Editorial workflows</h2>
-      <p>Story generation, review queues, publication, and email generation are not implemented.</p>
-      <p>No editions yet. No local model is selected by default.</p>
+      <p><a href="/review/editions">Inspect the private draft edition preview</a></p>
+      <p>Draft editions are generated locally with the draft-edition command (see README).
+        Held entries are excluded. Review queues, publication, and email generation are not
+        implemented.</p>
       <a href="http://127.0.0.1:8025">Open local Mailpit inbox</a>
     </main>
   </body>

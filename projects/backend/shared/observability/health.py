@@ -7,6 +7,7 @@ import time
 import httpx
 from pydantic import ValidationError
 
+from projects.backend.modules.editions.drafting import latest_draft
 from projects.backend.modules.orchestration.jobs import latest_run
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.model_inference.ollama import ModelRuntime
@@ -29,9 +30,11 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
     counts = None
     completed = None
     latest = None
+    latest_edition = None
     try:
         last_beat, counts, completed = await asyncio.to_thread(snapshot, settings.database)
         latest = await asyncio.to_thread(latest_run, settings.database)
+        latest_edition = await asyncio.to_thread(latest_draft, settings.database)
         components["database"] = ComponentHealth(status="ok", detail="SQLite records readable")
         age = time.time() - last_beat if last_beat is not None else None
         fresh = age is not None and 0 <= age <= settings.heartbeat_max_age
@@ -47,6 +50,7 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         counts = None
         completed = None
         latest = None
+        latest_edition = None
         logger.warning("Database health check failed: %s", error)
         components["database"] = ComponentHealth(status="unavailable", detail=str(error))
         components["worker"] = ComponentHealth(
@@ -72,7 +76,10 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         ),
         "ai": CapabilityReadiness(
             status="ready" if model_status == "ok" else model_status,
-            detail="Model-runtime availability only; story generation is not implemented.",
+            detail=(
+                "API model-runtime availability only. Private edition drafts run via the "
+                "draft-edition command, which selects its own default model."
+            ),
         ),
         "email_sink": CapabilityReadiness(
             status="ready" if components["mailpit"].status == "ok" else "unavailable",
@@ -88,6 +95,7 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         components=components,
         capabilities=capabilities,
         latest_ingestion=latest,
+        latest_edition_draft=latest_edition,
         jobs=counts,
         last_completed_job_at=completed,
     )

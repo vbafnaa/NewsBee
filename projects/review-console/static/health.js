@@ -32,6 +32,15 @@ async function refreshHealth() {
         + (run.skipped_library_closures === null ? "" : `; closures skipped: ${run.skipped_library_closures}`)
         + (run.duration_seconds === null ? "" : `; duration: ${run.duration_seconds}s`)
         + (run.error ? `; last attempt error: ${run.error}` : "");
+    const edition = report.latest_edition_draft;
+    document.querySelector("#latest-edition").textContent = report.jobs === null
+      ? "Latest draft edition unavailable"
+      : !edition ? "No draft editions yet"
+      : `${edition.window_start} to ${edition.window_end}: ${edition.status} (model: ${edition.model})`
+        + (edition.included === null ? "" : `; included: ${edition.included}`)
+        + (edition.held === null ? "" : `; held: ${edition.held}`)
+        + (edition.duration_seconds === null ? "" : `; duration: ${edition.duration_seconds}s`)
+        + (edition.error ? `; error: ${edition.error}` : "");
     const services = document.querySelector("#services");
     services.replaceChildren();
     for (const [name, component] of Object.entries(report.components)) {
@@ -50,6 +59,7 @@ async function refreshHealth() {
     document.querySelector("#services").replaceChildren();
     document.querySelector("#capabilities").replaceChildren();
     document.querySelector("#latest-ingestion").textContent = "Latest ingestion unavailable";
+    document.querySelector("#latest-edition").textContent = "Latest draft edition unavailable";
     document.querySelector("#jobs").textContent = "Unavailable";
     document.querySelector("#completed").textContent = "Last completed job: unavailable";
   } finally {

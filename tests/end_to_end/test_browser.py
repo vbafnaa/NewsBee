@@ -95,6 +95,7 @@ def test_review_clears_stale_health_on_api_failure(page, api_url):
     expect(page.locator("#jobs")).to_have_text("Unavailable")
     expect(page.locator("#capabilities").locator("li")).to_have_count(0)
     expect(page.locator("#latest-ingestion")).to_have_text("Latest ingestion unavailable")
+    expect(page.locator("#latest-edition")).to_have_text("Latest draft edition unavailable")
 
 
 def test_ingestion_ready_without_model_and_old_failure_visible(page, api_url, settings):
@@ -160,3 +161,18 @@ def test_inspection_storage_failure_in_browser(page, api_url, monkeypatch):
     response = page.goto(f"{api_url}/review/ingestion")
     assert response.status == 503
     expect(page.get_by_role("alert")).to_contain_text("Ingestion inspection unavailable.")
+
+
+def test_draft_edition_visible_from_health(page, api_url, settings, ingested_event, monkeypatch):
+    from tests.integration.test_edition_drafting import run_draft
+
+    run_draft(settings, monkeypatch)
+    page.goto(f"{api_url}/review")
+    expect(page.locator("#latest-edition")).to_contain_text("2026-11-01 to 2026-11-07: completed")
+    expect(page.locator("#latest-edition")).to_contain_text("included: 1; held: 0")
+    page.get_by_role("link", name="Inspect the private draft edition preview").click()
+    expect(page.get_by_role("heading", name="Draft edition preview")).to_be_visible()
+    expect(
+        page.get_by_role("heading", name=ingested_event["events"][0]["facts"]["title"])
+    ).to_be_visible()
+    expect(page.locator("main")).to_contain_text("No held entries.")
