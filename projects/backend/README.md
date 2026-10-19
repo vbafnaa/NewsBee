@@ -10,6 +10,8 @@ is `api\app.py`; run it through the repository's local launcher.
 `modules\orchestration\`; they do not need to call the backend over HTTP.
 The website and review console use the local API rather than reading private
 backend storage directly.
+The journalist site uses the protected `/api/admin` endpoints for source settings,
+ingestion triggers, and job status; its server-side proxy holds the shared admin token.
 
 ## Module ownership
 
@@ -48,7 +50,7 @@ sources, not executable scraping logic. Connectors can be reused across communit
 | `configuration\` | Loading and validating backend configuration |
 | `contracts\` | Internal module interfaces and shared backend data types |
 | `storage\` | Persistence and evidence-file adapters |
-| `model_inference\` | Selectable local Ollama or Google Gemini runtime, newsworthiness ranking and story writing with fail-closed checks |
+| `model_inference\` | Ollama/Gemini runtime selection, newsworthiness ranking and story writing with fail-closed checks |
 | `observability\` | Logging, metrics, and tracing instrumentation |
 
 Keep business decisions in their owning modules, not in API routes or a generic

@@ -110,12 +110,12 @@ def story_record(story: stories.Story) -> dict:
     }
 
 
-async def checked_item(settings: Settings, runtime: OllamaRuntime, candidate: dict) -> dict:
+async def checked_item(settings: Settings, runtime: ModelRuntime, candidate: dict) -> dict:
     """Reuse only successful prose with identical evidence, model and validation policy."""
     content = {key: candidate.get(key) for key in ("title", "description", "venues", "kind")}
     key = hashlib.sha256(
         json.dumps(
-            [settings.ollama_model or DEFAULT_MODEL, VALIDATION_POLICY, content],
+            [configured_model(settings) or DEFAULT_MODEL, VALIDATION_POLICY, content],
             sort_keys=True,
         ).encode()
     ).hexdigest()

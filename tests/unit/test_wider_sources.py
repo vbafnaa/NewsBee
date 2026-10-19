@@ -242,6 +242,46 @@ def test_hazards_keeps_noticeable_quakes_and_tiers_by_distance():
     assert record["skipped_unusable"] == {"below_threshold": 1, "too_far": 1}
 
 
+def test_hazards_merges_quakes_near_the_same_reference_place():
+    def feature(identity, mag, place, felt, time, status="reviewed"):
+        return {"id": identity, "geometry": {"coordinates": [-122.23, 47.31, 19]},
+                "properties": {"mag": mag, "place": place, "felt": felt, "time": time,
+                               "status": status,
+                               "url": f"https://earthquake.usgs.gov/{identity}"}}
+
+    content = json.dumps({"features": [
+        feature("a", 2.6, "5 km WSW of Wilderness Rim, Washington", 78, 1760400000000),
+        feature("b", 3.1, "5 km SW of Wilderness Rim, Washington", 46, 1760500000000),
+        feature("c", 3.2, "2 km N of Auburn, Washington", 0, 1760450000000),
+    ]}).encode()
+    record, facts = hazards.collect(
+        LOCATION, client({"https://earthquake.usgs.gov/": content}), TODAY, STATES
+    )
+    assert record["event_count"] == 2
+    assert record["skipped_unusable"] == {"merged_same_place": 1}
+    merged = next(fact for fact in facts if fact.source_event_id == "a+b")
+    assert merged.title == "2 earthquakes up to magnitude 3.1 near Wilderness Rim, Washington"
+    assert merged.signals == {
+        "magnitude": 3.1, "distance_km": 0, "felt": 124, "depth_km": 19.0, "count": 2,
+    }
+    assert merged.event_date == "2025-10-15"
+    assert merged.source_url == "https://earthquake.usgs.gov/b"
+    assert "5 km WSW" in merged.description and "5 km SW" in merged.description
+    assert "In total, 124 people" in merged.description
+
+
+def test_quakes_group_only_on_the_same_reference_place():
+    assert hazards.reference_place("12.5 km NNE of Carnation, Washington") == (
+        "Carnation, Washington"
+    )
+    assert hazards.reference_place("Puget Sound, Washington") == "Puget Sound, Washington"
+    quakes = [
+        {"id": i, "place": place, "magnitude": 3.0, "distance_km": 5, "felt": 0}
+        for i, place in [("1", "5 km SW of X"), ("2", "3 km N of x"), ("3", "4 km E of Y")]
+    ]
+    assert [[q["id"] for q in g] for g in hazards.group_by_place(quakes)] == [["1", "2"], ["3"]]
+
+
 def test_hazards_degrades_without_coordinates_or_when_blocked():
     record, facts = hazards.collect({**LOCATION, "systems": []}, client({}), TODAY, STATES)
     assert (record["status"], facts) == ("no_feed", [])

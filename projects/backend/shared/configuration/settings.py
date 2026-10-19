@@ -12,14 +12,14 @@ class Settings(BaseSettings):
 
     data_dir: Path = ROOT / ".local" / "data"
     model_provider: str = "ollama"
-    ollama_url: str = "http://127.0.0.1:11434"
-    ollama_model: str | None = None
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
     admin_api_token: str | None = None
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://127.0.0.1:4321", "http://localhost:4321"]
     )
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
     mailpit_host: str = "127.0.0.1"
     mailpit_smtp_port: int = Field(default=1025, ge=1, le=65535)
     website_url: str = "http://127.0.0.1:4321"
@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     def empty_gemini_api_key(cls, value: str | None) -> str | None:
         return value.strip() or None if value is not None else None
 
+    @field_validator("gemini_model")
+    @classmethod
+    def nonempty_gemini_model(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("Gemini model must not be empty")
+        return model
+
     @field_validator("admin_api_token", mode="before")
     @classmethod
     def empty_admin_api_token(cls, value: str | None) -> str | None:
@@ -55,14 +63,6 @@ class Settings(BaseSettings):
         if token is not None and not token.isascii():
             raise ValueError("Admin API token must contain ASCII characters only")
         return token
-
-    @field_validator("gemini_model")
-    @classmethod
-    def nonempty_gemini_model(cls, value: str) -> str:
-        model = value.strip()
-        if not model:
-            raise ValueError("Gemini model must not be empty")
-        return model
 
     @field_validator("cors_origins")
     @classmethod
