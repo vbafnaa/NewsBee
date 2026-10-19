@@ -13,15 +13,33 @@ type MongoCache = typeof globalThis & {
 export type AdminAccount = { email: string; enabled: boolean; createdAt?: Date };
 export type ConfiguredSource = {
   id: string;
+  kind: "library" | "government" | "state-newsroom";
   category: string;
   name: string;
   location: string;
+  region?: string;
   url?: string;
   platform?: string;
   tenant?: string;
 };
 
 type SourceConfigDocument = { _id: string; data: Record<string, unknown> };
+export type SourceConfigKind = "library" | "government" | "state-newsroom";
+export type SourceConfigInput = {
+  kind: SourceConfigKind;
+  location?: string;
+  region?: string;
+  name: string;
+  url?: string;
+  platform?: string;
+  tenant?: string;
+};
+
+export class SourceConfigError extends Error {
+  constructor(message: string, readonly status: number = 400) {
+    super(message);
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -116,7 +134,7 @@ export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
         if (!isRecord(value)) return [];
         const name = typeof value.name === "string" ? value.name : location;
         const url = secureUrl(value.website);
-        return [{ id: `library-${location}`, category: "Library", name, location, url }];
+        return [{ id: `library-${location}`, kind: "library", category: "Library", name, location, url }];
       });
     }
 
@@ -125,6 +143,7 @@ export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
         if (!isRecord(value)) return [];
         return [{
           id: `government-${location}`,
+          kind: "government",
           category: "Government",
           name: location,
           location,
@@ -143,9 +162,11 @@ export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
           const url = secureUrl(newsroom.feed);
           return [{
             id: `newsroom-${region}-${index}`,
+            kind: "state-newsroom",
             category: "State newsroom",
             name: newsroom.name,
             location: `${regionName} (${region})`,
+            region,
             url,
           }];
         });
@@ -153,6 +174,166 @@ export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
     }
 
     return [];
+  });
+}
+
+function sourceConfigId(kind: SourceConfigKind) {
+  return kind === "library" ? "library-websites" :
+    kind === "government" ? "government-sources" : "state-sources";
+}
+
+function sourceConfigPath(kind: SourceConfigKind) {
+  return kind === "library" ? "config/library-websites.json" :
+    kind === "government" ? "config/government-sources.json" : "config/state-sources.json";
+}
+
+async function mutateSourceConfig(
+  kind: SourceConfigKind,
+  mutate: (data: Record<string, unknown>) => Record<string, unknown>,
+) {
+  const databaseName = process.env.MONGODB_DATABASE;
+  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
+  const client = await getMongoClient();
+  const collection = client.db(databaseName).collection<SourceConfigDocument>("source_configs");
+  const configId = sourceConfigId(kind);
+
+  if (kind !== "state-newsroom") {
+    await collection.updateOne(
+      { _id: configId },
+      { $setOnInsert: { config_path: sourceConfigPath(kind), data: {} } },
+      { upsert: true },
+    );
+  }
+
+  const current = await collection.findOne({ _id: configId }, { projection: { _id: 1, data: 1 } });
+  if (!current || !isRecord(current.data)) {
+    throw new SourceConfigError(`MongoDB source config ${configId} is missing or malformed`, 404);
+  }
+  const updated = mutate(current.data);
+  const result = await collection.updateOne(
+    { _id: configId, data: current.data },
+    { $set: { data: updated } },
+  );
+  if (result.matchedCount !== 1) {
+    throw new SourceConfigError("Source configuration changed concurrently; reload and try again.", 409);
+  }
+}
+
+export async function createConfiguredSource(source: SourceConfigInput) {
+  if (source.kind === "library") {
+    const location = source.location!;
+    await mutateSourceConfig(source.kind, (data) => {
+      if (Object.prototype.hasOwnProperty.call(data, location)) {
+        throw new SourceConfigError("A library source already exists for this identifier.", 409);
+      }
+      return { ...data, [location]: { name: source.name, website: source.url } };
+    });
+    return;
+  }
+
+  if (source.kind === "government") {
+    const location = source.location!;
+    await mutateSourceConfig(source.kind, (data) => {
+      if (Object.prototype.hasOwnProperty.call(data, location)) {
+        throw new SourceConfigError("A government source already exists for this location.", 409);
+      }
+      return { ...data, [location]: { platform: source.platform, tenant: source.tenant } };
+    });
+    return;
+  }
+
+  const region = source.region!;
+  await mutateSourceConfig(source.kind, (data) => {
+    const state = data[region];
+    if (!isRecord(state) || !Array.isArray(state.newsrooms)) {
+      throw new SourceConfigError(`State configuration ${region} does not exist or has no newsroom list.`, 404);
+    }
+    return {
+      ...data,
+      [region]: { ...state, newsrooms: [...state.newsrooms, { name: source.name, feed: source.url }] },
+    };
+  });
+}
+
+export async function updateConfiguredSource(id: string, source: SourceConfigInput) {
+  const kind: SourceConfigKind = id.startsWith("library-") ? "library" :
+    id.startsWith("government-") ? "government" : "state-newsroom";
+  if (source.kind !== kind) throw new SourceConfigError("The source type cannot be changed.");
+
+  if (kind === "library") {
+    const location = id.slice("library-".length);
+    await mutateSourceConfig(kind, (data) => {
+      const current = data[location];
+      if (!isRecord(current)) throw new SourceConfigError("Library source was not found.", 404);
+      return { ...data, [location]: { ...current, name: source.name, website: source.url } };
+    });
+    return;
+  }
+
+  if (kind === "government") {
+    const location = id.slice("government-".length);
+    await mutateSourceConfig(kind, (data) => {
+      const current = data[location];
+      if (!isRecord(current)) throw new SourceConfigError("Government source was not found.", 404);
+      return { ...data, [location]: { ...current, platform: source.platform, tenant: source.tenant } };
+    });
+    return;
+  }
+
+  const match = /^newsroom-(.+)-(\d+)$/.exec(id);
+  if (!match) throw new SourceConfigError("Invalid state newsroom identifier.");
+  const [, region, indexText] = match;
+  const index = Number(indexText);
+  await mutateSourceConfig(kind, (data) => {
+    const state = data[region];
+    if (!isRecord(state) || !Array.isArray(state.newsrooms) || !isRecord(state.newsrooms[index])) {
+      throw new SourceConfigError("State newsroom source was not found.", 404);
+    }
+    const newsrooms = [...state.newsrooms];
+    newsrooms[index] = { ...newsrooms[index], name: source.name, feed: source.url };
+    return { ...data, [region]: { ...state, newsrooms } };
+  });
+}
+
+export async function deleteConfiguredSource(id: string) {
+  if (id.startsWith("library-")) {
+    const location = id.slice("library-".length);
+    await mutateSourceConfig("library", (data) => {
+      if (!Object.prototype.hasOwnProperty.call(data, location)) {
+        throw new SourceConfigError("Library source was not found.", 404);
+      }
+      const updated = { ...data };
+      delete updated[location];
+      return updated;
+    });
+    return;
+  }
+
+  if (id.startsWith("government-")) {
+    const location = id.slice("government-".length);
+    await mutateSourceConfig("government", (data) => {
+      if (!Object.prototype.hasOwnProperty.call(data, location)) {
+        throw new SourceConfigError("Government source was not found.", 404);
+      }
+      const updated = { ...data };
+      delete updated[location];
+      return updated;
+    });
+    return;
+  }
+
+  const match = /^newsroom-(.+)-(\d+)$/.exec(id);
+  if (!match) throw new SourceConfigError("Invalid source identifier.");
+  const [, region, indexText] = match;
+  const index = Number(indexText);
+  await mutateSourceConfig("state-newsroom", (data) => {
+    const state = data[region];
+    if (!isRecord(state) || !Array.isArray(state.newsrooms) || !isRecord(state.newsrooms[index])) {
+      throw new SourceConfigError("State newsroom source was not found.", 404);
+    }
+    const newsrooms = [...state.newsrooms];
+    newsrooms.splice(index, 1);
+    return { ...data, [region]: { ...state, newsrooms } };
   });
 }
 

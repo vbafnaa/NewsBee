@@ -1,38 +1,84 @@
-# Local reader website
+# Reader site
 
-Home for the minimal Stage 1 website: community editions, full stories, and
-visible source attribution. Consume published content through the local backend
-API; keep editorial and source-processing logic in the backend.
+The Astro reader site serves its own public API routes and browser application. The
+`/api/editions` and `/api/locations` endpoints read published edition JSON and a location
+index from a Google Drive folder using a server-side service account. Drive credentials are
+never sent to the browser. The site is deployed as a Vercel server application through the
+Astro Vercel adapter; it is not a static-only build.
 
-Cross-project contracts belong in `shared\contracts\` at the repository root.
-Astro renders the minimal reader shell in `src\pages\index.astro`; a small browser
-script opens the first onboarded town by default (or the town in a `?location=` link).
-A compact top-right edition dropdown lists onboarded towns and marks the current
-selection. Its "Find another town" input searches `/api/locations/search` for
-autocomplete suggestions from the local
-US public-library directory (towns with library venues, not a worldwide geocoder).
-Type at least two letters; add `, ST` to narrow by state. Suggestions support mouse,
-touch, and arrow-key/Enter selection. `/api/editions` determines whether the selected
-town has an onboarded paper: show its latest published edition, "No edition yet."
-for an onboarded town awaiting publication, or an expansion interest page otherwise.
-The `?location=<id>` link works for both onboarded and directory-only towns.
-Search, edition, and signup failures are shown explicitly.
+## Google Drive files
 
-Edition/API failures have a retry action. Each story identifies its source and whether it
-is an event, upcoming public meeting or recorded outcome. Coverage disclosures, past-edition
-warnings and visible correction notices prevent missing/stale coverage being presented as
-a complete account of local news. The layout is keyboard-accessible and adapts to mobile widths.
+Share the Drive folder with the service account email as a Viewer. Place one `.json` file
+for each published edition and a `locations.json` directory index in that folder. Use the
+edition contract in [`../../shared/contracts/edition.schema.json`](../../shared/contracts/edition.schema.json).
+For example:
 
-The expansion form posts an email to `/api/locations/<id>/interest`. The API validates
-the town against the directory and saves one entry per town/email in the local
-SQLite `expansion_signups` table (including town name and signup time). Repeated
-signups are idempotent. These are interest registrations, not subscriptions: no
-email is sent and no launch is promised. Addresses are not exposed by a public API.
-The form discloses local storage; do not use real personal data for demos.
+```json
+{
+  "id": "edition-seattle-2026-10-19",
+  "location_id": "seattle-wa",
+  "location_name": "Seattle, WA",
+  "window_start": "2026-10-12",
+  "window_end": "2026-10-19",
+  "published_at": 1792435200,
+  "headline": "Seattle this week",
+  "intro": "A brief introduction to this edition.",
+  "items": [],
+  "coverage": [],
+  "corrections": []
+}
+```
 
-No public hosting, reader accounts, email subscriptions, or behavioral analytics
-are scaffolded here. Use the root README's setup and launcher commands, including
-`setup-directory` before location search.
-`PUBLIC_API_URL` optionally changes the API origin at build/start time; it
-defaults to `http://127.0.0.1:8000`. Cross-origin access is allowed only from the
-default local website origins.
+`locations.json` contains all towns available to the location picker, including towns
+without an edition:
+
+```json
+{
+  "locations": [
+    {
+      "id": "seattle-wa",
+      "name": "Seattle, WA",
+      "branch_count": 31,
+      "system_count": 8
+    }
+  ]
+}
+```
+
+Edition filenames are not significant; each file's JSON `location_id` and `published_at`
+select the latest edition for a town. Drive data is cached in each running site instance
+for 60 seconds. Edition documents must use the shared contract, and each edition's town
+must exist in `locations.json`.
+
+## Environment
+
+Set these server-side variables in Vercel and local development:
+
+- `GOOGLE_DRIVE_FOLDER_ID`: ID of the shared Drive folder.
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`: service account email with Viewer access to the folder.
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`: service account private key in PEM format. Store
+  it as a secret; escaped `\n` newlines are supported.
+- `MONGODB_URI`: private MongoDB Atlas connection string.
+- `MONGODB_DATABASE`: database where reader interest signups are stored.
+
+The service account only requests Drive's read-only scope. MongoDB creates a unique
+`(location_id, email)` index in the `reader_interest_signups` collection so repeat
+signups are idempotent.
+
+## API routes
+
+- `GET /api/editions`: lists towns and their latest edition metadata.
+- `GET /api/editions/<location_id>`: returns the latest edition for a town.
+- `GET /api/locations/search?q=<prefix>[,%20ST]`: searches `locations.json`.
+- `GET /api/locations/<location_id>`: resolves a town in the directory.
+- `POST /api/locations/<location_id>/interest`: validates and stores an interest email in
+  MongoDB; addresses are never returned by a public endpoint.
+
+The reader calls these same-origin routes. Google Drive content is read on the server;
+the browser never receives service-account credentials. Search and edition content are
+public. Interest signups require a same-origin request and are stored durably in MongoDB.
+
+Run `npm install`, `npm run check`, and `npm run dev` from this directory for local
+development. Set the server-side environment variables above before using the API. The
+Python backend remains responsible for ingestion, edition authoring, and any other
+non-reader operations; these Astro routes replace only the reader-facing API.

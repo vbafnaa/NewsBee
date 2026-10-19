@@ -5,7 +5,8 @@ the MongoDB `journalist_admins` collection. The browser calls this site's same-o
 proxy; it never receives `ADMIN_API_TOKEN`. The site checks the account list at sign-in and
 on every protected page/API request, so disabling an account revokes its access immediately.
 The backend independently checks the matching `NEWSBEE_ADMIN_API_TOKEN`.
-Administrator management is available on the protected `/administrators` page.
+Source management and administrator management are available on the protected `/sources`
+and `/administrators` pages, linked from the persistent left navigation.
 
 Set these environment variables before running or deploying:
 
@@ -26,8 +27,8 @@ Provision an account by inserting a document into the `journalist_admins` collec
 
 Create a unique index on `email` and store addresses in lowercase. Only documents with
 `enabled: true` are authorized; the administrators page can add or re-enable an account. Set
-`enabled` to `false` or remove the document to revoke access. The MongoDB database user
-should have only the permissions needed to read and update `journalist_admins` and read
+`enabled` to `false` or remove the document to revoke access. Grant the MongoDB database
+user only the access it needs: read/update `journalist_admins` and read/write
 `source_configs`.
 
 Run `npm install` and `npm run dev` from this directory for local development. The backend
@@ -35,8 +36,10 @@ must be reachable and configured with an admin token. Production deployment also
 the durable backend and worker described in
 [`Docs/production-architecture-decisions.md`](../../Docs/production-architecture-decisions.md).
 
-The dashboard reads the configured library websites, government platforms, and state
-newsroom feeds from the MongoDB `source_configs` collection. Its separate onboarded-location
-settings still use the backend API. The first version also triggers ingestion, shows job
-status, and lists the existing reader channel. Reader publication remains automatic; there
-is no channel toggle or editorial approval action yet.
+The dashboard and `/sources` page read the configured library websites, government
+platforms, and state newsroom feeds from the MongoDB `source_configs` collection. Source
+changes update those MongoDB documents; runtime ingestion still uses the checked-in
+configuration files. The dashboard's separate onboarded-location settings use the backend
+API. It also triggers ingestion, shows job status, and lists the existing reader channel.
+Reader publication remains automatic; there is no channel toggle or editorial approval
+action yet.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import Link from "next/link";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -146,6 +147,7 @@ export default function Dashboard() {
             <h2>Configured sources</h2>
             <p>Loaded from the MongoDB <code>source_configs</code> collection.</p>
           </div>
+          <Link className="nav-button" href="/sources">Manage sources</Link>
         </div>
         {configuredSources === null ? <p>Source list could not be loaded.</p> :
           configuredSources.length === 0 ? <p>No source entries found in MongoDB.</p> : (
