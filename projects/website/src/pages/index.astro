@@ -385,12 +385,13 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
           document.querySelector("#edition-freshness")!.textContent =
             edition.window_end < today ? "Past edition: these listings may no longer be current." : "";
           document.querySelector("#edition-coverage")!.replaceChildren(
-            ...edition.coverage.map((message) => text("li", message)),
+            ...(edition.coverage ?? []).map((message) => text("li", message)),
           );
           const corrections = document.querySelector<HTMLElement>("#corrections")!;
-          corrections.hidden = edition.corrections.length === 0;
+          const notices = edition.corrections ?? [];
+          corrections.hidden = notices.length === 0;
           corrections.replaceChildren(
-            ...edition.corrections.map((notice) =>
+            ...notices.map((notice) =>
               text("p", `Correction (${new Date(notice.created_at * 1000).toLocaleDateString("en-US")}): ${notice.reason}`),
             ),
           );
