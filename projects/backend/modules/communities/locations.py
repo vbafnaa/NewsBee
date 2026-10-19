@@ -133,6 +133,7 @@ def remove(database: Path, evidence_dir: Path, identity: str) -> dict[str, int]:
         editions = "SELECT id FROM edition_drafts WHERE community_id = ?"
         snapshots = "SELECT id FROM location_snapshots WHERE location_id = ?"
         statements = {
+            "email_deliveries": (f"DELETE FROM email_deliveries WHERE edition_id IN ({editions})"),
             "edition_entries": (
                 f"DELETE FROM edition_draft_entries WHERE edition_id IN ({editions})"
             ),

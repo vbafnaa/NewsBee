@@ -233,20 +233,24 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
+            week = stories.week_label(snapshot["window_start"], snapshot["window_end"])
+            passed_stories = [candidate for candidate, _ in passed]
+            passed_drafts = [draft for _, draft in passed]
             front = await story_writer.write_front(
-                runtime,
-                community,
-                stories.week_label(snapshot["window_start"], snapshot["window_end"]),
-                [candidate for candidate, _ in passed],
-                [draft for _, draft in passed],
+                runtime, community, week, passed_stories, passed_drafts
             )
-            logger.info(
-                "Edition front edition_id=%s fallback=%s errors=%s wall_seconds=%s",
-                identity,
-                front["fallback"],
-                front["validation_errors"] or front.get("error"),
-                front["wall_seconds"],
+            email = await story_writer.write_email(
+                runtime, community, week, passed_stories, passed_drafts, front
             )
+            for label, text in (("front", front), ("email", email)):
+                logger.info(
+                    "Edition %s edition_id=%s fallback=%s errors=%s wall_seconds=%s",
+                    label,
+                    identity,
+                    text["fallback"],
+                    text["validation_errors"] or text.get("error"),
+                    text["wall_seconds"],
+                )
         except BaseException as error:
             detail = f"{type(error).__name__}: {error}"
             logger.exception("Edition authoring failed edition_id=%s", identity)
@@ -264,6 +268,7 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             "ranking": ranking,
             "duration_seconds": round(time.monotonic() - started, 3),
             "front": front,
+            "email": email,
         }
         _finish(settings.database, identity, "completed", None, summary)
     logger.info(
@@ -293,6 +298,7 @@ def _run(row) -> EditionRun:
         status=row["status"],
         error=row["error"],
         front_fallback=front["fallback"] if front else None,
+        email_fallback=result["email"]["fallback"] if result.get("email") else None,
         **{
             key: result.get(key)
             for key in (
@@ -401,6 +407,28 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
     )
 
 
+def email_content(path: Path, edition_id: str) -> dict:
+    """What an email preview of a published edition says; the website holds the full edition."""
+    with connect(path) as database:
+        row = database.execute(
+            "SELECT community_id, result_json FROM edition_drafts "
+            "WHERE id = ? AND status = 'completed'",
+            (edition_id,),
+        ).fetchone()
+    if row is None:
+        raise LookupError(f"No published edition: {edition_id}")
+    result = json.loads(row["result_json"])
+    name = locations.get(path, row["community_id"])["name"]
+    email = result.get("email") or story_writer.fallback_email(name, True).model_dump()
+    return {
+        "location_id": row["community_id"],
+        "location_name": name,
+        "headline": result["front"]["headline"],
+        "intro": result["front"]["intro"],
+        "blurb": email["blurb"],
+    }
+
+
 def inspect_editions(path: Path) -> dict:
     """Audit view: latest run with included and held items, plus recent history."""
     with connect(path) as database:
@@ -421,6 +449,7 @@ def inspect_editions(path: Path) -> dict:
                 "run": _run(runs[0]).model_dump(),
                 "validation_policy": runs[0]["validation_policy"],
                 "front": result.get("front"),
+                "email": result.get("email"),
                 "included": [entry for entry in entries if entry["disposition"] != "held"],
                 "held": [entry for entry in entries if entry["disposition"] == "held"],
             }

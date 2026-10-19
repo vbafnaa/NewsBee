@@ -68,6 +68,18 @@ class EditionRun(BaseModel):
     ranking_fallback_ratings: int | None = None
     duration_seconds: float | None = None
     front_fallback: bool | None = None
+    email_fallback: bool | None = None
+
+
+class EmailDelivery(BaseModel):
+    """Email-preview delivery for one location's most recently emailed edition."""
+
+    edition_id: str
+    location_id: str
+    sent: int = 0
+    pending: int = 0
+    failed: int = 0
+    errors: list[str] = Field(default_factory=list)
 
 
 class HealthReport(BaseModel):
@@ -77,6 +89,7 @@ class HealthReport(BaseModel):
     latest_ingestion: IngestionRun | None = None
     locations: list[LocationStatus] | None = None
     latest_edition: EditionRun | None = None
+    email_deliveries: list[EmailDelivery] | None = None
     jobs: dict[str, int] | None = None
     last_completed_job_at: float | None = None
     pipelines: Literal["local_ingestion_and_auto_publish"] = "local_ingestion_and_auto_publish"

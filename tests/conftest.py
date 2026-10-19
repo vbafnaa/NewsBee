@@ -14,7 +14,7 @@ from shared.contracts.health import ComponentHealth
 def settings(tmp_path: Path, monkeypatch) -> Settings:
     for name in Settings.model_fields:
         monkeypatch.delenv(f"NEWSBEE_{name.upper()}", raising=False)
-    return Settings(data_dir=tmp_path / "data")
+    return Settings(data_dir=tmp_path / "data", subscribers_file=tmp_path / "subscribers.json")
 
 
 @pytest.fixture

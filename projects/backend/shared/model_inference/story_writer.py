@@ -21,6 +21,7 @@ WRITING_POLICY = "story_v1"
 HEADLINE_MAX = 90
 SUMMARY_MAX = 480
 INTRO_MAX = 300
+EMAIL_MAX = 280
 KEEP_ALIVE = "10m"
 MAX_RETRIES = 1
 NO_EVENTS_INTRO = "There are no events to report this week."
@@ -51,6 +52,11 @@ class FrontDraft(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     headline: str = Field(min_length=1, max_length=HEADLINE_MAX)
     intro: str = Field(min_length=1, max_length=INTRO_MAX)
+
+
+class EmailDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    blurb: str = Field(min_length=1, max_length=EMAIL_MAX)
 
 
 def style_errors(text: str, headline: str | None = None) -> list[str]:
@@ -122,6 +128,17 @@ def front_prompt(context: dict) -> str:
     )
 
 
+def email_prompt(context: dict) -> str:
+    return (
+        "You write the email that invites neighbours to read this week's local community "
+        f"newsletter on its website. Write a persuasive blurb of 1 or 2 sentences, at most "
+        f"{EMAIL_MAX} characters, that makes readers curious enough to click through to the "
+        "full edition. Tease the most interesting stories without listing them all, and do "
+        f"not repeat the edition headline. {RULES} Output JSON matching this schema:\n"
+        f"{json.dumps(EmailDraft.model_json_schema())}\nEmail:\n{json.dumps(context)}"
+    )
+
+
 async def _generate(runtime: OllamaRuntime, prompt: str, schema: type[BaseModel]):
     generation = await runtime.generate_structured(
         prompt, schema.model_json_schema(), num_ctx=4096, num_predict=600, keep_alive=KEEP_ALIVE
@@ -137,8 +154,8 @@ def retry_prompt(story: dict, rejected: dict, errors: list[str]) -> str:
     return (
         f"{item_prompt(story)}\nYour previous draft was rejected:\n{json.dumps(rejected)}\n"
         f"Problems found: {', '.join(errors)}. Rewrite it fixing every problem. "
-        "unsupported_name means a capitalized word not in the story: rephrase so the "
-        "sentence does not start with it. unsupported_claim_word or unsupported_number means "
+        "unsupported_name means a capitalized name not in the story: remove it or use "
+        "lowercase if it is not a name. unsupported_claim_word or unsupported_number means "
         "the word or number is not in the story: remove it."
     )
 
@@ -188,14 +205,66 @@ def fallback_front(community: str, week: str, has_items: bool) -> FrontDraft:
     )
 
 
-def validate_front(context: dict, stories: list[dict], draft: FrontDraft) -> list[str]:
+def fallback_email(community: str, has_items: bool) -> EmailDraft:
+    return EmailDraft(
+        blurb=f"See what is happening around {community} this week in the new edition."
+        if has_items
+        else NO_EVENTS_INTRO
+    )
+
+
+def edition_context(community: str, week: str, stories: list[dict], drafts: list[dict]) -> dict:
+    return {
+        "community": community,
+        "week": week,
+        "stories": [
+            {"title": s["title"], "headline": d["headline"], "summary": d["summary"]}
+            for s, d in zip(stories, drafts, strict=True)
+        ],
+    }
+
+
+def _edition_allowed(context: dict, stories: list[dict]) -> list[str]:
     allowed = [context["community"], context["week"]]
     for item, story in zip(context["stories"], stories, strict=True):
         allowed += [item["headline"], item["summary"], *story_allowed(story)]
+    return allowed
+
+
+def validate_front(context: dict, stories: list[dict], draft: FrontDraft) -> list[str]:
+    allowed = _edition_allowed(context, stories)
     errors = [f"headline:{e}" for e in added_claims(draft.headline, allowed, 1)]
     errors += [f"intro:{e}" for e in added_claims(draft.intro, allowed, 2)]
     errors += [f"intro:{e}" for e in style_errors(draft.intro, draft.headline)]
     return list(dict.fromkeys(errors))
+
+
+def validate_email(context: dict, stories: list[dict], draft: EmailDraft) -> list[str]:
+    allowed = [*_edition_allowed(context, stories), context["headline"], context["intro"]]
+    errors = [f"blurb:{e}" for e in added_claims(draft.blurb, allowed, 2)]
+    errors += [f"blurb:{e}" for e in style_errors(draft.blurb, context["headline"])]
+    return list(dict.fromkeys(errors))
+
+
+async def _edition_text(runtime, context, stories, prompt, schema, validate, label) -> dict:
+    """Model-written edition-level text, or the caller's labelled fallback."""
+    result: dict = {"fallback": True, "validation_errors": []}
+    if not stories:
+        result["fallback_reason"] = "no_items_passed_checks"
+        return result
+    result["context"] = context
+    try:
+        draft, metrics = await _generate(runtime, prompt(context), schema)
+        errors = validate(context, stories, draft)
+        result.update(rejected=draft.model_dump(), validation_errors=errors, metrics=metrics)
+        if not errors:
+            result.update(fallback=False, rejected=None, **draft.model_dump())
+    except (httpx.HTTPError, ValidationError, ValueError) as error:
+        logger.exception("Edition %s draft failed", label)
+        result["error"] = f"{type(error).__name__}: {error}"
+    if result["fallback"]:
+        result["fallback_reason"] = "model_text_held"
+    return result
 
 
 async def write_front(
@@ -203,32 +272,37 @@ async def write_front(
 ) -> dict:
     """Model-written edition headline and intro, or a labelled fixed fallback."""
     started = time.monotonic()
-    result: dict = {"fallback": True, "validation_errors": []}
-    if not stories:
-        result["fallback_reason"] = "no_items_passed_checks"
-    else:
-        context = {
-            "community": community,
-            "week": week,
-            "stories": [
-                {"title": s["title"], "headline": d["headline"], "summary": d["summary"]}
-                for s, d in zip(stories, drafts, strict=True)
-            ],
-        }
-        result["context"] = context
-        try:
-            draft, metrics = await _generate(runtime, front_prompt(context), FrontDraft)
-            errors = validate_front(context, stories, draft)
-            result.update(rejected=draft.model_dump(), validation_errors=errors, metrics=metrics)
-            if not errors:
-                result.update(fallback=False, rejected=None, **draft.model_dump())
-        except (httpx.HTTPError, ValidationError, ValueError) as error:
-            logger.exception("Edition front draft failed")
-            result["error"] = f"{type(error).__name__}: {error}"
-        if result["fallback"]:
-            result["fallback_reason"] = "model_text_held"
+    context = edition_context(community, week, stories, drafts)
+    result = await _edition_text(
+        runtime, context, stories, front_prompt, FrontDraft, validate_front, "front"
+    )
     if result["fallback"]:
         result.update(fallback_front(community, week, bool(stories)).model_dump())
+    result["checks_passed"] = not result["fallback"]
+    result["wall_seconds"] = round(time.monotonic() - started, 3)
+    return result
+
+
+async def write_email(
+    runtime: OllamaRuntime,
+    community: str,
+    week: str,
+    stories: list[dict],
+    drafts: list[dict],
+    front: dict,
+) -> dict:
+    """Persuasive email-preview blurb that drives clicks, or a labelled fixed fallback."""
+    started = time.monotonic()
+    context = {
+        **edition_context(community, week, stories, drafts),
+        "headline": front["headline"],
+        "intro": front["intro"],
+    }
+    result = await _edition_text(
+        runtime, context, stories, email_prompt, EmailDraft, validate_email, "email"
+    )
+    if result["fallback"]:
+        result.update(fallback_email(community, bool(stories)).model_dump())
     result["checks_passed"] = not result["fallback"]
     result["wall_seconds"] = round(time.monotonic() - started, 3)
     return result

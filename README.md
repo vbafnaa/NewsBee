@@ -15,6 +15,8 @@ flowchart LR
   Rank --> Write[Story writing and checks]
   Write --> Site[Reader website]
   Write --> Console[Health and audit console]
+  Write --> Email[Email preview]
+  Email --> Site
 ```
 
 ## Setup
@@ -35,6 +37,7 @@ uv run --locked python scripts/dev.py up
 | Reader website | http://127.0.0.1:4321 |
 | Health and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
+| Email previews (Mailpit) | http://127.0.0.1:8025 |
 
 Localhost only, no authentication. Logs go to `.local/logs/`.
 
@@ -70,6 +73,9 @@ supplies agendas only.
 3. **Write** up to 5 stories, one per category. Drafts that add facts or repeat
    themselves get one retry, then are held for audit at `/review/editions`.
 4. **Front** headline about the top story.
+5. **Email** a preview (headline, intro, a teaser blurb and a link to the website) to the
+   test subscribers for that location in `config/preview-subscribers.json`. Failed sends
+   retry and show on the health page.
 
 ## Development
 
@@ -88,6 +94,6 @@ Run `scripts/dev.py contracts` after changing `shared/contracts`. Optional setti
 | `projects/website` | Minimal reader site |
 | `projects/review-console` | Minimal review and health pages |
 | `shared/contracts` | Contracts shared between projects |
-| `config` | Library website and government platform overrides, policies |
+| `config` | Library website and government platform overrides, preview subscribers, policies |
 | `tests` | Unit, integration, end-to-end ([map](tests/README.md)) |
 | `Docs` | [Design spec](Docs/newsbee-design-spec-v1.html), [roadmap](Docs/newsbee-implementation-roadmap-v1.html) |

@@ -186,6 +186,28 @@ def test_lease_expiry_reclaims_and_fences_old_attempt(settings, onboarded):
     assert jobs.inspect(settings.database)["jobs"][0]["status"] == "completed"
 
 
+def test_worker_survives_job_finishing_just_before_lease_renewal(settings, monkeypatch):
+    initialize(settings.database)
+    jobs.enqueue(settings.database, LOCATION_ID)
+    stop, release = threading.Event(), threading.Event()
+    real_renew = jobs.renew
+
+    def finish_then_block(settings, job):
+        jobs.complete(settings.database, job, {"done": True})
+        release.wait(5)
+
+    def renew_after_completion(path, job):
+        renewed = real_renew(path, job)
+        stop.set()
+        release.set()
+        return renewed
+
+    monkeypatch.setattr(worker, "execute", finish_then_block)
+    monkeypatch.setattr(jobs, "renew", renew_after_completion)
+    worker.run(settings.model_copy(update={"heartbeat_interval": 0.1}), stop)
+    assert jobs.inspect(settings.database)["jobs"][0]["status"] == "completed"
+
+
 def test_retry_exhaustion_and_failure_are_recorded(settings):
     initialize(settings.database)
     jobs.enqueue(settings.database, LOCATION_ID)
@@ -243,7 +265,7 @@ def test_schema_one_upgrades_without_losing_existing_jobs(settings):
     initialize(settings.database)
     with connect(settings.database) as database:
         assert database.execute("SELECT id FROM jobs").fetchone()[0] == "old"
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 6
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
 
 
 def test_v4_single_source_data_is_dropped_on_upgrade(settings, ingested_event):
@@ -254,7 +276,7 @@ def test_v4_single_source_data_is_dropped_on_upgrade(settings, ingested_event):
     report = jobs.inspect(settings.database)
     assert report["events"] == [] and report["jobs"] == []
     with connect(settings.database) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 7
         assert database.execute("SELECT COUNT(*) FROM locations").fetchone()[0] == 0
 
 
