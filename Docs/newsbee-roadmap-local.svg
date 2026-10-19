@@ -1,0 +1,26 @@
+<svg class="diagram" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 760" role="img" aria-labelledby="local-title local-desc"><style>text{font-family:Arial,Helvetica,sans-serif;fill:#243146}.heading{font-size:22px;font-weight:700}.title{font-size:18px;font-weight:700}.sub{font-size:15px}.small{font-size:14px;fill:#54657b}.box{fill:white;stroke:#91a3ba;stroke-width:1.5}.store{fill:#fffaf0;stroke:#c79b45;stroke-width:1.5;stroke-dasharray:6 4}.edge{fill:none;stroke:#526984;stroke-width:2;marker-end:url(#arrow1)}.control{stroke-dasharray:6 4}</style>
+<title id="local-title">Stage 1: all-local Newsbee proof of concept</title><desc id="local-desc">External sources feed local source agents controlled by an orchestrator. Local evidence processing, editorial workers, model inference and records produce private website and email previews. An internal review interface handles exceptions. Nothing is publicly hosted or sent.</desc>
+<defs><marker id="arrow1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="#526984"/></marker></defs>
+<rect width="1160" height="760" fill="white"/>
+<rect x="205" y="25" width="930" height="705" rx="14" fill="#eff6ff" stroke="#9dbce0"/>
+<text x="225" y="58" class="heading">TEAM-LOCAL / PRIVATE DEVELOPMENT ENVIRONMENT</text>
+<text x="225" y="84" class="small">Repeatable setup per developer; model size and concurrency depend on available resources</text>
+<rect class="box" x="25" y="140" width="150" height="115" rx="9"/>
+<text x="40" y="171" class="title">Sources</text><text x="40" y="199" class="sub">A / B / N</text><text x="40" y="224" class="small">Network inputs</text>
+<rect class="box" x="235" y="120" width="245" height="65" rx="9"/><text x="250" y="146" class="title">Local orchestrator</text><text x="250" y="169" class="sub">Schedule, run state, retries</text>
+<rect class="box" x="235" y="230" width="245" height="135" rx="9"/><text x="250" y="258" class="title">Source-specific agents</text><text x="250" y="286" class="sub">Use source connectors</text><text x="250" y="311" class="sub">Fetch, extract, retain origin</text><text x="250" y="337" class="small">E.g. council docs / event feeds</text>
+<path class="edge" d="M175 200H195V295H235"/><path class="edge control" d="M357 185V230"/>
+<rect class="box" x="530" y="230" width="245" height="135" rx="9"/><text x="545" y="258" class="title">Story processing</text><text x="545" y="286" class="sub">Normalize + deduplicate</text><text x="545" y="311" class="sub">Link updates + evidence</text><text x="545" y="337" class="sub">Group by town / neighborhood</text><path class="edge" d="M480 295H530"/>
+<rect class="box" x="825" y="230" width="280" height="135" rx="9"/><text x="840" y="258" class="title">Editorial worker modules</text><text x="840" y="286" class="sub">Plan → write → assess</text><text x="840" y="311" class="sub">Hold or approve → assemble</text><text x="840" y="337" class="small">Rules protect essential coverage</text><path class="edge" d="M775 295H825"/>
+<rect class="store" x="235" y="430" width="245" height="110" rx="9"/><text x="250" y="458" class="title">Local durable records</text><text x="250" y="486" class="sub">SQLite + evidence files</text><text x="250" y="511" class="sub">Jobs, policies, releases</text>
+<path class="edge" d="M650 365V400H357V430"/>
+<rect class="box" x="530" y="430" width="245" height="110" rx="9"/><text x="545" y="458" class="title">Local model runtime</text><text x="545" y="486" class="sub">Shared inference queue</text><text x="545" y="511" class="sub">Small quantized model</text>
+<path class="edge" d="M825 335H800V485H775"/>
+<rect class="box" x="825" y="430" width="280" height="110" rx="9"/><text x="840" y="458" class="title">Private site + email preview</text><text x="840" y="486" class="sub">Full stories + source links</text><text x="840" y="511" class="sub">Local mail sink; no sends</text><path class="edge" d="M965 365V430"/>
+<rect class="box" x="530" y="605" width="245" height="85" rx="9"/><text x="545" y="634" class="title">Local review console</text><text x="545" y="661" class="sub">Exceptions, corrections, audits</text>
+<path class="edge" d="M885 365V395H800V575H650V605"/><path class="edge" d="M775 650H1120V395H1030V365"/>
+<text x="240" y="592" class="small">Durable state is shared by local modules.</text>
+<text x="240" y="619" class="small">Back up evidence + database off-machine.</text>
+<text x="240" y="665" class="small">No public forms. No reader PII.</text>
+<text x="240" y="690" class="small">No production email.</text>
+</svg>
