@@ -4,8 +4,8 @@ CSE589 UW Entrepreneurship Prototyping
 Newsbee is a local Stage 1 prototype of an automatically written weekly community newspaper.
 For each onboarded town it:
 
-1. pulls the coming week's library events and local government meetings and, for news
-   deserts, county and statewide news and trends,
+1. pulls the coming week's library events and local government meetings, plus nearby
+   earthquakes, state newsroom announcements and county or statewide trends,
 2. ranks them and has a local model (Ollama, `qwen3:4b`) write short stories,
 3. holds any story that fails its checks, and publishes the rest to a reader website,
 4. emails a preview to test subscribers (captured locally by Mailpit).
@@ -14,7 +14,10 @@ For each onboarded town it:
 flowchart LR
   Library[Library events] --> Ingest[Ingestion]
   Meetings[Government meetings] --> Ingest
-  Wider[State news, hazards and trends] --> Ingest
+  USGS[USGS earthquakes] --> Ingest
+  StateNews[State newsrooms] --> Ingest
+  Wikipedia[Wikipedia trends] --> Ingest
+  Bluesky[Bluesky trends] --> Ingest
   Ingest --> Rank[Ranking] --> Write[Story writing and checks]
   Write --> Site[Reader website]
   Write --> Email[Email preview]
@@ -67,10 +70,10 @@ Prefix each with `uv run --locked python scripts/dev.py`:
 If `onboard` can't find a town's library website or meeting platform, add it to
 `config/library-websites.json` or `config/government-sources.json` and re-run it.
 
-### Wider-area sources (news deserts)
+### County and state sources
 
-When a town has little local news, editions widen to its county and state. Each source is
-free, keyless, public and robots.txt-permitted, with its own adapter and ranking rules:
+Each source is free, keyless, public and robots.txt-permitted, with its own connector and
+ranking rules:
 
 | Source id | Source | Window | Kept | Ranking |
 | --- | --- | --- | --- | --- |

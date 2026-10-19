@@ -91,7 +91,7 @@ Upgrades from versions 5-8 keep data. Upgrading from older versions
 drops pre-location events, drafts and ingestion jobs. See the root README for retrieval scope
 and limits.
 
-The default authoring model is `qwen3:4b`. Public meetings precede discretionary events;
+The default authoring model is `qwen3:4b`. All sources compete on newsworthiness score;
 full essential-news thresholds, a human-review workflow and ratified publication policy remain
 operating decisions. Routine support events are not excluded just for covering a sensitive
 topic; identifiable cases and allegations are held by conservative checks.

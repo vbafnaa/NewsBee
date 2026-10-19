@@ -254,6 +254,7 @@ def test_full_pool_ranking_preserves_council_and_meeting_identity():
 
 
 def test_civic_coverage_survives_popularity_scores_and_shared_categories(settings, monkeypatch):
+    """Low-scored meetings are still published; every source is ordered by score alone."""
     identity = store_snapshot(settings, 3)
     with connect(settings.database) as database:
         events = snapshots.events(settings.database, identity)
@@ -283,7 +284,7 @@ def test_civic_coverage_survives_popularity_scores_and_shared_categories(setting
     edition = drafting.latest_published(settings.database, library_world.LOCATION_ID)
     assert run.included == 3
     assert [item.kind for item in edition.items] == [
+        "event",
         "meeting_preview",
         "meeting_outcome",
-        "event",
     ]
