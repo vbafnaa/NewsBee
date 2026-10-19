@@ -1,6 +1,6 @@
-"""Ranking rules for wider-area stories (hazards, state newsrooms, statewide trends).
+"""Ranking rules for wider-area stories (hazards, state newsrooms, trends near the town).
 
-Every wider ranker puts stories that name the town first, then the county, then the state
+Every wider ranker puts stories that name the town first, then the county, then nearby places
 (``TIER_ORDER``); within a tier each source type has its own rules below.
 """
 
@@ -9,7 +9,7 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import date
 
-TIER_ORDER = {"local": 0, "region": 1, "state": 2}
+TIER_ORDER = {"local": 0, "region": 1, "nearby": 2}
 
 PRACTICAL = re.compile(
     r"\b(closures?|closed|closing|detours?|lanes?|ferr(?:y|ies)|roads?|highways?|bridges?|"
@@ -74,7 +74,7 @@ def state_news_score(story) -> int:
 
 
 def state_news(stories: Sequence) -> list:
-    """Town, then county, then statewide; practical public-service news (roads, ferries,
+    """Town, then county, then nearby places; practical public-service news (roads, ferries,
     health, scams, deadlines) over ceremonial items (appointments, proclamations); newest
     first; publishers interleaved so no one agency fills the shortlist."""
     ordered = sorted(stories, key=lambda s: (tier(s), -state_news_score(s), _date_desc(s)))
@@ -88,7 +88,7 @@ def trend_strength(story) -> float:
 
 
 def trending(stories: Sequence) -> list:
-    """Town, then county, then state; within a source, the biggest jump over usual
+    """Town, then county, then nearby places; within a source, the biggest jump over usual
     attention (Wikipedia) or the most posts (Bluesky), with social mentions breaking ties;
     the two sources interleaved."""
     ordered = sorted(

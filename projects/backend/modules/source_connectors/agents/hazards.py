@@ -1,4 +1,4 @@
-"""Hazards agent: earthquakes the USGS recorded near the town in the past fortnight.
+"""Hazards agent: earthquakes the USGS recorded within NEARBY_KM of the town in 14 days.
 
 Only quakes people may have noticed are kept (magnitude MIN_MAGNITUDE or more, or at least
 MIN_FELT "Did You Feel It?" reports) within RADIUS_KM. Wording stays factual: no damage
@@ -18,7 +18,13 @@ from projects.backend.modules.source_connectors.agents.library_events import (
     DiscoveryBlockedError,
     Fetcher,
 )
-from projects.backend.modules.source_connectors.agents.regions import USER_AGENT, region, result
+from projects.backend.modules.source_connectors.agents.regions import (
+    LOCAL_KM,
+    NEARBY_KM,
+    USER_AGENT,
+    region,
+    result,
+)
 from projects.backend.modules.source_connectors.connectors import usgs
 from projects.backend.modules.source_connectors.connectors.common import (
     MAX_FEED_BYTES,
@@ -29,8 +35,7 @@ from projects.backend.modules.source_connectors.connectors.news import NewsFacts
 logger = logging.getLogger(__name__)
 SOURCE_ID = "hazards:usgs"
 PAST_DAYS = 14
-RADIUS_KM = 100
-LOCAL_KM = 30
+RADIUS_KM = NEARBY_KM
 QUERY_MAGNITUDE = 2.5
 MIN_MAGNITUDE = 3.0
 MIN_FELT = 10
@@ -66,7 +71,7 @@ def facts(quake: dict, town: str) -> NewsFacts:
         source_url=quake["url"] or "https://earthquake.usgs.gov/earthquakes/map/",
         description=description,
         kind="earthquake",
-        tier="local" if quake["distance_km"] <= LOCAL_KM else "region",
+        tier="local" if quake["distance_km"] <= LOCAL_KM else "nearby",
         section=SECTION,
         signals={
             "magnitude": quake["magnitude"],
@@ -99,7 +104,9 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
     except (FeedFormatError, httpx.HTTPError) as error:
         record.update(status="failed", detail=f"{type(error).__name__}: {error}")
         return record, []
-    kept = [quake for quake in quakes if noticeable(quake) and quake["distance_km"] <= RADIUS_KM]
+    near = [quake for quake in quakes if quake["distance_km"] <= RADIUS_KM]
+    kept = [quake for quake in near if noticeable(quake)]
+    skipped = {"too_far": len(quakes) - len(near), "below_threshold": len(near) - len(kept)}
     kept.sort(key=lambda quake: (-quake["magnitude"], quake["distance_km"]))
     made = [facts(quake, place.town) for quake in kept[:MAX_ITEMS]]
     record.update(
@@ -107,7 +114,7 @@ def collect(location: dict, client: httpx.Client, today: date, states=None):
         f"{RADIUS_KM} km in {PAST_DAYS} days; {len(made)} noticeable",
         response_sha256=hashlib.sha256(content).hexdigest(),
         event_count=len(made),
-        skipped_unusable={"below_threshold": len(quakes) - len(kept)} if quakes != kept else {},
+        skipped_unusable={key: value for key, value in skipped.items() if value},
     )
     logger.info("Hazards result source_id=%s quakes=%s kept=%s", SOURCE_ID, len(quakes), len(made))
     return record, made

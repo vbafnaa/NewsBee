@@ -176,7 +176,7 @@ def test_every_source_competes_on_score_alone():
     )
     pool = [
         candidate("meeting", kind="meeting_preview"),
-        candidate("news", kind="state_news", tier="state"),
+        candidate("news", kind="state_news", tier="nearby"),
         candidate("quake", kind="earthquake", tier="local"),
         candidate("event"),
     ]
@@ -187,7 +187,7 @@ def test_every_source_competes_on_score_alone():
 def test_rule_fallback_scores_news_zero_and_keeps_meetings_high():
     runtime = Runtime([ValueError("bad json")])
     pool = [
-        candidate("trend", kind="trending_topic", tier="state"),
+        candidate("trend", kind="trending_topic", tier="nearby"),
         candidate("event"),
         candidate("meeting", kind="meeting_outcome"),
         candidate("news", kind="state_news", tier="region"),
