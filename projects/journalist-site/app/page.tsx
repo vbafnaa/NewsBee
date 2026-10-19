@@ -4,7 +4,8 @@ import Dashboard from "./dashboard";
 
 export default async function Home() {
   const session = await auth();
-  if (!(await isAdminEmail(session?.user?.email))) redirect("/login");
+  const email = session?.user?.email;
+  if (!email || !(await isAdminEmail(email))) redirect("/login");
 
   return (
     <main>
@@ -18,7 +19,7 @@ export default async function Home() {
           "use server";
           await signOut({ redirectTo: "/login" });
         }}>
-          <span>{session.user.email}</span>
+          <span>{email}</span>
           <button className="secondary" type="submit">Sign out</button>
         </form>
       </header>
