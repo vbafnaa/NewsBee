@@ -1,11 +1,18 @@
 import type { APIRoute } from "astro";
-import { readerData } from "../../../lib/reader-data";
+import { readerChannelSettings, readerData } from "../../../lib/reader-data";
 
 export const prerender = false;
 
 export const GET: APIRoute = async () => {
   try {
-    const { locations, editions } = await readerData();
+    const channel = await readerChannelSettings();
+    if (!channel.enabled) {
+      return Response.json(
+        { detail: "The reader channel is currently disabled" },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const { locations, editions } = await readerData(channel.driveFolderId);
     const latestByLocation = new Map<string, (typeof editions)[number]>();
     for (const edition of editions) {
       const current = latestByLocation.get(edition.location_id);
@@ -28,7 +35,7 @@ export const GET: APIRoute = async () => {
           };
         }),
       },
-      { headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" } },
+      { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
     console.error("Drive editions listing unavailable", error);

@@ -40,8 +40,11 @@ type Cache = typeof globalThis & {
   newsbeeReaderData?: {
     accessToken?: { value: string; expiresAt: number };
     tokenPromise?: Promise<string>;
-    data?: { expiresAt: number; locations: Location[]; editions: Edition[] };
-    dataPromise?: Promise<{ locations: Location[]; editions: Edition[] }>;
+    data?: { folderId: string; expiresAt: number; locations: Location[]; editions: Edition[] };
+    dataPromise?: {
+      folderId: string;
+      promise: Promise<{ locations: Location[]; editions: Edition[] }>;
+    };
   };
   newsbeeReaderMongo?: {
     uri: string;
@@ -55,6 +58,41 @@ function cache() {
   const global = globalThis as Cache;
   global.newsbeeReaderData ??= {};
   return global.newsbeeReaderData;
+}
+
+async function readerMongoClient() {
+  const uri = process.env.MONGODB_URI;
+  const databaseName = process.env.MONGODB_DATABASE;
+  if (!uri) throw new Error("MONGODB_URI is not configured");
+  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
+
+  const global = globalThis as Cache;
+  if (!global.newsbeeReaderMongo || global.newsbeeReaderMongo.uri !== uri) {
+    global.newsbeeReaderMongo = { uri, client: new MongoClient(uri) };
+  }
+  const mongo = global.newsbeeReaderMongo;
+  if (!mongo.promise) {
+    mongo.promise = mongo.client.connect().catch((error: unknown) => {
+      mongo.promise = undefined;
+      throw error;
+    });
+  }
+  return { client: await mongo.promise, databaseName, mongo };
+}
+
+export async function readerChannelSettings() {
+  const { client, databaseName } = await readerMongoClient();
+  const channelId = process.env.NEWSBEE_OUTPUT_CHANNEL_ID ?? "reader-site";
+  const channel = await client.db(databaseName)
+    .collection<{ _id: string; enabled: boolean; drive_folder_id: string }>("output_channels")
+    .findOne({ _id: channelId }, { projection: { _id: 1, enabled: 1, drive_folder_id: 1 } });
+  if (!channel) throw new Error(`Reader channel ${channelId} is missing from the output_channels collection`);
+  if (typeof channel.enabled !== "boolean" ||
+    typeof channel.drive_folder_id !== "string" ||
+    !/^[A-Za-z0-9_-]{10,200}$/.test(channel.drive_folder_id)) {
+    throw new Error("The reader output channel configuration is malformed");
+  }
+  return { enabled: channel.enabled, driveFolderId: channel.drive_folder_id };
 }
 
 function base64Url(bytes: Uint8Array) {
@@ -177,10 +215,7 @@ function parseEdition(value: unknown): Edition | null {
   return value as Edition;
 }
 
-async function loadDriveData() {
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  if (!folderId) throw new Error("GOOGLE_DRIVE_FOLDER_ID is not configured");
-
+async function loadDriveData(folderId: string) {
   const files: DriveFile[] = [];
   let pageToken: string | undefined;
   do {
@@ -226,19 +261,25 @@ async function loadDriveData() {
   return { locations: locations as Location[], editions };
 }
 
-export async function readerData() {
+export async function readerData(folderId?: string) {
   const state = cache();
-  if (state.data && state.data.expiresAt > Date.now()) return state.data;
-  if (!state.dataPromise) {
-    state.dataPromise = loadDriveData().then((data) => {
-      const cached = { ...data, expiresAt: Date.now() + 60_000 };
-      state.data = cached;
+  const selectedFolderId = folderId ?? (await readerChannelSettings()).driveFolderId;
+  if (state.data?.folderId === selectedFolderId && state.data.expiresAt > Date.now()) {
+    return state.data;
+  }
+  if (state.dataPromise?.folderId !== selectedFolderId) {
+    const promise = loadDriveData(selectedFolderId).then((data) => {
+      const cached = { ...data, folderId: selectedFolderId, expiresAt: Date.now() + 60_000 };
+      if (state.dataPromise?.folderId === selectedFolderId) state.data = cached;
       return cached;
     }).finally(() => {
-      state.dataPromise = undefined;
+      if (state.dataPromise?.folderId === selectedFolderId) state.dataPromise = undefined;
     });
+    state.dataPromise = { folderId: selectedFolderId, promise };
   }
-  return state.dataPromise;
+  const pending = state.dataPromise;
+  if (!pending) throw new Error("Reader data loading did not start");
+  return pending.promise;
 }
 
 export function searchLocations(locations: Location[], query: string) {
@@ -263,23 +304,7 @@ export function searchLocations(locations: Location[], query: string) {
 }
 
 export async function saveInterestSignup(location: Location, email: string) {
-  const uri = process.env.MONGODB_URI;
-  const databaseName = process.env.MONGODB_DATABASE;
-  if (!uri) throw new Error("MONGODB_URI is not configured");
-  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
-
-  const global = globalThis as Cache;
-  if (!global.newsbeeReaderMongo || global.newsbeeReaderMongo.uri !== uri) {
-    global.newsbeeReaderMongo = { uri, client: new MongoClient(uri) };
-  }
-  const mongo = global.newsbeeReaderMongo;
-  if (!mongo.promise) {
-    mongo.promise = mongo.client.connect().catch((error: unknown) => {
-      mongo.promise = undefined;
-      throw error;
-    });
-  }
-  const client = await mongo.promise;
+  const { client, databaseName, mongo } = await readerMongoClient();
   const collection = client.db(databaseName).collection("reader_interest_signups");
   if (!mongo.indexPromise) {
     mongo.indexPromise = collection.createIndex(

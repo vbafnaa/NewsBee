@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/auth";
 
-type AdminPage = "dashboard" | "sources" | "administrators";
+type AdminPage = "dashboard" | "sources" | "output-channel" | "administrators";
 
 export default function AdminShell({
   email,
@@ -20,6 +20,7 @@ export default function AdminShell({
   const navItems: { id: AdminPage; label: string; href: string }[] = [
     { id: "dashboard", label: "Dashboard", href: "/" },
     { id: "sources", label: "Sources", href: "/sources" },
+    { id: "output-channel", label: "Output channel", href: "/output-channel" },
     { id: "administrators", label: "Administrators", href: "/administrators" },
   ];
 
