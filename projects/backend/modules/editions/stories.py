@@ -3,7 +3,8 @@
 Events whose normalized titles match (same program at several branches, on several days,
 or listed by several sources) become one Story with every occurrence kept, so the edition
 never repeats an item. Stories are source-agnostic; a story's kind (event, or a public
-meeting preview or outcome) only changes how it is written.
+meeting preview or outcome) only changes how it is written, and ``facts`` keeps the first
+event's connector facts for per-source ranking.
 """
 
 import hashlib
@@ -34,6 +35,7 @@ class Story:
     description: str | None
     occurrences: list[Occurrence] = field(default_factory=list)
     kind: str = "event"
+    facts: dict = field(default_factory=dict)
 
     @property
     def first(self) -> Occurrence:
@@ -62,7 +64,7 @@ def collapse(events: list[dict]) -> list[Story]:
         if story is None:
             identity = hashlib.sha256(key.encode()).hexdigest()[:12]
             story = stories[key] = Story(
-                identity, facts["title"], None, kind=facts.get("kind", "event")
+                identity, facts["title"], None, kind=facts.get("kind", "event"), facts=facts
             )
         description = facts.get("description")
         if description and len(description) > len(story.description or ""):

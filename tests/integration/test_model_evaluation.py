@@ -9,9 +9,9 @@ from tests import fakes
 
 TARGET = "projects.backend.shared.model_inference.evaluation"
 INJECTIONS = {
-    "invented-time": (" It starts at 7pm.", "blurb:unsupported_number:7"),
+    "invented-time": (" Come in the evening.", "blurb:unsupported_claim_word:evening"),
     "invented-price": (" Admission is free.", "blurb:unsupported_claim_word:free"),
-    "invented-name": (" Ask Maria about it.", "blurb:unsupported_name:Maria"),
+    "invented-online": (" It is also online.", "blurb:unsupported_claim_word:online"),
     "invented-booking": (" Registration required.", "blurb:unsupported_claim_word:registration"),
 }
 
