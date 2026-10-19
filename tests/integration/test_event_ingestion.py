@@ -307,3 +307,52 @@ def test_bibliocommons_system_is_ingested_at_in_town_branches(settings, onboarde
     assert event["facts"]["title"] == "Lego Club"
     assert event["facts"]["source_url"] == "https://exco.bibliocommons.com/events/ev1"
     assert report["jobs"][0]["result"]["event_count"] == 2
+
+
+def onboard_with_meetings(settings) -> None:
+    from tests import meetings_world
+
+    initialize(settings.database)
+    profile = {**library_world.profile(), "government": meetings_world.government()}
+    locations.save(settings.database, profile)
+
+
+def test_public_meetings_join_the_location_snapshot(settings):
+    from projects.backend.shared.storage import snapshots
+    from tests import meetings_world
+
+    onboard_with_meetings(settings)
+    report = run_once(settings, {**library_world.routes(), **meetings_world.legistar_routes()})
+    meeting = systems(report)["meetings:legistar:exampletown"]
+    assert (meeting["status"], meeting["event_count"], meeting["feed_kind"]) == (
+        "ingested",
+        2,
+        "legistar",
+    )
+    assert systems(report)["library:WA0001"]["event_count"] == 1
+    stored = {(e["source_id"], e["facts"].get("kind", "event")) for e in report["events"]}
+    assert stored == {
+        ("library:WA0001", "event"),
+        ("meetings:legistar:exampletown", "meeting_preview"),
+        ("meetings:legistar:exampletown", "meeting_outcome"),
+    }
+    snapshot = snapshots.latest(settings.database, LOCATION_ID)
+    assert (snapshot["window_start"], snapshot["window_end"]) == ("2026-11-01", "2026-11-07")
+    kinds = sorted(
+        e["facts"].get("kind", "event") for e in snapshots.events(settings.database, snapshot["id"])
+    )
+    assert kinds == ["event", "meeting_outcome", "meeting_preview"]
+
+
+def test_meeting_rate_limits_retry_and_store_nothing(settings):
+    from projects.backend.modules.source_connectors.connectors import legistar
+    from tests import meetings_world
+
+    onboard_with_meetings(settings)
+    table = {**library_world.routes(), **meetings_world.legistar_routes()}
+    table[meetings_world.key(legistar.items_url(meetings_world.LEGISTAR, 3))] = httpx.Response(429)
+    jobs.enqueue(settings.database, LOCATION_ID)
+    job = jobs.claim(settings.database, jobs.JOB_KIND)
+    with pytest.raises(httpx.HTTPStatusError):
+        library_world.ingest(settings, job, table)
+    assert jobs.inspect(settings.database)["events"] == []

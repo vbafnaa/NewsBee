@@ -21,6 +21,10 @@ outlets' journalism are out of scope.
 **Recommendation:** build a **local government meetings connector**. Meetings are dated public
 events, so they fit the existing pipeline unchanged (snapshot, rank, write, publish).
 
+**Status:** built for Legistar (agendas and recorded outcomes) and CivicClerk (agendas); see
+`source_connectors\agents\government_meetings.py`. PrimeGov is recorded as blocked by its
+`robots.txt`; CivicPlus AgendaCenter is not yet supported.
+
 ## Rejected: news search feeds
 
 | Source | Finding |

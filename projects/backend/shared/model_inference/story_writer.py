@@ -85,13 +85,28 @@ def validate_item(story: dict, draft: ItemDraft) -> list[str]:
     return list(dict.fromkeys(errors))
 
 
+PURPOSE = {
+    "event": "tells neighbours what happens at this event and why it is worth going",
+    "meeting_preview": (
+        "tells neighbours what this public meeting will consider and why it matters to "
+        "residents, in plain language for someone new to local government"
+    ),
+    "meeting_outcome": (
+        "tells neighbours what this public body decided, exactly as the recorded outcomes "
+        "state, and why it matters to residents, in plain language for someone new to local "
+        "government"
+    ),
+}
+
+
 def item_prompt(story: dict) -> str:
     data = {key: story.get(key) for key in ("title", "description")}
+    purpose = PURPOSE.get(story.get("kind", "event"), PURPOSE["event"])
     return (
         "You write for a friendly local community newsletter. Write a catchy headline of at "
         f"most {HEADLINE_MAX} characters and a summary of 2 or 3 sentences, at most "
-        f"{SUMMARY_MAX} characters, that tells neighbours what happens at this event and why "
-        f"it is worth going. If there is no description, write 1 sentence. {RULES} "
+        f"{SUMMARY_MAX} characters, that {purpose}. "
+        f"If there is no description, write 1 sentence. {RULES} "
         "Output JSON matching this schema:\n"
         f"{json.dumps(ItemDraft.model_json_schema())}\nStory:\n{json.dumps(data)}"
     )

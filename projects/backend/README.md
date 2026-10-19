@@ -72,6 +72,11 @@ feed on each website (robots.txt respected, HTTPS only); replaceable parsers liv
 `source_connectors\connectors\` (`trumba_rss`, `ical`, `jsonld`). The pipeline
 `source_connectors\pipelines\events.py` keeps next-7-day events at in-town branches
 and stores them transactionally with job completion. No model is used.
+For locations with a meeting platform, `source_connectors\agents\government_meetings.py`
+(found at onboarding, overridable in `config\government-sources.json`) adds date-filtered
+Legistar/CivicClerk agendas for the same window plus Legistar's recorded outcomes from the
+past 7 days; `connectors\meetings.py` drops procedural and private items and prefixes a
+plain-language sentence on what each public body does.
 Schema version 6 adds location snapshots and edition snapshot IDs; upgrades from version 5 keep data. Upgrading from older versions drops pre-location events, drafts and ingestion jobs on upgrade. See the root README for retrieval scope and limits.
 
 No essential-news thresholds, review policy, or model are defined by this scaffold.

@@ -1,13 +1,15 @@
 # Newsbee
 CSE589 UW Entrepreneurship Prototyping
 
-Local Stage 1 prototype of an auto-published community newspaper. Library events are the
-first source; editions publish after each ingestion with no human review.
+Local Stage 1 prototype of an auto-published community newspaper. Sources are library events
+and local government meetings; editions publish after each ingestion with no human review.
 
 ```mermaid
 flowchart LR
   Locations[Onboarded locations] --> Library[Library events connector]
+  Locations --> Meetings[Government meetings connector]
   Library --> Ingest[Ingestion]
+  Meetings --> Ingest
   Ingest --> Snapshot[Event snapshots]
   Snapshot --> Rank[Newsworthiness ranking]
   Rank --> Write[Story writing and checks]
@@ -44,14 +46,22 @@ In a second terminal (prefix each with `uv run --locked python scripts/dev.py`):
 | --- | --- |
 | `setup-directory` | Download the US library directory (once) |
 | `find-location Edmonds` | List matching towns and ids |
-| `onboard edmonds-wa` | Add a location and find its library websites |
+| `onboard edmonds-wa` | Add a location and find its library websites and meeting platform |
 | `remove-location <id>` | Delete a location and all its data |
-| `ingest-events` | Pull 7 days of events from tomorrow, then author editions |
+| `ingest-events` | Pull 7 days of events and meeting agendas from tomorrow, plus the past 7 days' recorded meeting decisions, then author editions |
 | `author-edition <id>` | Re-author one location |
 | `events` | List jobs and stored events |
 
 If a library website isn't found, add it to `config/library-websites.json` and re-run
 `onboard`. Library data is for local evaluation only; don't commit or redistribute it.
+
+Government meetings come from the town's Legistar or CivicClerk public API, found via the
+town website (Wikidata) or its name. If `onboard` reports no platform, add
+`{"<location id>": {"platform": "legistar", "tenant": "<name>"}}` to
+`config/government-sources.json` and re-run `onboard`. Each meeting story opens with what
+the public body does; procedural items (roll call, minutes) and private individuals' cases
+are left out. Outcomes are the clerk's recorded actions; CivicClerk records none, so it
+supplies agendas only.
 
 ## Authoring
 
@@ -78,6 +88,6 @@ Run `scripts/dev.py contracts` after changing `shared/contracts`. Optional setti
 | `projects/website` | Minimal reader site |
 | `projects/review-console` | Minimal review and health pages |
 | `shared/contracts` | Contracts shared between projects |
-| `config` | Library website overrides, policies |
+| `config` | Library website and government platform overrides, policies |
 | `tests` | Unit, integration, end-to-end ([map](tests/README.md)) |
 | `Docs` | [Design spec](Docs/newsbee-design-spec-v1.html), [roadmap](Docs/newsbee-implementation-roadmap-v1.html) |
