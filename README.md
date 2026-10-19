@@ -112,7 +112,7 @@ uv run --locked ruff check .
 | Folder | Holds |
 | --- | --- |
 | `projects/backend` | API, pipeline modules, shared adapters ([map](projects/backend/README.md)) |
-| `projects/website` | Reader site |
+| `projects/reader-site` | Reader site |
 | `projects/journalist-site` | Authenticated Next.js operations console |
 | `projects/review-console` | Health and review pages |
 | `shared/contracts` | Contracts shared between projects |
