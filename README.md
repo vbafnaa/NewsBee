@@ -39,6 +39,7 @@ the stack is running:
 uv run --locked python scripts/dev.py setup-directory       # download US library directory
 uv run --locked python scripts/dev.py find-location Seattle # list matching towns and ids
 uv run --locked python scripts/dev.py onboard seattle-wa    # find library systems' websites
+uv run --locked python scripts/dev.py remove-location <id>  # delete a location and all its data
 uv run --locked python scripts/dev.py ingest-events         # 7 days of events from tomorrow, all locations
 uv run --locked python scripts/dev.py events                # list jobs and retained events
 uv run --locked python scripts/dev.py author-edition <id>   # re-queue authoring for a location
@@ -57,12 +58,14 @@ Each ingestion stores a snapshot (event descriptions are kept locally) and queue
 authoring:
 
 1. **Deduplicate**: repeats of the same event become one story listing every date and branch.
-2. **Rank**: the model scores each story for civic/practical value, broad appeal, and
-   one-off specialness (weighted 3:2:1); rules break ties and stand in if ranking fails.
+2. **Rank**: if there are more than 10 stories, 10 are picked at random. The model
+   scores each for civic/practical value, broad appeal, and one-off specialness
+   (weighted 3:2:1); rules break ties and stand in if ranking fails.
 3. **Write**: top stories, at most one per category, up to 5, each get a headline and a
    short prose summary plus fixed When/Where and source link. Checks hold any text that
-   adds facts not in the event, uses lists, or repeats itself; held items are left out and
-   kept for audit at `/review/editions`.
+   adds facts not in the event, uses lists, or repeats itself. A failing draft gets one
+   retry with the errors fed back; if it still fails it is left out and kept for audit
+   at `/review/editions`.
 4. **Front**: a headline about the top story, or "Auburn this week: Oct 19–25".
 No human review step. Library data is for local evaluation only; do not commit or redistribute it.
 

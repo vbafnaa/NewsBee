@@ -64,6 +64,7 @@ class EditionRun(BaseModel):
     events: int | None = None
     stories: int | None = None
     skipped_for_variety: int | None = None
+    ranked: int | None = None
     ranking_fallback_ratings: int | None = None
     duration_seconds: float | None = None
     front_fallback: bool | None = None

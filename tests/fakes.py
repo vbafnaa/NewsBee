@@ -59,7 +59,6 @@ def valid_ranking(candidates: list[dict]) -> dict:
 
 def valid_story(story: dict) -> dict:
     return {
-        "id": story["id"],
         "headline": f"Don't miss {story['title']}"[:90],
         "summary": f"Join us for {story['title']}.",
     }
@@ -103,7 +102,7 @@ def install(
         }
         marker = next((m for m in markers if m in prompt), None)
         if marker:
-            draft = markers[marker](json.loads(prompt.split(marker)[1]))
+            draft = markers[marker](json.loads(prompt.split(marker)[1].split("\n")[0]))
         else:
             draft = item(json.loads(prompt.split("\nFacts:\n")[1]))
         return httpx.Response(

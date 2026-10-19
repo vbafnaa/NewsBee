@@ -35,7 +35,7 @@
           <h2>{{ entry.result.draft.headline }}</h2>
           <p>{{ entry.result.draft.summary or entry.result.draft.blurb }}</p>
           {% if entry.result.when_where %}<p>{{ entry.result.when_where }}</p>{% endif %}
-          {% if entry.result.ranking %}<p><small>Rank {{ entry.result.ranking.rank }}, score {{ entry.result.ranking.score }} ({{ entry.result.ranking.category }}, rated by {{ entry.result.ranking.rated_by }}); {{ entry.result.story.occurrences|length }} occurrence(s) collapsed.</small></p>{% endif %}
+          {% if entry.result.ranking %}<p><small>Rank {{ entry.result.ranking.rank }}, score {{ entry.result.ranking.score }} ({{ entry.result.ranking.category }}, rated by {{ entry.result.ranking.rated_by }}); {{ entry.result.story.occurrences|length }} occurrence(s) collapsed.{% if entry.result.attempts and entry.result.attempts > 1 %} Passed on retry after: {{ entry.result.rejected_first.errors|join(", ") }}.{% endif %}</small></p>{% endif %}
           {% set link = (entry.result.source_url or entry.result.facts.source_url)|source_link %}
           {% if link %}<a href="{{ link }}" rel="noreferrer">View original event</a>
           {% else %}<p>Source link unavailable: unsupported URL</p>{% endif %}
@@ -54,6 +54,7 @@
         Not attempted: {{ run.not_attempted if run.not_attempted is not none else "n/a" }} |
         Events: {{ run.events if run.events is not none else "n/a" }} |
         Stories after deduplication: {{ run.stories if run.stories is not none else "n/a" }} |
+        Ranked (random sample of at most 10 stories): {{ run.ranked if run.ranked is not none else "n/a" }} |
         Skipped for variety: {{ run.skipped_for_variety if run.skipped_for_variety is not none else "n/a" }} |
         Rule-rated (model ranking failed): {{ run.ranking_fallback_ratings if run.ranking_fallback_ratings is not none else "n/a" }} |
         Duration (seconds): {{ run.duration_seconds if run.duration_seconds is not none else "n/a" }}</p>
@@ -75,6 +76,8 @@
         {% if entry.result.error %}<p>Generation error: {{ entry.result.error }}</p>{% endif %}
         {% if entry.result.draft %}<p>Rejected headline: {{ entry.result.draft.headline }}</p>
         <p>Rejected summary: {{ entry.result.draft.summary or entry.result.draft.blurb }}</p>{% endif %}
+        {% if entry.result.rejected_first %}<p>First attempt errors: {{ entry.result.rejected_first.errors|join(", ") }}</p>
+        <p>First attempt summary: {{ entry.result.rejected_first.draft.summary }}</p>{% endif %}
         <p>Source event ID: {{ entry.source_event_id }}</p>
       </section>
       {% else %}

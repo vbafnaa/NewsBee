@@ -186,6 +186,18 @@
           "default": null,
           "title": "Skipped For Variety"
         },
+        "ranked": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranked"
+        },
         "ranking_fallback_ratings": {
           "anyOf": [
             {
