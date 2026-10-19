@@ -81,7 +81,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         <div id="edition-items" class="columns"></div>
         <footer>
           <p id="edition-window"></p>
-          <p>Compiled automatically from library listings and public meeting records, not independent reporting. Check the original source for changes before attending.</p>
+          <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official state, county and trend sources. Not independent reporting. Check the original source before you go.</p>
         </footer>
       </article>
     </main>
@@ -95,8 +95,10 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         when_where: string;
         source_url: string | null;
         rank: number | null;
-        kind: "event" | "meeting_preview" | "meeting_outcome";
+        kind: "event" | "meeting_preview" | "meeting_outcome" | "state_news" | "earthquake" | "trending_topic" | "social_trend";
         source_name: string;
+        section?: string | null;
+        local?: boolean;
       };
       type Edition = {
         headline: string;
@@ -160,12 +162,17 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         const section = document.createElement("section");
         section.className = lead ? `story lead${repeatsFront ? " repeats-front" : ""}` : "story";
         if (item.story_id) section.id = `story-${item.story_id}`;
+        if (item.section) section.append(text("p", item.section, "kicker"));
         section.append(text("h3", item.headline), text("p", item.blurb, "blurb"));
         section.append(text("p", item.when_where, "when-where"));
         const labels = {
           event: "Library event",
           meeting_preview: "Upcoming public meeting",
           meeting_outcome: "Recorded meeting outcome",
+          state_news: "State news",
+          earthquake: "Earthquake report",
+          trending_topic: "Trending on Wikipedia",
+          social_trend: "Trending on Bluesky",
         };
         section.append(text("p", `${labels[item.kind]} · Source: ${item.source_name}`, "attribution"));
         if (item.source_url?.startsWith("https://")) {
@@ -396,10 +403,13 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
             ),
           );
           const items = edition.items;
-          const ranked = items.filter((item) => item.rank !== null);
+          // Town news leads; county or state stories lead only when there is no town news.
+          const localItems = items.filter((item) => item.local !== false);
+          const pool = localItems.length ? localItems : items;
+          const ranked = pool.filter((item) => item.rank !== null);
           const lead = ranked.length
             ? ranked.reduce((best, item) => (item.rank! < best.rank! ? item : best))
-            : items[0];
+            : pool[0];
           document.querySelector("#edition-lead")!.replaceChildren(
             ...(lead ? [story(lead, true, same(lead.headline, edition.headline))] : []),
           );
@@ -685,6 +695,14 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         font: italic 1.2rem/1.5 var(--display);
         color: var(--muted);
       }
+      .story .kicker {
+        margin: 0 0 0.3rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--accent);
+      }
+      .lead .kicker { grid-column: 1 / -1; }
       .story h3 { font: 700 1.35rem/1.2 var(--display); margin: 0 0 0.5rem; }
       .story .blurb { margin: 0 0 0.6rem; text-align: justify; hyphens: auto; }
       .when-where {
