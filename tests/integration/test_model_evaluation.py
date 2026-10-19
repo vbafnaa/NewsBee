@@ -11,7 +11,7 @@ TARGET = "projects.backend.shared.model_inference.evaluation"
 INJECTIONS = {
     "invented-time": (" It starts at 7pm.", "blurb:unsupported_number:7"),
     "invented-price": (" Admission is free.", "blurb:unsupported_claim_word:free"),
-    "invented-name": (" Maria leads it.", "blurb:unsupported_name:Maria"),
+    "invented-name": (" Ask Maria about it.", "blurb:unsupported_name:Maria"),
     "invented-booking": (" Registration required.", "blurb:unsupported_claim_word:registration"),
 }
 
@@ -65,13 +65,13 @@ def test_held_front_uses_labelled_fallback(settings, monkeypatch):
     report, passed, _ = run(
         settings,
         monkeypatch,
-        front=lambda _: {"headline": "Fun for kids", "intro": "Something for everyone."},
+        front=lambda _: {"headline": "Fun online", "intro": "Something for everyone."},
     )
     front = report["front"]
     assert passed is False
     assert front["fallback"] is True and front["fallback_reason"] == "model_text_held"
-    assert front["rejected"]["headline"] == "Fun for kids"
-    assert "headline:unsupported_claim_word:kids" in front["validation_errors"]
+    assert front["rejected"]["headline"] == "Fun online"
+    assert "headline:unsupported_claim_word:online" in front["validation_errors"]
     assert front["headline"].startswith("Capitol Hill events: ")
 
 

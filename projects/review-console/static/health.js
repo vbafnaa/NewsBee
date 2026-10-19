@@ -65,6 +65,19 @@ async function refreshHealth() {
           : `; headline: ${edition.front_fallback ? "fixed fallback" : "model"}`)
         + (edition.duration_seconds === null ? "" : `; duration: ${edition.duration_seconds}s`)
         + (edition.error ? `; error: ${edition.error}` : "");
+    const emails = document.querySelector("#email-deliveries");
+    emails.replaceChildren();
+    if (report.email_deliveries === null || report.email_deliveries === undefined) {
+      emails.textContent = "Email delivery status unavailable";
+    } else if (report.email_deliveries.length === 0) {
+      emails.textContent = "No email previews yet";
+    }
+    for (const sent of report.email_deliveries ?? []) {
+      const item = document.createElement("li");
+      item.textContent = `${sent.location_id}: sent ${sent.sent}, pending ${sent.pending}, failed ${sent.failed}`
+        + (sent.errors.length ? ` - ${sent.errors.join("; ")}` : "");
+      emails.append(item);
+    }
     const services = document.querySelector("#services");
     services.replaceChildren();
     for (const [name, component] of Object.entries(report.components)) {
@@ -83,6 +96,7 @@ async function refreshHealth() {
     document.querySelector("#services").replaceChildren();
     document.querySelector("#capabilities").replaceChildren();
     document.querySelector("#locations").replaceChildren();
+    document.querySelector("#email-deliveries").replaceChildren();
     document.querySelector("#latest-ingestion").textContent = "Latest ingestion unavailable";
     document.querySelector("#latest-edition").textContent = "Latest edition unavailable";
     document.querySelector("#jobs").textContent = "Unavailable";

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import httpx
 
 from projects.backend.modules.editions import drafting
+from projects.backend.modules.email_previews import delivery
 from projects.backend.modules.orchestration import jobs
 from projects.backend.modules.source_connectors.pipelines.events import ingest
 from projects.backend.shared.configuration.settings import Settings
@@ -37,6 +38,12 @@ def execute_authoring(settings: Settings, job: dict) -> None:
     except Exception as error:
         jobs.fail(settings.database, job, error, retryable=False)
         return
+    try:
+        delivery.queue(settings, job["source_id"], run.id)
+    except (ValueError, OSError) as error:
+        logger.exception("Email previews not queued edition_id=%s", run.id)
+        jobs.fail(settings.database, job, error, retryable=False)
+        return
     jobs.complete(
         settings.database,
         job,
@@ -44,8 +51,23 @@ def execute_authoring(settings: Settings, job: dict) -> None:
     )
 
 
+def execute_email(settings: Settings, job: dict) -> None:
+    try:
+        result = delivery.send(settings, job["source_id"])
+    except delivery.SendFailed as error:
+        jobs.fail(settings.database, job, error, retryable=True)
+        return
+    except Exception as error:
+        logger.exception("Email preview job failed job_id=%s", job["id"])
+        jobs.fail(settings.database, job, error, retryable=False)
+        return
+    jobs.complete(settings.database, job, result)
+
+
 def execute(settings: Settings, job: dict) -> None:
-    if job["kind"] == jobs.AUTHOR_KIND:
+    if job["kind"] == jobs.EMAIL_KIND:
+        execute_email(settings, job)
+    elif job["kind"] == jobs.AUTHOR_KIND:
         execute_authoring(settings, job)
     else:
         execute_ingestion(settings, job)
@@ -53,7 +75,7 @@ def execute(settings: Settings, job: dict) -> None:
 
 def run(settings: Settings, stop: threading.Event) -> None:
     initialize(settings.database)
-    logger.info("Worker starting; local ingestion and automatic edition publishing enabled")
+    logger.info("Worker starting; local ingestion, automatic publishing and email previews enabled")
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = None
         job = None
@@ -64,7 +86,13 @@ def run(settings: Settings, stop: threading.Event) -> None:
                     future.result()
                     future = None
                 else:
-                    jobs.renew(settings.database, job)
+                    renewed = jobs.renew(settings.database, job)
+                    if not renewed:
+                        # Usually the job recorded its result between done() and renew().
+                        # A genuinely lost lease surfaces when the job tries to record it.
+                        logger.warning("Lease not renewed job_id=%s; waiting", job["id"])
+                        future.result()
+                        future = None
             if future is None:
                 job = jobs.claim(settings.database)
                 if job:

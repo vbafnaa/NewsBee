@@ -76,7 +76,7 @@ def store_snapshot(settings, count: int, repeat: int = 0) -> str:
 def hold(*titles):
     def story(data):
         draft = fakes.valid_story(data)
-        return {**draft, "summary": "Free pizza."} if data["title"] in titles else draft
+        return {**draft, "summary": "Free raffle."} if data["title"] in titles else draft
 
     return story
 
@@ -106,7 +106,8 @@ def test_ingestion_snapshot_is_authored_and_published(
     assert (snapshot["window_start"], snapshot["window_end"]) == WINDOW
     job, requests = run_worker(settings, monkeypatch)
     assert job["id"] == ingestion["author_job_id"] and job["status"] == "completed"
-    assert len(requests) == 3 and {r["model"] for r in requests} == {"qwen3:4b"}
+    assert len(requests) == 4 and {r["model"] for r in requests} == {"qwen3:4b"}
+    assert "\nEmail:\n" in requests[3]["prompt"]
     assert requests[0]["options"]["num_gpu"] == 0 and requests[0]["keep_alive"] == "10m"
     assert "\nCandidates:\n" in requests[0]["prompt"]
     story_prompt = requests[1]["prompt"].split("\nStory:\n")[1]
@@ -163,7 +164,7 @@ def test_fill_to_five_skips_held_items_in_rank_order(client, settings, monkeypat
     assert (run.included, run.held, run.attempted, run.not_attempted) == (5, 2, 7, 1)
     assert headlines(client) == [f"Story Hour {i}" for i in (1, 3, 4, 5, 6)]
     held = client.get("/review/editions").text.split("Held text (excluded from the edition)")[1]
-    assert "Story Hour 0" in held and "summary:unsupported_claim_word:pizza" in held
+    assert "Story Hour 0" in held and "summary:unsupported_claim_word:raffle" in held
 
 
 def test_newsworthiness_orders_items_by_weighted_rubric(client, settings, monkeypatch):
@@ -223,15 +224,15 @@ def test_held_draft_gets_one_retry_with_errors_fed_back(client, settings, monkey
     def story(data):
         calls.append(data["title"])
         draft = fakes.valid_story(data)
-        return {**draft, "summary": "Free pizza."} if len(calls) == 1 else draft
+        return {**draft, "summary": "Free raffle."} if len(calls) == 1 else draft
 
     run, requests = author(settings, monkeypatch, story=story)
     assert (run.included, run.held, len(calls)) == (1, 0, 2)
     retry = requests[2]["prompt"]
-    assert "Your previous draft was rejected" in retry and "Free pizza." in retry
-    assert "summary:unsupported_claim_word:pizza" in retry
+    assert "Your previous draft was rejected" in retry and "Free raffle." in retry
+    assert "summary:unsupported_claim_word:raffle" in retry
     page = client.get("/review/editions").text
-    assert "Passed on retry after: summary:unsupported_claim_word:pizza" in page
+    assert "Passed on retry after: summary:unsupported_claim_word:raffle" in page
 
 
 def test_only_ten_random_stories_are_ranked(client, settings, monkeypatch):
@@ -338,7 +339,7 @@ def test_no_snapshot_fails_without_retry(settings, monkeypatch):
 def test_held_items_are_excluded_and_explained(client, settings, monkeypatch, outcome):
     store_snapshot(settings, 1)
     fake = (
-        {"story": lambda s: {**fakes.valid_story(s), "summary": "<b>Free</b> pizza for all."}}
+        {"story": lambda s: {**fakes.valid_story(s), "summary": "<b>Free</b> raffle for all."}}
         if outcome == "injected-claim"
         else {"status": 500}
     )
@@ -350,7 +351,7 @@ def test_held_items_are_excluded_and_explained(client, settings, monkeypatch, ou
     assert NO_EVENTS_INTRO in edition
     assert "Story Hour 0" in held
     if outcome == "injected-claim":
-        assert "summary:unsupported_claim_word:pizza" in held
+        assert "summary:unsupported_claim_word:raffle" in held
         assert "&lt;b&gt;Free&lt;/b&gt;" in held and "<b>Free</b>" not in page
     else:
         assert "Generation error: HTTPStatusError" in held
@@ -362,14 +363,14 @@ def test_held_front_uses_fixed_fallback(client, settings, monkeypatch):
     run, _ = author(
         settings,
         monkeypatch,
-        edition_front=lambda _: {"headline": "<i>Free</i> fun", "intro": "Bring the kids."},
+        edition_front=lambda _: {"headline": "<i>Free</i> fun", "intro": "Join us online."},
     )
     assert (run.included, run.front_fallback) == (1, True)
     edition = client.get(f"/api/editions/{LOCATION_ID}").json()
     assert edition["headline"] == "Seattle this week: Nov 1\u20137"
     page = client.get("/review/editions").text
     assert "Rejected headline: &lt;i&gt;Free&lt;/i&gt; fun" in page
-    assert "intro:unsupported_claim_word:kids" in page and "<i>Free</i>" not in page
+    assert "intro:unsupported_claim_word:online" in page and "<i>Free</i>" not in page
 
 
 def test_configured_model_overrides_default(settings, monkeypatch):
@@ -415,6 +416,7 @@ def test_removing_a_location_deletes_all_its_data(client, settings, monkeypatch)
 
     counts = locations.remove(settings.database, settings.evidence_dir, LOCATION_ID)
     assert counts == {
+        "email_deliveries": 0,
         "edition_entries": 2,
         "editions": 1,
         "snapshot_events": 2,
@@ -448,7 +450,7 @@ def test_v5_database_gains_snapshots_and_keeps_editions(tmp_path):
         database.execute("PRAGMA user_version = 5")
     initialize(path)
     with connect(path) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 6
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
         row = database.execute("SELECT id, snapshot_id FROM edition_drafts").fetchone()
         assert (row["id"], row["snapshot_id"]) == ("old", None)
         assert database.execute("SELECT COUNT(*) FROM location_snapshots").fetchone()[0] == 0
