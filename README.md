@@ -6,18 +6,13 @@ first source; editions publish after each ingestion with no human review.
 
 ```mermaid
 flowchart LR
-  subgraph Connectors["Library events connector (feed found per library website)"]
-    KCLS["King County Library System<br/>Auburn, Issaquah"]
-    KRL["Kitsap Regional Library<br/>Bainbridge Island"]
-    SNO["Sno-Isle Libraries<br/>Edmonds"]
-    FVRL["Fort Vancouver Regional<br/>Vancouver"]
-  end
-  Connectors -->|BiblioCommons, iCal, Trumba, schema.org| Worker[Ingestion worker]
-  Worker --> DB[(SQLite snapshots)]
-  DB --> Author["Authoring<br/>dedupe, rank, write, check<br/>Ollama qwen3:4b"]
-  Author --> API[FastAPI]
-  API --> Site[Reader website]
-  API --> Console[Review and health console]
+  Locations[Onboarded locations] --> Library[Library events connector]
+  Library --> Ingest[Ingestion]
+  Ingest --> Snapshot[Event snapshots]
+  Snapshot --> Rank[Newsworthiness ranking]
+  Rank --> Write[Story writing and checks]
+  Write --> Site[Reader website]
+  Write --> Console[Health and audit console]
 ```
 
 ## Setup
