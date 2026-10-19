@@ -19,25 +19,33 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       <header class="masthead">
         <div class="ears">
           <span>Your community, this week</span>
-          <span>Free &middot; Local &middot; Independent</span>
+          <div class="picker">
+            <button id="edition-toggle" type="button" aria-expanded="false"
+              aria-controls="edition-picker" disabled>
+              <span id="selected-location">Change edition</span>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div id="edition-picker" hidden>
+              <p class="picker-heading">Choose your edition</p>
+              <div id="onboarded-editions" aria-label="Available editions"></div>
+              <label for="location">Find another town</label>
+              <div class="location-field">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.5" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6.5" />
+                  <path d="m15.5 15.5 5 5" />
+                </svg>
+                <input id="location" type="text" role="combobox" aria-autocomplete="list"
+                  aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
+                  placeholder="Town or city, ST" autocomplete="off" maxlength="80" disabled />
+                <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
+              </div>
+              <p id="location-help" aria-live="polite">Search US towns, e.g. Seattle, WA.</p>
+            </div>
+          </div>
         </div>
         <p class="title">Newsbee</p>
         <p class="subtitle" id="edition-name">Community News</p>
-        <div class="picker">
-          <label for="location">Find your local edition</label>
-          <div class="location-field">
-            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="1.5" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="6.5" />
-              <path d="m15.5 15.5 5 5" />
-            </svg>
-            <input id="location" type="text" role="combobox" aria-autocomplete="list"
-              aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
-              placeholder="Enter your town or city" autocomplete="off" maxlength="80" disabled />
-            <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
-          </div>
-          <p id="location-help" aria-live="polite">A little closer to home. Search a US town, e.g. Seattle, WA.</p>
-        </div>
         <div class="dateline">
           <span id="edition-week">&nbsp;</span>
           <span id="edition-published">&nbsp;</span>
@@ -85,6 +93,11 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       const input = document.querySelector<HTMLInputElement>("#location")!;
       const options = document.querySelector<HTMLUListElement>("#location-options")!;
       const help = document.querySelector<HTMLParagraphElement>("#location-help")!;
+      const picker = document.querySelector<HTMLElement>(".picker")!;
+      const pickerPanel = document.querySelector<HTMLDivElement>("#edition-picker")!;
+      const pickerToggle = document.querySelector<HTMLButtonElement>("#edition-toggle")!;
+      const selectedLabel = document.querySelector<HTMLSpanElement>("#selected-location")!;
+      const onboarded = document.querySelector<HTMLDivElement>("#onboarded-editions")!;
       const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
       const article = document.querySelector<HTMLElement>("#edition")!;
       const expansion = document.querySelector<HTMLElement>("#expansion")!;
@@ -163,6 +176,40 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         active = -1;
       }
 
+      function closePicker(returnFocus = false) {
+        closeOptions();
+        pickerPanel.hidden = true;
+        pickerToggle.setAttribute("aria-expanded", "false");
+        if (returnFocus) pickerToggle.focus();
+      }
+
+      pickerToggle.addEventListener("click", () => {
+        if (!pickerPanel.hidden) {
+          closePicker();
+          return;
+        }
+        input.value = "";
+        help.textContent = "Search US towns, e.g. Seattle, WA.";
+        pickerPanel.hidden = false;
+        pickerToggle.setAttribute("aria-expanded", "true");
+        const current = onboarded.querySelector<HTMLButtonElement>('[aria-current="true"]');
+        (current ?? onboarded.querySelector<HTMLButtonElement>("button") ?? input).focus();
+      });
+      document.addEventListener("click", (event) => {
+        if (event.target instanceof Node && !picker.contains(event.target)) closePicker();
+      });
+      picker.addEventListener("focusout", (event) => {
+        if (!(event.relatedTarget instanceof Node) || !picker.contains(event.relatedTarget)) {
+          closePicker();
+        }
+      });
+      picker.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePicker(true);
+        }
+      });
+
       function highlight(index: number) {
         active = index;
         Array.from(options.children).forEach((option, i) =>
@@ -208,10 +255,15 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       }
 
       async function choose(town: Town, updateUrl = true) {
-        closeOptions();
+        const wasOpen = !pickerPanel.hidden;
+        closePicker(wasOpen);
         selected = town;
-        input.value = town.name;
-        help.textContent = "A little closer to home. Search a US town, e.g. Seattle, WA.";
+        input.value = "";
+        selectedLabel.textContent = town.name;
+        pickerToggle.setAttribute("aria-label", `Change edition: ${town.name}`);
+        onboarded.querySelectorAll<HTMLButtonElement>("button").forEach((button) =>
+          button.setAttribute("aria-current", String(button.dataset.locationId === town.id)),
+        );
         if (updateUrl) {
           const url = new URL(window.location.href);
           url.searchParams.set("location", town.id);
@@ -230,12 +282,10 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       });
       input.addEventListener("blur", () => {
         closeOptions();
-        if (selected) input.value = selected.name;
       });
       input.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
           closeOptions();
-          if (selected) input.value = selected.name;
         } else if (!options.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
           event.preventDefault();
           const next = active < 0
@@ -323,6 +373,13 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         if (!Array.isArray(data.locations)) throw new Error("Unsupported editions contract");
         for (const listing of data.locations as Listing[]) {
           listings.set(listing.location_id, listing);
+          const button = text("button", listing.location_name) as HTMLButtonElement;
+          button.type = "button";
+          button.dataset.locationId = listing.location_id;
+          button.addEventListener("click", () => choose({
+            id: listing.location_id, name: listing.location_name,
+          }));
+          onboarded.append(button);
         }
         const requested = new URLSearchParams(location.search).get("location");
         const listing = requested ? listings.get(requested) : data.locations[0] as Listing | undefined;
@@ -333,12 +390,13 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
             const town = await getJson(`/api/locations/${encodeURIComponent(requested)}`);
             await choose(town, false);
           } catch (error) {
-            status.textContent = `Location unavailable: ${failure(error)}. Search for your town above.`;
+            status.textContent = `Location unavailable: ${failure(error)}. Choose a town from Change edition.`;
           }
         } else {
-          status.textContent = "Find your community. Search for your town above.";
+          status.textContent = "Find your community. Open Change edition to search for your town.";
         }
         input.disabled = false;
+        pickerToggle.disabled = false;
       } catch (error) {
         status.textContent = `Editions unavailable: ${failure(error)}`;
       }
@@ -376,6 +434,8 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       .ears {
         display: flex;
         justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
         font: italic 0.8rem var(--serif);
         color: var(--muted);
         border-bottom: 1px solid var(--rule);
@@ -404,7 +464,70 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       }
       .dateline > :first-child { text-align: left; }
       .dateline > :last-child { text-align: right; }
-      .picker { max-width: 30rem; margin: 1.4rem auto 1.3rem; text-align: left; }
+      .picker { position: relative; text-align: left; font-style: normal; }
+      #edition-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 2.25rem;
+        max-width: 18rem;
+        padding: 0.25rem 0;
+        border: 0;
+        background: transparent;
+        color: var(--accent);
+        font: 0.8rem/1.4 var(--serif);
+        cursor: pointer;
+      }
+      #edition-toggle:hover { text-decoration: underline; text-underline-offset: 0.2rem; }
+      #edition-toggle:focus-visible, #onboarded-editions button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      #edition-toggle:disabled { opacity: 0.6; cursor: wait; }
+      .chevron {
+        width: 0.4rem;
+        height: 0.4rem;
+        flex-shrink: 0;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: rotate(45deg) translateY(-2px);
+      }
+      #edition-toggle[aria-expanded="true"] .chevron { transform: rotate(225deg); }
+      #edition-picker {
+        position: absolute;
+        z-index: 3;
+        top: calc(100% + 0.5rem);
+        right: 0;
+        width: min(19rem, calc(100vw - 2rem));
+        max-height: min(34rem, 75vh);
+        overflow-y: auto;
+        padding: 1rem;
+        background: var(--paper);
+        border: 1px solid #a69a85;
+        border-top: 2px solid var(--accent);
+        box-shadow: 0 6px 18px rgb(28 26 23 / 0.15);
+      }
+      .picker-heading {
+        margin: 0 0 0.5rem;
+        font: italic 1.1rem/1.4 var(--display);
+        color: var(--ink);
+      }
+      #onboarded-editions { max-height: 12rem; overflow-y: auto; }
+      #onboarded-editions:not(:empty) { margin-bottom: 1rem; border-bottom: 1px solid #c9c0ae; }
+      #onboarded-editions button {
+        display: block;
+        width: 100%;
+        padding: 0.6rem 0.4rem;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: 0.9rem/1.4 var(--serif);
+        text-align: left;
+        cursor: pointer;
+      }
+      #onboarded-editions button:hover { background: #e8dfcd; }
+      #onboarded-editions [aria-current="true"] { color: var(--accent); font-weight: bold; }
+      #onboarded-editions [aria-current="true"]::after { content: " \2713"; }
       .picker label {
         display: block;
         margin-bottom: 0.5rem;
@@ -427,15 +550,15 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         border-color: var(--accent);
         box-shadow: 0 0 0 3px rgb(122 31 31 / 0.12);
       }
-      .search-icon { flex: 0 0 1.3rem; width: 1.3rem; height: 1.3rem; margin-left: 1rem; color: var(--accent); }
+      .search-icon { flex: 0 0 1rem; width: 1rem; height: 1rem; margin-left: 0.6rem; color: var(--accent); }
       .picker input {
         min-width: 0;
         width: 100%;
-        font: 1.1rem/1.5 var(--serif);
+        font: 0.9rem/1.5 var(--serif);
         background: transparent;
         color: var(--ink);
         border: 0;
-        padding: 0.8rem 1rem 0.8rem 0.7rem;
+        padding: 0.5rem 0.6rem;
       }
       .picker input:focus { outline: none; }
       .picker input::placeholder { color: #746b5b; font-style: italic; }
@@ -448,11 +571,6 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         color: var(--muted);
       }
       #location-options {
-        position: absolute;
-        z-index: 2;
-        top: calc(100% + 0.35rem);
-        left: -1px;
-        right: -1px;
         max-height: 18rem;
         overflow-y: auto;
         margin: 0;
@@ -460,9 +578,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         list-style: none;
         background: var(--paper);
         border: 1px solid #a69a85;
-        border-top: 2px solid var(--accent);
         border-radius: 2px;
-        box-shadow: 0 8px 20px rgb(28 26 23 / 0.16);
         text-align: left;
         text-transform: none;
         letter-spacing: normal;
@@ -474,6 +590,9 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         cursor: pointer;
       }
       #location-options li:last-child { border-bottom: 0; }
+      .location-field { flex-wrap: wrap; }
+      #location { flex: 1; width: 0; }
+      #location-options { flex: 0 0 100%; border: 0; border-top: 1px solid #c9c0ae; }
       #location-options li:hover, #location-options [aria-selected="true"] {
         background: var(--accent);
         color: var(--paper);
@@ -568,9 +687,10 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
       @media (max-width: 760px) {
         main { margin: 0; padding: 1rem; }
         .title { font-size: 3.4rem; }
-        .picker { margin: 1.2rem auto; }
+        .picker { margin-left: auto; }
         .picker input { font-size: 1rem; }
-        .ears { display: none; }
+        .ears > span { font-size: 0.7rem; }
+        #edition-toggle { max-width: 12rem; font-size: 0.75rem; }
         .dateline { grid-template-columns: 1fr; text-align: center; }
         .dateline > :first-child, .dateline > :last-child { text-align: center; }
         #edition-headline { font-size: 2.2rem; }
