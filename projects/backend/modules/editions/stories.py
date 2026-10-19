@@ -15,6 +15,12 @@ from datetime import date
 MAX_OCCURRENCES_SHOWN = 4
 _NOISE = re.compile(r"[^a-z0-9]+")
 _YEAR = re.compile(r",\s*\d{4}(?=,|$)")
+NEWS_LINES = {
+    "state_news": "Published {when} by {source}.",
+    "earthquake": "Recorded {when}. Where: {source}.",
+    "trending_topic": "Measured through {when}. Source: {source}.",
+    "social_trend": "Trending as of {when}. Source: {source}.",
+}
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,8 @@ def collapse(events: list[dict]) -> list[Story]:
     for event in events:
         facts = event["facts"]
         key = story_key(facts["title"])
+        if facts.get("kind", "event") != "event":
+            key = f"{facts['kind']}:{facts['event_date']}:{key}"
         story = stories.get(key)
         if story is None:
             identity = hashlib.sha256(key.encode()).hexdigest()[:12]
@@ -90,7 +98,13 @@ def _place(item: Occurrence) -> str:
 
 
 def when_where(story: Story) -> str:
-    """Fixed, factual When/Where text (never model-written)."""
+    """Fixed, factual When/Where text (never model-written). Wider-area news says when it
+    was published or measured and by whom instead."""
+    if story.kind in NEWS_LINES:
+        item = story.first
+        return NEWS_LINES[story.kind].format(
+            when=_YEAR.sub("", item.schedule_text), source=item.venue
+        )
     shown = story.occurrences[:MAX_OCCURRENCES_SHOWN]
     if len(story.occurrences) == 1:
         item = shown[0]

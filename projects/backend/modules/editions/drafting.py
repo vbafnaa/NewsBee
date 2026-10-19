@@ -1,18 +1,21 @@
 """Author and publish one edition per location snapshot, with no human review step.
 
-Pipeline: snapshot events -> stories (repeats collapsed) -> per source type, at most
-SAMPLE_PER_SOURCE stories randomly sampled (seeded by snapshot ID), ranked by that source's
-own rules, keeping the top TOP_PER_SOURCE -> model newsworthiness ranking across sources ->
+Pipeline: snapshot events -> stories (repeats collapsed) -> rank every story by its
+source's rules, keeping the top TOP_PER_SOURCE -> model newsworthiness ranking across sources ->
 write items best-first, each source's best story first (falling to its next story if held),
 with no per-category limit, until MAX_ENTRIES pass the checks or MAX_ATTEMPTS have been
 written -> edition headline and
 intro. Items are shown in rank order. Held items are excluded and never block publishing.
 A snapshot with no usable events still publishes an edition.
+
+Local stories (town events, meetings, and wider-source items that name the town) are written
+first. County and nearby-town stories (news deserts' fallback) then fill remaining slots, up to
+MAX_WIDER, and are shown after local ones with a section label saying where they are from.
 """
 
+import hashlib
 import json
 import logging
-import random
 import time
 import uuid
 from dataclasses import asdict
@@ -22,6 +25,8 @@ import httpx
 
 from projects.backend.modules.communities import locations
 from projects.backend.modules.editions import stories
+from projects.backend.modules.editorial.corrections import withdrawals
+from projects.backend.modules.editorial.publication_checks import policy
 from projects.backend.modules.source_connectors import ranking as source_ranking
 from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.shared.configuration.settings import Settings
@@ -30,14 +35,25 @@ from projects.backend.shared.model_inference.ollama import ModelRuntime
 from projects.backend.shared.model_inference.runtime import configured_model, create_runtime
 from projects.backend.shared.storage import snapshots
 from projects.backend.shared.storage.database import connect
-from shared.contracts.health import Edition, EditionItem, EditionListing, EditionRun
+from shared.contracts.health import (
+    CorrectionNotice,
+    Edition,
+    EditionItem,
+    EditionListing,
+    EditionRun,
+)
 
 logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "qwen3:4b"
-VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}"
+VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}+{policy.POLICY}"
 MAX_ENTRIES = 9
 MAX_ATTEMPTS = 12
-SAMPLE_PER_SOURCE = 10
+# Wider-area (county or nearby-place) stories fill only slots local news leaves, at most about
+# 40% of a full edition, with their own attempt budget so local attempts never starve them.
+MAX_WIDER = 4
+MAX_WIDER_ATTEMPTS = 6
+WIDER_TIERS = frozenset({"region", "nearby"})
+WIDER_SOURCES = ("hazards:", "statenews:", "trending:")
 TOP_PER_SOURCE = 5
 
 
@@ -51,23 +67,13 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
             "venues": story.venues,
             "first_date": story.first.event_date,
             "kind": story.kind,
+            "tier": story.facts.get("tier", "local"),
         }
         for story in story_list
     ]
 
 
-def sample(story_list: list[stories.Story], seed: str) -> list[stories.Story]:
-    """A random subset when a source has more than SAMPLE_PER_SOURCE stories, for variety.
-
-    Seeded by snapshot ID so re-authoring the same snapshot picks the same stories.
-    """
-    if len(story_list) <= SAMPLE_PER_SOURCE:
-        return story_list
-    chosen = set(random.Random(seed).sample(range(len(story_list)), SAMPLE_PER_SOURCE))
-    return [story for index, story in enumerate(story_list) if index in chosen]
-
-
-def shortlist(story_list: list[stories.Story], seed: str) -> tuple[list[stories.Story], dict]:
+def shortlist(story_list: list[stories.Story]) -> tuple[list[stories.Story], dict]:
     """Each source type's best stories by its own rules, so every source can compete."""
     groups: dict[str, list[stories.Story]] = {}
     for story in story_list:
@@ -75,12 +81,11 @@ def shortlist(story_list: list[stories.Story], seed: str) -> tuple[list[stories.
     chosen: list[stories.Story] = []
     summary: dict[str, dict] = {}
     for kind in sorted(groups):
-        sampled = sample(groups[kind], f"{seed}:{kind}")
-        top = source_ranking.rank(kind, sampled)[:TOP_PER_SOURCE]
+        top = source_ranking.rank(kind, groups[kind])[:TOP_PER_SOURCE]
         chosen += top
         summary[kind] = {
             "stories": len(groups[kind]),
-            "sampled": len(sampled),
+            "considered": len(groups[kind]),
             "shortlisted": len(top),
         }
     return chosen, summary
@@ -100,8 +105,39 @@ def story_record(story: stories.Story) -> dict:
         "id": story.id,
         "title": story.title,
         "description": story.description,
+        "kind": story.kind,
         "occurrences": [asdict(item) for item in story.occurrences],
     }
+
+
+async def checked_item(settings: Settings, runtime: OllamaRuntime, candidate: dict) -> dict:
+    """Reuse only successful prose with identical evidence, model and validation policy."""
+    content = {key: candidate.get(key) for key in ("title", "description", "venues", "kind")}
+    key = hashlib.sha256(
+        json.dumps(
+            [settings.ollama_model or DEFAULT_MODEL, VALIDATION_POLICY, content],
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    key = f"{candidate['community_id']}:{key}"
+    with connect(settings.database) as database:
+        cached = database.execute(
+            "SELECT result_json FROM story_cache WHERE cache_key = ?", (key,)
+        ).fetchone()
+    if cached:
+        result = json.loads(cached["result_json"])
+        draft = story_writer.ItemDraft.model_validate(result["draft"])
+        if not story_writer.validate_item(candidate, draft):
+            return {**result, "cache_hit": True, "wall_seconds": 0.0}
+        logger.warning("Cached draft failed current checks cache_key=%s", key)
+    result = await story_writer.write_item(runtime, candidate)
+    if result["disposition"] == "checks_passed":
+        with connect(settings.database) as database:
+            database.execute(
+                "INSERT OR REPLACE INTO story_cache VALUES (?, ?, ?)",
+                (key, candidate["community_id"], json.dumps(result)),
+            )
+    return {**result, "cache_hit": False}
 
 
 class ModelNotReady(RuntimeError):
@@ -191,8 +227,9 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             VALIDATION_POLICY,
         )
         all_stories = stories.collapse(events)
-        story_list, sources = shortlist(all_stories, snapshot["id"])
+        story_list, sources = shortlist(all_stories)
         by_id = {story.id: story for story in story_list}
+        withdrawn = withdrawals.for_location(settings.database, location_id)
         source_of = {
             story.id: source_ranking.source_type(story.first.source_id) for story in story_list
         }
@@ -215,13 +252,38 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 json.dumps(sources),
             )
             rank_of = {candidate["id"]: rank for rank, candidate in enumerate(ranked, start=1)}
-            pending = list(ranked)
-            while pending and len(passed) < MAX_ENTRIES and attempted < MAX_ATTEMPTS:
-                candidate = next_candidate(pending, source_of, covered)
-                pending.remove(candidate)
+            # Retired "state" tier stories from older snapshots are never written.
+            local = [c for c in ranked if c["tier"] == "local"]
+            # Wider stories only fill what local news leaves: nearest tier first, then rank.
+            wider = sorted(
+                (c for c in ranked if c["tier"] in WIDER_TIERS),
+                key=lambda c: (c["tier"] != "region", rank_of[c["id"]]),
+            )
+            wider_attempted = wider_passed = 0
+
+            async def attempt(candidate: dict) -> bool:
+                nonlocal held, attempted
                 rank = rank_of[candidate["id"]]
                 story = by_id[candidate["id"]]
-                result = await story_writer.write_item(runtime, candidate)
+                candidate["community_id"] = location_id
+                eligibility = policy.errors(candidate) + policy.source_errors(
+                    [item.source_url for item in story.occurrences]
+                )
+                if withdrawals.matching(story_record(story), withdrawn):
+                    eligibility.append("previously_withdrawn")
+                if eligibility:
+                    logger.warning(
+                        "Story held before writing story_id=%s errors=%s", story.id, eligibility
+                    )
+                    result = {
+                        "disposition": "held",
+                        "checks_passed": False,
+                        "validation_errors": eligibility,
+                        "attempts": 0,
+                        "wall_seconds": 0.0,
+                    }
+                else:
+                    result = await checked_item(settings, runtime, candidate)
                 result.update(
                     story=story_record(story),
                     ranking={
@@ -232,8 +294,11 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                     },
                     when_where=stories.when_where(story),
                     source_url=story.first.source_url,
+                    tier=candidate["tier"],
+                    section=story.facts.get("section"),
                 )
-                if result["disposition"] == "checks_passed":
+                ok = result["disposition"] == "checks_passed"
+                if ok:
                     covered.add(source_of[candidate["id"]])
                     passed.append((rank, candidate, result["draft"]))
                 else:
@@ -254,19 +319,39 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 attempted += 1
                 logger.info(
                     "Edition item edition_id=%s story_id=%s rank=%s score=%s category=%s "
-                    "occurrences=%s attempts=%s disposition=%s errors=%s wall_seconds=%s",
+                    "tier=%s occurrences=%s attempts=%s disposition=%s errors=%s "
+                    "wall_seconds=%s",
                     identity,
                     story.id,
                     rank,
                     candidate["score"],
                     candidate["rating"]["category"],
+                    candidate["tier"],
                     len(story.occurrences),
                     result.get("attempts"),
                     result["disposition"],
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
-            passed.sort(key=lambda entry: entry[0])
+                return ok
+
+            while local and len(passed) < MAX_ENTRIES and attempted < MAX_ATTEMPTS:
+                candidate = next_candidate(local, source_of, covered)
+                local.remove(candidate)
+                await attempt(candidate)
+            local_passed = len(passed)
+            while (
+                wider
+                and len(passed) < MAX_ENTRIES
+                and wider_passed < MAX_WIDER
+                and wider_attempted < MAX_WIDER_ATTEMPTS
+            ):
+                candidate = next_candidate(wider, source_of, covered)
+                wider.remove(candidate)
+                wider_attempted += 1
+                wider_passed += await attempt(candidate)
+            # Local stories lead; wider stories follow, each group in rank order.
+            passed.sort(key=lambda entry: (entry[1]["tier"] in WIDER_TIERS, entry[0]))
             week = stories.week_label(snapshot["window_start"], snapshot["window_end"])
             passed_stories = [candidate for _, candidate, _ in passed]
             passed_drafts = [draft for _, _, draft in passed]
@@ -292,6 +377,9 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             raise
         summary = {
             "included": len(passed),
+            "local_included": local_passed,
+            "wider_included": wider_passed,
+            "wider_attempted": wider_attempted,
             "held": held,
             "attempted": attempted,
             "not_attempted": len(story_list) - attempted,
@@ -406,14 +494,27 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
             "AND disposition != 'held' ORDER BY position",
             (row["id"],),
         ).fetchall()
+        snapshot = database.execute(
+            "SELECT systems_json FROM location_snapshots WHERE id = ?", (row["snapshot_id"],)
+        ).fetchone()
     front = json.loads(row["result_json"])["front"]
+    withdrawn = withdrawals.for_location(path, location_id)
+    corrections = []
+    systems = json.loads(snapshot["systems_json"]) if snapshot else []
+    source_names = {system["source_id"]: system["name"] for system in systems}
     items = []
     for entry in entries:
         result = json.loads(entry["result_json"])
         draft = result["draft"]
         story = result.get("story")
+        notices = withdrawals.matching(story, withdrawn) if story else []
+        if notices:
+            corrections.extend(CorrectionNotice.model_validate(notice) for notice in notices)
+            continue
+        occurrence = story["occurrences"][0] if story else {}
         items.append(
             EditionItem(
+                story_id=story["id"] if story else None,
                 headline=draft["headline"],
                 blurb=draft.get("summary") or draft.get("blurb"),
                 when_where=result["when_where"],
@@ -426,9 +527,38 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
                     result.get("source_url") or result.get("facts", {}).get("source_url")
                 ),
                 rank=(result.get("ranking") or {}).get("rank"),
+                kind=story.get("kind", "event") if story else "event",
+                source_name=source_names.get(occurrence.get("source_id"), "Local source"),
+                section=result.get("section"),
+                local=result.get("tier", "local") == "local",
             )
         )
-    items.sort(key=lambda item: item.rank if item.rank is not None else float("inf"))
+    if corrections:
+        front = story_writer.fallback_front(
+            location["name"].split(",")[0],
+            stories.week_label(row["window_start"], row["window_end"]),
+            bool(items),
+        ).model_dump()
+    coverage = [
+        f"{system['name']}: coverage unavailable ({system['status']})."
+        for system in systems
+        if system["status"] != "ingested"
+    ]
+    if not systems:
+        coverage.append("Source coverage was not recorded for this edition.")
+    if not any(system["source_id"].startswith("meetings:") for system in systems):
+        coverage.append("No public meeting source was checked for this edition.")
+    wider = any(system["source_id"].startswith(WIDER_SOURCES) for system in systems)
+    coverage.insert(
+        0,
+        "Private prototype: library listings, public meetings"
+        + (", official state news and trends about the town and nearby places" if wider else "")
+        + " only, not all local news.",
+    )
+    # Town stories first; county and nearby ones after, each group best ranked first.
+    items.sort(
+        key=lambda item: (not item.local, item.rank if item.rank is not None else float("inf"))
+    )
     return Edition(
         id=row["id"],
         location_id=location_id,
@@ -439,6 +569,8 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
         headline=front["headline"],
         intro=front["intro"],
         items=items,
+        coverage=coverage,
+        corrections=list({notice.story_id: notice for notice in corrections}.values()),
     )
 
 
@@ -455,6 +587,28 @@ def email_content(path: Path, edition_id: str) -> dict:
     result = json.loads(row["result_json"])
     name = locations.get(path, row["community_id"])["name"]
     email = result.get("email") or story_writer.fallback_email(name, True).model_dump()
+    withdrawn = withdrawals.for_location(path, row["community_id"])
+    with connect(path) as database:
+        entries = database.execute(
+            "SELECT result_json FROM edition_draft_entries WHERE edition_id = ? "
+            "AND disposition != 'held'",
+            (edition_id,),
+        ).fetchall()
+    affected = [
+        story
+        for entry in entries
+        if (story := json.loads(entry["result_json"]).get("story"))
+        and withdrawals.matching(story, withdrawn)
+    ]
+    if affected:
+        front = story_writer.fallback_front(name, "updated edition", False)
+        return {
+            "location_id": row["community_id"],
+            "location_name": name,
+            "headline": front.headline,
+            "intro": "This edition has been corrected. Read the website for the current stories.",
+            "blurb": "A story was withdrawn; the correction notice is available with the edition.",
+        }
     return {
         "location_id": row["community_id"],
         "location_name": name,

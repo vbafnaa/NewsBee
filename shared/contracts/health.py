@@ -97,12 +97,31 @@ class HealthReport(BaseModel):
 
 
 class EditionItem(BaseModel):
+    story_id: str | None = None
     headline: str
     blurb: str
     when_where: str
     event_date: str
     source_url: str | None
     rank: int | None = None
+    kind: Literal[
+        "event",
+        "meeting_preview",
+        "meeting_outcome",
+        "state_news",
+        "earthquake",
+        "trending_topic",
+        "social_trend",
+    ] = "event"
+    source_name: str = "Local source"
+    section: str | None = None
+    local: bool = True
+
+
+class CorrectionNotice(BaseModel):
+    story_id: str
+    reason: str
+    created_at: float
 
 
 class Edition(BaseModel):
@@ -115,6 +134,8 @@ class Edition(BaseModel):
     headline: str
     intro: str
     items: list[EditionItem]
+    coverage: list[str] = Field(default_factory=list)
+    corrections: list[CorrectionNotice] = Field(default_factory=list)
 
 
 class EditionListing(BaseModel):

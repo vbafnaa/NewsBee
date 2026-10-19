@@ -14,7 +14,13 @@ from shared.contracts.health import ComponentHealth
 def settings(tmp_path: Path, monkeypatch) -> Settings:
     for name in Settings.model_fields:
         monkeypatch.delenv(f"NEWSBEE_{name.upper()}", raising=False)
-    return Settings(data_dir=tmp_path / "data", subscribers_file=tmp_path / "subscribers.json")
+    # Wider (county/state/trending) sources have dedicated tests; the shared fixture worlds
+    # model only town sources.
+    return Settings(
+        data_dir=tmp_path / "data",
+        subscribers_file=tmp_path / "subscribers.json",
+        wider_sources=False,
+    )
 
 
 @pytest.fixture

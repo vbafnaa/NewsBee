@@ -1,22 +1,27 @@
 # Newsbee
 CSE589 UW Entrepreneurship Prototyping
 
-Local Stage 1 prototype of an auto-published community newspaper. Sources are library events
-and local government meetings; editions publish after each ingestion with no human review.
+Newsbee is a local Stage 1 prototype of an automatically written weekly community newspaper.
+For each onboarded town it:
+
+1. pulls the coming week's library events and local government meetings, plus nearby
+   earthquakes, state newsroom announcements and trends about the town, county or nearby places,
+2. ranks them and has a local model (Ollama, `qwen3:4b`) write short stories,
+3. holds any story that fails its checks, and publishes the rest to a reader website,
+4. emails a preview to test subscribers (captured locally by Mailpit).
 
 ```mermaid
 flowchart LR
-  Locations[Onboarded locations] --> Library[Library events connector]
-  Locations --> Meetings[Government meetings connector]
-  Library --> Ingest[Ingestion]
-  Meetings --> Ingest
-  Ingest --> Snapshot[Event snapshots]
-  Snapshot --> Rank[Newsworthiness ranking]
-  Rank --> Write[Story writing and checks]
+  Library[Library events] --> Ingest[Ingestion]
+  Meetings[Government meetings] --> Ingest
+  USGS[USGS earthquakes] --> Ingest
+  StateNews[State newsrooms] --> Ingest
+  Wikipedia[Wikipedia trends] --> Ingest
+  Bluesky[Bluesky trends] --> Ingest
+  Ingest --> Rank[Ranking] --> Write[Story writing and checks]
   Write --> Site[Reader website]
-  Write --> Console[Health and audit console]
   Write --> Email[Email preview]
-  Email --> Site
+  Write --> Console[Health and review console]
 ```
 
 ## Setup
@@ -32,6 +37,14 @@ uv run --locked python scripts/dev.py setup --browser
 uv run --locked python scripts/dev.py up
 ```
 
+In a second terminal, add a town and publish its first edition:
+
+```text
+uv run --locked python scripts/dev.py setup-directory
+uv run --locked python scripts/dev.py onboard edmonds-wa
+uv run --locked python scripts/dev.py ingest-events
+```
+
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
@@ -41,54 +54,59 @@ uv run --locked python scripts/dev.py up
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
 The local API and reader are localhost-only. The journalist admin requires Google OAuth and
-an administrator email allowlist; see `projects/journalist-site/README.md`.
+an enabled administrator account in MongoDB; see `projects/journalist-site/README.md`.
+Logs go to `.local/logs/`. The local API and reader do not require authentication.
 
 ## Commands
 
-In a second terminal (prefix each with `uv run --locked python scripts/dev.py`):
+Prefix each with `uv run --locked python scripts/dev.py`:
 
 | Command | Does |
 | --- | --- |
-| `setup-directory` | Download the US library directory (once) |
-| `find-location Edmonds` | List matching towns and ids |
-| `onboard edmonds-wa` | Add a location and find its library websites and meeting platform |
-| `remove-location <id>` | Delete a location and all its data |
-| `ingest-events` | Pull 7 days of events and meeting agendas from tomorrow, plus the past 7 days' recorded meeting decisions, then author editions |
-| `author-edition <id>` | Re-author one location |
+| `find-location Edmonds` | Find a town's id |
+| `onboard <id>` / `remove-location <id>` | Add or remove a town |
+| `ingest-events` | Fetch sources and publish editions for every town |
+| `author-edition <id>` | Re-write one town's edition |
+| `withdraw-story <edition id> --story <story id> --reason "..."` | Remove a published story with a correction |
 | `events` | List jobs and stored events |
 
-If a library website isn't found, add it to `config/library-websites.json` and re-run
-`onboard`. Library data is for local evaluation only; don't commit or redistribute it.
+If `onboard` can't find a town's library website or meeting platform, add it to
+`config/library-websites.json` or `config/government-sources.json` and re-run it.
 
-Government meetings come from the town's Legistar or CivicClerk public API, found via the
-town website (Wikidata) or its name. If `onboard` reports no platform, add
-`{"<location id>": {"platform": "legistar", "tenant": "<name>"}}` to
-`config/government-sources.json` and re-run `onboard`. Each meeting story opens with what
-the public body does; procedural items (roll call, minutes) and private individuals' cases
-are left out. Outcomes are the clerk's recorded actions; CivicClerk records none, so it
-supplies agendas only.
+### County and nearby sources
 
-## Authoring
+Editions also draw on the town's county and reviewed places within 50 km. Statewide stories
+are not used. Each source is free, keyless, public and robots.txt-permitted, with its own
+connector and ranking rules:
 
-1. **Deduplicate** repeated events into one story.
-2. **Rank** in two steps. Each source type shortlists its own top 5 (from at most 10 randomly
-   sampled) by its own rules: library events put one-off events, then practical help, first;
-   meetings put the city council first, then sooner meetings and fuller agendas. The model then
-   ranks the shortlists together (civic 3 : appeal 2 : one-off 1).
-3. **Write** up to 9 stories in rank order (each source's best story first, so every source
-   gets in), with no per-category limit and at most 12 attempts. Drafts that add facts, repeat
-   themselves, stop mid-sentence, drift into non-Latin characters or leave the event's own
-   name out of the headline get one retry, then are held for audit at `/review/editions`.
-4. **Front** headline naming the top story (same checks and one retry, else a fixed fallback).
-5. **Email** a preview (headline, intro, a teaser blurb and a link to the website) to the
-   test subscribers for that location in `config/preview-subscribers.json`. Failed sends
-   retry and show on the health page.
+| Source id | Source | Window | Kept | Ranking |
+| --- | --- | --- | --- | --- |
+| `hazards:usgs` | USGS earthquake catalog | 14 days, 50 km | M3.0+ or 10+ "felt" reports | town tier (≤15 km), magnitude, distance, felt |
+| `statenews:wa` | Official state newsroom RSS (Governor, WSDOT, AG, DOH) | 14 days | names the town, county or a nearby place | town, county, nearby; practical over ceremonial; publishers interleaved |
+| `trending:wikipedia:wa` | Wikimedia pageviews: nearby watchlist + state-tied most-read | last 3 days vs prior 2 weeks | ≥2x (watchlist) / ≥1.5x (most-read), 1,000+ views/day | town, county, nearby; biggest spike |
+| `trending:bluesky:wa` | Bluesky public trending topics | today | trend name is the town, county, a nearby place or a nearby watchlist topic; 100+ posts | town, county, nearby; most posts |
+
+Items are tagged `local` (names the town), `region` (names its county) or `nearby` (names a
+place within 50 km, e.g. Seattle for Edmonds or Portland for Vancouver). Items that name none
+of these are dropped. A nearby place must be in the headline or trend name, not just the body,
+so a passing mention doesn't count. Names shared with other states (Auburn, Vancouver,
+Portland) count from national sources only when the state or county is also named. Local
+stories are written first; county then nearby stories fill at most 4 of the 9 slots, appear
+after local ones, and carry a section label (e.g. "Around King County", "Near Edmonds"). Places,
+coordinates and watchlist places are reviewed in `config/state-sources.json`. Guardrails: deaths,
+crime, violence and self-harm topics are dropped; Bluesky politics trends are excluded; no
+post text or handles are stored (counts only); calls are bounded and statewide results cached
+daily; a failing source shows on the health page but never fails the town's ingestion.
+Per-state sources live in `config/state-sources.json`. Set `NEWSBEE_WIDER_SOURCES=false` to
+turn them off. Not used: NWS alerts and Wikipedia `api.php` (robots.txt disallows), and
+Google Trends, X, Reddit and TikTok (no free, permitted public API).
 
 ## Development
 
 ```text
-uv run --locked python scripts/dev.py test      # fixtures and mocks only
-uv run --locked python scripts/dev.py browser
+uv run --locked python scripts/dev.py test      # offline tests
+uv run --locked python scripts/dev.py browser   # browser tests
+uv run --locked python scripts/dev.py replay    # Stage 1 replay check
 uv run --locked ruff check .
 ```
 
@@ -110,6 +128,6 @@ Vercel, MongoDB Atlas, Google Drive, admin authentication, and worker-hosting di
 | `projects/journalist-site` | Authenticated Next.js operations console |
 | `projects/review-console` | Minimal review and health pages |
 | `shared/contracts` | Contracts shared between projects |
-| `config` | Library website and government platform overrides, preview subscribers, policies |
+| `config` | Source overrides, preview subscribers, policies |
 | `tests` | Unit, integration, end-to-end ([map](tests/README.md)) |
 | `Docs` | [Design spec](Docs/newsbee-design-spec-v1.html), [roadmap](Docs/newsbee-implementation-roadmap-v1.html) |

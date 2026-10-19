@@ -18,6 +18,11 @@ for an onboarded town awaiting publication, or an expansion interest page otherw
 The `?location=<id>` link works for both onboarded and directory-only towns.
 Search, edition, and signup failures are shown explicitly.
 
+Edition/API failures have a retry action. Each story identifies its source and whether it
+is an event, upcoming public meeting or recorded outcome. Coverage disclosures, past-edition
+warnings and visible correction notices prevent missing/stale coverage being presented as
+a complete account of local news. The layout is keyboard-accessible and adapts to mobile widths.
+
 The expansion form posts an email to `/api/locations/<id>/interest`. The API validates
 the town against the directory and saves one entry per town/email in the local
 SQLite `expansion_signups` table (including town name and signup time). Repeated

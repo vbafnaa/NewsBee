@@ -76,7 +76,7 @@ def test_week_label():
     assert stories.week_label("2026-10-29", "2026-11-04") == "Oct 29\u2013Nov 4"
 
 
-def candidate(identity, occurrences=1, first_date="2026-11-01"):
+def candidate(identity, occurrences=1, first_date="2026-11-01", **extra):
     return {
         "id": identity,
         "title": identity,
@@ -84,6 +84,7 @@ def candidate(identity, occurrences=1, first_date="2026-11-01"):
         "occurrences": occurrences,
         "venues": ["Branch"],
         "first_date": first_date,
+        **extra,
     }
 
 
@@ -160,6 +161,68 @@ def test_ranking_falls_back_to_rules_per_missing_or_failed_batch(monkeypatch):
     assert "ValueError" in summary["batch_reports"][1]["error"]
 
 
+def test_every_source_competes_on_score_alone():
+    runtime = Runtime(
+        [
+            {
+                "ratings": [
+                    rating("event", civic=2),
+                    rating("meeting", civic=1),
+                    rating("news", appeal=1),
+                    rating("quake", civic=3),
+                ]
+            }
+        ]
+    )
+    pool = [
+        candidate("meeting", kind="meeting_preview"),
+        candidate("news", kind="state_news", tier="nearby"),
+        candidate("quake", kind="earthquake", tier="local"),
+        candidate("event"),
+    ]
+    ranked, _ = asyncio.run(newsworthiness.rank(runtime, pool))
+    assert [item["id"] for item in ranked] == ["quake", "event", "meeting", "news"]
+
+
+def test_rule_fallback_scores_news_zero_and_keeps_meetings_high():
+    runtime = Runtime([ValueError("bad json")])
+    pool = [
+        candidate("trend", kind="trending_topic", tier="nearby"),
+        candidate("event"),
+        candidate("meeting", kind="meeting_outcome"),
+        candidate("news", kind="state_news", tier="region"),
+    ]
+    ranked, _ = asyncio.run(newsworthiness.rank(runtime, pool))
+    assert [(item["id"], item["score"]) for item in ranked] == [
+        ("meeting", 10),
+        ("event", 1),
+        ("news", 0),
+        ("trend", 0),
+    ]
+
+
+def test_ties_put_upcoming_events_soonest_and_news_newest_first():
+    runtime = Runtime([{"ratings": [rating(i, civic=1) for i in ("e1", "e2", "n1", "n2")]}])
+    pool = [
+        candidate("e2", first_date="2026-11-03"),
+        candidate("e1", first_date="2026-11-02"),
+        candidate("n1", first_date="2026-10-28", kind="state_news"),
+        candidate("n2", first_date="2026-10-30", kind="state_news"),
+    ]
+    ranked, _ = asyncio.run(newsworthiness.rank(runtime, pool))
+    assert [item["id"] for item in ranked] == ["n2", "n1", "e1", "e2"]
+
+
+def test_ranking_prompt_tells_the_model_each_kind_and_area():
+    pool = [candidate("e"), candidate("q", kind="earthquake", tier="region")]
+    data = json.loads(newsworthiness.prompt(pool).split("\nCandidates:\n")[1])
+    assert [(item["kind"], item["area"]) for item in data] == [
+        ("event", "town"),
+        ("earthquake", "county"),
+    ]
+    assert "trending_topics" in newsworthiness.prompt(pool)
+
+
 def draft(summary=SUMMARY, headline="Robots take over the lab", **changes):
     return ItemDraft(**{"headline": headline, "summary": summary, **changes})
 
@@ -193,6 +256,21 @@ def test_item_checks_headline():
         "headline:unsupported_claim_word:free",
         "headline:repeats_when_where",
     } <= set(errors)
+
+
+@pytest.mark.parametrize("kind", ["state_news", "earthquake", "trending_topic", "social_trend"])
+def test_news_stories_may_mention_dates(kind):
+    story = {**STORY, "kind": kind}
+    text = "Build robots from Monday through October 19."
+    errors = story_writer.validate_item(story, draft(summary=text, headline="Robots on Monday"))
+    assert not [error for error in errors if "repeats_when_where" in error]
+    prompt = story_writer.item_prompt(story)
+    assert story_writer.DATE_RULE not in prompt
+
+
+def test_event_prompts_still_forbid_dates():
+    assert story_writer.DATE_RULE in story_writer.item_prompt(STORY)
+    assert story_writer.DATE_RULE in story_writer.item_prompt({**STORY, "kind": "meeting_preview"})
 
 
 def test_item_checks_allow_names_and_numbers():

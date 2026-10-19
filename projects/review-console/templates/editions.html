@@ -10,9 +10,10 @@
     <main>
       <p><strong>Edition audit</strong> |
         <a href="/review">Local health</a> | <a href="/review/editions">Refresh audit</a></p>
-      <p>Read-only. Editions publish automatically; there is no review or publish step. Held
-        items are excluded from the edition and kept as future training data for the connector
-        agents. Redistribution permission is unresolved.</p>
+      <p>Read-only audit of the original publication. Editions publish automatically. Held
+        items stay excluded. Withdraw stories using the local withdraw-story command;
+        reader editions show the correction while this original evidence stays unchanged.
+        Redistribution permission is unresolved. No automatic training uses held text.</p>
       {% if report is none %}
       <p role="alert">Edition audit unavailable. Check API logs and local database access.</p>
       {% elif report.latest is none %}
@@ -34,6 +35,8 @@
         {% for entry in report.latest.included %}
         <section>
           <h2>{{ entry.result.draft.headline }}</h2>
+          {% if entry.result.story %}<p><small>Edition: {{ run.id }} | Story: {{ entry.result.story.id }}</small></p>{% endif %}
+          {% if entry.result.cache_hit %}<p><small>Reused checked prose: unchanged source text, model and policy.</small></p>{% endif %}
           <p>{{ entry.result.draft.summary or entry.result.draft.blurb }}</p>
           {% if entry.result.when_where %}<p>{{ entry.result.when_where }}</p>{% endif %}
           {% if entry.result.ranking %}<p><small>Rank {{ entry.result.ranking.rank }}, score {{ entry.result.ranking.score }} ({{ entry.result.ranking.category }}, rated by {{ entry.result.ranking.rated_by }}); {{ entry.result.story.occurrences|length }} occurrence(s) collapsed.{% if entry.result.attempts and entry.result.attempts > 1 %} Passed on retry after: {{ entry.result.rejected_first.errors|join(", ") }}.{% endif %}</small></p>{% endif %}

@@ -19,6 +19,7 @@ from tests.library_world import LOCATION_ID
 
 TARGET = "projects.backend.modules.editions.drafting"
 WINDOW = ("2026-11-01", "2026-11-07")
+pytestmark = pytest.mark.critical
 
 
 def author(settings, monkeypatch, **fake):
@@ -109,7 +110,7 @@ def test_ingestion_snapshot_is_authored_and_published(
     assert job["id"] == ingestion["author_job_id"] and job["status"] == "completed"
     assert len(requests) == 4 and {r["model"] for r in requests} == {"qwen3:4b"}
     assert "\nEmail:\n" in requests[3]["prompt"]
-    assert requests[0]["options"]["num_gpu"] == 0 and requests[0]["keep_alive"] == "10m"
+    assert "num_gpu" not in requests[0]["options"] and requests[0]["keep_alive"] == "10m"
     assert "\nCandidates:\n" in requests[0]["prompt"]
     story_prompt = requests[1]["prompt"].split("\nStory:\n")[1]
     assert "venue_url" not in story_prompt and "source_url" not in story_prompt
@@ -135,19 +136,24 @@ def test_ingestion_snapshot_is_authored_and_published(
     schedule = facts["schedule_text"].replace(", 2026", "")
     assert edition["items"] == [
         {
+            "story_id": stories.collapse(snapshots.events(settings.database, snapshot["id"]))[0].id,
             "headline": f"Don't miss {facts['title']}",
             "blurb": f"Join us for {facts['title']}.",
             "when_where": f"When: {schedule}. Where: {facts['venue']}, {facts['room']}.",
             "event_date": "2026-11-03",
             "source_url": facts["source_url"],
             "rank": 1,
+            "kind": "event",
+            "source_name": "Example City Library",
+            "section": None,
+            "local": True,
         }
     ]
     health = client.get("/api/health").json()
     assert health["latest_edition"]["included"] == 1
     assert health["locations"][0]["latest_edition_id"] == run.id
     page = client.get("/review/editions").text
-    assert "No held items." in page and "newsworthiness_v1+story_v1" in page
+    assert "No held items." in page and drafting.VALIDATION_POLICY in page
     assert "Rank 1, score 3" in page
     assert "human review" not in page.lower()
     assert client.post("/review/editions").status_code == 405
@@ -244,7 +250,7 @@ def test_held_draft_gets_one_retry_with_errors_fed_back(client, settings, monkey
     assert "Passed on retry after: summary:unsupported_claim_word:raffle" in page
 
 
-def test_each_source_is_sampled_and_shortlisted_before_ranking(client, settings, monkeypatch):
+def test_each_source_is_fully_ranked_and_shortlisted(client, settings, monkeypatch):
     store_snapshot(settings, 14)
     run, requests = author(settings, monkeypatch)
     ranked = json.loads(requests[0]["prompt"].split("\nCandidates:\n")[1])
@@ -253,11 +259,11 @@ def test_each_source_is_sampled_and_shortlisted_before_ranking(client, settings,
     with connect(settings.database) as database:
         snapshot = database.execute("SELECT id FROM location_snapshots").fetchone()["id"]
     events = snapshots.events(settings.database, snapshot)
-    first, summary = drafting.shortlist(stories.collapse(events), snapshot)
+    first, summary = drafting.shortlist(stories.collapse(events))
     assert [s.title for s in first] == [
-        s.title for s in drafting.shortlist(stories.collapse(events), snapshot)[0]
+        s.title for s in drafting.shortlist(stories.collapse(events))[0]
     ]
-    assert summary == {"library": {"stories": 14, "sampled": 10, "shortlisted": 5}}
+    assert summary == {"library": {"stories": 14, "considered": 14, "shortlisted": 5}}
     assert "Ranked (top 5 per source): 5" in client.get("/review/editions").text
 
 
@@ -290,6 +296,71 @@ def test_attempts_are_capped_and_edition_still_publishes(client, settings, monke
         NO_EVENTS_INTRO,
         [],
     )
+
+
+def store_mixed_snapshot(settings, local: int, wider: list[tuple[str, str]]) -> None:
+    """`local` library stories plus wider news items given as (title, tier)."""
+    initialize(settings.database)
+    library_world.onboard(settings.database)
+    events = []
+    for index in range(local):
+        events.append({
+            "source_id": "library:WA0001", "source_event_id": f"l{index}",
+            "event_date": "2026-11-02",
+            "facts": {
+                "source_event_id": f"l{index}", "title": f"Story Hour {index}",
+                "event_date": "2026-11-02", "schedule_text": "Monday, November 2, 2026, 10am",
+                "venue": "Capitol Hill Branch", "room": None,
+                "source_url": f"https://www.spl.org/event/{index}",
+                "description": "Free picture books and songs.", "branch": "Capitol Hill",
+            },
+        })
+    for index, (title, tier) in enumerate(wider):
+        section = {"region": "Around King County", "nearby": "Near Seattle",
+                   "state": "Around Washington"}[tier]
+        events.append({
+            "source_id": "statenews:wa", "source_event_id": f"n{index}",
+            "event_date": "2026-10-28",
+            "facts": {
+                "source_event_id": f"n{index}", "title": title, "event_date": "2026-10-28",
+                "schedule_text": "Wednesday, October 28, 2026", "venue": "WSDOT", "room": None,
+                "source_url": f"https://wsdot.wa.gov/news/{index}",
+                "description": f"{title} was announced by WSDOT.", "kind": "state_news",
+                "tier": tier, "section": section, "signals": {"publisher": "WSDOT"},
+                "branch": None,
+            },
+        })
+    with connect(settings.database) as database:
+        snapshots.record(database, LOCATION_ID, "job", WINDOW, events, [], "e.json")
+        jobs.enqueue_within(database, LOCATION_ID, jobs.AUTHOR_KIND)
+
+
+def test_local_stories_lead_and_wider_news_only_fills_capped_slots(client, settings, monkeypatch):
+    wider = [(f"Tacoma road work {i}", "nearby") for i in range(4)]
+    wider.append(("County ferry update", "region"))
+    store_mixed_snapshot(settings, 3, wider)
+    # Rate nearby news highest: local stories must still come first.
+    run, _ = author(settings, monkeypatch, ranking=rate(**{t: {"civic": 3} for t, _ in wider}))
+    items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
+    assert [item["local"] for item in items] == [True] * 3 + [False] * drafting.MAX_WIDER
+    assert items[3]["headline"] == "Don't miss County ferry update"  # county before nearby
+    assert items[3]["section"] == "Around King County" and items[0]["section"] is None
+    assert items[4]["when_where"] == "Published Wednesday, October 28 by WSDOT."
+    summary = json.loads(
+        sqlite3.connect(settings.database).execute(
+            "SELECT result_json FROM edition_drafts").fetchone()[0])
+    assert (summary["local_included"], summary["wider_included"]) == (3, 4)
+
+
+def test_news_desert_edition_is_filled_from_wider_sources(client, settings, monkeypatch):
+    # A retired statewide item from an older snapshot is never written.
+    store_mixed_snapshot(
+        settings, 0, [("Statewide burn ban", "state"), ("Bellevue road closure", "nearby")]
+    )
+    run, _ = author(settings, monkeypatch)
+    items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
+    assert run.included == 1 and items[0]["section"] == "Near Seattle"
+    assert items[0]["local"] is False
 
 
 def test_empty_snapshot_publishes_without_the_model(client, settings, monkeypatch):
@@ -436,6 +507,8 @@ def test_removing_a_location_deletes_all_its_data(client, settings, monkeypatch)
 
     counts = locations.remove(settings.database, settings.evidence_dir, LOCATION_ID)
     assert counts == {
+        "story_cache": 2,
+        "withdrawals": 0,
         "email_deliveries": 0,
         "edition_entries": 2,
         "editions": 1,
@@ -470,7 +543,7 @@ def test_v5_database_gains_snapshots_and_keeps_editions(tmp_path):
         database.execute("PRAGMA user_version = 5")
     initialize(path)
     with connect(path) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 9
         row = database.execute("SELECT id, snapshot_id FROM edition_drafts").fetchone()
         assert (row["id"], row["snapshot_id"]) == ("old", None)
         assert database.execute("SELECT COUNT(*) FROM location_snapshots").fetchone()[0] == 0

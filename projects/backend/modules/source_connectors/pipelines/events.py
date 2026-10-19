@@ -1,6 +1,11 @@
 """Ingest one onboarded location: run the library events agent for every library system,
 keep only next-7-day events at an in-town branch, add the town's public meetings (upcoming
-agendas plus the past week's recorded outcomes), and store facts plus evidence."""
+agendas plus the past week's recorded outcomes), and store facts plus evidence.
+
+With NEWSBEE_WIDER_SOURCES on (the default), also add the past fortnight's nearby
+earthquakes, official state newsroom posts, and Wikipedia/Bluesky trends about the town, its
+county or places within 50 km (statewide items are dropped), each tagged local/region/nearby
+so drafting can fill news-desert editions without crowding out town news."""
 
 import hashlib
 import json
@@ -16,7 +21,14 @@ import httpx
 from projects.backend.modules.communities import locations
 from projects.backend.modules.communities.venues import match_branch
 from projects.backend.modules.orchestration import jobs
-from projects.backend.modules.source_connectors.agents import government_meetings, library_events
+from projects.backend.modules.source_connectors.agents import (
+    government_meetings,
+    hazards,
+    library_events,
+    regions,
+    state_news,
+    trending,
+)
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.storage import snapshots
 from projects.backend.shared.storage.database import connect
@@ -90,6 +102,32 @@ def collect(system: dict, client: httpx.Client, start: str, end: str) -> tuple[d
     return result, kept
 
 
+def wider(location: dict, client: httpx.Client, today: date, cache_dir) -> list[tuple]:
+    """Nearby hazards, state newsroom posts and trends near the town, so news deserts still get an
+    edition. Each returns its own result; none of them fails the location's job."""
+    states = regions.load()
+    collectors = (
+        ("hazards:usgs", "USGS earthquakes nearby", lambda: hazards.collect(
+            location, client, today, states)),
+        ("statenews", "State newsrooms", lambda: state_news.collect(
+            location, client, today, states)),
+        ("trending:wikipedia", "Trending on Wikipedia", lambda: trending.wikipedia(
+            location, client, today, cache_dir, states)),
+        ("trending:bluesky", "Trending on Bluesky", lambda: trending.bluesky_trends(
+            location, client, today, cache_dir, states)),
+    )
+    outcomes = []
+    for source, name, run in collectors:
+        try:
+            outcomes.append(run())
+        except Exception as error:  # supplementary sources must never fail the town's job
+            logger.exception("Wider source crashed source_id=%s", source)
+            outcomes.append(
+                (regions.result(source, name, "failed", f"{type(error).__name__}: {error}"), [])
+            )
+    return outcomes
+
+
 def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | None = None) -> None:
     started = time.monotonic()
     try:
@@ -107,6 +145,10 @@ def ingest(settings: Settings, job: dict, client: httpx.Client, today: date | No
         result, meetings = government_meetings.collect(location, client, today, (start, end))
         systems.append(result)
         retained += [(result["source_id"], meeting, None) for meeting in meetings]
+    if settings.wider_sources:
+        for result, facts in wider(location, client, today, settings.trending_cache_dir):
+            systems.append(result)
+            retained += [(result["source_id"], fact, None) for fact in facts]
     retrieved = datetime.now(UTC).isoformat()
     envelope = {
         "location_id": location["id"],

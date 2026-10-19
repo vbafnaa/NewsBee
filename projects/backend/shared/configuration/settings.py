@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     subscribers_file: Path = ROOT / "config" / "preview-subscribers.json"
     heartbeat_interval: float = Field(default=2, ge=0.1, le=10)
     heartbeat_max_age: float = Field(default=15, ge=15)
+    wider_sources: bool = True
 
     @field_validator("model_provider", mode="before")
     @classmethod
@@ -130,3 +131,7 @@ class Settings(BaseSettings):
     @property
     def evidence_dir(self) -> Path:
         return self.data_dir / "evidence"
+
+    @property
+    def trending_cache_dir(self) -> Path:
+        return self.data_dir / "cache" / "trending"
