@@ -9,7 +9,7 @@ intro. Items are shown in rank order. Held items are excluded and never block pu
 A snapshot with no usable events still publishes an edition.
 
 Local stories (town events, meetings, and wider-source items that name the town) are written
-first. County and statewide stories (news deserts' fallback) then fill remaining slots, up to
+first. County and nearby-town stories (news deserts' fallback) then fill remaining slots, up to
 MAX_WIDER, and are shown after local ones with a section label saying where they are from.
 """
 
@@ -47,11 +47,11 @@ DEFAULT_MODEL = "qwen3:4b"
 VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}+{policy.POLICY}"
 MAX_ENTRIES = 9
 MAX_ATTEMPTS = 12
-# Wider-area (county or state) stories fill only slots local news leaves, at most about
+# Wider-area (county or nearby-place) stories fill only slots local news leaves, at most about
 # 40% of a full edition, with their own attempt budget so local attempts never starve them.
 MAX_WIDER = 4
 MAX_WIDER_ATTEMPTS = 6
-WIDER_TIERS = frozenset({"region", "state"})
+WIDER_TIERS = frozenset({"region", "nearby"})
 WIDER_SOURCES = ("hazards:", "statenews:", "trending:")
 TOP_PER_SOURCE = 5
 
@@ -249,7 +249,8 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 json.dumps(sources),
             )
             rank_of = {candidate["id"]: rank for rank, candidate in enumerate(ranked, start=1)}
-            local = [c for c in ranked if c["tier"] not in WIDER_TIERS]
+            # Retired "state" tier stories from older snapshots are never written.
+            local = [c for c in ranked if c["tier"] == "local"]
             # Wider stories only fill what local news leaves: nearest tier first, then rank.
             wider = sorted(
                 (c for c in ranked if c["tier"] in WIDER_TIERS),
@@ -526,7 +527,7 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
                 kind=story.get("kind", "event") if story else "event",
                 source_name=source_names.get(occurrence.get("source_id"), "Local source"),
                 section=result.get("section"),
-                local=result.get("tier", "local") not in WIDER_TIERS,
+                local=result.get("tier", "local") == "local",
             )
         )
     if corrections:
@@ -548,10 +549,10 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
     coverage.insert(
         0,
         "Private prototype: library listings, public meetings"
-        + (", official state news and statewide trends" if wider else "")
+        + (", official state news and trends about the town and nearby places" if wider else "")
         + " only, not all local news.",
     )
-    # Town stories first; county and statewide ones after, each group best ranked first.
+    # Town stories first; county and nearby ones after, each group best ranked first.
     items.sort(
         key=lambda item: (not item.local, item.rank if item.rank is not None else float("inf"))
     )

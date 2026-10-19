@@ -1,14 +1,16 @@
-"""Trending agent: what people across the state are paying attention to right now.
+"""Trending agent: what people near the town are paying attention to right now.
 
 Two free, public, keyless sources, each its own adapter and source id:
 
 * Wikipedia (``trending:wikipedia:<state>``): daily views of reviewed state watchlist
   articles (teams, landmarks, ferries, fairs, shows set in the state) plus most-read
-  articles whose titles tie them to the state. A topic trends when its latest three days
+  articles whose titles tie them to the state. Only topics about the town, its county or a
+  reviewed place within NEARBY_KM are kept. A topic trends when its latest three days
   average at least MIN_RATIO times its usual daily views. The town's and county's own
   articles are measured too, as a local attention signal recorded on the result.
 * Bluesky (``trending:bluesky:<state>``): Bluesky's trending topics that name the town,
-  county or a state alias. Political topics are excluded. Posts are only ever counted.
+  county, a nearby place or a nearby watchlist topic. Political topics are excluded. Posts
+  are only ever counted.
 
 Statewide results are cached per state per day under the data directory, so every location
 in a state shares one set of calls. Guardrails: robots.txt is honoured (Fetcher), call
@@ -172,6 +174,15 @@ def qualifies(topic: dict) -> bool:
     )
 
 
+def topic_tier(topic: dict, place: Region) -> str | None:
+    """Watchlist topics are nearby when their reviewed place is; most-read titles are
+    already tied to the state, so ambiguous place names count."""
+    tier = place.item_tier(wikimedia.label(topic["article"]), topic["about"], qualified=True)
+    if tier is None and any(e["article"] == topic["article"] for e in place.nearby_topics):
+        return "nearby"
+    return tier
+
+
 def topic_facts(topic: dict, place: Region) -> NewsFacts:
     name = wikimedia.label(topic["article"])
     views, ratio = topic["recent_daily_views"], topic["ratio"]
@@ -187,11 +198,11 @@ def topic_facts(topic: dict, place: Region) -> NewsFacts:
         description += (
             f" Bluesky users mentioned it in {topic['social_mentions']} or more recent posts."
         )
-    tier = place.tier_for(name)
+    tier = topic_tier(topic, place)
     section = {
         "local": "Trending locally",
         "region": f"Trending around {place.county}",
-    }.get(tier, f"Trending in {place.state_name}")
+    }.get(tier, f"Trending near {place.town}")
     day = date.fromisoformat(
         f"{topic['latest_day'][:4]}-{topic['latest_day'][4:6]}-{topic['latest_day'][6:]}"
     )
@@ -253,13 +264,22 @@ def wikipedia(location: dict, client: httpx.Client, today: date, cache_dir=None,
         (topic for topic in data["topics"] if qualifies(topic)),
         key=lambda topic: -topic["ratio"],
     )
-    facts = [topic_facts(topic, place) for topic in trending[:MAX_ITEMS]]
+    near = [topic for topic in trending if topic_tier(topic, place)]
+    facts = [topic_facts(topic, place) for topic in near[:MAX_ITEMS]]
     record.update(
-        detail=f"{len(data['topics'])} topics measured, {len(trending)} trending; top lists "
+        detail=f"{len(data['topics'])} topics measured, {len(trending)} trending, "
+        f"{len(near)} near {place.town}; top lists "
         f"{', '.join(data['top_days']) or 'unavailable'}; attention vs usual: town "
         f"{attention.get('town')}x, county {attention.get('county')}x",
         event_count=len(facts),
-        skipped_unusable={"not_trending": len(data["topics"]) - len(trending)},
+        skipped_unusable={
+            key: value
+            for key, value in {
+                "not_trending": len(data["topics"]) - len(trending),
+                "not_near_town": len(trending) - len(near),
+            }.items()
+            if value
+        },
         pages_checked=data["errors"][:10],
     )
     logger.info("Wikipedia trending result source_id=%s topics=%s trending=%s attention=%s",
@@ -267,9 +287,17 @@ def wikipedia(location: dict, client: httpx.Client, today: date, cache_dir=None,
     return record, facts
 
 
-def _relevant_terms(place: Region) -> list[str]:
-    labels = [wikimedia.label(entry["article"]) for entry in place.watchlist]
-    return [place.town, *([place.county] if place.county else []), *place.aliases, *labels]
+def trend_tier(trend: dict, place: Region) -> str | None:
+    """Bluesky trends are national, so ambiguous names need the state or county named too;
+    a nearby place or nearby watchlist topic (e.g. a local team) must be in the trend name
+    itself, not just its summary."""
+    tier = place.item_tier(trend["name"], trend["description"])
+    if tier is None and any(
+        mentions(trend["name"], wikimedia.label(entry["article"]))
+        for entry in place.nearby_topics
+    ):
+        return "nearby"
+    return tier
 
 
 def trend_facts(trend: dict, place: Region, today: date) -> NewsFacts:
@@ -279,7 +307,7 @@ def trend_facts(trend: dict, place: Region, today: date) -> NewsFacts:
     )
     if trend["description"]:
         description += f" Bluesky's summary: {trend['description']}"
-    tier = place.tier_for(trend["name"], trend["description"])
+    tier = trend_tier(trend, place)
     return NewsFacts(
         source_event_id=hashlib.sha256(trend["topic"].encode()).hexdigest()[:16],
         title=trend["name"],
@@ -328,13 +356,12 @@ def bluesky_trends(location: dict, client: httpx.Client, today: date, cache_dir=
     if data.get("failed"):
         record.update(status=data["status"], detail=data["error"])
         return record, []
-    terms = _relevant_terms(place)
-    skipped = {"not_about_the_state": 0, "excluded_topic": 0, "too_few_posts": 0}
+    skipped = {"not_near_town": 0, "excluded_topic": 0, "too_few_posts": 0}
     facts = []
     for trend in data["trends"]:
         text = f"{trend['name']} {trend['description'] or ''}"
-        if not any(mentions(text, term) for term in terms):
-            skipped["not_about_the_state"] += 1
+        if trend_tier(trend, place) is None:
+            skipped["not_near_town"] += 1
         elif trend["category"] in EXCLUDED_CATEGORIES or sensitive(text):
             skipped["excluded_topic"] += 1
         elif trend["post_count"] < MIN_POSTS:
@@ -343,8 +370,8 @@ def bluesky_trends(location: dict, client: httpx.Client, today: date, cache_dir=
             facts.append(trend_facts(trend, place, today))
     facts = facts[:MAX_ITEMS]
     record.update(
-        detail=f"{len(data['trends'])} national trending topics, {len(facts)} tied to "
-        f"{place.state_name}; {town_posts if town_posts is not None else 'unknown'} posts "
+        detail=f"{len(data['trends'])} national trending topics, {len(facts)} about "
+        f"{place.town} or nearby; {town_posts if town_posts is not None else 'unknown'} posts "
         f"naming {place.town} in 7 days (counted, not stored)",
         event_count=len(facts),
         skipped_unusable={key: value for key, value in skipped.items() if value},

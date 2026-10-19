@@ -81,7 +81,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
         <div id="edition-items" class="columns"></div>
         <footer>
           <p id="edition-window"></p>
-          <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official state, county and trend sources. Not independent reporting. Check the original source before you go.</p>
+          <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official county, nearby-town and trend sources. Not independent reporting. Check the original source before you go.</p>
         </footer>
       </article>
     </main>
@@ -403,7 +403,7 @@ const apiUrl = import.meta.env.PUBLIC_API_URL || "http://127.0.0.1:8000";
             ),
           );
           const items = edition.items;
-          // Town news leads; county or state stories lead only when there is no town news.
+          // Town news leads; county or nearby stories lead only when there is no town news.
           const localItems = items.filter((item) => item.local !== false);
           const pool = localItems.length ? localItems : items;
           const ranked = pool.filter((item) => item.rank !== null);
