@@ -8,7 +8,7 @@ import pytest
 from projects.backend.modules.communities import directory, locations, wikidata
 from projects.backend.modules.communities.venues import match_branch
 from projects.backend.modules.source_connectors.agents import government_meetings
-from projects.backend.shared.storage.database import initialize
+from projects.backend.shared.storage.database import connect, initialize
 
 SYSTEMS = [
     {
@@ -150,6 +150,58 @@ def test_search_api_returns_candidates(client, settings):
     response = client.get("/api/locations/search", params={"q": "seattle, wa"})
     assert response.status_code == 200
     assert [result["id"] for result in response.json()["results"]] == ["seattle-wa"]
+
+
+def test_expansion_signup_validates_town_and_deduplicates_email(client, settings):
+    directory.build(archive(), directory.directory_path(settings.data_dir))
+    assert client.get("/api/locations/seaside-or").json() == {
+        "id": "seaside-or",
+        "name": "Seaside, OR",
+    }
+    for email in (" Reader@Example.com ", "reader@example.com"):
+        response = client.post("/api/locations/seaside-or/interest", json={"email": email})
+        assert response.status_code == 200
+        assert response.json() == {"status": "saved"}
+    with connect(settings.database) as database:
+        [row] = database.execute("SELECT * FROM expansion_signups").fetchall()
+        assert row["email"] == "reader@example.com"
+        assert row["location_id"] == "seaside-or"
+        assert row["location_name"] == "Seaside, OR"
+        assert row["created_at"] > 0
+    assert client.post(
+        "/api/locations/unknown/interest", json={"email": "reader@example.com"}
+    ).status_code == 404
+
+
+@pytest.mark.parametrize("email", ["invalid", "a@b", "a b@example.com", "a@example.com\r\nBcc:x"])
+def test_expansion_signup_rejects_invalid_email(client, email):
+    assert client.post(
+        "/api/locations/seaside-or/interest", json={"email": email}
+    ).status_code == 422
+
+
+def test_location_directory_unavailable_is_explicit(client):
+    assert client.get("/api/locations/search?q=Sea").status_code == 503
+    assert client.get("/api/locations/seaside-or").status_code == 503
+    assert client.post(
+        "/api/locations/seaside-or/interest", json={"email": "reader@example.com"}
+    ).status_code == 503
+
+
+def test_expansion_signup_storage_failure_is_explicit(client, settings, monkeypatch):
+    import sqlite3
+
+    directory.build(archive(), directory.directory_path(settings.data_dir))
+
+    def fail(_):
+        raise sqlite3.OperationalError("fixture outage")
+
+    monkeypatch.setattr("projects.backend.api.routes.locations.connect", fail)
+    response = client.post(
+        "/api/locations/seaside-or/interest", json={"email": "reader@example.com"}
+    )
+    assert response.status_code == 503
+    assert "could not be saved" in response.json()["detail"]
 
 
 def wikidata_transport(entities: dict, search_ids: list[str]) -> httpx.MockTransport:

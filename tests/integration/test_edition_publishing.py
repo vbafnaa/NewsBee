@@ -463,7 +463,7 @@ def test_v5_database_gains_snapshots_and_keeps_editions(tmp_path):
         database.execute("PRAGMA user_version = 5")
     initialize(path)
     with connect(path) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 7
+        assert database.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 8
         row = database.execute("SELECT id, snapshot_id FROM edition_drafts").fetchone()
         assert (row["id"], row["snapshot_id"]) == ("old", None)
         assert database.execute("SELECT COUNT(*) FROM location_snapshots").fetchone()[0] == 0
