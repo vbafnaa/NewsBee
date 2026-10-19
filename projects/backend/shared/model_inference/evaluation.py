@@ -46,7 +46,7 @@ async def evaluate(settings: Settings, fixture: Path | None = None) -> tuple[Pat
                 result["validation_errors"] or result.get("error"),
                 result["wall_seconds"],
             )
-        front = await draft_front(runtime, [case.facts for case in cases])
+        front = await draft_front(runtime, [case.facts for case in cases], "Capitol Hill")
         logger.info(
             "Model evaluation front checks_passed=%s errors=%s",
             front["checks_passed"],

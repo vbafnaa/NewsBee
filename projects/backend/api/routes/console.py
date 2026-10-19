@@ -2,15 +2,15 @@ import logging
 import sqlite3
 from datetime import UTC, datetime
 from typing import Annotated
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from projects.backend.api.dependencies.services import get_settings
-from projects.backend.modules.editions.drafting import inspect_drafts
+from projects.backend.modules.editions.drafting import inspect_editions
 from projects.backend.modules.orchestration.jobs import inspect
+from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.shared.configuration.settings import ROOT, Settings
 
 logger = logging.getLogger(__name__)
@@ -22,20 +22,8 @@ def timestamp(value: float | None) -> str:
     return datetime.fromtimestamp(value, UTC).isoformat() if value is not None else "Not recorded"
 
 
-def source_link(value: str) -> str | None:
-    url = urlsplit(value)
-    if (
-        url.scheme == "https"
-        and url.hostname == "www.spl.org"
-        and not url.username
-        and not url.password
-    ):
-        return value
-    return None
-
-
 templates.env.filters["timestamp"] = timestamp
-templates.env.filters["source_link"] = source_link
+templates.env.filters["source_link"] = https_link
 
 
 @router.get("", response_class=HTMLResponse)
@@ -60,9 +48,9 @@ def ingestion(request: Request, settings: Annotated[Settings, Depends(get_settin
 @router.get("/editions", response_class=HTMLResponse)
 def editions(request: Request, settings: Annotated[Settings, Depends(get_settings)]):
     try:
-        report = inspect_drafts(settings.database)
+        report = inspect_editions(settings.database)
     except (sqlite3.Error, OSError, ValueError):
-        logger.exception("Edition draft inspection unavailable")
+        logger.exception("Edition audit unavailable")
         return templates.TemplateResponse(
             request=request, name="editions.html", context={"report": None}, status_code=503
         )

@@ -7,7 +7,7 @@ from projects.backend.api.dependencies.services import get_model, get_settings
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.model_inference.ollama import ModelRuntime
 from projects.backend.shared.observability.health import collect_health
-from shared.contracts.health import EditionsResponse, HealthReport
+from shared.contracts.health import HealthReport
 
 router = APIRouter(prefix="/api")
 
@@ -28,8 +28,3 @@ async def health(
 ) -> JSONResponse:
     report = await collect_health(settings, model)
     return JSONResponse(report.model_dump(), status_code=200 if report.status == "ok" else 503)
-
-
-@router.get("/editions", response_model=EditionsResponse)
-def editions() -> EditionsResponse:
-    return EditionsResponse()
