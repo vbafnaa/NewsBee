@@ -4,6 +4,7 @@ import time
 
 from projects.backend.shared.storage.database import connect, heartbeat
 from shared.contracts.health import EditionsResponse, HealthReport
+from shared.contracts.metrics import MetricsReport
 
 
 def test_startup_initializes_local_storage(client, settings):
@@ -91,6 +92,25 @@ def test_cors_allows_only_local_website(client):
 def test_generated_contracts_match_models():
     from projects.backend.shared.configuration.settings import ROOT
 
-    for name, model in (("health", HealthReport), ("editions", EditionsResponse)):
+    for name, model in (
+        ("health", HealthReport),
+        ("editions", EditionsResponse),
+        ("metrics", MetricsReport),
+    ):
         schema = ROOT / "shared" / "contracts" / f"{name}.schema.json"
         assert json.loads(schema.read_text(encoding="utf-8")) == model.model_json_schema()
+
+
+def test_metrics_empty_and_storage_failure(client, monkeypatch):
+    report = MetricsReport.model_validate(client.get("/api/metrics").json())
+    assert report.window_days == 7
+    assert report.ingestion.runs == 0 and report.ingestion.success_rate is None
+    assert len(report.ingestion.daily) == 7
+    assert report.locations == []
+    assert client.get("/api/metrics?days=0").status_code == 422
+
+    def fail(*_, **__):
+        raise sqlite3.OperationalError("fixture outage")
+
+    monkeypatch.setattr("projects.backend.api.routes.infrastructure.collect_metrics", fail)
+    assert client.get("/api/metrics").status_code == 503
