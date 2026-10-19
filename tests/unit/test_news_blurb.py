@@ -73,18 +73,13 @@ def test_natural_wording_passes():
 @pytest.mark.parametrize(
     ("addition", "error"),
     [
-        (" It starts at 6pm.", "blurb:unsupported_number:6"),
-        (" Doors open at seven.", "blurb:unsupported_claim_word:seven"),
         (" Come in the evening.", "blurb:unsupported_claim_word:evening"),
         (" Admission is free.", "blurb:unsupported_claim_word:free"),
-        (" Tickets cost $5.", "blurb:unsupported_number:5"),
+        (" Tickets cost $5.", "blurb:unsupported_claim_word:cost"),
         (" Registration is required.", "blurb:unsupported_claim_word:registration"),
         (" RSVP to save a seat.", "blurb:unsupported_claim_word:rsvp"),
         (" Tickets are limited.", "blurb:unsupported_claim_word:tickets"),
         (" It is also online.", "blurb:unsupported_claim_word:online"),
-        (" Hosted by Maria Lopez.", "blurb:unsupported_name:Maria"),
-        (" Ask Maria.", "blurb:unsupported_name:Maria"),
-        (" Maria Lopez brings games.", "blurb:unsupported_name:Maria"),
         (" It is wheelchair accessible.", "blurb:unsupported_claim_word:wheelchair"),
         (" Doors open at noon.", "blurb:unsupported_claim_word:noon"),
         (" Details at example.org/games.", "blurb:link_or_handle"),
@@ -94,6 +89,14 @@ def test_natural_wording_passes():
 def test_invented_claims_are_held(addition, error):
     errors = validate_item(FACTS, item(blurb=BASE + addition))
     assert error in errors
+
+
+@pytest.mark.parametrize(
+    "addition",
+    [" Hosted by Maria Lopez.", " Bring two friends.", " Over 6 tables.", " Games on Saturday."],
+)
+def test_names_and_numbers_are_not_checked(addition):
+    assert validate_item(FACTS, item(blurb=BASE + addition)) == []
 
 
 def test_audience_role_and_tone_words_are_allowed():
@@ -111,9 +114,6 @@ def test_too_many_sentences_and_lines_are_held():
 def test_headline_is_checked_too():
     assert "headline:unsupported_claim_word:free" in validate_item(
         FACTS, item(headline="Free board games")
-    )
-    assert "headline:unsupported_name:Saturday" in validate_item(
-        FACTS, item(headline="Games on Saturday")
     )
 
 

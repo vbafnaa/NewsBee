@@ -171,8 +171,9 @@ def scan(fetcher: Fetcher, website: str, checked: list[str]) -> tuple[str, str] 
     return found
 
 
-def guesses(website: str, profile: dict) -> list[str]:
-    label = urlsplit(website).hostname.removeprefix("www.").split(".")[0].lower()
+def guesses(website: str | None, profile: dict) -> list[str]:
+    host = urlsplit(website).hostname if website else None
+    label = host.removeprefix("www.").split(".")[0].lower() if host else ""
     city = re.sub(r"[^a-z0-9]", "", profile["name"].split(",")[0].lower())
     state = profile["id"].rsplit("-", 1)[-1].lower()
     slugs = [label if len(label) >= 4 else "", f"{city}{state}"]
@@ -198,14 +199,12 @@ def discover(client: httpx.Client, profile: dict, override: dict | None = None) 
     except httpx.HTTPError as error:
         return _found("failed", f"Wikidata lookup failed: {type(error).__name__}: {error}")
     website = lookup["website"]
-    if not website:
-        return _found("unresolved_website", lookup["detail"])
     known = {"website": website, "wikidata_id": lookup["wikidata_id"]}
     fetcher = Fetcher(client, USER_AGENT)
     checked: list[str] = []
     how = "linked from the town website"
     try:
-        found = scan(fetcher, website, checked)
+        found = scan(fetcher, website, checked) if website else None
         if found is None:
             how = "found under a name guessed from the town"
             found = _choose(
@@ -216,6 +215,11 @@ def discover(client: httpx.Client, profile: dict, override: dict | None = None) 
     except (FeedFormatError, httpx.HTTPError) as error:
         detail = f"{type(error).__name__}: {error}"
         return _found("failed", detail, pages_checked=checked, **known)
+    if found is None and not website:
+        return _found(
+            "unresolved_website",
+            f"{lookup['detail']}; no supported meeting platform under a name guessed from the town",
+        )
     if found is None:
         return _found(
             "no_platform",

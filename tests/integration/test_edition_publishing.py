@@ -41,15 +41,16 @@ def run_worker(settings, monkeypatch, **fake):
     return dict(row), requests
 
 
-def store_snapshot(settings, count: int, repeat: int = 0) -> str:
-    """`count` distinct stories, plus `repeat` extra occurrences of Story Hour 0."""
+def store_snapshot(settings, count: int, repeat: int = 0, sources=("library:WA0001",)) -> str:
+    """`count` distinct stories spread across `sources` in turn, plus `repeat` extra
+    occurrences of Story Hour 0."""
     initialize(settings.database)
     library_world.onboard(settings.database)
 
     def event(index: int, title: str, venue: str = "Capitol Hill Branch") -> dict:
         day = 1 + index // 3
         return {
-            "source_id": "library:WA0001",
+            "source_id": sources[index % len(sources)],
             "source_event_id": f"e{index}",
             "event_date": f"2026-11-0{day}",
             "facts": {
@@ -158,7 +159,7 @@ def test_ingestion_snapshot_is_authored_and_published(
 
 
 def test_fill_to_five_skips_held_items_in_rank_order(client, settings, monkeypatch):
-    store_snapshot(settings, 8)
+    store_snapshot(settings, 8, sources=("library:WA0001", "meetings:legistar:x"))
     job, _ = run_worker(settings, monkeypatch, story=hold("Story Hour 0", "Story Hour 2"))
     run = drafting.latest_run(settings.database)
     assert job["status"] == "completed"
@@ -197,8 +198,8 @@ def test_repeated_events_collapse_into_one_story(client, settings, monkeypatch):
     run, requests = author(settings, monkeypatch)
     assert (run.events, run.stories, run.included) == (7, 2, 2)
     candidates = json.loads(requests[0]["prompt"].split("\nCandidates:\n")[1])
-    assert [c["occurrences"] for c in candidates] == [6, 1]
-    assert candidates[0]["venues"] == ["Ballard Branch", "Capitol Hill Branch"]
+    assert [c["occurrences"] for c in candidates] == [1, 6]  # one-off events rank first
+    assert candidates[1]["venues"] == ["Ballard Branch", "Capitol Hill Branch"]
     item = client.get(f"/api/editions/{LOCATION_ID}").json()["items"][1]
     assert item["headline"] == "Don't miss Story Hour 0"
     assert item["when_where"] == (
@@ -236,24 +237,35 @@ def test_held_draft_gets_one_retry_with_errors_fed_back(client, settings, monkey
     assert "Passed on retry after: summary:unsupported_claim_word:raffle" in page
 
 
-def test_only_ten_random_stories_are_ranked(client, settings, monkeypatch):
+def test_each_source_is_sampled_and_shortlisted_before_ranking(client, settings, monkeypatch):
     store_snapshot(settings, 14)
     run, requests = author(settings, monkeypatch)
     ranked = json.loads(requests[0]["prompt"].split("\nCandidates:\n")[1])
-    assert (run.events, run.stories, run.ranked, len(ranked)) == (14, 14, 10, 10)
-    assert run.not_attempted == 10 - run.attempted
-    assert [c["title"] for c in ranked] != [f"Story Hour {i}" for i in range(10)]
+    assert (run.events, run.stories, run.ranked, len(ranked)) == (14, 14, 5, 5)
+    assert run.not_attempted == 5 - run.attempted
     with connect(settings.database) as database:
         snapshot = database.execute("SELECT id FROM location_snapshots").fetchone()["id"]
     events = snapshots.events(settings.database, snapshot)
-    first = [s.title for s in drafting.sample(stories.collapse(events), snapshot)]
-    assert first == [s.title for s in drafting.sample(stories.collapse(events), snapshot)]
-    assert "Ranked (random sample of at most 10 stories): 10" in client.get("/review/editions").text
+    first, summary = drafting.shortlist(stories.collapse(events), snapshot)
+    assert [s.title for s in first] == [
+        s.title for s in drafting.shortlist(stories.collapse(events), snapshot)[0]
+    ]
+    assert summary == {"library": {"stories": 14, "sampled": 10, "shortlisted": 5}}
+    assert "Ranked (top 5 per source): 5" in client.get("/review/editions").text
+
+
+def test_every_source_reaches_the_cross_source_ranking(client, settings, monkeypatch):
+    store_snapshot(settings, 18, sources=("library:WA0001",) * 5 + ("meetings:legistar:x",))
+    run, requests = author(settings, monkeypatch)
+    ranked = json.loads(requests[0]["prompt"].split("\nCandidates:\n")[1])
+    meetings = {f"Story Hour {i}" for i in range(18) if i % 6 == 5}
+    assert len(meetings) == 3 and meetings <= {c["title"] for c in ranked}
+    assert (run.stories, run.ranked) == (18, 8)
 
 
 def test_attempts_are_capped_and_edition_still_publishes(client, settings, monkeypatch):
     assert (drafting.MAX_ENTRIES, drafting.MAX_ATTEMPTS) == (5, 10)
-    store_snapshot(settings, 12)
+    store_snapshot(settings, 12, sources=("library:WA0001", "meetings:legistar:x"))
     titles = [f"Story Hour {i}" for i in range(12)]
     _, requests = run_worker(settings, monkeypatch, story=hold(*titles))
     run = drafting.latest_run(settings.database)
