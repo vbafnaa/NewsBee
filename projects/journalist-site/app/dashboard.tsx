@@ -44,31 +44,40 @@ export default function Dashboard() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [configuredSources, setConfiguredSources] = useState<ConfiguredSource[]>([]);
+  const [configuredSources, setConfiguredSources] = useState<ConfiguredSource[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      const [locationData, jobData, channelData, sourceData] = await Promise.all([
-        request<{ locations: Location[] }>("locations"),
-        request<{ jobs: Job[] }>("jobs"),
-        request<{ channels: Channel[] }>("channels"),
-        fetch("/api/source-configs", { cache: "no-store" }).then(async (response) => {
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-          return data as { sources: ConfiguredSource[] };
-        }),
-      ]);
-      setLocations(locationData.locations);
-      setJobs(jobData.jobs);
-      setChannels(channelData.channels);
-      setConfiguredSources(sourceData.sources);
-      setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    }
+    const results = await Promise.allSettled([
+      request<{ locations: Location[] }>("locations"),
+      request<{ jobs: Job[] }>("jobs"),
+      request<{ channels: Channel[] }>("channels"),
+      fetch("/api/source-configs", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
+        return data as { sources: ConfiguredSource[] };
+      }),
+    ]);
+
+    const failures: string[] = [];
+    const recordFailure = (label: string, result: PromiseSettledResult<unknown>) => {
+      if (result.status === "rejected") {
+        failures.push(`${label}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      }
+    };
+
+    if (results[0].status === "fulfilled") setLocations(results[0].value.locations);
+    else recordFailure("Locations", results[0]);
+    if (results[1].status === "fulfilled") setJobs(results[1].value.jobs);
+    else recordFailure("Jobs", results[1]);
+    if (results[2].status === "fulfilled") setChannels(results[2].value.channels);
+    else recordFailure("Channels", results[2]);
+    if (results[3].status === "fulfilled") setConfiguredSources(results[3].value.sources);
+    else recordFailure("Source configs", results[3]);
+
+    setError(failures.length ? `Some dashboard data could not be loaded. ${failures.join("; ")}` : "");
   }, []);
 
   useEffect(() => {
@@ -138,25 +147,26 @@ export default function Dashboard() {
             <p>Loaded from the MongoDB <code>source_configs</code> collection.</p>
           </div>
         </div>
-        {configuredSources.length === 0 ? <p>No source entries found in MongoDB.</p> : (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Source</th><th>Type</th><th>Location</th><th>Details</th></tr></thead>
-              <tbody>{configuredSources.map((source) => (
-                <tr key={source.id}>
-                  <td>{source.name}</td>
-                  <td>{source.category}</td>
-                  <td>{source.location}</td>
-                  <td>
-                    {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a> : null}
-                    {source.platform ? <span>{source.platform}{source.tenant ? ` (${source.tenant})` : ""}</span> : null}
-                    {!source.url && !source.platform ? "—" : null}
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
+        {configuredSources === null ? <p>Source list could not be loaded.</p> :
+          configuredSources.length === 0 ? <p>No source entries found in MongoDB.</p> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Source</th><th>Type</th><th>Location</th><th>Details</th></tr></thead>
+                <tbody>{configuredSources.map((source) => (
+                  <tr key={source.id}>
+                    <td>{source.name}</td>
+                    <td>{source.category}</td>
+                    <td>{source.location}</td>
+                    <td>
+                      {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a> : null}
+                      {source.platform ? <span>{source.platform}{source.tenant ? ` (${source.tenant})` : ""}</span> : null}
+                      {!source.url && !source.platform ? "—" : null}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
       </section>
 
       <section className="panel">
