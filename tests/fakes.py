@@ -71,6 +71,10 @@ def valid_edition_front(context: dict) -> dict:
     }
 
 
+def valid_email(context: dict) -> dict:
+    return {"blurb": f"Find out what is on around {context['community']} this week."}
+
+
 def install(
     monkeypatch,
     target: str,
@@ -80,6 +84,7 @@ def install(
     ranking=valid_ranking,
     story=valid_story,
     edition_front=valid_edition_front,
+    email=valid_email,
     status: int = 200,
     done_reason: str = "stop",
 ) -> list[dict]:
@@ -99,6 +104,7 @@ def install(
             "\nCandidates:\n": ranking,
             "\nStory:\n": story,
             "\nEdition:\n": edition_front,
+            "\nEmail:\n": email,
         }
         marker = next((m for m in markers if m in prompt), None)
         if marker:

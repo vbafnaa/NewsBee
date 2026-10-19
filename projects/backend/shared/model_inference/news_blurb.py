@@ -28,32 +28,20 @@ NUMBER = re.compile(r"\d+")
 LINK = re.compile(r"https?://|www\.|@|#|\.(?:com|org|net)\b", re.IGNORECASE)
 SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
 
+# Words that state facts a reader acts on (cost, sign-up, format, cancellation, timing,
+# counts, prizes, accessibility). Audience, role and tone words are allowed for now;
+# tighten this list as sensitivity rules are added.
 CLAIM_WORDS = frozenset(
     """
     free cost costs price prices priced fee fees ticket tickets paid pay donation donations
-    admission register registration registered rsvp sign signup book booking booked reserve
-    reservation reservations required require requires limited seats seat space spaces
-    capacity sold waitlist kid kids child children family families teen teens adult adults
-    senior seniors ages age toddler toddlers baby babies parent parents student students
-    beginner beginners accessible accessibility wheelchair asl captioned interpreter
+    admission register registration registered rsvp signup required require requires
+    limited seats capacity sold waitlist
+    wheelchair asl captioned interpreter
     cancel canceled cancelled postponed rescheduled online virtual zoom livestream hybrid
-    food snack snacks refreshment refreshments coffee tea pizza lunch dinner breakfast drinks
-    prize prizes giveaway giveaways raffle guest guests speaker speakers author authors host
-    hosts hosted hosting led leads presenter presented presents featuring featured expert
-    experts instructor instructors teacher volunteer volunteers sponsor sponsored partner
-    annual weekly monthly daily every recurring returning returns series first new last final
-    popular favorite favourite beloved award winning
+    prize prizes giveaway giveaways raffle award winning
     one two three four five six seven eight nine ten eleven twelve twenty dozen hundred
     noon midnight morning afternoon evening night tonight today tomorrow yesterday
     am pm minute minutes hour hours
-    """.split()
-)
-
-SENTENCE_STARTERS = frozenset(
-    """
-    a an and also at bring catch check come discover don't drop enjoy explore find for from
-    get grab head here in it it's join learn mark on plus save see spend stop take the there
-    this these with you your
     """.split()
 )
 
@@ -117,18 +105,28 @@ def added_claims(text: str, allowed: list[str], max_sentences: int) -> list[str]
         stripped = stripped.replace(value, " ")
     if len(SENTENCE_END.findall(stripped.strip() + " ")) > max_sentences:
         errors.append("too_many_sentences")
-    sentence_start = True
+    # A capitalized first word is usually ordinary prose; it is only treated as a name
+    # when the next word is also an unknown capitalized word (e.g. "Maria Lopez").
+    sentence_start, opener = True, None
     for match in re.finditer(rf"{WORD.pattern}|[.!?]", text):
         token = match.group()
         if token in ".!?":
-            sentence_start = True
+            sentence_start, opener = True, None
             continue
         lower = token.lower()
         if lower in CLAIM_WORDS and lower not in vocabulary:
             errors.append(f"unsupported_claim_word:{lower}")
+            opener = None
         elif token[0].isupper() and lower not in vocabulary:
-            if not (sentence_start and lower in SENTENCE_STARTERS):
+            if sentence_start:
+                opener = token
+            else:
+                if opener:
+                    errors.append(f"unsupported_name:{opener}")
                 errors.append(f"unsupported_name:{token}")
+                opener = None
+        else:
+            opener = None
         sentence_start = False
     return list(dict.fromkeys(errors))
 
