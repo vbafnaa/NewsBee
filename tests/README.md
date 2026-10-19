@@ -36,7 +36,7 @@ after interrupted writing, and cache invalidation when source text or policy cha
 
 Only inference and external source responses are mocked. This proves deterministic pipeline
 behavior, not model factuality, source permissions or useful live community coverage.
-The remaining operational exit criteria are documented in the root README.
+The remaining Stage 1 exit criteria are in the [roadmap](../Docs/newsbee-implementation-roadmap-v1.html).
 
 `python scripts/dev.py browser` runs three critical reader checks: location selection,
 source/coverage display and mobile rendering with corrections; no locations; and failure/retry.
