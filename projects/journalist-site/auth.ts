@@ -11,6 +11,30 @@ type MongoCache = typeof globalThis & {
 };
 
 export type AdminAccount = { email: string; enabled: boolean; createdAt?: Date };
+export type ConfiguredSource = {
+  id: string;
+  category: string;
+  name: string;
+  location: string;
+  url?: string;
+  platform?: string;
+  tenant?: string;
+};
+
+type SourceConfigDocument = { _id: string; data: Record<string, unknown> };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function secureUrl(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 async function getMongoClient() {
   const uri = process.env.MONGODB_URI;
@@ -70,6 +94,66 @@ export async function enableAdminAccount(email: string) {
     { upsert: true },
   );
   return { email, enabled: true };
+}
+
+export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
+  const databaseName = process.env.MONGODB_DATABASE;
+  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
+
+  const client = await getMongoClient();
+  const configs = await client
+    .db(databaseName)
+    .collection<SourceConfigDocument>("source_configs")
+    .find({}, { projection: { _id: 1, data: 1 } })
+    .sort({ _id: 1 })
+    .toArray();
+
+  return configs.flatMap((config) => {
+    if (!isRecord(config.data)) return [];
+
+    if (config._id === "library-websites") {
+      return Object.entries(config.data).flatMap(([location, value]) => {
+        if (!isRecord(value)) return [];
+        const name = typeof value.name === "string" ? value.name : location;
+        const url = secureUrl(value.website);
+        return [{ id: `library-${location}`, category: "Library", name, location, url }];
+      });
+    }
+
+    if (config._id === "government-sources") {
+      return Object.entries(config.data).flatMap(([location, value]) => {
+        if (!isRecord(value)) return [];
+        return [{
+          id: `government-${location}`,
+          category: "Government",
+          name: location,
+          location,
+          platform: typeof value.platform === "string" ? value.platform : undefined,
+          tenant: typeof value.tenant === "string" ? value.tenant : undefined,
+        }];
+      });
+    }
+
+    if (config._id === "state-sources") {
+      return Object.entries(config.data).flatMap(([region, value]) => {
+        if (!isRecord(value) || !Array.isArray(value.newsrooms)) return [];
+        const regionName = typeof value.name === "string" ? value.name : region;
+        return value.newsrooms.flatMap((newsroom, index) => {
+          if (!isRecord(newsroom) || typeof newsroom.name !== "string") return [];
+          const url = secureUrl(newsroom.feed);
+          return [{
+            id: `newsroom-${region}-${index}`,
+            category: "State newsroom",
+            name: newsroom.name,
+            location: `${regionName} (${region})`,
+            url,
+          }];
+        });
+      });
+    }
+
+    return [];
+  });
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
