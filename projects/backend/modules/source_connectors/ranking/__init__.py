@@ -8,10 +8,16 @@ return them best first. Add a source type by registering its ranker in ``RANKERS
 
 from collections.abc import Callable, Sequence
 
-from projects.backend.modules.source_connectors.ranking import library, meetings
+from projects.backend.modules.source_connectors.ranking import library, meetings, wider
 
 Ranker = Callable[[Sequence], list]
-RANKERS: dict[str, Ranker] = {"library": library.rank, "meetings": meetings.rank}
+RANKERS: dict[str, Ranker] = {
+    "library": library.rank,
+    "meetings": meetings.rank,
+    "hazards": wider.hazards,
+    "statenews": wider.state_news,
+    "trending": wider.trending,
+}
 
 
 def source_type(source_id: str) -> str:

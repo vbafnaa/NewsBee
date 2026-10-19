@@ -145,6 +145,8 @@ def test_ingestion_snapshot_is_authored_and_published(
             "rank": 1,
             "kind": "event",
             "source_name": "Example City Library",
+            "section": None,
+            "local": True,
         }
     ]
     health = client.get("/api/health").json()
@@ -294,6 +296,67 @@ def test_attempts_are_capped_and_edition_still_publishes(client, settings, monke
         NO_EVENTS_INTRO,
         [],
     )
+
+
+def store_mixed_snapshot(settings, local: int, wider: list[tuple[str, str]]) -> None:
+    """`local` library stories plus wider news items given as (title, tier)."""
+    initialize(settings.database)
+    library_world.onboard(settings.database)
+    events = []
+    for index in range(local):
+        events.append({
+            "source_id": "library:WA0001", "source_event_id": f"l{index}",
+            "event_date": "2026-11-02",
+            "facts": {
+                "source_event_id": f"l{index}", "title": f"Story Hour {index}",
+                "event_date": "2026-11-02", "schedule_text": "Monday, November 2, 2026, 10am",
+                "venue": "Capitol Hill Branch", "room": None,
+                "source_url": f"https://www.spl.org/event/{index}",
+                "description": "Free picture books and songs.", "branch": "Capitol Hill",
+            },
+        })
+    for index, (title, tier) in enumerate(wider):
+        section = {"region": "Around King County", "state": "Around Washington"}[tier]
+        events.append({
+            "source_id": "statenews:wa", "source_event_id": f"n{index}",
+            "event_date": "2026-10-28",
+            "facts": {
+                "source_event_id": f"n{index}", "title": title, "event_date": "2026-10-28",
+                "schedule_text": "Wednesday, October 28, 2026", "venue": "WSDOT", "room": None,
+                "source_url": f"https://wsdot.wa.gov/news/{index}",
+                "description": f"{title} was announced by WSDOT.", "kind": "state_news",
+                "tier": tier, "section": section, "signals": {"publisher": "WSDOT"},
+                "branch": None,
+            },
+        })
+    with connect(settings.database) as database:
+        snapshots.record(database, LOCATION_ID, "job", WINDOW, events, [], "e.json")
+        jobs.enqueue_within(database, LOCATION_ID, jobs.AUTHOR_KIND)
+
+
+def test_local_stories_lead_and_wider_news_only_fills_capped_slots(client, settings, monkeypatch):
+    wider = [(f"Statewide road work {i}", "state") for i in range(4)]
+    wider.append(("County ferry update", "region"))
+    store_mixed_snapshot(settings, 3, wider)
+    # Rate statewide news highest: local stories must still come first.
+    run, _ = author(settings, monkeypatch, ranking=rate(**{t: {"civic": 3} for t, _ in wider}))
+    items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
+    assert [item["local"] for item in items] == [True] * 3 + [False] * drafting.MAX_WIDER
+    assert items[3]["headline"] == "Don't miss County ferry update"  # county before state
+    assert items[3]["section"] == "Around King County" and items[0]["section"] is None
+    assert items[4]["when_where"] == "Published Wednesday, October 28 by WSDOT."
+    summary = json.loads(
+        sqlite3.connect(settings.database).execute(
+            "SELECT result_json FROM edition_drafts").fetchone()[0])
+    assert (summary["local_included"], summary["wider_included"]) == (3, 4)
+
+
+def test_news_desert_edition_is_filled_from_wider_sources(client, settings, monkeypatch):
+    store_mixed_snapshot(settings, 0, [("Snoqualmie Pass closure", "state")])
+    run, _ = author(settings, monkeypatch)
+    items = client.get(f"/api/editions/{LOCATION_ID}").json()["items"]
+    assert run.included == 1 and items[0]["section"] == "Around Washington"
+    assert items[0]["local"] is False
 
 
 def test_empty_snapshot_publishes_without_the_model(client, settings, monkeypatch):

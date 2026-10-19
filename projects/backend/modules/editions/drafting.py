@@ -7,6 +7,10 @@ with no per-category limit, until MAX_ENTRIES pass the checks or MAX_ATTEMPTS ha
 written -> edition headline and
 intro. Items are shown in rank order. Held items are excluded and never block publishing.
 A snapshot with no usable events still publishes an edition.
+
+Local stories (town events, meetings, and wider-source items that name the town) are written
+first. County and statewide stories (news deserts' fallback) then fill remaining slots, up to
+MAX_WIDER, and are shown after local ones with a section label saying where they are from.
 """
 
 import hashlib
@@ -43,6 +47,12 @@ DEFAULT_MODEL = "qwen3:4b"
 VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}+{policy.POLICY}"
 MAX_ENTRIES = 9
 MAX_ATTEMPTS = 12
+# Wider-area (county or state) stories fill only slots local news leaves, at most about
+# 40% of a full edition, with their own attempt budget so local attempts never starve them.
+MAX_WIDER = 4
+MAX_WIDER_ATTEMPTS = 6
+WIDER_TIERS = frozenset({"region", "state"})
+WIDER_SOURCES = ("hazards:", "statenews:", "trending:")
 TOP_PER_SOURCE = 5
 
 
@@ -56,6 +66,7 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
             "venues": story.venues,
             "first_date": story.first.event_date,
             "kind": story.kind,
+            "tier": story.facts.get("tier", "local"),
         }
         for story in story_list
     ]
@@ -238,10 +249,16 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 json.dumps(sources),
             )
             rank_of = {candidate["id"]: rank for rank, candidate in enumerate(ranked, start=1)}
-            pending = list(ranked)
-            while pending and len(passed) < MAX_ENTRIES and attempted < MAX_ATTEMPTS:
-                candidate = next_candidate(pending, source_of, covered)
-                pending.remove(candidate)
+            local = [c for c in ranked if c["tier"] not in WIDER_TIERS]
+            # Wider stories only fill what local news leaves: nearest tier first, then rank.
+            wider = sorted(
+                (c for c in ranked if c["tier"] in WIDER_TIERS),
+                key=lambda c: (c["tier"] != "region", rank_of[c["id"]]),
+            )
+            wider_attempted = wider_passed = 0
+
+            async def attempt(candidate: dict) -> bool:
+                nonlocal held, attempted
                 rank = rank_of[candidate["id"]]
                 story = by_id[candidate["id"]]
                 candidate["community_id"] = location_id
@@ -273,8 +290,11 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                     },
                     when_where=stories.when_where(story),
                     source_url=story.first.source_url,
+                    tier=candidate["tier"],
+                    section=story.facts.get("section"),
                 )
-                if result["disposition"] == "checks_passed":
+                ok = result["disposition"] == "checks_passed"
+                if ok:
                     covered.add(source_of[candidate["id"]])
                     passed.append((rank, candidate, result["draft"]))
                 else:
@@ -295,19 +315,39 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
                 attempted += 1
                 logger.info(
                     "Edition item edition_id=%s story_id=%s rank=%s score=%s category=%s "
-                    "occurrences=%s attempts=%s disposition=%s errors=%s wall_seconds=%s",
+                    "tier=%s occurrences=%s attempts=%s disposition=%s errors=%s "
+                    "wall_seconds=%s",
                     identity,
                     story.id,
                     rank,
                     candidate["score"],
                     candidate["rating"]["category"],
+                    candidate["tier"],
                     len(story.occurrences),
                     result.get("attempts"),
                     result["disposition"],
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
-            passed.sort(key=lambda entry: entry[0])
+                return ok
+
+            while local and len(passed) < MAX_ENTRIES and attempted < MAX_ATTEMPTS:
+                candidate = next_candidate(local, source_of, covered)
+                local.remove(candidate)
+                await attempt(candidate)
+            local_passed = len(passed)
+            while (
+                wider
+                and len(passed) < MAX_ENTRIES
+                and wider_passed < MAX_WIDER
+                and wider_attempted < MAX_WIDER_ATTEMPTS
+            ):
+                candidate = next_candidate(wider, source_of, covered)
+                wider.remove(candidate)
+                wider_attempted += 1
+                wider_passed += await attempt(candidate)
+            # Local stories lead; wider stories follow, each group in rank order.
+            passed.sort(key=lambda entry: (entry[1]["tier"] in WIDER_TIERS, entry[0]))
             week = stories.week_label(snapshot["window_start"], snapshot["window_end"])
             passed_stories = [candidate for _, candidate, _ in passed]
             passed_drafts = [draft for _, _, draft in passed]
@@ -333,6 +373,9 @@ async def author_edition(settings: Settings, location_id: str) -> EditionRun:
             raise
         summary = {
             "included": len(passed),
+            "local_included": local_passed,
+            "wider_included": wider_passed,
+            "wider_attempted": wider_attempted,
             "held": held,
             "attempted": attempted,
             "not_attempted": len(story_list) - attempted,
@@ -482,6 +525,8 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
                 rank=(result.get("ranking") or {}).get("rank"),
                 kind=story.get("kind", "event") if story else "event",
                 source_name=source_names.get(occurrence.get("source_id"), "Local source"),
+                section=result.get("section"),
+                local=result.get("tier", "local") not in WIDER_TIERS,
             )
         )
     if corrections:
@@ -499,10 +544,17 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
         coverage.append("Source coverage was not recorded for this edition.")
     if not any(system["source_id"].startswith("meetings:") for system in systems):
         coverage.append("No public meeting source was checked for this edition.")
+    wider = any(system["source_id"].startswith(WIDER_SOURCES) for system in systems)
     coverage.insert(
-        0, "Private prototype: library listings and public meetings only, not all local news."
+        0,
+        "Private prototype: library listings, public meetings"
+        + (", official state news and statewide trends" if wider else "")
+        + " only, not all local news.",
     )
-    items.sort(key=lambda item: item.rank if item.rank is not None else float("inf"))
+    # Town stories first; county and statewide ones after, each group best ranked first.
+    items.sort(
+        key=lambda item: (not item.local, item.rank if item.rank is not None else float("inf"))
+    )
     return Edition(
         id=row["id"],
         location_id=location_id,
