@@ -2,6 +2,7 @@
 
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 
@@ -97,3 +98,40 @@ def list_all(database: Path) -> list[dict]:
     with connect(database) as connection:
         rows = connection.execute("SELECT profile_json FROM locations ORDER BY name").fetchall()
     return [json.loads(row["profile_json"]) for row in rows]
+
+
+class LocationBusy(RuntimeError):
+    """A job for the location is running; removal would race with the worker."""
+
+
+def remove(database: Path, evidence_dir: Path, identity: str) -> dict[str, int]:
+    """Delete a location and everything stored for it: jobs, events, snapshots, editions."""
+    get(database, identity)
+    with connect(database) as connection:
+        running = connection.execute(
+            "SELECT COUNT(*) FROM jobs WHERE source_id = ? AND status = 'running'", (identity,)
+        ).fetchone()[0]
+        if running:
+            raise LocationBusy(f"{identity} has a running job; wait for it to finish")
+        editions = "SELECT id FROM edition_drafts WHERE community_id = ?"
+        snapshots = "SELECT id FROM location_snapshots WHERE location_id = ?"
+        statements = {
+            "edition_entries": (
+                f"DELETE FROM edition_draft_entries WHERE edition_id IN ({editions})"
+            ),
+            "editions": "DELETE FROM edition_drafts WHERE community_id = ?",
+            "snapshot_events": f"DELETE FROM snapshot_events WHERE snapshot_id IN ({snapshots})",
+            "snapshots": "DELETE FROM location_snapshots WHERE location_id = ?",
+            "events": "DELETE FROM source_events WHERE community_id = ?",
+            "jobs": "DELETE FROM jobs WHERE source_id = ?",
+            "locations": "DELETE FROM locations WHERE id = ?",
+        }
+        counts = {
+            name: connection.execute(sql, (identity,)).rowcount for name, sql in statements.items()
+        }
+    folder = evidence_dir / identity
+    counts["evidence_files"] = sum(1 for item in folder.rglob("*") if item.is_file())
+    if folder.is_dir():
+        shutil.rmtree(folder)
+    logger.info("Location removed location_id=%s counts=%s", identity, counts)
+    return counts

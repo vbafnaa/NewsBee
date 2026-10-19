@@ -8,7 +8,8 @@ from datetime import date
 import pytest
 from anyio.from_thread import start_blocking_portal
 
-from projects.backend.modules.editions import drafting
+from projects.backend.modules.communities import locations
+from projects.backend.modules.editions import drafting, stories
 from projects.backend.modules.orchestration import jobs, worker
 from projects.backend.shared.model_inference.story_writer import NO_EVENTS_INTRO
 from projects.backend.shared.storage import snapshots
@@ -215,6 +216,39 @@ def test_ranking_failure_falls_back_to_rules(client, settings, monkeypatch):
     assert "rated by rule" in client.get("/review/editions").text
 
 
+def test_held_draft_gets_one_retry_with_errors_fed_back(client, settings, monkeypatch):
+    store_snapshot(settings, 1)
+    calls = []
+
+    def story(data):
+        calls.append(data["title"])
+        draft = fakes.valid_story(data)
+        return {**draft, "summary": "Free pizza."} if len(calls) == 1 else draft
+
+    run, requests = author(settings, monkeypatch, story=story)
+    assert (run.included, run.held, len(calls)) == (1, 0, 2)
+    retry = requests[2]["prompt"]
+    assert "Your previous draft was rejected" in retry and "Free pizza." in retry
+    assert "summary:unsupported_claim_word:pizza" in retry
+    page = client.get("/review/editions").text
+    assert "Passed on retry after: summary:unsupported_claim_word:pizza" in page
+
+
+def test_only_ten_random_stories_are_ranked(client, settings, monkeypatch):
+    store_snapshot(settings, 14)
+    run, requests = author(settings, monkeypatch)
+    ranked = json.loads(requests[0]["prompt"].split("\nCandidates:\n")[1])
+    assert (run.events, run.stories, run.ranked, len(ranked)) == (14, 14, 10, 10)
+    assert run.not_attempted == 10 - run.attempted
+    assert [c["title"] for c in ranked] != [f"Story Hour {i}" for i in range(10)]
+    with connect(settings.database) as database:
+        snapshot = database.execute("SELECT id FROM location_snapshots").fetchone()["id"]
+    events = snapshots.events(settings.database, snapshot)
+    first = [s.title for s in drafting.sample(stories.collapse(events), snapshot)]
+    assert first == [s.title for s in drafting.sample(stories.collapse(events), snapshot)]
+    assert "Ranked (random sample of at most 10 stories): 10" in client.get("/review/editions").text
+
+
 def test_attempts_are_capped_and_edition_still_publishes(client, settings, monkeypatch):
     assert (drafting.MAX_ENTRIES, drafting.MAX_ATTEMPTS) == (5, 10)
     store_snapshot(settings, 12)
@@ -226,9 +260,9 @@ def test_attempts_are_capped_and_edition_still_publishes(client, settings, monke
         0,
         10,
         10,
-        2,
+        0,
     )
-    assert len(requests) == 11
+    assert len(requests) == 21  # 1 ranking batch + 10 items x (draft + one retry)
     edition = client.get(f"/api/editions/{LOCATION_ID}").json()
     assert (edition["headline"], edition["intro"], edition["items"]) == (
         "Seattle this week: Nov 1\u20137",
@@ -310,7 +344,7 @@ def test_held_items_are_excluded_and_explained(client, settings, monkeypatch, ou
     )
     run, requests = author(settings, monkeypatch, **fake)
     assert (run.status, run.included, run.held, run.front_fallback) == ("completed", 0, 1, True)
-    assert len(requests) == 2
+    assert len(requests) == (3 if outcome == "injected-claim" else 2)
     page = client.get("/review/editions").text
     edition, held = page.split("Held text (excluded from the edition)")
     assert NO_EVENTS_INTRO in edition
@@ -357,6 +391,46 @@ def test_empty_and_unavailable_console_states(client, monkeypatch, caplog):
     assert response.status_code == 503
     assert "Edition audit unavailable." in response.text
     assert "Edition audit unavailable" in caplog.text
+
+
+def test_removing_a_location_deletes_all_its_data(client, settings, monkeypatch):
+    store_snapshot(settings, 2)
+    author(settings, monkeypatch)
+    with connect(settings.database) as database:
+        database.execute(
+            "INSERT INTO source_events (source_id, source_event_id, event_date, community_id, "
+            "facts_json, retrieved_at, evidence_path) VALUES ('s', 'e', '2026-11-01', ?, '{}', 0, "
+            "'x')",
+            (LOCATION_ID,),
+        )
+    evidence = settings.evidence_dir / LOCATION_ID
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / "e.json").write_text("{}")
+    running = jobs.enqueue(settings.database, LOCATION_ID, jobs.AUTHOR_KIND)
+    assert jobs.claim(settings.database, jobs.AUTHOR_KIND)["id"] == running
+    with pytest.raises(locations.LocationBusy):
+        locations.remove(settings.database, settings.evidence_dir, LOCATION_ID)
+    with connect(settings.database) as database:
+        database.execute("UPDATE jobs SET status = 'completed' WHERE id = ?", (running,))
+
+    counts = locations.remove(settings.database, settings.evidence_dir, LOCATION_ID)
+    assert counts == {
+        "edition_entries": 2,
+        "editions": 1,
+        "snapshot_events": 2,
+        "snapshots": 1,
+        "events": 1,
+        "jobs": 1,
+        "locations": 1,
+        "evidence_files": 1,
+    }
+    assert not evidence.exists()
+    with connect(settings.database) as database:
+        for table in ("jobs", "edition_drafts", "location_snapshots", "snapshot_events"):
+            assert database.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    assert client.get("/api/editions").json()["locations"] == []
+    with pytest.raises(LookupError):
+        locations.remove(settings.database, settings.evidence_dir, LOCATION_ID)
 
 
 def test_v5_database_gains_snapshots_and_keeps_editions(tmp_path):
