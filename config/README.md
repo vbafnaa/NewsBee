@@ -23,3 +23,7 @@ not here. No editorial defaults are implied.
 library systems Wikidata cannot resolve. The name must match the directory, the
 website must be `https://`, and the entry overrides Wikidata. Re-run `onboard` after
 editing it.
+
+The current source configuration files can be imported into MongoDB as seed documents;
+see [`sources/README.md`](sources/README.md). This seed is not yet used by the backend,
+which continues to read the checked-in JSON files and local SQLite data.
