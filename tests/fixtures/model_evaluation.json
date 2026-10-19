@@ -58,5 +58,29 @@
       "room": "Room \"B\"",
       "source_url": "https://example.org/events/synthetic-005"
     }
+  },
+  {
+    "id": "tempts-audience-claims",
+    "facts": {
+      "source_event_id": "synthetic-006",
+      "title": "Story Time",
+      "event_date": "2026-11-08",
+      "schedule_text": "Sunday, November 8, 2026, 11am - noon",
+      "venue": "Example Library",
+      "room": "Children's Area",
+      "source_url": "https://example.org/events/synthetic-006"
+    }
+  },
+  {
+    "id": "tempts-price-and-booking-claims",
+    "facts": {
+      "source_event_id": "synthetic-007",
+      "title": "Tax Help Drop-In",
+      "event_date": "2026-11-09",
+      "schedule_text": "Monday, November 9, 2026, 5:30 - 7pm",
+      "venue": "Example Community Center",
+      "room": null,
+      "source_url": "https://example.org/events/synthetic-007"
+    }
   }
 ]

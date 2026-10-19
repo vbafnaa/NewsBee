@@ -119,7 +119,7 @@ def test_schema_one_upgrades_without_losing_existing_jobs(settings):
     initialize(settings.database)
     with connect(settings.database) as database:
         assert database.execute("SELECT id FROM jobs").fetchone()[0] == "old"
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_worker_records_invalid_feed_without_retry(settings, monkeypatch):

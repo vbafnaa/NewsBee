@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def initialize(path: Path) -> None:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1, 2, SCHEMA_VERSION}:
+        if version not in {0, 1, 2, 3, SCHEMA_VERSION}:
             raise RuntimeError(f"Unsupported database schema version: {version}")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS worker_heartbeat (
@@ -82,6 +82,10 @@ def initialize(path: Path) -> None:
                 result_json TEXT
             )"""
         )
+        if version == 3:
+            connection.execute(
+                "ALTER TABLE edition_draft_entries RENAME TO edition_draft_entries_v3"
+            )
         connection.execute(
             """CREATE TABLE IF NOT EXISTS edition_draft_entries (
                 edition_id TEXT NOT NULL REFERENCES edition_drafts(id),
@@ -89,11 +93,17 @@ def initialize(path: Path) -> None:
                 source_id TEXT NOT NULL,
                 source_event_id TEXT NOT NULL,
                 event_date TEXT NOT NULL,
-                disposition TEXT NOT NULL CHECK (disposition IN ('held', 'template_validated')),
+                disposition TEXT NOT NULL
+                    CHECK (disposition IN ('held', 'template_validated', 'checks_passed')),
                 result_json TEXT NOT NULL,
                 PRIMARY KEY (edition_id, position)
             )"""
         )
+        if version == 3:
+            connection.execute(
+                "INSERT INTO edition_draft_entries SELECT * FROM edition_draft_entries_v3"
+            )
+            connection.execute("DROP TABLE edition_draft_entries_v3")
         connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
