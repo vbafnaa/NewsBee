@@ -1,9 +1,0 @@
-{
-  "id": "spl-capitol-hill",
-  "community_id": "capitol-hill-seattle",
-  "connector": "spl_rss",
-  "feed_url": "https://www.trumba.com/calendars/kalendaro.rss?filterview=LocationCAP",
-  "venue_url": "https://www.spl.org/hours-and-locations/capitol-hill-branch",
-  "usage": "local_evaluation_only",
-  "redistribution_permission": "unresolved"
-}

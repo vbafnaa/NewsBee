@@ -30,7 +30,8 @@ def test_healthy_dependencies_do_not_claim_editorial_readiness(
     heartbeat(settings.database)
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["pipelines"] == "local_event_ingestion_only"
+    assert response.json()["pipelines"] == "local_ingestion_and_auto_publish"
+    assert response.json()["capabilities"]["publishing"]["status"] == "ready"
 
 
 def test_ingestion_ready_without_model_or_mailpit(client, settings, monkeypatch):
@@ -47,7 +48,7 @@ def test_ingestion_ready_without_model_or_mailpit(client, settings, monkeypatch)
     assert capabilities["ingestion"]["status"] == "ready"
     assert capabilities["ai"]["status"] == "not_configured"
     assert capabilities["email_sink"]["status"] == "unavailable"
-    assert capabilities["publishing"]["status"] == "not_implemented"
+    assert capabilities["publishing"]["status"] == "ready"
 
 
 def test_latest_ingestion_does_not_erase_failure_history(client, settings):
@@ -61,7 +62,7 @@ def test_latest_ingestion_does_not_erase_failure_history(client, settings):
         ):
             database.execute(
                 """INSERT INTO jobs (id, kind, source_id, status, created_at, attempts, error)
-                VALUES (?, 'ingest_events', 'spl-capitol-hill', ?, ?, 1, ?)""",
+                VALUES (?, 'ingest_events', 'seattle-wa', ?, ?, 1, ?)""",
                 (identity, status, created, error),
             )
     report = client.get("/api/health").json()

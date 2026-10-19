@@ -7,8 +7,9 @@ import time
 import httpx
 from pydantic import ValidationError
 
-from projects.backend.modules.editions.drafting import latest_draft
+from projects.backend.modules.editions.drafting import latest_run as latest_edition_run
 from projects.backend.modules.orchestration.jobs import latest_run
+from projects.backend.modules.orchestration.orchestrator import statuses
 from projects.backend.shared.configuration.settings import Settings
 from projects.backend.shared.model_inference.ollama import ModelRuntime
 from projects.backend.shared.storage.database import snapshot
@@ -31,17 +32,19 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
     completed = None
     latest = None
     latest_edition = None
+    location_statuses = None
     try:
         last_beat, counts, completed = await asyncio.to_thread(snapshot, settings.database)
         latest = await asyncio.to_thread(latest_run, settings.database)
-        latest_edition = await asyncio.to_thread(latest_draft, settings.database)
+        latest_edition = await asyncio.to_thread(latest_edition_run, settings.database)
+        location_statuses = await asyncio.to_thread(statuses, settings.database)
         components["database"] = ComponentHealth(status="ok", detail="SQLite records readable")
         age = time.time() - last_beat if last_beat is not None else None
         fresh = age is not None and 0 <= age <= settings.heartbeat_max_age
         components["worker"] = ComponentHealth(
             status="ok" if fresh else "unavailable",
             detail=(
-                f"Heartbeat age: {age:.1f}s; local event ingestion only"
+                f"Heartbeat age: {age:.1f}s; runs ingestion and edition authoring"
                 if age is not None
                 else "No worker heartbeat recorded"
             ),
@@ -51,6 +54,7 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         completed = None
         latest = None
         latest_edition = None
+        location_statuses = None
         logger.warning("Database health check failed: %s", error)
         components["database"] = ComponentHealth(status="unavailable", detail=str(error))
         components["worker"] = ComponentHealth(
@@ -77,8 +81,8 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         "ai": CapabilityReadiness(
             status="ready" if model_status == "ok" else model_status,
             detail=(
-                "API model-runtime availability only. Private edition drafts run via the "
-                "draft-edition command, which selects its own default model."
+                "API model-runtime availability only. The worker authors editions with its "
+                "own default model and retries while Ollama is unavailable."
             ),
         ),
         "email_sink": CapabilityReadiness(
@@ -86,8 +90,11 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
             detail="Local SMTP connectivity only; email composition is not implemented.",
         ),
         "publishing": CapabilityReadiness(
-            status="not_implemented",
-            detail="No editorial approval or publishing workflow exists.",
+            status="ready" if ingestion_ready else "unavailable",
+            detail=(
+                "Each ingestion snapshot queues automatic authoring; completed editions are "
+                "published to the local website. Held items are excluded, never reviewed."
+            ),
         ),
     }
     return HealthReport(
@@ -95,7 +102,8 @@ async def collect_health(settings: Settings, model: ModelRuntime) -> HealthRepor
         components=components,
         capabilities=capabilities,
         latest_ingestion=latest,
-        latest_edition_draft=latest_edition,
+        locations=location_statuses,
+        latest_edition=latest_edition,
         jobs=counts,
         last_completed_job_at=completed,
     )

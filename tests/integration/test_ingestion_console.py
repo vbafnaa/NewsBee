@@ -25,7 +25,7 @@ def test_inspection_reads_pipeline_output_without_mutation(client, settings, ing
     assert event["facts"]["title"] in response.text
     assert event["facts"]["source_url"] in response.text
     assert event["retrieved_at"] in response.text
-    assert "spl-capitol-hill: completed" in response.text
+    assert "seattle-wa: completed" in response.text
     assert "Events retained" in response.text
     assert "PRIVATE_DESCRIPTION" not in response.text
     assert "do-not-save" not in response.text
@@ -38,11 +38,11 @@ def test_job_states_and_errors_are_visible_and_escaped(client, settings, status)
         database.execute(
             """INSERT INTO jobs
             (id, kind, source_id, status, created_at, attempts, error)
-            VALUES ('fixture-job', ?, 'spl-capitol-hill', ?, 0, 1, ?)""",
+            VALUES ('fixture-job', ?, 'seattle-wa', ?, 0, 1, ?)""",
             (jobs.JOB_KIND, status, "<script>error</script>"),
         )
     response = client.get("/review/ingestion")
-    assert f"spl-capitol-hill: {status}" in response.text
+    assert f"seattle-wa: {status}" in response.text
     assert "1970-01-01T00:00:00+00:00" in response.text
     assert "Not recorded" in response.text
     assert "&lt;script&gt;error&lt;/script&gt;" in response.text
@@ -79,7 +79,7 @@ def test_inspection_respects_existing_limits(client, settings, ingested_event):
         for index in range(205):
             database.execute(
                 "INSERT INTO jobs (id, kind, source_id, status, created_at) "
-                "VALUES (?, ?, 'spl-capitol-hill', 'failed', ?)",
+                "VALUES (?, ?, 'seattle-wa', 'failed', ?)",
                 (f"bounded-job-{index}", jobs.JOB_KIND, index + 1),
             )
             database.execute(
@@ -98,3 +98,25 @@ def test_inspection_respects_existing_limits(client, settings, ingested_event):
     assert response.status_code == 200
     assert "200 events shown" in response.text
     assert response.text.count("Job: ") == 20
+
+
+def test_health_reports_each_location_and_its_systems(client, ingested_event):
+    [location] = client.get("/api/health").json()["locations"]
+    assert (location["id"], location["library_systems"], location["websites_resolved"]) == (
+        "seattle-wa",
+        2,
+        1,
+    )
+    statuses = {
+        system["name"]: system["status"] for system in location["latest_ingestion"]["systems"]
+    }
+    assert statuses == {
+        "Example City Library": "ingested",
+        "Example County Library": "unresolved_website",
+    }
+
+
+def test_location_search_requires_the_directory(client):
+    response = client.get("/api/locations/search", params={"q": "Seattle"})
+    assert response.status_code == 503
+    assert "setup-directory" in response.json()["detail"]

@@ -11,13 +11,38 @@ def test_startup_initializes_local_storage(client, settings):
     assert settings.database.is_file()
     assert settings.evidence_dir.is_dir()
     with connect(settings.database) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
-def test_empty_editions_are_explicitly_unimplemented(client):
-    response = client.get("/api/editions")
-    assert response.status_code == 200
-    assert response.json() == EditionsResponse().model_dump()
+def test_editions_list_onboarded_locations_without_editions(client, settings):
+    from tests import library_world
+
+    assert client.get("/api/editions").json() == EditionsResponse().model_dump()
+    library_world.onboard(settings.database)
+    listing = client.get("/api/editions").json()["locations"]
+    assert listing == [
+        {
+            "location_id": "seattle-wa",
+            "location_name": "Seattle, WA",
+            "edition_id": None,
+            "published_at": None,
+            "window_start": None,
+            "window_end": None,
+        }
+    ]
+    assert client.get("/api/editions/seattle-wa").json() == {"detail": "No edition yet"}
+    assert client.get("/api/editions/seattle-wa").status_code == 404
+    assert client.get("/api/editions/nowhere-xx").json() == {
+        "detail": "Unknown location: nowhere-xx"
+    }
+
+
+def test_editions_storage_failure_is_503(client, monkeypatch):
+    def fail(_):
+        raise sqlite3.OperationalError("fixture outage")
+
+    monkeypatch.setattr("projects.backend.modules.editions.drafting.listings", fail)
+    assert client.get("/api/editions").status_code == 503
 
 
 def test_missing_worker_and_unselected_model_are_not_green(client):
@@ -28,8 +53,8 @@ def test_missing_worker_and_unselected_model_are_not_green(client):
     assert report.components["worker"].status == "unavailable"
     assert report.components["ollama"].status == "not_configured"
     assert report.jobs == {"pending": 0, "running": 0, "failed": 0, "completed": 0}
-    assert report.held_reviews is None
-    assert report.publication == "not_implemented"
+    assert report.publication == "automatic_local_only"
+    assert report.latest_edition is None
 
 
 def test_worker_heartbeat_and_staleness(client, settings):

@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -50,16 +49,11 @@ def client(app):
 @pytest.fixture
 def ingested_event(settings):
     from projects.backend.modules.orchestration import jobs
-    from projects.backend.modules.source_connectors.pipelines.events import ingest
-    from projects.backend.shared.configuration.settings import ROOT
     from projects.backend.shared.storage.database import initialize
+    from tests import library_world
 
     initialize(settings.database)
-    jobs.enqueue(settings.database, "spl-capitol-hill")
-    job = jobs.claim(settings.database)
-    feed = (ROOT / "tests" / "fixtures" / "library_events.xml").read_bytes()
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=feed))
-    ) as transport:
-        ingest(settings, job, transport)
+    library_world.onboard(settings.database)
+    jobs.enqueue(settings.database, library_world.LOCATION_ID)
+    library_world.ingest(settings, jobs.claim(settings.database, jobs.JOB_KIND))
     return jobs.inspect(settings.database)

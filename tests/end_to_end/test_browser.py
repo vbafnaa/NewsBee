@@ -11,6 +11,7 @@ import uvicorn
 from playwright.sync_api import expect
 
 from projects.backend.shared.configuration.settings import ROOT
+from tests import library_world
 
 pytestmark = pytest.mark.browser
 
@@ -67,16 +68,51 @@ def test_review_displays_real_health_report(page, api_url):
     expect(page.get_by_role("status")).to_contain_text("Ingestion: unavailable.")
 
 
-def test_reader_consumes_editions_api(page, api_url, website_url):
+def forward_api(page, api_url):
     def forward(route):
-        response = page.request.get(f"{api_url}/api/editions")
-        route.fulfill(response=response)
+        path = route.request.url.removeprefix("http://127.0.0.1:8000")
+        route.fulfill(response=page.request.get(f"{api_url}{path}"))
 
-    page.route("http://127.0.0.1:8000/api/editions", forward)
+    page.route("http://127.0.0.1:8000/api/**", forward)
+
+
+def test_reader_selects_location_and_reads_published_edition(
+    page, api_url, website_url, settings, ingested_event, monkeypatch
+):
+    from projects.backend.modules.communities import locations
+    from tests.integration.test_edition_publishing import run_worker
+
+    run_worker(settings, monkeypatch)
+    other = {
+        **library_world.profile(),
+        "id": "bainbridge-island-wa",
+        "name": "Bainbridge Island, WA",
+    }
+    locations.save(settings.database, other)
+    forward_api(page, api_url)
     page.goto(website_url)
-    expect(page.get_by_role("status")).to_have_text(
-        "No editions yet. Publishing is not implemented."
+    select = page.get_by_label("Location")
+    expect(select).to_have_value("bainbridge-island-wa")
+    expect(page.get_by_role("status")).to_have_text("No edition yet.")
+    expect(page.get_by_role("article", name="Edition")).to_be_hidden()
+    select.select_option(label="Seattle, WA")
+    edition = page.get_by_role("article", name="Edition")
+    expect(edition.get_by_role("heading", level=2)).to_have_text(
+        f"{ingested_event['events'][0]['facts']['title']} this week"
     )
+    title = ingested_event["events"][0]["facts"]["title"]
+    expect(edition.get_by_role("heading", level=3, name=title)).to_be_visible()
+    expect(edition.get_by_role("link", name="Original event")).to_have_attribute(
+        "href", ingested_event["events"][0]["facts"]["source_url"]
+    )
+    expect(edition).to_contain_text("Events from 2026-11-01 to 2026-11-07.")
+
+
+def test_reader_without_locations(page, api_url, website_url):
+    forward_api(page, api_url)
+    page.goto(website_url)
+    expect(page.get_by_role("status")).to_have_text("No locations onboarded yet.")
+    expect(page.get_by_label("Location")).to_be_disabled()
 
 
 def test_reader_reports_api_failure(page, website_url):
@@ -95,7 +131,7 @@ def test_review_clears_stale_health_on_api_failure(page, api_url):
     expect(page.locator("#jobs")).to_have_text("Unavailable")
     expect(page.locator("#capabilities").locator("li")).to_have_count(0)
     expect(page.locator("#latest-ingestion")).to_have_text("Latest ingestion unavailable")
-    expect(page.locator("#latest-edition")).to_have_text("Latest draft edition unavailable")
+    expect(page.locator("#latest-edition")).to_have_text("Latest edition unavailable")
 
 
 def test_ingestion_ready_without_model_and_old_failure_visible(page, api_url, settings):
@@ -106,29 +142,33 @@ def test_ingestion_ready_without_model_and_old_failure_visible(page, api_url, se
         database.execute(
             """INSERT INTO jobs
             (id, kind, source_id, status, created_at, attempts, error)
-            VALUES ('old-failure', 'ingest_events', 'spl-capitol-hill', 'failed', 1, 1,
+            VALUES ('old-failure', 'ingest_events', 'seattle-wa', 'failed', 1, 1,
             'Historical parsing failure')"""
         )
         database.execute(
             """INSERT INTO jobs
             (id, kind, source_id, status, created_at, attempts, result_json)
-            VALUES ('latest-success', 'ingest_events', 'spl-capitol-hill', 'completed', 2, 1,
-            '{"event_count":23,"skipped_library_closures":7,"duration_seconds":0.3}')"""
+            VALUES ('latest-success', 'ingest_events', 'seattle-wa', 'completed', 2, 1,
+            '{"event_count":23,"skipped_outside_window":7,"duration_seconds":0.3}')"""
         )
     page.goto(f"{api_url}/review")
     expect(page.get_by_role("status")).to_have_text(
         "Ingestion: ready. All-service health: degraded."
     )
     expect(page.locator("#capabilities")).to_contain_text("ai: not_configured")
-    expect(page.locator("#capabilities")).to_contain_text("publishing: not_implemented")
-    expect(page.locator("#latest-ingestion")).to_contain_text("spl-capitol-hill: completed")
+    expect(page.locator("#capabilities")).to_contain_text("publishing: ready")
+    expect(page.locator("#latest-ingestion")).to_contain_text("seattle-wa: completed")
     expect(page.locator("#latest-ingestion")).to_contain_text("events: 23")
-    expect(page.locator("#latest-ingestion")).to_contain_text("closures skipped: 7")
+    expect(page.locator("#latest-ingestion")).to_contain_text("outside 7-day window: 7")
     expect(page.locator("#jobs")).to_contain_text("failed: 1")
 
 
 def test_inspection_navigation_and_retained_pipeline_facts(page, api_url, ingested_event):
     page.goto(f"{api_url}/review")
+    expect(page.locator("#locations")).to_contain_text(
+        "Seattle, WA: 1/2 websites resolved; latest ingestion completed"
+    )
+    expect(page.locator("#locations")).to_contain_text("Example County Library: unresolved_website")
     page.get_by_role("link", name="Inspect retained events and ingestion jobs").click()
     expect(page.get_by_role("heading", name="Ingestion inspection", exact=True)).to_be_visible()
     expect(
@@ -138,7 +178,7 @@ def test_inspection_navigation_and_retained_pipeline_facts(page, api_url, ingest
         "href", ingested_event["events"][0]["facts"]["source_url"]
     )
     expect(page.locator("main")).to_contain_text(ingested_event["events"][0]["retrieved_at"])
-    expect(page.get_by_role("heading", name="spl-capitol-hill: completed")).to_be_visible()
+    expect(page.get_by_role("heading", name="seattle-wa: completed")).to_be_visible()
     page.get_by_role("link", name="Refresh inspection").click()
     expect(page.locator("main")).to_contain_text("1 events shown")
     page.get_by_role("link", name="Local health").click()
@@ -163,16 +203,21 @@ def test_inspection_storage_failure_in_browser(page, api_url, monkeypatch):
     expect(page.get_by_role("alert")).to_contain_text("Ingestion inspection unavailable.")
 
 
-def test_draft_edition_visible_from_health(page, api_url, settings, ingested_event, monkeypatch):
-    from tests.integration.test_edition_drafting import run_draft
+def test_published_edition_audit_from_health(page, api_url, settings, ingested_event, monkeypatch):
+    from tests.integration.test_edition_publishing import run_worker
 
-    run_draft(settings, monkeypatch)
+    run_worker(settings, monkeypatch)
     page.goto(f"{api_url}/review")
-    expect(page.locator("#latest-edition")).to_contain_text("2026-11-01 to 2026-11-07: completed")
-    expect(page.locator("#latest-edition")).to_contain_text("included: 1; held: 0; headline: model")
-    page.get_by_role("link", name="Inspect the private draft edition preview").click()
-    edition = page.get_by_role("article", name="Draft edition")
-    expect(edition.get_by_role("heading", level=1)).to_have_text("Capitol Hill events")
+    expect(page.locator("#latest-edition")).to_contain_text(
+        "seattle-wa, 2026-11-01 to 2026-11-07: completed"
+    )
+    expect(page.locator("#latest-edition")).to_contain_text(
+        "included: 1; held: 0; attempted: 1; stories: 1; headline: model"
+    )
+    expect(page.locator("#locations")).to_contain_text("edition published")
+    page.get_by_role("link", name="Audit the latest edition run and held items").click()
+    edition = page.get_by_role("article", name="Latest edition")
+    expect(edition.get_by_role("heading", level=1)).to_contain_text(" this week")
     expect(
         edition.get_by_role("heading", level=2, name=ingested_event["events"][0]["facts"]["title"])
     ).to_be_visible()

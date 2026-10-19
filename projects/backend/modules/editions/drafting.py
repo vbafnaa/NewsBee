@@ -1,45 +1,73 @@
-"""Private draft edition: model-written news items gated by the rule-based claim check."""
+"""Author and publish one edition per location snapshot, with no human review step.
+
+Pipeline: snapshot events -> stories (repeats collapsed) -> newsworthiness ranking ->
+write items best-first, at most one per category, until MAX_ENTRIES pass the checks or
+MAX_ATTEMPTS have been written -> edition headline and intro. Held items are excluded and
+never block publishing. A snapshot with no usable events still publishes an edition.
+"""
 
 import json
 import logging
 import time
 import uuid
-from datetime import date, timedelta
+from dataclasses import asdict
 from pathlib import Path
 
 import httpx
 
+from projects.backend.modules.communities import locations
+from projects.backend.modules.editions import stories
+from projects.backend.modules.source_connectors.connectors.common import https_link
 from projects.backend.shared.configuration.settings import Settings
-from projects.backend.shared.model_inference.news_blurb import (
-    VALIDATION_POLICY,
-    EventFacts,
-    draft_front,
-    draft_item,
-)
+from projects.backend.shared.model_inference import newsworthiness, story_writer
 from projects.backend.shared.model_inference.ollama import OllamaRuntime
+from projects.backend.shared.storage import snapshots
 from projects.backend.shared.storage.database import connect
-from shared.contracts.health import EditionDraftRun
+from shared.contracts.health import Edition, EditionItem, EditionListing, EditionRun
 
 logger = logging.getLogger(__name__)
-DEFAULT_MODEL = "qwen3:1.7b"
-COMMUNITY_ID = "capitol-hill-seattle"
-WINDOW_DAYS = 7
-MAX_ENTRIES = 50
+DEFAULT_MODEL = "qwen3:4b"
+VALIDATION_POLICY = f"{newsworthiness.RANKING_POLICY}+{story_writer.WRITING_POLICY}"
+MAX_ENTRIES = 5
+MAX_ATTEMPTS = 10
 
 
-def window(today: date) -> tuple[str, str]:
-    return today.isoformat(), (today + timedelta(days=WINDOW_DAYS - 1)).isoformat()
+def candidates(story_list: list[stories.Story]) -> list[dict]:
+    return [
+        {
+            "id": story.id,
+            "title": story.title,
+            "description": story.description,
+            "occurrences": len(story.occurrences),
+            "venues": story.venues,
+            "first_date": story.first.event_date,
+        }
+        for story in story_list
+    ]
 
 
-def select_events(path: Path, start: str, end: str) -> list[dict]:
-    with connect(path) as database:
-        rows = database.execute(
-            "SELECT source_id, source_event_id, event_date, facts_json FROM source_events "
-            "WHERE community_id = ? AND event_date BETWEEN ? AND ? "
-            "ORDER BY event_date, source_event_id",
-            (COMMUNITY_ID, start, end),
-        ).fetchall()
-    return [dict(row) for row in rows]
+def variety_key(candidate: dict) -> str:
+    """One item per model category; rule-rated stories have no category to compare."""
+    if candidate["rated_by"] == "model":
+        return candidate["rating"]["category"]
+    return f"unrated:{candidate['id']}"
+
+
+def story_record(story: stories.Story) -> dict:
+    return {
+        "id": story.id,
+        "title": story.title,
+        "description": story.description,
+        "occurrences": [asdict(item) for item in story.occurrences],
+    }
+
+
+class ModelNotReady(RuntimeError):
+    """The local model runtime is unavailable; authoring can be retried later."""
+
+
+class NoSnapshot(LookupError):
+    """The location has not been ingested yet."""
 
 
 def _finish(path: Path, identity: str, status: str, error: str | None, result: dict | None):
@@ -51,46 +79,113 @@ def _finish(path: Path, identity: str, status: str, error: str | None, result: d
         )
 
 
-async def draft_edition(settings: Settings, today: date | None = None) -> EditionDraftRun:
+def published_for(path: Path, snapshot_id: str) -> str | None:
+    with connect(path) as database:
+        row = database.execute(
+            "SELECT id FROM edition_drafts WHERE snapshot_id = ? AND status = 'completed'",
+            (snapshot_id,),
+        ).fetchone()
+    return row["id"] if row else None
+
+
+async def _check_model(runtime: OllamaRuntime, model: str) -> None:
+    try:
+        health = await runtime.health()
+    except httpx.HTTPError as error:
+        raise ModelNotReady(f"Ollama unreachable: {error}. Start Ollama.") from error
+    if health.status != "ok":
+        raise ModelNotReady(f"{health.detail}. Start Ollama and pull {model} first.")
+
+
+async def author_edition(settings: Settings, location_id: str) -> EditionRun:
+    """Publish an edition for the location's latest snapshot (idempotent per snapshot)."""
+    location = locations.get(settings.database, location_id)
+    snapshot = snapshots.latest(settings.database, location_id)
+    if snapshot is None:
+        raise NoSnapshot(f"No snapshot for {location_id}; run ingest-events first")
+    existing = published_for(settings.database, snapshot["id"])
+    if existing:
+        logger.info(
+            "Edition already published edition_id=%s snapshot_id=%s", existing, snapshot["id"]
+        )
+        return run_by_id(settings.database, existing)
+    community = location["name"].split(",")[0]
     model = settings.ollama_model or DEFAULT_MODEL
-    start, end = window(today or date.today())
+    events = snapshots.events(settings.database, snapshot["id"])
     started = time.monotonic()
     async with httpx.AsyncClient(trust_env=False, timeout=10) as client:
         runtime = OllamaRuntime(client, settings.ollama_url, model)
-        health = await runtime.health()
-        if health.status != "ok":
-            raise RuntimeError(f"{health.detail}. Start Ollama and pull {model} first.")
-        events = select_events(settings.database, start, end)
-        selected, skipped = events[:MAX_ENTRIES], max(0, len(events) - MAX_ENTRIES)
+        if events:
+            await _check_model(runtime, model)
         identity = str(uuid.uuid4())
         with connect(settings.database) as database:
             database.execute(
                 "INSERT INTO edition_drafts (id, community_id, window_start, window_end, model, "
-                "validation_policy, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)",
-                (identity, COMMUNITY_ID, start, end, model, VALIDATION_POLICY, time.time()),
+                "validation_policy, status, created_at, snapshot_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?)",
+                (
+                    identity,
+                    location_id,
+                    snapshot["window_start"],
+                    snapshot["window_end"],
+                    model,
+                    VALIDATION_POLICY,
+                    time.time(),
+                    snapshot["id"],
+                ),
             )
         logger.info(
-            "Edition draft started edition_id=%s window=%s..%s events=%s skipped_over_limit=%s "
-            "model=%s policy=%s",
+            "Edition authoring started edition_id=%s location_id=%s snapshot_id=%s "
+            "window=%s..%s snapshot_events=%s model=%s policy=%s",
             identity,
-            start,
-            end,
-            len(selected),
-            skipped,
+            location_id,
+            snapshot["id"],
+            snapshot["window_start"],
+            snapshot["window_end"],
+            len(events),
             model,
             VALIDATION_POLICY,
         )
-        passed: list[EventFacts] = []
-        held = 0
+        story_list = stories.collapse(events)
+        by_id = {story.id: story for story in story_list}
+        passed: list[tuple[dict, dict]] = []
+        held = attempted = skipped_for_variety = 0
+        used: set[str] = set()
+        ranking = None
         try:
-            for position, event in enumerate(selected):
-                stored = json.loads(event["facts_json"])
-                facts = EventFacts.model_validate(
-                    {name: stored.get(name) for name in EventFacts.model_fields}
+            ranked, ranking = await newsworthiness.rank(runtime, candidates(story_list))
+            logger.info(
+                "Edition ranking edition_id=%s events=%s stories=%s fallback_ratings=%s "
+                "wall_seconds=%s",
+                identity,
+                len(events),
+                len(story_list),
+                ranking["fallback_ratings"],
+                ranking["wall_seconds"],
+            )
+            for rank, candidate in enumerate(ranked, start=1):
+                if len(passed) >= MAX_ENTRIES or attempted >= MAX_ATTEMPTS:
+                    break
+                key = variety_key(candidate)
+                if key in used:
+                    skipped_for_variety += 1
+                    continue
+                story = by_id[candidate["id"]]
+                result = await story_writer.write_item(runtime, candidate)
+                result.update(
+                    story=story_record(story),
+                    ranking={
+                        "rank": rank,
+                        "score": candidate["score"],
+                        "rated_by": candidate["rated_by"],
+                        **candidate["rating"],
+                    },
+                    when_where=stories.when_where(story),
+                    source_url=story.first.source_url,
                 )
-                result = await draft_item(runtime, facts)
                 if result["disposition"] == "checks_passed":
-                    passed.append(facts)
+                    used.add(key)
+                    passed.append((candidate, result["draft"]))
                 else:
                     held += 1
                 with connect(settings.database) as database:
@@ -98,24 +193,35 @@ async def draft_edition(settings: Settings, today: date | None = None) -> Editio
                         "INSERT INTO edition_draft_entries VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (
                             identity,
-                            position,
-                            event["source_id"],
-                            event["source_event_id"],
-                            event["event_date"],
+                            attempted,
+                            story.first.source_id,
+                            story.first.source_event_id,
+                            story.first.event_date,
                             result["disposition"],
                             json.dumps(result),
                         ),
                     )
+                attempted += 1
                 logger.info(
-                    "Edition item edition_id=%s source_event_id=%s disposition=%s "
-                    "errors=%s wall_seconds=%s",
+                    "Edition item edition_id=%s story_id=%s rank=%s score=%s category=%s "
+                    "occurrences=%s disposition=%s errors=%s wall_seconds=%s",
                     identity,
-                    facts.source_event_id,
+                    story.id,
+                    rank,
+                    candidate["score"],
+                    candidate["rating"]["category"],
+                    len(story.occurrences),
                     result["disposition"],
                     result.get("validation_errors") or result.get("error"),
                     result["wall_seconds"],
                 )
-            front = await draft_front(runtime, passed)
+            front = await story_writer.write_front(
+                runtime,
+                community,
+                stories.week_label(snapshot["window_start"], snapshot["window_end"]),
+                [candidate for candidate, _ in passed],
+                [draft for _, draft in passed],
+            )
             logger.info(
                 "Edition front edition_id=%s fallback=%s errors=%s wall_seconds=%s",
                 identity,
@@ -125,35 +231,43 @@ async def draft_edition(settings: Settings, today: date | None = None) -> Editio
             )
         except BaseException as error:
             detail = f"{type(error).__name__}: {error}"
-            logger.exception("Edition draft failed edition_id=%s", identity)
+            logger.exception("Edition authoring failed edition_id=%s", identity)
             _finish(settings.database, identity, "failed", detail, None)
             raise
         summary = {
             "included": len(passed),
             "held": held,
-            "skipped_over_limit": skipped,
+            "attempted": attempted,
+            "not_attempted": len(story_list) - attempted,
+            "events": len(events),
+            "stories": len(story_list),
+            "skipped_for_variety": skipped_for_variety,
+            "ranking": ranking,
             "duration_seconds": round(time.monotonic() - started, 3),
             "front": front,
         }
         _finish(settings.database, identity, "completed", None, summary)
     logger.info(
-        "Edition draft completed edition_id=%s included=%s held=%s front_fallback=%s "
-        "duration_seconds=%s",
+        "Edition published edition_id=%s location_id=%s included=%s held=%s attempted=%s "
+        "front_fallback=%s duration_seconds=%s",
         identity,
+        location_id,
         summary["included"],
         held,
+        attempted,
         front["fallback"],
         summary["duration_seconds"],
     )
-    return latest_draft(settings.database)
+    return run_by_id(settings.database, identity)
 
 
-def _run(row) -> EditionDraftRun:
+def _run(row) -> EditionRun:
     result = json.loads(row["result_json"]) if row["result_json"] else {}
     front = result.get("front")
-    return EditionDraftRun(
+    return EditionRun(
         id=row["id"],
         community_id=row["community_id"],
+        snapshot_id=row["snapshot_id"],
         window_start=row["window_start"],
         window_end=row["window_end"],
         model=row["model"],
@@ -162,20 +276,113 @@ def _run(row) -> EditionDraftRun:
         front_fallback=front["fallback"] if front else None,
         **{
             key: result.get(key)
-            for key in ("included", "held", "skipped_over_limit", "duration_seconds")
+            for key in (
+                "included",
+                "held",
+                "attempted",
+                "not_attempted",
+                "duration_seconds",
+                "events",
+                "stories",
+                "skipped_for_variety",
+            )
         },
+        ranking_fallback_ratings=(result.get("ranking") or {}).get("fallback_ratings"),
     )
 
 
-def latest_draft(path: Path) -> EditionDraftRun | None:
+def run_by_id(path: Path, identity: str) -> EditionRun:
+    with connect(path) as database:
+        row = database.execute("SELECT * FROM edition_drafts WHERE id = ?", (identity,)).fetchone()
+    return _run(row)
+
+
+def latest_run(path: Path, location_id: str | None = None) -> EditionRun | None:
     with connect(path) as database:
         row = database.execute(
-            "SELECT * FROM edition_drafts ORDER BY created_at DESC, id DESC LIMIT 1"
+            "SELECT * FROM edition_drafts WHERE ? IS NULL OR community_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (location_id, location_id),
         ).fetchone()
     return _run(row) if row else None
 
 
-def inspect_drafts(path: Path) -> dict:
+def _latest_published_row(database, location_id: str):
+    return database.execute(
+        "SELECT * FROM edition_drafts WHERE community_id = ? AND status = 'completed' "
+        "ORDER BY completed_at DESC, id DESC LIMIT 1",
+        (location_id,),
+    ).fetchone()
+
+
+def listings(path: Path) -> list[EditionListing]:
+    """Every onboarded location with its latest published edition, if any."""
+    result = []
+    onboarded = locations.list_all(path)
+    with connect(path) as database:
+        for location in onboarded:
+            row = _latest_published_row(database, location["id"])
+            result.append(
+                EditionListing(
+                    location_id=location["id"],
+                    location_name=location["name"],
+                    edition_id=row["id"] if row else None,
+                    published_at=row["completed_at"] if row else None,
+                    window_start=row["window_start"] if row else None,
+                    window_end=row["window_end"] if row else None,
+                )
+            )
+    return result
+
+
+def latest_published(path: Path, location_id: str) -> Edition | None:
+    """The reader-facing edition: front plus items that passed checks, earliest first."""
+    location = locations.get(path, location_id)
+    with connect(path) as database:
+        row = _latest_published_row(database, location_id)
+        if row is None:
+            return None
+        entries = database.execute(
+            "SELECT result_json FROM edition_draft_entries WHERE edition_id = ? "
+            "AND disposition != 'held' ORDER BY position",
+            (row["id"],),
+        ).fetchall()
+    front = json.loads(row["result_json"])["front"]
+    items = []
+    for entry in entries:
+        result = json.loads(entry["result_json"])
+        draft = result["draft"]
+        story = result.get("story")
+        items.append(
+            EditionItem(
+                headline=draft["headline"],
+                blurb=draft.get("summary") or draft.get("blurb"),
+                when_where=result["when_where"],
+                event_date=(
+                    story["occurrences"][0]["event_date"]
+                    if story
+                    else result["facts"]["event_date"]
+                ),
+                source_url=https_link(
+                    result.get("source_url") or result.get("facts", {}).get("source_url")
+                ),
+            )
+        )
+    return Edition(
+        id=row["id"],
+        location_id=location_id,
+        location_name=location["name"],
+        window_start=row["window_start"],
+        window_end=row["window_end"],
+        published_at=row["completed_at"],
+        headline=front["headline"],
+        intro=front["intro"],
+        items=items,
+    )
+
+
+def inspect_editions(path: Path) -> dict:
+    """Audit view: latest run with included and held items, plus recent history."""
     with connect(path) as database:
         runs = database.execute(
             "SELECT * FROM edition_drafts ORDER BY created_at DESC, id DESC LIMIT 10"

@@ -47,7 +47,8 @@
       "title": "ComponentHealth",
       "type": "object"
     },
-    "EditionDraftRun": {
+    "EditionRun": {
+      "description": "One authoring run over one location snapshot. A completed run is the published edition.",
       "properties": {
         "id": {
           "title": "Id",
@@ -56,6 +57,18 @@
         "community_id": {
           "title": "Community Id",
           "type": "string"
+        },
+        "snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot Id"
         },
         "window_start": {
           "title": "Window Start",
@@ -113,7 +126,7 @@
           "default": null,
           "title": "Held"
         },
-        "skipped_over_limit": {
+        "attempted": {
           "anyOf": [
             {
               "type": "integer"
@@ -123,7 +136,67 @@
             }
           ],
           "default": null,
-          "title": "Skipped Over Limit"
+          "title": "Attempted"
+        },
+        "not_attempted": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Attempted"
+        },
+        "events": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Events"
+        },
+        "stories": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stories"
+        },
+        "skipped_for_variety": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped For Variety"
+        },
+        "ranking_fallback_ratings": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Fallback Ratings"
         },
         "duration_seconds": {
           "anyOf": [
@@ -159,7 +232,7 @@
         "status",
         "error"
       ],
-      "title": "EditionDraftRun",
+      "title": "EditionRun",
       "type": "object"
     },
     "IngestionRun": {
@@ -168,8 +241,8 @@
           "title": "Id",
           "type": "string"
         },
-        "source_id": {
-          "title": "Source Id",
+        "location_id": {
+          "title": "Location Id",
           "type": "string"
         },
         "status": {
@@ -221,7 +294,7 @@
           "default": null,
           "title": "Skipped Other Venues"
         },
-        "skipped_library_closures": {
+        "skipped_outside_window": {
           "anyOf": [
             {
               "type": "integer"
@@ -231,7 +304,7 @@
             }
           ],
           "default": null,
-          "title": "Skipped Library Closures"
+          "title": "Skipped Outside Window"
         },
         "duration_seconds": {
           "anyOf": [
@@ -244,16 +317,151 @@
           ],
           "default": null,
           "title": "Duration Seconds"
+        },
+        "systems": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SystemIngestion"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Systems"
         }
       },
       "required": [
         "id",
-        "source_id",
+        "location_id",
         "status",
         "attempts",
         "error"
       ],
       "title": "IngestionRun",
+      "type": "object"
+    },
+    "LocationStatus": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "library_systems": {
+          "title": "Library Systems",
+          "type": "integer"
+        },
+        "websites_resolved": {
+          "title": "Websites Resolved",
+          "type": "integer"
+        },
+        "latest_ingestion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IngestionRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "latest_edition_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Edition Id"
+        },
+        "latest_edition_published_at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Edition Published At"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "library_systems",
+        "websites_resolved"
+      ],
+      "title": "LocationStatus",
+      "type": "object"
+    },
+    "SystemIngestion": {
+      "properties": {
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ingested",
+            "no_feed",
+            "unresolved_website",
+            "blocked",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "feed_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feed Kind"
+        },
+        "event_count": {
+          "default": 0,
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "skipped_other_venues": {
+          "default": 0,
+          "title": "Skipped Other Venues",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source_id",
+        "name",
+        "status",
+        "detail"
+      ],
+      "title": "SystemIngestion",
       "type": "object"
     }
   },
@@ -291,10 +499,25 @@
       ],
       "default": null
     },
-    "latest_edition_draft": {
+    "locations": {
       "anyOf": [
         {
-          "$ref": "#/$defs/EditionDraftRun"
+          "items": {
+            "$ref": "#/$defs/LocationStatus"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Locations"
+    },
+    "latest_edition": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EditionRun"
         },
         {
           "type": "null"
@@ -330,26 +553,14 @@
       "title": "Last Completed Job At"
     },
     "pipelines": {
-      "const": "local_event_ingestion_only",
-      "default": "local_event_ingestion_only",
+      "const": "local_ingestion_and_auto_publish",
+      "default": "local_ingestion_and_auto_publish",
       "title": "Pipelines",
       "type": "string"
     },
-    "held_reviews": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Held Reviews"
-    },
     "publication": {
-      "const": "not_implemented",
-      "default": "not_implemented",
+      "const": "automatic_local_only",
+      "default": "automatic_local_only",
       "title": "Publication",
       "type": "string"
     }
