@@ -44,6 +44,11 @@ p, small, .muted { color: var(--muted); }
 .field { display: grid; gap: .4rem; font-size: .9rem; }
 .admin-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 1rem; max-width: 720px; }
 .source-form, .source-edit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 1rem; }
+.channel-form { display: grid; gap: 1rem; max-width: 720px; }
+.channel-toggle { display: flex; align-items: flex-start; gap: .65rem; }
+.channel-toggle input[type="checkbox"] { width: 1.2rem; min-height: 1.2rem; margin: .1rem 0 0; accent-color: var(--accent); }
+.channel-toggle span { display: grid; gap: .25rem; }
+.channel-toggle small { color: var(--muted); }
 .source-url { grid-column: span 2; }
 .source-list { display: grid; gap: .8rem; }
 .folder-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .8rem; }

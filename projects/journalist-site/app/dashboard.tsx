@@ -16,7 +16,7 @@ type Job = {
   created_at: number;
   error: string | null;
 };
-type Channel = { id: string; name: string; url: string; enabled: boolean; mode: string };
+type Channel = { id: string; name: string; url: string; enabled: boolean };
 type ConfiguredSource = {
   id: string;
   category: string;
@@ -54,7 +54,11 @@ export default function Dashboard() {
     const results = await Promise.allSettled([
       request<{ locations: Location[] }>("locations"),
       request<{ jobs: Job[] }>("jobs"),
-      request<{ channels: Channel[] }>("channels"),
+      fetch("/api/output-channel", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
+        return data as { channel: Channel };
+      }),
       fetch("/api/source-configs", { cache: "no-store" }).then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
@@ -73,7 +77,7 @@ export default function Dashboard() {
     else recordFailure("Locations", results[0]);
     if (results[1].status === "fulfilled") setJobs(results[1].value.jobs);
     else recordFailure("Jobs", results[1]);
-    if (results[2].status === "fulfilled") setChannels(results[2].value.channels);
+    if (results[2].status === "fulfilled") setChannels([results[2].value.channel]);
     else recordFailure("Channels", results[2]);
     if (results[3].status === "fulfilled") setConfiguredSources(results[3].value.sources);
     else recordFailure("Source configs", results[3]);
@@ -219,18 +223,23 @@ export default function Dashboard() {
       </section>
 
       <section className="panel">
-        <h2>Output channels</h2>
+        <div className="section-heading">
+          <div>
+            <h2>Output channels</h2>
+            <p>Reader site channel configuration.</p>
+          </div>
+          <Link className="nav-button" href="/output-channel">Manage channel</Link>
+        </div>
         {channels.map((channel) => (
           <div className="channel" key={channel.id}>
             <div>
               <strong>{channel.name}</strong>
-              <p>{channel.mode === "automatic" ? "Published automatically after authoring" : channel.mode}</p>
+              <p>Reader editions are served from the Newsbee reader site.</p>
             </div>
             <a href={channel.url} target="_blank" rel="noreferrer">{channel.url}</a>
             <span className={channel.enabled ? "state active" : "state"}>{channel.enabled ? "Enabled" : "Disabled"}</span>
           </div>
         ))}
-        <p className="muted">The reader channel currently follows the backend’s automatic publishing policy.</p>
       </section>
 
       <section className="panel">

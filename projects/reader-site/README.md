@@ -52,18 +52,29 @@ must exist in `locations.json`.
 
 ## Environment
 
-Set these server-side variables in Vercel and local development:
+Create a Google Cloud project, enable the Google Drive API, and create a service account
+with a JSON key. Share the Drive folder with that service account's email as a Viewer.
+Keep the JSON key private and do not commit it. Set the service-account email, private key,
+as server-side environment variables on the reader-site deployment in Vercel (and in local
+development when needed):
 
-- `GOOGLE_DRIVE_FOLDER_ID`: ID of the shared Drive folder.
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`: service account email with Viewer access to the folder.
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`: service account private key in PEM format. Store
   it as a secret; escaped `\n` newlines are supported.
+- `NEWSBEE_OUTPUT_CHANNEL_ID`: `_id` of this reader's document in `output_channels`.
+  Defaults to `reader-site`.
 - `MONGODB_URI`: private MongoDB Atlas connection string.
 - `MONGODB_DATABASE`: database where reader interest signups are stored.
 
-The service account only requests Drive's read-only scope. MongoDB creates a unique
-`(location_id, email)` index in the `reader_interest_signups` collection so repeat
-signups are idempotent.
+The Drive folder ID is read from `output_channels.drive_folder_id` on the document whose
+`_id` is `reader-site`; configure it in the journalist site's Output channel page. The
+reader site does not use a Drive folder ID environment variable. Share the configured Drive
+folder with the service account email as a Viewer. The service account only requests
+Drive's read-only scope. The MongoDB database user needs read/write access to
+`reader_interest_signups` and read access to `output_channels`. MongoDB creates a unique
+`(location_id, email)` index in the signup collection so repeat signups are idempotent.
+When the channel's `enabled` field is `false`, edition listing and edition detail APIs
+return HTTP 503 without serving cached edition responses.
 
 ## API routes
 
