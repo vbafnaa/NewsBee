@@ -14,6 +14,71 @@ approved local library-event ingestion job. The site reports that no editions
 exist. Health checks
 report infrastructure availability, not editorial readiness.
 
+## Local model evaluation (optional)
+
+The initial evaluation candidate is `qwen3:1.7b` (about 1.4 GB of model files,
+Apache 2.0 license). This is not a permanent model choice. Install Ollama from
+https://ollama.com/download and start it locally; normal setup never downloads models.
+In a separate terminal, run `ollama pull qwen3:1.7b`, then set
+`NEWSBEE_OLLAMA_MODEL=qwen3:1.7b` for the evaluation command:
+
+```powershell
+# PowerShell
+$env:NEWSBEE_OLLAMA_MODEL = "qwen3:1.7b"
+uv run --locked python scripts/dev.py evaluate-model
+```
+
+```sh
+# macOS / Linux
+NEWSBEE_OLLAMA_MODEL=qwen3:1.7b uv run --locked python scripts/dev.py evaluate-model
+```
+
+To compare the larger candidate, explicitly download it with `ollama pull qwen3:4b`
+(about 2.5 GB) and rerun the same command with `NEWSBEE_OLLAMA_MODEL=qwen3:4b`.
+Both candidates must use the same fixture and validation-policy versions.
+
+Evaluation uses five synthetic fixtures, not retained library records. It runs
+sequentially on CPU with a 2,048-token context, a 512-token output limit, and
+thinking disabled. Model responses are unloaded after each case; timings include
+loading. Reports under `.local/data/model-evaluations/` contain drafts, field
+checks, token counts, and durations. Failed checks exit nonzero; transport and
+validation failures are logged and recorded. No drafts enter editorial storage
+or publication.
+
+**Strict fail-closed validation:** every copied field must match the supplied facts,
+and the summary must exactly match a deterministic, labeled rendering of title,
+date, source schedule, venue, and room when supplied. Values are quoted as data.
+Any addition, omission, paraphrase, altered value, malformed response, or generation
+failure is held; it is not replaced with a success-shaped fallback. Reports include
+the expected summary and validation errors. The model receives the approved rendering:
+this measures constrained copying, **not free-form writing ability**. A deterministic
+renderer can produce these summaries without AI.
+
+**Human review is still mandatory:** template matching cannot verify source truth,
+resolve malicious source text, or authorize publication. Instruction-like titles
+and venues remain quoted source data, never admission/accessibility assertions.
+Model download
+size is not RAM usage; successful execution on a larger machine does not certify
+the CPU-only 8 GB baseline. Measure memory and latency on baseline hardware before
+accepting the model. Model identity and license: [Ollama model](https://ollama.com/library/qwen3:1.7b),
+[upstream license](https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/LICENSE).
+
+## Private draft edition preview
+
+With Ollama running and `qwen3:1.7b` pulled, draft entries for retained Capitol Hill
+events dated in the next 7 days (local machine date, inclusive):
+
+```bash
+uv run --locked python scripts/dev.py draft-edition
+```
+
+The command uses `qwen3:1.7b` unless `NEWSBEE_OLLAMA_MODEL` is set; the main stack
+is unchanged. Each entry goes through the same strict fail-closed template gate as
+evaluation. Validated entries are included; held entries are excluded and listed with
+their errors. At most 50 events are drafted per run (overflow is reported). Inspect at
+http://127.0.0.1:8000/review/editions; the health page shows the latest run. Drafts are
+local only: not published or emailed, and every entry still needs human review.
+
 ## First source: Capitol Hill Branch events
 
 The first connector reads the library's official
@@ -94,6 +159,7 @@ uv run --locked python scripts/dev.py stop
 | Reader website | http://127.0.0.1:4321 |
 | Review and health page | http://127.0.0.1:8000/review |
 | Read-only ingestion inspection | http://127.0.0.1:8000/review/ingestion |
+| Private draft edition preview | http://127.0.0.1:8000/review/editions |
 | API documentation | http://127.0.0.1:8000/docs |
 | Mailpit inbox | http://127.0.0.1:8025 |
 | Mailpit SMTP | `127.0.0.1:1025` |
@@ -163,8 +229,8 @@ Default tests use temporary SQLite databases, synthetic event XML, mocked HTTP
 and Ollama responses, and SMTP fixtures. They cover filtering, fact-only retention,
 replay deduplication, lease recovery, retries, and schema upgrades.
 Browser tests start isolated local test servers and build the
-website; they do not need Ollama or Mailpit. Real source/model evaluations are
-not implemented and must be explicitly invoked when added.
+website; they do not need Ollama or Mailpit. Real source ingestion and model
+evaluation are explicit CLI commands, never part of default tests.
 
 Python and npm dependency locks are committed for reproducible installation.
 After intentionally changing shared Pydantic contracts, regenerate their JSON

@@ -47,6 +47,109 @@
       "title": "ComponentHealth",
       "type": "object"
     },
+    "EditionDraftRun": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "community_id": {
+          "title": "Community Id",
+          "type": "string"
+        },
+        "window_start": {
+          "title": "Window Start",
+          "type": "string"
+        },
+        "window_end": {
+          "title": "Window End",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "failed",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "included": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Included"
+        },
+        "held": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Held"
+        },
+        "skipped_over_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Over Limit"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        }
+      },
+      "required": [
+        "id",
+        "community_id",
+        "window_start",
+        "window_end",
+        "model",
+        "status",
+        "error"
+      ],
+      "title": "EditionDraftRun",
+      "type": "object"
+    },
     "IngestionRun": {
       "properties": {
         "id": {
@@ -169,6 +272,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/IngestionRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "latest_edition_draft": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EditionDraftRun"
         },
         {
           "type": "null"
