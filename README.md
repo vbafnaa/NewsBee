@@ -73,7 +73,8 @@ supplies agendas only.
    sampled) by its own rules: library events put one-off events, then practical help, first;
    meetings put the city council first, then sooner meetings and fuller agendas. The model then
    ranks the shortlists together (civic 3 : appeal 2 : one-off 1).
-3. **Write** up to 5 stories, one per category. Drafts that add facts, repeat
+3. **Write** up to 9 stories in rank order (each source's best story first, so every source
+   gets in), with no per-category limit and at most 12 attempts. Drafts that add facts, repeat
    themselves, stop mid-sentence, drift into non-Latin characters or leave the event's own
    name out of the headline get one retry, then are held for audit at `/review/editions`.
 4. **Front** headline naming the top story (same checks and one retry, else a fixed fallback).
