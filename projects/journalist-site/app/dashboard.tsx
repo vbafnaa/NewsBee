@@ -16,6 +16,15 @@ type Job = {
   error: string | null;
 };
 type Channel = { id: string; name: string; url: string; enabled: boolean; mode: string };
+type ConfiguredSource = {
+  id: string;
+  category: string;
+  name: string;
+  location: string;
+  url?: string;
+  platform?: string;
+  tenant?: string;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/admin/${path}`, {
@@ -35,20 +44,27 @@ export default function Dashboard() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [configuredSources, setConfiguredSources] = useState<ConfiguredSource[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [locationData, jobData, channelData] = await Promise.all([
+      const [locationData, jobData, channelData, sourceData] = await Promise.all([
         request<{ locations: Location[] }>("locations"),
         request<{ jobs: Job[] }>("jobs"),
         request<{ channels: Channel[] }>("channels"),
+        fetch("/api/source-configs", { cache: "no-store" }).then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
+          return data as { sources: ConfiguredSource[] };
+        }),
       ]);
       setLocations(locationData.locations);
       setJobs(jobData.jobs);
       setChannels(channelData.channels);
+      setConfiguredSources(sourceData.sources);
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -118,8 +134,36 @@ export default function Dashboard() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <h2>Input sources</h2>
-            <p>HTTPS library websites and supported local-government meeting platforms.</p>
+            <h2>Configured sources</h2>
+            <p>Loaded from the MongoDB <code>source_configs</code> collection.</p>
+          </div>
+        </div>
+        {configuredSources.length === 0 ? <p>No source entries found in MongoDB.</p> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Source</th><th>Type</th><th>Location</th><th>Details</th></tr></thead>
+              <tbody>{configuredSources.map((source) => (
+                <tr key={source.id}>
+                  <td>{source.name}</td>
+                  <td>{source.category}</td>
+                  <td>{source.location}</td>
+                  <td>
+                    {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a> : null}
+                    {source.platform ? <span>{source.platform}{source.tenant ? ` (${source.tenant})` : ""}</span> : null}
+                    {!source.url && !source.platform ? "—" : null}
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>Onboarded location settings</h2>
+            <p>Manage library websites and supported local-government platforms for onboarded locations.</p>
           </div>
           <button disabled={busy || locations.length === 0} onClick={() => void trigger("ingestion")}>
             Run all locations

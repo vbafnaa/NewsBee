@@ -20,7 +20,8 @@ environment and MongoDB Database Tools installed:
 mongoimport --uri "$env:MONGODB_URI" --db "$env:MONGODB_DATABASE" --collection source_configs --jsonArray --mode upsert --upsertFields _id --file config\sources\mongodb-source-configs.json
 ```
 
-The seed reflects only the three checked-in files listed above. It does not contain
-onboarded location profiles from SQLite or journalist-admin accounts. The running backend
-does not yet read these MongoDB documents; this file prepares the source configuration
-data shape for migration.
+The journalist site's dashboard reads the library websites, government platforms, and
+state newsroom feeds from these MongoDB documents for display. The seed reflects only the
+three checked-in files listed above. It does not contain onboarded location profiles from
+SQLite or journalist-admin accounts. The running backend does not yet read these MongoDB
+documents for ingestion; runtime source configuration remains file-based.

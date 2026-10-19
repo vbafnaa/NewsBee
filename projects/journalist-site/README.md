@@ -13,7 +13,7 @@ Set these environment variables before running or deploying:
   `https://<journalist-host>/api/auth/callback/google` as an authorized redirect URI.
 - `AUTH_SECRET`: a random, private Auth.js session secret.
 - `MONGODB_URI`: private connection string for MongoDB Atlas.
-- `MONGODB_DATABASE`: database containing the journalist account collection.
+- `MONGODB_DATABASE`: database containing the journalist accounts and source configs.
 - `BACKEND_API_URL`: backend origin, for example `https://api.example.com`.
 - `ADMIN_API_TOKEN`: private server-to-server token; must match the backend's
   `NEWSBEE_ADMIN_API_TOKEN` and be at least 32 ASCII characters.
@@ -27,13 +27,16 @@ Provision an account by inserting a document into the `journalist_admins` collec
 Create a unique index on `email` and store addresses in lowercase. Only documents with
 `enabled: true` are authorized; the administrators page can add or re-enable an account. Set
 `enabled` to `false` or remove the document to revoke access. The MongoDB database user
-should have only the permissions needed to read and update this collection.
+should have only the permissions needed to read and update `journalist_admins` and read
+`source_configs`.
 
 Run `npm install` and `npm run dev` from this directory for local development. The backend
 must be reachable and configured with an admin token. Production deployment also requires
 the durable backend and worker described in
 [`Docs/production-architecture-decisions.md`](../../Docs/production-architecture-decisions.md).
 
-The first version edits source settings for onboarded locations, triggers ingestion, shows
-job status, and lists the existing reader channel. Reader publication remains automatic;
-there is no channel toggle or editorial approval action yet.
+The dashboard reads the configured library websites, government platforms, and state
+newsroom feeds from the MongoDB `source_configs` collection. Its separate onboarded-location
+settings still use the backend API. The first version also triggers ingestion, shows job
+status, and lists the existing reader channel. Reader publication remains automatic; there
+is no channel toggle or editorial approval action yet.
