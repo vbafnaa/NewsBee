@@ -64,6 +64,19 @@ p, small, .muted { color: var(--muted); }
 .source-summary p { margin: .3rem 0; }
 .source-type { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .source-actions { display: flex; gap: .5rem; }
+.pipeline-sources, .pipeline-runs { display: grid; gap: .75rem; }
+.pipeline-source, .pipeline-run { display: grid; gap: .7rem; padding: 1rem; border: 1px solid var(--line); border-radius: .45rem; background: #fffdf8; }
+.source-select { display: flex; align-items: flex-start; gap: .7rem; }
+.source-select input { width: 1.1rem; min-height: 1.1rem; margin: .15rem 0 0; accent-color: var(--accent); }
+.source-select span, .pipeline-run-heading > div { display: grid; gap: .25rem; }
+.source-select small, .pipeline-run small, .ingestion-note { color: var(--muted); }
+.ingestion-note { padding-top: .5rem; border-top: 1px solid var(--line); }
+.pipeline-location { max-width: 520px; margin-bottom: 1rem; }
+.pipeline-actions { margin: .5rem 0 1rem; }
+.pipeline-run-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.pipeline-run > button { justify-self: start; }
+.stage-summary, .stage-error { display: block; }
+.stage-error { color: #8a1d15 !important; }
 .danger { border-color: #9c2f24; background: transparent; color: #8a1d15; }
 .source-edit-form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .admin-list { margin-top: 1.2rem; border-top: 1px solid var(--line); }
@@ -94,6 +107,7 @@ th { font-size: .82rem; }
   .sidebar-account { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-top: .75rem; padding-top: .75rem; }
   .sidebar-account form button { width: auto; }
   .section-heading, .channel, .source-summary { align-items: flex-start; flex-direction: column; }
+  .pipeline-run-heading { flex-direction: column; }
   .government { grid-template-columns: 1fr; }
   .admin-form, .source-form, .source-edit-form { grid-template-columns: 1fr; }
   .source-url { grid-column: auto; }

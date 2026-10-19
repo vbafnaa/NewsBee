@@ -1,4 +1,4 @@
-import { auth, getOutputChannel, isAdminEmail, updateOutputChannel } from "@/auth";
+import { auth, getOutputChannel, isAdminEmail, listConfiguredSources, updateOutputChannel } from "@/auth";
 import type { NextRequest } from "next/server";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,7 +42,7 @@ export async function PATCH(request: NextRequest) {
     if (!isRecord(body)) {
       return Response.json({ detail: "Request body must be a JSON object" }, { status: 400 });
     }
-    const { name, url, driveFolderId, enabled } = body;
+    const { name, url, driveFolderId, enabled, selectedSourceIds } = body;
     if (typeof name !== "string" || !name.trim() || name.trim().length > 120) {
       return Response.json({ detail: "Enter a channel name of up to 120 characters" }, { status: 422 });
     }
@@ -64,11 +64,21 @@ export async function PATCH(request: NextRequest) {
     if (typeof enabled !== "boolean") {
       return Response.json({ detail: "Channel enabled status must be true or false" }, { status: 422 });
     }
+    if (!Array.isArray(selectedSourceIds) || selectedSourceIds.length > 100 ||
+      selectedSourceIds.some((id) => typeof id !== "string" || !id || id.length > 256) ||
+      new Set(selectedSourceIds).size !== selectedSourceIds.length) {
+      return Response.json({ detail: "Select a valid list of unique source identifiers" }, { status: 422 });
+    }
+    const availableSources = new Set((await listConfiguredSources()).map((source) => source.id));
+    if (selectedSourceIds.some((id) => !availableSources.has(id))) {
+      return Response.json({ detail: "One or more selected sources no longer exist; reload the page" }, { status: 422 });
+    }
 
     const channel = await updateOutputChannel({
       name: name.trim(),
       url: parsedUrl.toString().replace(/\/$/, ""),
       driveFolderId,
+      selectedSourceIds,
       enabled,
     });
     return Response.json({ channel }, { headers: { "Cache-Control": "no-store" } });

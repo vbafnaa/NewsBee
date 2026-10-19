@@ -16,6 +16,7 @@ export type OutputChannel = {
   name: string;
   url: string;
   driveFolderId: string;
+  selectedSourceIds: string[];
   enabled: boolean;
 };
 export type ConfiguredSource = {
@@ -36,6 +37,7 @@ type OutputChannelDocument = {
   name: string;
   url: string;
   drive_folder_id: string;
+  selected_source_ids?: string[];
   enabled: boolean;
 };
 export type SourceConfigKind = "library" | "government" | "state-newsroom";
@@ -87,6 +89,13 @@ async function getMongoClient() {
   return mongo.promise;
 }
 
+export async function getMongoDatabase() {
+  const databaseName = process.env.MONGODB_DATABASE;
+  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
+  const client = await getMongoClient();
+  return client.db(databaseName);
+}
+
 export async function isAdminEmail(email: string | null | undefined) {
   if (!email) return false;
 
@@ -129,10 +138,8 @@ export async function enableAdminAccount(email: string) {
 }
 
 export async function getOutputChannel(): Promise<OutputChannel> {
-  const databaseName = process.env.MONGODB_DATABASE;
-  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
-  const client = await getMongoClient();
-  const collection = client.db(databaseName).collection<OutputChannelDocument>("output_channels");
+  const database = await getMongoDatabase();
+  const collection = database.collection<OutputChannelDocument>("output_channels");
   await collection.updateOne(
     { _id: "reader-site" },
     {
@@ -155,20 +162,23 @@ export async function getOutputChannel(): Promise<OutputChannel> {
     typeof channel.enabled !== "boolean") {
     throw new Error("The reader output channel configuration is malformed");
   }
+  const selectedSourceIds = channel.selected_source_ids ?? [];
+  if (!Array.isArray(selectedSourceIds) || selectedSourceIds.some((id) => typeof id !== "string")) {
+    throw new Error("The reader output channel source selection is malformed");
+  }
   return {
     id: channel._id,
     name: channel.name,
     url: channel.url,
     driveFolderId: channel.drive_folder_id,
+    selectedSourceIds,
     enabled: channel.enabled,
   };
 }
 
 export async function updateOutputChannel(channel: Omit<OutputChannel, "id">) {
-  const databaseName = process.env.MONGODB_DATABASE;
-  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
-  const client = await getMongoClient();
-  const collection = client.db(databaseName).collection<OutputChannelDocument>("output_channels");
+  const database = await getMongoDatabase();
+  const collection = database.collection<OutputChannelDocument>("output_channels");
   await collection.updateOne(
     { _id: "reader-site" },
     {
@@ -176,6 +186,7 @@ export async function updateOutputChannel(channel: Omit<OutputChannel, "id">) {
         name: channel.name,
         url: channel.url,
         drive_folder_id: channel.driveFolderId,
+        selected_source_ids: channel.selectedSourceIds,
         enabled: channel.enabled,
       },
     },
@@ -366,6 +377,7 @@ export async function updateConfiguredSource(id: string, source: SourceConfigInp
 }
 
 export async function deleteConfiguredSource(id: string) {
+  let retiredPrefix: string | undefined;
   if (id.startsWith("library-")) {
     const location = id.slice("library-".length);
     await mutateSourceConfig("library", (data) => {
@@ -376,10 +388,7 @@ export async function deleteConfiguredSource(id: string) {
       delete updated[location];
       return updated;
     });
-    return;
-  }
-
-  if (id.startsWith("government-")) {
+  } else if (id.startsWith("government-")) {
     const location = id.slice("government-".length);
     await mutateSourceConfig("government", (data) => {
       if (!Object.prototype.hasOwnProperty.call(data, location)) {
@@ -389,22 +398,37 @@ export async function deleteConfiguredSource(id: string) {
       delete updated[location];
       return updated;
     });
-    return;
+  } else {
+    const match = /^newsroom-(.+)-(\d+)$/.exec(id);
+    if (!match) throw new SourceConfigError("Invalid source identifier.");
+    const [, region, indexText] = match;
+    retiredPrefix = `newsroom-${region}-`;
+    const index = Number(indexText);
+    await mutateSourceConfig("state-newsroom", (data) => {
+      const state = data[region];
+      if (!isRecord(state) || !Array.isArray(state.newsrooms) || !isRecord(state.newsrooms[index])) {
+        throw new SourceConfigError("State newsroom source was not found.", 404);
+      }
+      const newsrooms = [...state.newsrooms];
+      newsrooms.splice(index, 1);
+      return { ...data, [region]: { ...state, newsrooms } };
+    });
   }
 
-  const match = /^newsroom-(.+)-(\d+)$/.exec(id);
-  if (!match) throw new SourceConfigError("Invalid source identifier.");
-  const [, region, indexText] = match;
-  const index = Number(indexText);
-  await mutateSourceConfig("state-newsroom", (data) => {
-    const state = data[region];
-    if (!isRecord(state) || !Array.isArray(state.newsrooms) || !isRecord(state.newsrooms[index])) {
-      throw new SourceConfigError("State newsroom source was not found.", 404);
-    }
-    const newsrooms = [...state.newsrooms];
-    newsrooms.splice(index, 1);
-    return { ...data, [region]: { ...state, newsrooms } };
-  });
+  const database = await getMongoDatabase();
+  const channels = database.collection<OutputChannelDocument>("output_channels");
+  const channel = await channels.findOne({ _id: "reader-site" });
+  if (channel?.selected_source_ids) {
+    await channels.updateOne(
+      { _id: "reader-site" },
+      {
+        $set: {
+          selected_source_ids: channel.selected_source_ids.filter((selectedId) =>
+            selectedId !== id && (!retiredPrefix || !selectedId.startsWith(retiredPrefix))),
+        },
+      },
+    );
+  }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
