@@ -179,8 +179,8 @@ def test_grounded_prose_item_passes():
         ("Robots take over the lab. Build robots.", "summary:repeats_headline"),
         ("Build robots. Win a raffle.", "summary:unsupported_claim_word:raffle"),
         ("Build robots. Admission is free.", "summary:unsupported_claim_word:free"),
-        ("Build robots with Maria.", "summary:unsupported_name:Maria"),
-        ("Build robots. Ages 6 and up.", "summary:unsupported_number:6"),
+        ("Build robots and program them,", "summary:unfinished_sentence"),
+        ("Build robots and program them.\u7121", "summary:foreign_characters"),
     ],
 )
 def test_item_checks_fail_closed(text, error):
@@ -193,6 +193,69 @@ def test_item_checks_headline():
         "headline:unsupported_claim_word:free",
         "headline:repeats_when_where",
     } <= set(errors)
+
+
+def test_item_checks_allow_names_and_numbers():
+    text = "Maria Lopez leads two sessions for 6 teams. Build robots."
+    assert story_writer.validate_item(STORY, draft(summary=text)) == []
+
+
+def test_text_checks_allow_accents_and_closing_quotes():
+    assert story_writer.style_errors('Hora de cuentos en espa\u00f1ol \u2014 "cuentos."') == []
+    assert story_writer.style_errors("No final stop", prose=False) == []
+    errors = story_writer.validate_item(STORY, draft(headline="Robots \u7121"))
+    assert "headline:foreign_characters" in errors
+
+
+@pytest.mark.parametrize(
+    ("title", "name"),
+    [
+        ("Chapter 1 Book Club", "Chapter 1 Book Club"),
+        ("10-19-2026 City Council agenda: Court Presentation (Leyba)", "City Council agenda"),
+        ("Hora de cuentos / Spanish Story Time", "Hora de cuentos"),
+        ("Drop-In Mindful Coloring for Adults & Teens", "Drop-In Mindful Coloring"),
+        ("Tech Tutors at the Auburn Library", "Tech Tutors"),
+    ],
+)
+def test_event_name_drops_subtitles_audiences_and_dates(title, name):
+    assert story_writer.event_name(title) == name
+
+
+def test_headline_must_keep_the_event_name():
+    book_club = {**STORY, "title": "Chapter 1 Book Club"}
+    vague = "Tweens explore chapter 1 adventures with snacks and book borrowing"
+    assert "headline:drops_event_name" in story_writer.validate_item(
+        book_club, draft(headline=vague)
+    )
+    named = "Chapter 1 Book Club welcomes new readers"
+    assert story_writer.validate_item(book_club, draft(headline=named)) == []
+    meeting = "10-19-2026 City Council agenda: Budget"
+    assert story_writer.name_errors("City Council takes up the budget", meeting) == []
+    bilingual = "\u0406\u043d\u0444\u043e \u0446\u0435\u043d\u0442\u0440 / The Welcoming Center"
+    assert story_writer.name_errors("The Welcoming Center opens its doors", bilingual) == []
+
+
+def test_held_front_is_retried_with_the_problems(monkeypatch):
+    prompts = []
+
+    async def generate(runtime, prompt, schema):
+        prompts.append(prompt)
+        return schema(**runtime.responses.pop(0)), {}
+
+    monkeypatch.setattr(story_writer, "_generate", generate)
+    story = {**STORY, "title": "Chapter 1 Book Club"}
+    item = {"headline": "Chapter 1 Book Club meets", "summary": SUMMARY}
+    runtime = Runtime(
+        [
+            {"headline": "Tweens love books", "intro": "Lots to do this week."},
+            {"headline": "Chapter 1 Book Club meets again", "intro": "Lots to do this week."},
+        ]
+    )
+    front = asyncio.run(story_writer.write_front(runtime, "Auburn", "Oct 19", [story], [item]))
+    assert (front["fallback"], front["attempts"]) == (False, 2)
+    assert front["headline"] == "Chapter 1 Book Club meets again"
+    assert front["rejected_first"]["errors"] == ["headline:drops_event_name"]
+    assert '"Chapter 1 Book Club", written as is' in prompts[1]
 
 
 def test_front_falls_back_to_week_title():

@@ -88,6 +88,7 @@ class MeetingFacts(EventFacts):
 
     kind: Literal["meeting_preview", "meeting_outcome"]
     body: str
+    agenda_items: int = 0
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,9 @@ def _lead(item: Item) -> str:
     return item.title[:LEAD_MAX].rsplit(" ", 1)[0].rstrip(",;:. ") + "..."
 
 
-def _facts(meeting: Meeting, kind: str, title: str, description: str) -> MeetingFacts:
+def _facts(
+    meeting: Meeting, kind: str, title: str, description: str, agenda_items: int
+) -> MeetingFacts:
     return MeetingFacts(
         source_event_id=meeting.source_event_id,
         title=title,
@@ -174,6 +177,7 @@ def _facts(meeting: Meeting, kind: str, title: str, description: str) -> Meeting
         description=plain_text(description),
         kind=kind,
         body=meeting.body,
+        agenda_items=agenda_items,
     )
 
 
@@ -198,7 +202,11 @@ def preview(meeting: Meeting, place: str) -> MeetingFacts | None:
     if note:
         parts.append(f"Note from the clerk: {note}")
     return _facts(
-        meeting, "meeting_preview", f"{meeting.body} agenda: {_lead(shown[0])}", " ".join(parts)
+        meeting,
+        "meeting_preview",
+        f"{meeting.body} agenda: {_lead(shown[0])}",
+        " ".join(parts),
+        len(items),
     )
 
 
@@ -219,5 +227,9 @@ def outcome(meeting: Meeting, place: str) -> MeetingFacts | None:
         "not yet approved."
     )
     return _facts(
-        meeting, "meeting_outcome", f"{meeting.body} decisions: {_lead(shown[0])}", " ".join(parts)
+        meeting,
+        "meeting_outcome",
+        f"{meeting.body} decisions: {_lead(shown[0])}",
+        " ".join(parts),
+        len(items),
     )

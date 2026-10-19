@@ -1,0 +1,474 @@
+{
+  "$defs": {
+    "DailyRuns": {
+      "description": "Runs finished on one UTC day; `items` is events ingested or items published.",
+      "properties": {
+        "day": {
+          "title": "Day",
+          "type": "string"
+        },
+        "completed": {
+          "default": 0,
+          "title": "Completed",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "items": {
+          "default": 0,
+          "title": "Items",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "day"
+      ],
+      "title": "DailyRuns",
+      "type": "object"
+    },
+    "EditionMetrics": {
+      "properties": {
+        "runs": {
+          "default": 0,
+          "title": "Runs",
+          "type": "integer"
+        },
+        "completed": {
+          "default": 0,
+          "title": "Completed",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "publish_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publish Rate"
+        },
+        "included": {
+          "default": 0,
+          "title": "Included",
+          "type": "integer"
+        },
+        "held": {
+          "default": 0,
+          "title": "Held",
+          "type": "integer"
+        },
+        "held_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Held Rate"
+        },
+        "ranked": {
+          "default": 0,
+          "title": "Ranked",
+          "type": "integer"
+        },
+        "ranking_fallback_ratings": {
+          "default": 0,
+          "title": "Ranking Fallback Ratings",
+          "type": "integer"
+        },
+        "ranking_fallback_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ranking Fallback Rate"
+        },
+        "headline_fallbacks": {
+          "default": 0,
+          "title": "Headline Fallbacks",
+          "type": "integer"
+        },
+        "median_duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Duration Seconds"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/DailyRuns"
+          },
+          "title": "Daily",
+          "type": "array"
+        }
+      },
+      "title": "EditionMetrics",
+      "type": "object"
+    },
+    "EmailMetrics": {
+      "properties": {
+        "sent": {
+          "default": 0,
+          "title": "Sent",
+          "type": "integer"
+        },
+        "pending": {
+          "default": 0,
+          "title": "Pending",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "delivery_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delivery Rate"
+        }
+      },
+      "title": "EmailMetrics",
+      "type": "object"
+    },
+    "IngestionMetrics": {
+      "properties": {
+        "runs": {
+          "default": 0,
+          "title": "Runs",
+          "type": "integer"
+        },
+        "completed": {
+          "default": 0,
+          "title": "Completed",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "success_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Success Rate"
+        },
+        "retried": {
+          "default": 0,
+          "title": "Retried",
+          "type": "integer"
+        },
+        "median_duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median Duration Seconds"
+        },
+        "p95_duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P95 Duration Seconds"
+        },
+        "events": {
+          "default": 0,
+          "title": "Events",
+          "type": "integer"
+        },
+        "skipped_other_venues": {
+          "default": 0,
+          "title": "Skipped Other Venues",
+          "type": "integer"
+        },
+        "skipped_outside_window": {
+          "default": 0,
+          "title": "Skipped Outside Window",
+          "type": "integer"
+        },
+        "by_source": {
+          "items": {
+            "$ref": "#/$defs/SourceKindMetrics"
+          },
+          "title": "By Source",
+          "type": "array"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/DailyRuns"
+          },
+          "title": "Daily",
+          "type": "array"
+        }
+      },
+      "title": "IngestionMetrics",
+      "type": "object"
+    },
+    "LocationFreshness": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ingestion_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ingestion Status"
+        },
+        "last_ingested_age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Ingested Age Seconds"
+        },
+        "last_published_age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Published Age Seconds"
+        },
+        "events": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Events"
+        },
+        "sources": {
+          "default": 0,
+          "title": "Sources",
+          "type": "integer"
+        },
+        "sources_ingested": {
+          "default": 0,
+          "title": "Sources Ingested",
+          "type": "integer"
+        },
+        "government_platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Government Platform"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "LocationFreshness",
+      "type": "object"
+    },
+    "QueueMetrics": {
+      "properties": {
+        "pending": {
+          "default": 0,
+          "title": "Pending",
+          "type": "integer"
+        },
+        "running": {
+          "default": 0,
+          "title": "Running",
+          "type": "integer"
+        },
+        "oldest_pending_age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oldest Pending Age Seconds"
+        },
+        "failed_last_24h": {
+          "default": 0,
+          "title": "Failed Last 24H",
+          "type": "integer"
+        },
+        "worker_heartbeat_age_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Worker Heartbeat Age Seconds"
+        },
+        "by_kind": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "title": "By Kind",
+          "type": "object"
+        }
+      },
+      "title": "QueueMetrics",
+      "type": "object"
+    },
+    "SourceKindMetrics": {
+      "description": "Per-source outcomes from each location's latest finished ingestion.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "library",
+            "government"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "sources": {
+          "default": 0,
+          "title": "Sources",
+          "type": "integer"
+        },
+        "ingested": {
+          "default": 0,
+          "title": "Ingested",
+          "type": "integer"
+        },
+        "events": {
+          "default": 0,
+          "title": "Events",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "SourceKindMetrics",
+      "type": "object"
+    }
+  },
+  "description": "Read-only operational metrics over the trailing window, for the review dashboard.",
+  "properties": {
+    "generated_at": {
+      "title": "Generated At",
+      "type": "number"
+    },
+    "window_days": {
+      "title": "Window Days",
+      "type": "integer"
+    },
+    "ingestion": {
+      "$ref": "#/$defs/IngestionMetrics"
+    },
+    "editions": {
+      "$ref": "#/$defs/EditionMetrics"
+    },
+    "email": {
+      "$ref": "#/$defs/EmailMetrics"
+    },
+    "queue": {
+      "$ref": "#/$defs/QueueMetrics"
+    },
+    "locations": {
+      "items": {
+        "$ref": "#/$defs/LocationFreshness"
+      },
+      "title": "Locations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_at",
+    "window_days",
+    "ingestion",
+    "editions",
+    "email",
+    "queue"
+  ],
+  "title": "MetricsReport",
+  "type": "object"
+}

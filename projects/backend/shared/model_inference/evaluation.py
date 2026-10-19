@@ -59,8 +59,9 @@ async def evaluate(settings: Settings, fixture: Path | None = None) -> tuple[Pat
         "manual_review_required": True,
         "validation_policy": VALIDATION_POLICY,
         "limitations": (
-            "Rule-based checks hold text that adds numbers, names, or claim vocabulary not in "
-            "the facts. They cannot prove a blurb is true or catch every unsupported claim. "
+            "Rule-based checks hold text that adds claim vocabulary (price, booking and "
+            "similar) not in the facts. They cannot prove a blurb is true or catch every "
+            "unsupported claim. "
             "Human review of every item is required. This is not an 8 GB hardware certification."
         ),
         "settings": {"context_tokens": 2048, "output_tokens": 512, "cpu_only": True},
