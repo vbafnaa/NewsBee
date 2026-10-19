@@ -1,4 +1,5 @@
-"""Onboarded locations: a town, every library system with a venue there, and their websites."""
+"""Onboarded locations: a town, every library system with a venue there, their websites, and
+the town's public meeting platform."""
 
 import json
 import logging
@@ -9,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from projects.backend.modules.communities import directory, wikidata
+from projects.backend.modules.source_connectors.agents import government_meetings
 from projects.backend.shared.configuration.settings import ROOT
 from projects.backend.shared.storage.database import connect
 
@@ -51,13 +53,17 @@ def onboard(
     identity: str,
     client: httpx.Client,
     overrides: dict[str, dict] | None = None,
+    government_overrides: dict[str, dict] | None = None,
 ) -> dict:
-    """Save (or refresh) a location from the directory, resolving each system's website.
+    """Save (or refresh) a location from the directory, resolving each system's website
+    and the town's public meeting platform.
 
     A reviewed override wins over Wikidata so a known-bad match can also be corrected.
     """
     profile = directory.place(directory.directory_path(data_dir), identity)
     overrides = website_overrides() if overrides is None else overrides
+    if government_overrides is None:
+        government_overrides = government_meetings.overrides()
     for system in profile["systems"]:
         entry = overrides.get(system["fscskey"])
         system["website_lookup"] = (
@@ -71,6 +77,17 @@ def onboard(
             system["website_lookup"]["status"],
             system["website_lookup"]["detail"],
         )
+    profile["government"] = government_meetings.discover(
+        client, profile, government_overrides.get(identity)
+    )
+    logger.info(
+        "Government meetings onboarded location_id=%s status=%s platform=%s tenant=%s detail=%s",
+        identity,
+        profile["government"]["status"],
+        profile["government"]["platform"],
+        profile["government"]["tenant"],
+        profile["government"]["detail"],
+    )
     save(database, profile)
     return profile
 

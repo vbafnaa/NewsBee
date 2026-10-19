@@ -44,6 +44,7 @@ def candidates(story_list: list[stories.Story]) -> list[dict]:
             "occurrences": len(story.occurrences),
             "venues": story.venues,
             "first_date": story.first.event_date,
+            "kind": story.kind,
         }
         for story in story_list
     ]
@@ -391,6 +392,7 @@ def latest_published(path: Path, location_id: str) -> Edition | None:
                 source_url=https_link(
                     result.get("source_url") or result.get("facts", {}).get("source_url")
                 ),
+                rank=(result.get("ranking") or {}).get("rank"),
             )
         )
     return Edition(
