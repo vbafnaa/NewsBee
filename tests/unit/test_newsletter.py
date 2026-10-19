@@ -161,7 +161,7 @@ def test_ranking_falls_back_to_rules_per_missing_or_failed_batch(monkeypatch):
 
 
 def draft(summary=SUMMARY, headline="Robots take over the lab", **changes):
-    return ItemDraft(**{"id": "s1", "headline": headline, "summary": summary, **changes})
+    return ItemDraft(**{"headline": headline, "summary": summary, **changes})
 
 
 def test_grounded_prose_item_passes():
@@ -187,10 +187,9 @@ def test_item_checks_fail_closed(text, error):
     assert error in story_writer.validate_item(STORY, draft(summary=text))
 
 
-def test_item_checks_headline_and_id():
-    errors = story_writer.validate_item(STORY, draft(headline="Free robots on Friday", id="x"))
+def test_item_checks_headline():
+    errors = story_writer.validate_item(STORY, draft(headline="Free robots on Friday"))
     assert {
-        "changed_field:id",
         "headline:unsupported_claim_word:free",
         "headline:repeats_when_where",
     } <= set(errors)
