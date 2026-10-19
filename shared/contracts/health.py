@@ -37,6 +37,7 @@ class EditionDraftRun(BaseModel):
     held: int | None = None
     skipped_over_limit: int | None = None
     duration_seconds: float | None = None
+    front_fallback: bool | None = None
 
 
 class HealthReport(BaseModel):

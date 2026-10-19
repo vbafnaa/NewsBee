@@ -39,6 +39,8 @@ async function refreshHealth() {
       : `${edition.window_start} to ${edition.window_end}: ${edition.status} (model: ${edition.model})`
         + (edition.included === null ? "" : `; included: ${edition.included}`)
         + (edition.held === null ? "" : `; held: ${edition.held}`)
+        + (edition.front_fallback === null || edition.front_fallback === undefined ? ""
+          : `; headline: ${edition.front_fallback ? "fixed fallback" : "model"}`)
         + (edition.duration_seconds === null ? "" : `; duration: ${edition.duration_seconds}s`)
         + (edition.error ? `; error: ${edition.error}` : "");
     const services = document.querySelector("#services");

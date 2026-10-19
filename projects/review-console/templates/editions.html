@@ -8,48 +8,68 @@
   </head>
   <body>
     <main>
-      <h1>Draft edition preview</h1>
-      <nav><a href="/review">Local health</a> | <a href="/review/editions">Refresh drafts</a></nav>
+      <p><strong>Draft edition preview</strong> |
+        <a href="/review">Local health</a> | <a href="/review/editions">Refresh drafts</a></p>
       <p>Private, local evaluation only. Not published or emailed. Redistribution permission is
-        unresolved. Every entry requires human review; automatic checks do not prove factuality.</p>
+        unresolved. Every item requires human review; automatic checks cannot prove a blurb is true.</p>
       {% if report is none %}
       <p role="alert">Draft editions unavailable. Check API logs and local database access.</p>
       {% elif report.latest is none %}
       <p>No draft editions yet. Run the draft-edition command from the README.</p>
       {% else %}
       {% set run = report.latest.run %}
-      <h2>Latest draft: {{ run.window_start }} to {{ run.window_end }}</h2>
-      <p>Status: {{ run.status }} | Model: {{ run.model }} | Policy: {{ report.latest.validation_policy }}</p>
+      {% set front = report.latest.front %}
+      {% if run.error %}<p role="alert">Run error: {{ run.error }}</p>{% endif %}
+      <article aria-label="Draft edition">
+        {% if front %}
+        <h1>{{ front.headline }}</h1>
+        {% if front.fallback %}<p><em>Fixed fallback headline and intro: the model text was held
+          ({{ front.fallback_reason }}).</em></p>{% endif %}
+        <p>{{ front.intro }}</p>
+        {% else %}
+        <h1>Draft edition {{ run.window_start }} to {{ run.window_end }}</h1>
+        {% endif %}
+        {% for entry in report.latest.included %}
+        <section>
+          <h2>{{ entry.result.draft.headline if entry.result.draft and entry.result.draft.headline else entry.result.facts.title }}</h2>
+          <p>{{ entry.result.draft.blurb if entry.result.draft and entry.result.draft.blurb else entry.result.draft.summary }}</p>
+          {% if entry.result.when_where %}<p>{{ entry.result.when_where }}</p>{% endif %}
+          {% set link = entry.result.facts.source_url|source_link %}
+          {% if link %}<a href="{{ link }}" rel="noreferrer">View original event</a>
+          {% else %}<p>Source link unavailable: unsupported URL</p>{% endif %}
+        </section>
+        {% else %}
+        <p>No items passed automatic checks.</p>
+        {% endfor %}
+      </article>
+      <h2>Run details</h2>
+      <p>Window: {{ run.window_start }} to {{ run.window_end }} | Status: {{ run.status }} |
+        Model: {{ run.model }} | Policy: {{ report.latest.validation_policy }}</p>
       <p>Included: {{ run.included if run.included is not none else "n/a" }} |
         Held: {{ run.held if run.held is not none else "n/a" }} |
         Skipped over limit: {{ run.skipped_over_limit if run.skipped_over_limit is not none else "n/a" }} |
         Duration (seconds): {{ run.duration_seconds if run.duration_seconds is not none else "n/a" }}</p>
-      {% if run.error %}<p role="alert">Run error: {{ run.error }}</p>{% endif %}
-      <h2>Included entries</h2>
-      {% for entry in report.latest.included %}
-      <article>
-        <h3>{{ entry.result.facts.title }}</h3>
-        <p>{{ entry.result.draft.summary }}</p>
-        {% set link = entry.result.facts.source_url|source_link %}
-        {% if link %}<a href="{{ link }}" rel="noreferrer">View original event</a>
-        {% else %}<p>Source link unavailable: unsupported URL</p>{% endif %}
-        <p>Source event ID: {{ entry.source_event_id }} | Generation seconds: {{ entry.result.wall_seconds }}</p>
-      </article>
-      {% else %}
-      <p>No included entries.</p>
-      {% endfor %}
-      <h2>Held entries (excluded from the draft)</h2>
+      <h2>Held text (excluded from the draft)</h2>
+      {% if front and front.fallback and (front.rejected or front.error) %}
+      <section>
+        <h3>Edition headline and intro</h3>
+        {% if front.validation_errors %}<p>Validation errors: {{ front.validation_errors|join(", ") }}</p>{% endif %}
+        {% if front.error %}<p>Generation error: {{ front.error }}</p>{% endif %}
+        {% if front.rejected %}<p>Rejected headline: {{ front.rejected.headline }}</p>
+        <p>Rejected intro: {{ front.rejected.intro }}</p>{% endif %}
+      </section>
+      {% endif %}
       {% for entry in report.latest.held %}
-      <article>
+      <section>
         <h3>{{ entry.result.facts.title }} ({{ entry.event_date }})</h3>
         {% if entry.result.validation_errors %}<p>Validation errors: {{ entry.result.validation_errors|join(", ") }}</p>{% endif %}
         {% if entry.result.error %}<p>Generation error: {{ entry.result.error }}</p>{% endif %}
-        {% if entry.result.draft %}<p>Rejected model summary: {{ entry.result.draft.summary }}</p>{% endif %}
-        <p>Expected summary: {{ entry.result.expected_summary }}</p>
+        {% if entry.result.draft %}<p>Rejected headline: {{ entry.result.draft.headline }}</p>
+        <p>Rejected blurb: {{ entry.result.draft.blurb }}</p>{% endif %}
         <p>Source event ID: {{ entry.source_event_id }}</p>
-      </article>
+      </section>
       {% else %}
-      <p>No held entries.</p>
+      <p>No held items.</p>
       {% endfor %}
       <h2>Recent draft runs</h2>
       <ul>

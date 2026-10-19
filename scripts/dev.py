@@ -246,7 +246,7 @@ def main() -> None:
         configure_logging()
         path, passed = asyncio.run(evaluate(Settings()))
         print(f"Evaluation saved: {path}")
-        print("Human review of each summary is required; automatic checks do not prove factuality.")
+        print("Human review of every headline and blurb is required; automatic checks do not prove factuality.")
         if not passed:
             raise RuntimeError("Model evaluation checks failed; inspect the saved report")
     elif args.action == "draft-edition":
