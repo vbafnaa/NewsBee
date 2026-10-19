@@ -63,7 +63,7 @@ class EditionRun(BaseModel):
     not_attempted: int | None = None
     events: int | None = None
     stories: int | None = None
-    skipped_for_variety: int | None = None
+    skipped_for_variety: int | None = None  # editions before the category limit was removed
     ranked: int | None = None
     ranking_fallback_ratings: int | None = None
     duration_seconds: float | None = None

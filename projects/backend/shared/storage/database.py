@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def initialize(path: Path) -> None:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, 1, 2, 3, 4, 5, 6, SCHEMA_VERSION}:
+        if version not in {0, 1, 2, 3, 4, 5, 6, 7, SCHEMA_VERSION}:
             raise RuntimeError(f"Unsupported database schema version: {version}")
         connection.execute(
             """CREATE TABLE IF NOT EXISTS worker_heartbeat (
@@ -116,6 +116,15 @@ def initialize(path: Path) -> None:
                 name TEXT NOT NULL,
                 profile_json TEXT NOT NULL,
                 onboarded_at REAL NOT NULL
+            )"""
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS expansion_signups (
+                location_id TEXT NOT NULL,
+                location_name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY (location_id, email)
             )"""
         )
         connection.execute(

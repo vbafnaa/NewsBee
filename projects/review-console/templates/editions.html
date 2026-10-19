@@ -62,7 +62,6 @@
         Events: {{ run.events if run.events is not none else "n/a" }} |
         Stories after deduplication: {{ run.stories if run.stories is not none else "n/a" }} |
         Ranked (top 5 per source): {{ run.ranked if run.ranked is not none else "n/a" }} |
-        Skipped for variety: {{ run.skipped_for_variety if run.skipped_for_variety is not none else "n/a" }} |
         Rule-rated (model ranking failed): {{ run.ranking_fallback_ratings if run.ranking_fallback_ratings is not none else "n/a" }} |
         Duration (seconds): {{ run.duration_seconds if run.duration_seconds is not none else "n/a" }}</p>
       <h2>Held text (excluded from the edition)</h2>
