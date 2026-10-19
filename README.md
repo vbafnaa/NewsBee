@@ -48,11 +48,22 @@ uv run --locked python scripts/dev.py ingest-events
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
+| Journalist admin | http://127.0.0.1:3000 (start separately; Google OAuth and MongoDB must be configured) |
 | Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
-Logs go to `.local/logs/`. Everything runs on localhost with no authentication.
+The local API and reader are localhost-only. Journalist access requires an enabled account
+in MongoDB; see `projects/journalist-site/README.md`. Logs go to `.local/logs/`.
+
+To run the journalist admin separately, configure the Google OAuth and backend variables
+listed in `projects/journalist-site/README.md`, then run `npm install` and `npm run dev`
+from `projects/journalist-site`.
+
+The backend defaults to local Ollama. Set `NEWSBEE_MODEL_PROVIDER=gemini` and
+`NEWSBEE_GEMINI_API_KEY` to use Gemini; see
+[production architecture decisions](Docs/production-architecture-decisions.md) for hosting
+and storage boundaries.
 
 ## Commands
 
@@ -102,6 +113,7 @@ uv run --locked ruff check .
 | --- | --- |
 | `projects/backend` | API, pipeline modules, shared adapters ([map](projects/backend/README.md)) |
 | `projects/website` | Reader site |
+| `projects/journalist-site` | Authenticated Next.js operations console |
 | `projects/review-console` | Health and review pages |
 | `shared/contracts` | Contracts shared between projects |
 | `config` | Source overrides, preview subscribers, policies |

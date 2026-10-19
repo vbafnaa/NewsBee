@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from projects.backend.shared.model_inference.news_blurb import added_claims
 from projects.backend.shared.model_inference.newsworthiness import NEWS_KINDS
-from projects.backend.shared.model_inference.ollama import OllamaRuntime
+from projects.backend.shared.model_inference.ollama import ModelRuntime
 
 logger = logging.getLogger(__name__)
 WRITING_POLICY = "story_v1"
@@ -237,7 +237,7 @@ def email_prompt(context: dict) -> str:
     )
 
 
-async def _generate(runtime: OllamaRuntime, prompt: str, schema: type[BaseModel]):
+async def _generate(runtime: ModelRuntime, prompt: str, schema: type[BaseModel]):
     generation = await runtime.generate_structured(
         prompt, schema.model_json_schema(), num_ctx=4096, num_predict=600, keep_alive=KEEP_ALIVE
     )
@@ -270,7 +270,7 @@ def retry_prompt(story: dict, rejected: dict, errors: list[str]) -> str:
     return rejection(item_prompt(story), rejected, errors, story["title"])
 
 
-async def write_item(runtime: OllamaRuntime, story: dict) -> dict:
+async def write_item(runtime: ModelRuntime, story: dict) -> dict:
     """Return a result dict; any violation or runtime error yields disposition 'held'.
 
     A draft that fails checks gets exactly one retry with the errors fed back; the
@@ -387,7 +387,7 @@ async def _edition_text(runtime, context, stories, prompt, schema, validate, lab
 
 
 async def write_front(
-    runtime: OllamaRuntime, community: str, week: str, stories: list[dict], drafts: list[dict]
+    runtime: ModelRuntime, community: str, week: str, stories: list[dict], drafts: list[dict]
 ) -> dict:
     """Model-written edition headline and intro, or a labelled fixed fallback."""
     started = time.monotonic()
@@ -403,7 +403,7 @@ async def write_front(
 
 
 async def write_email(
-    runtime: OllamaRuntime,
+    runtime: ModelRuntime,
     community: str,
     week: str,
     stories: list[dict],

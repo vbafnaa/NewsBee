@@ -35,5 +35,6 @@ __pycache__/
 node_modules/
 dist/
 .astro/
+.next/
 playwright-report/
 test-results/
