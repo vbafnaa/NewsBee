@@ -204,7 +204,21 @@ def contracts() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Newsbee native local development")
-    parser.add_argument("action", choices=["setup", "up", "stop", "test", "browser", "contracts"])
+    parser.add_argument(
+        "action",
+        choices=[
+            "setup",
+            "up",
+            "stop",
+            "test",
+            "browser",
+            "contracts",
+            "ingest-events",
+            "events",
+            "evaluate-model",
+            "draft-edition",
+        ],
+    )
     parser.add_argument("--browser", action="store_true", help="Install Chromium during setup")
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 13):
@@ -219,8 +233,58 @@ def main() -> None:
         command([sys.executable, "-m", "pytest"])
     elif args.action == "browser":
         command([sys.executable, "-m", "pytest", "-m", "browser"])
-    else:
+    elif args.action == "contracts":
         contracts()
+    elif args.action == "evaluate-model":
+        import asyncio
+
+        sys.path.insert(0, str(ROOT))
+        from projects.backend.shared.configuration.settings import Settings
+        from projects.backend.shared.model_inference.evaluation import evaluate
+        from projects.backend.shared.observability.logging import configure_logging
+
+        configure_logging()
+        path, passed = asyncio.run(evaluate(Settings()))
+        print(f"Evaluation saved: {path}")
+        print("Human review of each summary is required; automatic checks do not prove factuality.")
+        if not passed:
+            raise RuntimeError("Model evaluation checks failed; inspect the saved report")
+    elif args.action == "draft-edition":
+        import asyncio
+
+        sys.path.insert(0, str(ROOT))
+        from projects.backend.modules.editions.drafting import draft_edition
+        from projects.backend.shared.configuration.settings import Settings
+        from projects.backend.shared.observability.logging import configure_logging
+        from projects.backend.shared.storage.database import initialize
+
+        configure_logging()
+        settings = Settings()
+        initialize(settings.database)
+        run = asyncio.run(draft_edition(settings))
+        print(
+            f"Draft edition {run.window_start} to {run.window_end}: {run.status}; "
+            f"included {run.included}, held {run.held}, skipped over limit "
+            f"{run.skipped_over_limit}."
+        )
+        print("Inspect: http://127.0.0.1:8000/review/editions (human review required)")
+    else:
+        sys.path.insert(0, str(ROOT))
+        from projects.backend.modules.orchestration import jobs
+        from projects.backend.modules.source_connectors.pipelines.events import load_source
+        from projects.backend.shared.configuration.settings import Settings
+        from projects.backend.shared.observability.logging import configure_logging
+        from projects.backend.shared.storage.database import initialize
+
+        configure_logging()
+        settings = Settings()
+        initialize(settings.database)
+        if args.action == "ingest-events":
+            source = load_source("spl-capitol-hill")
+            identity = jobs.enqueue(settings.database, source.id)
+            print(f"Ingestion queued: {identity}. Start the local worker with the up command.")
+        else:
+            print(json.dumps(jobs.inspect(settings.database), indent=2))
 
 
 if __name__ == "__main__":

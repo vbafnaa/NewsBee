@@ -1,5 +1,29 @@
 {
   "$defs": {
+    "CapabilityReadiness": {
+      "properties": {
+        "status": {
+          "enum": [
+            "ready",
+            "unavailable",
+            "not_configured",
+            "not_implemented"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "detail"
+      ],
+      "title": "CapabilityReadiness",
+      "type": "object"
+    },
     "ComponentHealth": {
       "properties": {
         "status": {
@@ -22,6 +46,203 @@
       ],
       "title": "ComponentHealth",
       "type": "object"
+    },
+    "EditionDraftRun": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "community_id": {
+          "title": "Community Id",
+          "type": "string"
+        },
+        "window_start": {
+          "title": "Window Start",
+          "type": "string"
+        },
+        "window_end": {
+          "title": "Window End",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "running",
+            "failed",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "included": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Included"
+        },
+        "held": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Held"
+        },
+        "skipped_over_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Over Limit"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        }
+      },
+      "required": [
+        "id",
+        "community_id",
+        "window_start",
+        "window_end",
+        "model",
+        "status",
+        "error"
+      ],
+      "title": "EditionDraftRun",
+      "type": "object"
+    },
+    "IngestionRun": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "failed",
+            "completed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "attempts": {
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "event_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Count"
+        },
+        "skipped_other_venues": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Other Venues"
+        },
+        "skipped_library_closures": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipped Library Closures"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        }
+      },
+      "required": [
+        "id",
+        "source_id",
+        "status",
+        "attempts",
+        "error"
+      ],
+      "title": "IngestionRun",
+      "type": "object"
     }
   },
   "properties": {
@@ -39,6 +260,35 @@
       },
       "title": "Components",
       "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/CapabilityReadiness"
+      },
+      "title": "Capabilities",
+      "type": "object"
+    },
+    "latest_ingestion": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IngestionRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "latest_edition_draft": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EditionDraftRun"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "jobs": {
       "anyOf": [
@@ -68,8 +318,8 @@
       "title": "Last Completed Job At"
     },
     "pipelines": {
-      "const": "not_implemented",
-      "default": "not_implemented",
+      "const": "local_event_ingestion_only",
+      "default": "local_event_ingestion_only",
       "title": "Pipelines",
       "type": "string"
     },
@@ -94,7 +344,8 @@
   },
   "required": [
     "status",
-    "components"
+    "components",
+    "capabilities"
   ],
   "title": "HealthReport",
   "type": "object"

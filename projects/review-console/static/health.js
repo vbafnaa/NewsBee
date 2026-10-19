@@ -10,10 +10,37 @@ async function refreshHealth() {
       throw new Error(`Health API returned HTTP ${response.status}`);
     }
     const report = await response.json();
-    if (!["ok", "degraded"].includes(report.status) || !report.components) {
+    if (!["ok", "degraded"].includes(report.status) || !report.components
+        || !report.capabilities) {
       throw new Error("Health API returned an invalid report");
     }
-    summary.textContent = `Overall: ${report.status}`;
+    summary.textContent = `Ingestion: ${report.capabilities.ingestion.status}. All-service health: ${report.status}.`;
+    const capabilities = document.querySelector("#capabilities");
+    capabilities.replaceChildren();
+    for (const [name, capability] of Object.entries(report.capabilities)) {
+      const item = document.createElement("li");
+      item.textContent = `${name}: ${capability.status} - ${capability.detail}`;
+      capabilities.append(item);
+    }
+    const run = report.latest_ingestion;
+    document.querySelector("#latest-ingestion").textContent = report.jobs === null
+      ? "Latest ingestion unavailable"
+      : run === null ? "No ingestion runs yet"
+      : `${run.source_id}: ${run.status} (attempts: ${run.attempts}, job: ${run.id})`
+        + (run.event_count === null ? "" : `; events: ${run.event_count}`)
+        + (run.skipped_other_venues === null ? "" : `; other venues skipped: ${run.skipped_other_venues}`)
+        + (run.skipped_library_closures === null ? "" : `; closures skipped: ${run.skipped_library_closures}`)
+        + (run.duration_seconds === null ? "" : `; duration: ${run.duration_seconds}s`)
+        + (run.error ? `; last attempt error: ${run.error}` : "");
+    const edition = report.latest_edition_draft;
+    document.querySelector("#latest-edition").textContent = report.jobs === null
+      ? "Latest draft edition unavailable"
+      : !edition ? "No draft editions yet"
+      : `${edition.window_start} to ${edition.window_end}: ${edition.status} (model: ${edition.model})`
+        + (edition.included === null ? "" : `; included: ${edition.included}`)
+        + (edition.held === null ? "" : `; held: ${edition.held}`)
+        + (edition.duration_seconds === null ? "" : `; duration: ${edition.duration_seconds}s`)
+        + (edition.error ? `; error: ${edition.error}` : "");
     const services = document.querySelector("#services");
     services.replaceChildren();
     for (const [name, component] of Object.entries(report.components)) {
@@ -30,6 +57,9 @@ async function refreshHealth() {
   } catch (error) {
     summary.textContent = `Health unavailable: ${error.message}`;
     document.querySelector("#services").replaceChildren();
+    document.querySelector("#capabilities").replaceChildren();
+    document.querySelector("#latest-ingestion").textContent = "Latest ingestion unavailable";
+    document.querySelector("#latest-edition").textContent = "Latest draft edition unavailable";
     document.querySelector("#jobs").textContent = "Unavailable";
     document.querySelector("#completed").textContent = "Last completed job: unavailable";
   } finally {

@@ -13,12 +13,25 @@ The worker emits a heartbeat every two seconds; health considers it stale after
 15 seconds. These are operational defaults, not editorial thresholds.
 HTTP 503 means at least one dependency is unavailable or not configured.
 HTTP 200 means infrastructure is available, not that publication is safe.
+Capability readiness is reported separately: ingestion requires the API, database,
+and fresh worker heartbeat, but not Ollama or Mailpit. AI readiness checks the
+model runtime only; email-sink readiness checks SMTP only. Publishing stays
+`not_implemented`. These indicators do not establish source availability or
+editorial quality. The summary leads with ingestion readiness while retaining
+the all-service status and existing HTTP 200/503 behavior.
+
+The latest ingestion run shows its current state, last attempt error, and
+available result counts/duration separately from historical job totals. Historical
+failures are retained, not treated as current outages. No runs and unavailable
+job storage are distinct states.
 Backend logs are structured JSON, including request duration and failures.
 The launcher captures them in `.local\logs\`; frontend/Mailpit logs retain their
 native formats. Logs contain operational metadata, not story prompts or evidence.
 
-The roadmap's quality, human-workload, run-duration, and edition-cost measures
-need real workflows and agreed definitions; they are not implemented metrics.
+Ingestion job results record event count, skipped other venues, duration, and
+selective evidence path. The `events` CLI command exposes recent job results and
+failure messages. The pipeline state is `local_event_ingestion_only`; quality,
+human-workload, and edition-cost measures still require editorial workflows.
 
 Do not store generated logs, telemetry exports, or runtime state here. No cloud
 monitoring service or separate monitoring stack has been selected.

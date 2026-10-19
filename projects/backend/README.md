@@ -58,9 +58,14 @@ SQLite and evidence files are initialized at startup. `shared\storage\database.p
 owns connection handling and the initial schema version; module-owned tables
 must preserve explicit ownership as workflows are implemented.
 
-The worker entry point is `modules\orchestration\worker.py`. It persists heartbeats
-but does not claim, execute, or retry jobs yet. The initial job table is reserved
-infrastructure, not a functioning queue.
+The worker entry point is `modules\orchestration\worker.py`. It claims the manually
+queued library RSS ingestion jobs, maintains heartbeats while ingestion runs,
+and renews job leases. Queue/recovery logic lives in `orchestration\jobs.py`.
+The source pipeline is `source_connectors\pipelines\events.py`; the replaceable
+RSS parser is `source_connectors\connectors\spl_rss.py`. No model is used.
+Database schema version 2 migrates version 1 without deleting existing records.
+Source events are upserted transactionally with job completion; selective JSON
+evidence is stored locally. See the root README for retrieval scope and limits.
 
 No essential-news thresholds, review policy, or model are defined by this scaffold.
 See the root README for setup, endpoints, configuration, and known limits.

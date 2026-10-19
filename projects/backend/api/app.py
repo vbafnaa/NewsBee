@@ -5,10 +5,9 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
+from projects.backend.api.routes.console import router as console_router
 from projects.backend.api.routes.infrastructure import router
 from projects.backend.shared.configuration.settings import ROOT, Settings
 from projects.backend.shared.model_inference.ollama import OllamaRuntime
@@ -44,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.mount("/review/static", StaticFiles(directory=CONSOLE / "static"), name="review-static")
     app.include_router(router)
-    templates = Jinja2Templates(directory=CONSOLE / "templates")
+    app.include_router(console_router)
 
     @app.middleware("http")
     async def request_logging(request: Request, call_next):
@@ -62,10 +61,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             (time.monotonic() - start) * 1000,
         )
         return response
-
-    @app.get("/review", response_class=HTMLResponse)
-    def review(request: Request):
-        return templates.TemplateResponse(request=request, name="index.html")
 
     return app
 

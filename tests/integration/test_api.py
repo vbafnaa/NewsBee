@@ -11,7 +11,7 @@ def test_startup_initializes_local_storage(client, settings):
     assert settings.database.is_file()
     assert settings.evidence_dir.is_dir()
     with connect(settings.database) as database:
-        assert database.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert database.execute("PRAGMA user_version").fetchone()[0] == 3
 
 
 def test_empty_editions_are_explicitly_unimplemented(client):
