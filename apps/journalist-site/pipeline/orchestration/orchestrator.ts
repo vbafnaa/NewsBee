@@ -21,13 +21,14 @@ import { getLocation, listLocations } from "../communities/locations";
 import { finishAuthoring, authorNextStory, shortlistSource, startAuthoring } from "../editions/authoring";
 import type { SourceEvent } from "../editions/stories";
 import type { ModelRuntime } from "../model/runtime";
+import { ModelRateLimitError } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
-import { cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
+import { acquireWorker, releaseWorker, renewWorker, cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
 import { publishToChannels } from "./publish";
 import { expireOverdueRuns } from "./diagnostics";
-import { ACTIVE_RUN_STATUSES, failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
+import { ACTIVE_RUN_STATUSES, oldestActiveRun, failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
 
 export type OrchestratorDeps = {
   db: Db;
@@ -204,13 +205,22 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   // Publication is the commit boundary: cancellation wins before this transition;
   // once publishing begins, cancellation is rejected to avoid a half-published edition.
   const run = await runs(deps.db).findOneAndUpdate(
-    { _id: job.run_id, status: "authoring" },
+    { _id: job.run_id, status: { $in: ["authoring", "publishing"] } },
     { $set: { status: "publishing", updated_at: now() } },
     { returnDocument: "after" },
   );
   if (!run) return { skipped: true };
   const draftId = String(job.payload.draft_id);
-  const finished = await finishAuthoring(authoringDeps(deps), draftId);
+  const finished = await finishAuthoring(authoringDeps(deps), draftId).catch(async (error: unknown) => {
+    // No edition is published on a quota failure; allow durable retries and cancellation.
+    if (error instanceof ModelRateLimitError) {
+      await runs(deps.db).updateOne(
+        { _id: job.run_id, status: "publishing" },
+        { $set: { status: "authoring", updated_at: now() } },
+      );
+    }
+    throw error;
+  });
   if (!("edition" in finished) || !finished.edition) throw new Error("Authoring has unwritten stories");
   const { edition, emailPreview, summary } = finished as { edition: { id: string; location_id: string; items: unknown[] }; emailPreview: { subject: string; text: string; html: string }; summary: Record<string, unknown> };
   const channels = await publishToChannels(deps.db, deps.store, edition);
@@ -256,8 +266,34 @@ async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
 
 /** Claim and run one job; returns false when the queue is empty. */
 export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; kinds?: readonly JobKind[] } = {}): Promise<boolean> {
-  const job = await claim(deps.db, options.kinds, options.jobId);
-  if (!job) return false;
+  const token = await acquireWorker(deps.db);
+  if (!token) return false;
+  try {
+    for (const expired of await recoverExpired(deps.db)) await finalFailure(deps, expired, expired.error ?? "Worker lease expired");
+    const active = await oldestActiveRun(deps.db);
+    if (!active) return false;
+    const job = await claim(deps.db, options.kinds, options.jobId, active._id);
+    if (!job) return false;
+    let renewal: Promise<void> = Promise.resolve();
+    let leaseError: unknown;
+    const heartbeat = setInterval(() => {
+      renewal = renewal.then(() => renewWorker(deps.db, token, job)).catch((error: unknown) => {
+        leaseError = error;
+        log.error("worker_lease_renewal_failed", { job_id: job._id, error: String(error) });
+      });
+    }, 60_000);
+    try {
+      return await runClaimedJob(deps, job, () => { if (leaseError) throw leaseError; });
+    } finally {
+      clearInterval(heartbeat);
+      await renewal;
+    }
+  } finally {
+    await releaseWorker(deps.db, token);
+  }
+}
+
+async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () => void) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !ACTIVE_RUN_STATUSES.includes(run.status)) {
     await cancelRunJobs(deps.db, job.run_id);
@@ -273,6 +309,7 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
       logger("job").info("job_started", { kind: job.kind, job_id: job._id, run_id: job.run_id, attempt: job.attempts });
       try {
         const result = await executeJob(deps, job);
+        checkLease();
         if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
           await cancelRunJobs(deps.db, job.run_id);
           await cancelClaimedJob(deps.db, job);
@@ -328,21 +365,19 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
 
 /**
  * One scheduler tick (Vercel Cron, or the local poller): record a heartbeat, recover
- * interrupted jobs, then run jobs in parallel until the queue is empty or the start
+ * interrupted jobs, then run one location at a time until the queue is empty or the start
  * budget is spent. Jobs already started run to completion.
  */
 export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number; concurrency?: number; kinds?: readonly JobKind[] } = {}) {
   const budgetMs = options.budgetMs ?? 30_000;
-  const concurrency = Math.max(1, options.concurrency ?? 4);
   const deadline = Date.now() + budgetMs;
   await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_at: now() } }, { upsert: true });
-  for (const job of await recoverExpired(deps.db)) await finalFailure(deps, job, job.error ?? "Worker lease expired");
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   let executed = 0;
   const worker = async () => {
     while (Date.now() < deadline && (await runOne(deps, { kinds: options.kinds }))) executed += 1;
   };
-  await Promise.all(Array.from({ length: concurrency }, worker));
+  await worker();
   await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_finished_at: now(), last_tick_executed: executed } });
   return { executed };
 }

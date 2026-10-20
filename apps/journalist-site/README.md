@@ -64,9 +64,9 @@ Hosted structured calls reserve at least 4,096 tokens for reasoning and output; 
 limits and publication validation remain unchanged.
 
 Ranking prefers the configured **hosted providers only**, in their listed order, whenever
-any are configured; it does not silently spill the larger workload onto Ollama. No new API
+any are configured; it does not silently spill the workload onto Ollama. No new API
 key is needed if Gemini/Groq is already configured. Ollama-only configuration remains
-available and uses the smaller candidate pool. Hosted APIs may impose rate limits or
+available with the same five-candidate limit. Hosted APIs may impose rate limits or
 charges; a free tier is not an unlimited quota.
 
 ## Test
@@ -82,11 +82,18 @@ One run per location; each step is a job in MongoDB `pipeline_jobs`, sized for o
 function call. The deployed Vercel cron is currently disabled; `npm run local` runs the tick
 every 5 seconds during local development.
 
+Locations execute **sequentially**, including across overlapping local ticks, cron calls
+and manual triggers. A renewable MongoDB worker lease prevents parallel model requests
+from different scheduler calls. The oldest active run finishes (or fails) before the next
+location starts; a run waiting for backoff keeps later locations queued.
+Cloud ticks dispatch one source invocation at a time for that oldest run, preserving
+the separate Vercel function boundary without bypassing serialization or backoff.
+
 1. **Collect**: one job per source (library, meetings, hazards, state news, trending).
-   Rule-based preselection keeps up to **15 candidates per source** with hosted models
-   configured (5 in Ollama-only mode); the combined pool is capped again at the same
-   limit per connector type. With five types, at most 75 candidates reach hosted ranking,
-   rather than 25. State feeds retain up to 25 geographically relevant items per newsroom,
+   Rule-based preselection keeps up to **5 candidates per source** in hosted and local
+   modes; the combined pool is capped again at five per connector type. With five types,
+   at most **25 candidates per location** reach model ranking. State feeds still retain up
+   to 25 geographically relevant items per newsroom before preselection,
    use the richest available RSS/Atom content and exclude announcements older than 14
    days or future-dated items. Older onboarded locations without a government profile
    get a real meeting-discovery task rather than silently skipping meetings.
@@ -97,9 +104,19 @@ every 5 seconds during local development.
    model, pool size, attempts, errors and fallback counts. News candidates are authored
    before upcoming listings, preferring town news to wider news. Write one story per job,
    with validation and one retry; failures are held with reasons. The edition remains
-   bounded at 9 items and at most 4 county/nearby items, not 75 authored stories.
+   bounded at 9 items and at most 4 county/nearby items, not 25 authored stories.
 3. **Publish**: the edition and email preview (saved, never sent) go to every enabled output
    channel that selects the location.
+
+HTTP **429** is an infrastructure delay, not an editorial rejection. Try configured backup
+providers first; if none succeeds, return the unfinished job to MongoDB with exponential
+backoff (15, 30, 60, 120, 240, then 300 seconds), honoring a longer `Retry-After` or provider
+retry hint. There are at most eight deferred retries per job; hints over one hour fail
+explicitly rather than scheduling an unbounded wait. Retrying does not turn stories into
+holds, consume their validation retry or use rule-ranking fallback for quota failures.
+Exhaustion fails the run before publication and leaves the last published edition intact.
+Job errors, retry counts and availability timestamps expose the wait in run inspection.
+A daily quota cannot be solved by backoff; capacity must recover or be increased.
 
 **Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
 for each source, story (with held reasons) and job. Each cloud source collection runs in

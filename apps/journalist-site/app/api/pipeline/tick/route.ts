@@ -5,6 +5,7 @@ import { logger } from "@/pipeline/core/log";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { nextPendingJob, pendingJobs } from "@/pipeline/orchestration/jobs";
 import { describeInternalFailure, markDispatch, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
+import { oldestActiveRun } from "@/pipeline/orchestration/runs";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -17,18 +18,19 @@ async function handle(request: Request) {
   let deps: OrchestratorDeps | null = null;
   try {
     deps = await pipelineDeps();
-    const active = deps;
+    const ctx = deps;
     const cloud = deps.settings.mode === "cloud";
     const result = await tick(deps, cloud
       ? { budgetMs: 30_000, kinds: ["author_start", "author_story", "author_finish"] }
       : { budgetMs: 30_000 });
-    const sources = cloud ? await pendingJobs(deps.db, "collect_source", 10) : [];
-    const next = cloud ? await nextPendingJob(deps.db) : null;
+    const active = cloud ? await oldestActiveRun(deps.db) : null;
+    const sources = active ? await pendingJobs(deps.db, "collect_source", 1, active._id) : [];
+    const next = active ? await nextPendingJob(deps.db, active._id) : null;
     if (sources.length || next) {
       after(async () => {
         const secret = process.env.CRON_SECRET;
         if (!secret) {
-          await recordSchedulerSafely(active.db, "dispatch", "CRON_SECRET is not set, so source workers and follow-up ticks cannot be started.");
+          await recordSchedulerSafely(ctx.db, "dispatch", "CRON_SECRET is not set, so source workers and follow-up ticks cannot be started.");
           throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
         }
         const sourceUrl = new URL("/api/pipeline/collect-source", request.url);
@@ -42,16 +44,16 @@ async function handle(request: Request) {
             });
             if (response.status === 409) return true; // Already claimed by another worker or tick.
             if (!response.ok) throw new Error(describeInternalFailure("Source worker", response.status, await response.text()));
-            await markDispatch(active.db, job._id, null).catch(() => undefined);
+            await markDispatch(ctx.db, job._id, null).catch(() => undefined);
             return true;
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             log.error("source_job_dispatch_failed", { job_id: job._id, run_id: job.run_id, error: detail });
-            await markDispatch(active.db, job._id, detail).catch(() => undefined);
+            await markDispatch(ctx.db, job._id, detail).catch(() => undefined);
             return false;
           }
         }));
-        await recordSchedulerSafely(active.db, "dispatch", results.every(Boolean) ? null : "One or more source workers could not be started; see the run's jobs for details.");
+        await recordSchedulerSafely(ctx.db, "dispatch", results.every(Boolean) ? null : "One or more source workers could not be started; see the run's jobs for details.");
         if (results.every(Boolean) && next) {
           const delay = Math.min(30_000, Math.max(0, next.available_at * 1000 - Date.now()));
           if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
@@ -62,11 +64,11 @@ async function handle(request: Request) {
               cache: "no-store",
             });
             if (!response.ok) throw new Error(describeInternalFailure("Follow-up scheduler tick", response.status, await response.text()));
-            await recordSchedulerSafely(active.db, "followup", null);
+            await recordSchedulerSafely(ctx.db, "followup", null);
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             log.error("followup_tick_failed", { error: detail });
-            await recordSchedulerSafely(active.db, "followup", detail);
+            await recordSchedulerSafely(ctx.db, "followup", detail);
           }
         }
       });

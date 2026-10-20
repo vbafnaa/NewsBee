@@ -8,6 +8,23 @@ export type ProviderHealth = { name: string; model: string | null; status: Compo
 export type ComponentHealth = { status: ComponentStatus; detail: string; providers?: ProviderHealth[] };
 
 export class ModelUnavailableError extends Error {}
+export class ModelRateLimitError extends ModelUnavailableError {
+  constructor(message: string, readonly retryAfterSeconds = 0) {
+    super(message);
+    this.name = "ModelRateLimitError";
+  }
+}
+
+export function retryAfterSeconds(headers: Record<string, string>, body: string, now = Date.now()) {
+  const header = Object.entries(headers).find(([name]) => name.toLowerCase() === "retry-after")?.[1];
+  const seconds = header ? Number(header) : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  const date = header ? Date.parse(header) : NaN;
+  if (Number.isFinite(date)) return Math.max(0, (date - now) / 1000);
+  const hint = body.match(/"retryDelay"\s*:\s*"([\d.]+)s"/i)
+    ?? body.match(/try again in\s+([\d.]+)\s*s/i);
+  return hint ? Number(hint[1]) : 0;
+}
 
 export type StructuredGeneration = {
   response: string;
@@ -56,6 +73,9 @@ async function post(transport: HttpTransport, url: string, headers: Record<strin
     timeoutMs: 300_000,
   });
   if (response.status >= 400) {
+    if (response.status === 429) {
+      throw new ModelRateLimitError(`Model request rate limited (429): ${text(response).slice(0, 300)}`, retryAfterSeconds(response.headers, text(response)));
+    }
     throw new Error(`Model request failed (${response.status}): ${text(response).slice(0, 300)}`);
   }
   return JSON.parse(text(response)) as Record<string, unknown>;
@@ -307,6 +327,7 @@ export class FallbackRuntime implements ModelRuntime {
     const available = order.filter(({ index }) => (this.cooldownUntil.get(index) ?? 0) <= time);
     const cooling = order.filter(({ index }) => (this.cooldownUntil.get(index) ?? 0) > time);
     const failures: string[] = [];
+    const limits: ModelRateLimitError[] = [];
     // Cooling providers are a last resort rather than skipped outright.
     for (const { runtime, index } of [...available, ...cooling]) {
       try {
@@ -315,6 +336,7 @@ export class FallbackRuntime implements ModelRuntime {
         if (failures.length) this.log.warn("model_fallback_served", { operation, provider: runtime.provider, failed: failures });
         return result;
       } catch (error) {
+        if (error instanceof ModelRateLimitError) limits.push(error);
         const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
         failures.push(`${runtime.provider}: ${message}`);
         this.cooldownUntil.set(index, this.now() + this.cooldownMs);
@@ -322,6 +344,7 @@ export class FallbackRuntime implements ModelRuntime {
       }
     }
     this.log.error("model_all_providers_failed", { operation, failed: failures });
+    if (limits.length) throw new ModelRateLimitError(`All model providers failed: ${failures.join("; ")}`, Math.min(...limits.map((error) => error.retryAfterSeconds)));
     throw new ModelUnavailableError(`All model providers failed: ${failures.join("; ")}`);
   }
 

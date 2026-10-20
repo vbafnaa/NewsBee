@@ -1,5 +1,6 @@
 /** Grounded story, edition-front and email-preview writing with fail-closed checks. */
 import type { ModelRuntime, JsonSchema } from "./runtime";
+import { ModelRateLimitError } from "./runtime";
 import { addedClaims } from "./news-blurb";
 
 export const WRITING_POLICY = "story_v5_local_reporting";
@@ -188,6 +189,7 @@ export async function writeItem(runtime: ModelRuntime, story: StoryInput) {
       break;
     }
   } catch (error) {
+    if (error instanceof ModelRateLimitError) throw error;
     Object.assign(result, { checks_passed: false, disposition: "held", validation_errors: [], error: `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}` });
   }
   result.wall_seconds = Math.round(Date.now() - started) / 1000;
@@ -221,7 +223,10 @@ async function editionText(runtime: ModelRuntime, context: ReturnType<typeof edi
       if (!errors.length) { Object.assign(result, { fallback: false, rejected: null, ...draft }); break; }
       if (attempt < MAX_RETRIES) { result.rejected_first = { draft, errors }; text = rejection(promptFn(context), draft, errors, stories[0].title); }
     }
-  } catch (error) { result.error = `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`; }
+  } catch (error) {
+    if (error instanceof ModelRateLimitError) throw error;
+    result.error = `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`;
+  }
   if (result.fallback) result.fallback_reason = "model_text_held";
   return result;
 }

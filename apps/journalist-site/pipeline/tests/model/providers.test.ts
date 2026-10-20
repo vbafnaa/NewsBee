@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadSettings, modelProviders, rankingCandidateLimit, rankingSettings } from "../../core/config";
 import type { HttpRequest, HttpTransport } from "../../core/http";
 import { logger, setLogSink, type LogRecord } from "../../core/log";
-import { createRuntime, FallbackRuntime, GeminiRuntime, ModelUnavailableError, OpenAICompatibleRuntime, type ModelRuntime } from "../../model/runtime";
+import { createRuntime, FallbackRuntime, GeminiRuntime, ModelUnavailableError, ModelRateLimitError, OpenAICompatibleRuntime, retryAfterSeconds, type ModelRuntime } from "../../model/runtime";
 
 const env = (values: Record<string, string>) => values as unknown as NodeJS.ProcessEnv;
 
@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe("model provider config", () => {
-  it("prefers only hosted providers for expanded ranking while preserving explicit Ollama-only mode", () => {
+  it("prefers hosted ranking while keeping the five-candidate budget in every mode", () => {
     const local = loadSettings(env({}));
     expect(rankingSettings(local)).toBe(local);
     expect(rankingCandidateLimit(local)).toBe(5);
@@ -46,7 +46,7 @@ describe("model provider config", () => {
     }));
     expect(rankingSettings(mixed).modelProviders.map(({ name }) => name)).toEqual(["gemini", "groq"]);
     expect(mixed.modelProviders[0].name).toBe("ollama");
-    expect(rankingCandidateLimit(mixed)).toBe(15);
+    expect(rankingCandidateLimit(mixed)).toBe(5);
   });
   it("defaults to Ollama locally and Gemini in cloud mode", () => {
     expect(modelProviders(env({}), "local").map((item) => item.name)).toEqual(["ollama"]);
@@ -87,6 +87,17 @@ describe("OpenAI-compatible runtime", () => {
     NEWSBEE_LLM_AZURE_API_KEY: "secret",
     NEWSBEE_LLM_AZURE_AUTH_HEADER: "api-key",
   }), "cloud");
+
+  it("preserves 429 and provider retry hints for durable queue backoff", async () => {
+    const runtime = new OpenAICompatibleRuntime(config, async () => ({
+      ...respond(429, { error: { message: "Try again in 3.5s." } }), headers: { "Retry-After": "45" },
+    }));
+    await expect(runtime.generate("x")).rejects.toMatchObject({ name: "ModelRateLimitError", retryAfterSeconds: 45 });
+    expect(retryAfterSeconds({}, 'Try again in 3.5s.')).toBe(3.5);
+    expect(retryAfterSeconds({}, '{"retryDelay":"12s"}')).toBe(12);
+    expect(retryAfterSeconds({ "retry-after": "Tue, 20 Oct 2026 08:00:30 GMT" }, "", Date.parse("2026-10-20T08:00:00Z"))).toBe(30);
+    expect(retryAfterSeconds({ "retry-after": "invalid" }, "quota exceeded")).toBe(0);
+  });
 
   it("sends structured requests and reads the reply", async () => {
     const requests: HttpRequest[] = [];
@@ -138,6 +149,13 @@ describe("OpenAI-compatible runtime", () => {
 });
 
 describe("fallback runtime", () => {
+  it("uses the backup before deferring and retains rate-limit identity if all providers fail", async () => {
+    const limited = stub("gemini", () => { throw new ModelRateLimitError("quota", 60); });
+    const backup = stub("groq", () => "written");
+    expect(await new FallbackRuntime([limited, backup], captureLog().log).generate("x")).toBe("written");
+    const runtime = new FallbackRuntime([limited, stub("groq", () => { throw new ModelRateLimitError("TPM", 20); })], captureLog().log);
+    await expect(runtime.generate("x")).rejects.toMatchObject({ name: "ModelRateLimitError", retryAfterSeconds: 20 });
+  });
   it("retries the same call on the next provider and cools down the failed one", async () => {
     let clock = 0;
     const primary = stub("gemini", () => { throw new Error("503 overloaded"); });
