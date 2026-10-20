@@ -10,7 +10,7 @@ export default async function OutputChannelPage() {
 
   return (
     <AdminShell email={email} page="output-channel" title="Output channel"
-      description="Manage the Newsbee reader site and control whether it serves published editions.">
+      description="Create destinations, select sources, and run channel-specific aggregation and publishing.">
       <OutputChannelManagement />
     </AdminShell>
   );

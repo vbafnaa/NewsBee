@@ -23,9 +23,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!/^[0-9a-f-]{36}$/i.test(runId)) {
       return Response.json({ detail: "Pipeline run identifier is invalid" }, { status: 400 });
     }
-    const channel = await getOutputChannel();
-    const run = await getRun(runId, channel.id);
+    const run = await getRun(runId);
     if (!run) return Response.json({ detail: "Pipeline run was not found" }, { status: 404 });
+    if (run.kind === "edition") {
+      if (!run.channel_id) return Response.json({ detail: "Edition run has no output channel" }, { status: 409 });
+      const channel = await getOutputChannel(run.channel_id);
+      if (run.channel_id !== channel.id) {
+        return Response.json({ detail: "Pipeline run was not found" }, { status: 404 });
+      }
+    }
     const valid = run.kind === "source"
       ? sourceStages.some((stage) => stage === rawStage)
       : editionStages.some((stage) => stage === rawStage);
@@ -36,14 +42,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (run.current_stage !== stage) {
       return Response.json({ detail: `The next stage for this run is ${run.current_stage ?? "complete"}` }, { status: 409 });
     }
-    const claimed = await claimStage(runId, channel.id, stage);
+    const claimed = await claimStage(run, stage);
     if (!claimed) {
       return Response.json({ detail: "This stage is already running or has already completed" }, { status: 409 });
     }
     try {
       const result = await executeStage(claimed, stage);
       await finishStage(claimed, stage, result.nextStage, result.driveFileId);
-      return Response.json({ run: await getRun(runId, channel.id) }, {
+      return Response.json({ run: await getRun(runId) }, {
         headers: { "Cache-Control": "no-store" },
       });
     } catch (error) {

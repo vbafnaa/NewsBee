@@ -1,4 +1,4 @@
-import { auth, getOutputChannel, isAdminEmail } from "@/auth";
+import { auth, isAdminEmail } from "@/auth";
 import { readJson } from "@/data-gathering-pipeline/drive";
 import { getRun } from "@/data-gathering-pipeline/store";
 import type { PipelineStage } from "@/data-gathering-pipeline/types";
@@ -14,8 +14,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
     }
     const { sourceId, runId } = await context.params;
-    const channel = await getOutputChannel();
-    const run = await getRun(runId, channel.id);
+    const run = await getRun(runId);
     if (!run || run.kind !== "source" || run.source_id !== sourceId) {
       return Response.json({ detail: "Source run was not found" }, { status: 404 });
     }

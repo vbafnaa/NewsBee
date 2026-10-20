@@ -17,7 +17,7 @@ export type StageRecord = {
 
 export type PipelineRun = {
   _id: string;
-  channel_id: string;
+  channel_id?: string;
   drive_folder_id: string;
   kind: "source" | "edition";
   source_id?: string;

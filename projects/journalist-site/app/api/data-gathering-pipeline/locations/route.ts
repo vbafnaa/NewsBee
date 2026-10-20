@@ -14,6 +14,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Pipeline location index could not be loaded", error);
-    return Response.json({ detail: "Could not load locations.json from the output channel Drive folder" }, { status: 503 });
+    return Response.json({ detail: "Could not load locations.json from the shared pipeline Drive folder" }, { status: 503 });
   }
 }

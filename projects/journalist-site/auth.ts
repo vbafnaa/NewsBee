@@ -12,7 +12,7 @@ type MongoCache = typeof globalThis & {
 
 export type AdminAccount = { email: string; enabled: boolean; createdAt?: Date };
 export type OutputChannel = {
-  id: "reader-site";
+  id: string;
   name: string;
   url: string;
   driveFolderId: string;
@@ -33,7 +33,7 @@ export type ConfiguredSource = {
 
 type SourceConfigDocument = { _id: string; data: Record<string, unknown> };
 type OutputChannelDocument = {
-  _id: "reader-site";
+  _id: string;
   name: string;
   url: string;
   drive_folder_id: string;
@@ -137,34 +137,15 @@ export async function enableAdminAccount(email: string) {
   return { email, enabled: true };
 }
 
-export async function getOutputChannel(): Promise<OutputChannel> {
-  const database = await getMongoDatabase();
-  const collection = database.collection<OutputChannelDocument>("output_channels");
-  await collection.updateOne(
-    { _id: "reader-site" },
-    {
-      $setOnInsert: {
-        name: "Newsbee reader site",
-        url: process.env.NEWSBEE_READER_SITE_URL ?? "https://newsbee-reader-site.vercel.app",
-        drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw",
-        enabled: true,
-      },
-    },
-    { upsert: true },
-  );
-  await collection.updateOne(
-    { _id: "reader-site", drive_folder_id: { $exists: false } },
-    { $set: { drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw" } },
-  );
-  const channel = await collection.findOne({ _id: "reader-site" });
-  if (!channel || typeof channel.name !== "string" || typeof channel.url !== "string" ||
-    typeof channel.drive_folder_id !== "string" || !/^[A-Za-z0-9_-]+$/.test(channel.drive_folder_id) ||
-    typeof channel.enabled !== "boolean") {
-    throw new Error("The reader output channel configuration is malformed");
+function outputChannelFromDocument(channel: OutputChannelDocument | null): OutputChannel {
+  if (!channel || typeof channel._id !== "string" || typeof channel.name !== "string" ||
+    typeof channel.url !== "string" || typeof channel.drive_folder_id !== "string" ||
+    !/^[A-Za-z0-9_-]+$/.test(channel.drive_folder_id) || typeof channel.enabled !== "boolean") {
+    throw new Error("The output channel configuration is malformed");
   }
   const selectedSourceIds = channel.selected_source_ids ?? [];
   if (!Array.isArray(selectedSourceIds) || selectedSourceIds.some((id) => typeof id !== "string")) {
-    throw new Error("The reader output channel source selection is malformed");
+    throw new Error("The output channel source selection is malformed");
   }
   return {
     id: channel._id,
@@ -176,23 +157,71 @@ export async function getOutputChannel(): Promise<OutputChannel> {
   };
 }
 
-export async function updateOutputChannel(channel: Omit<OutputChannel, "id">) {
+export async function getOutputChannel(channelId = "reader-site"): Promise<OutputChannel> {
+  const database = await getMongoDatabase();
+  const collection = database.collection<OutputChannelDocument>("output_channels");
+  if (channelId === "reader-site") {
+    await collection.updateOne(
+      { _id: "reader-site" },
+      {
+        $setOnInsert: {
+          name: "Newsbee reader site",
+          url: process.env.NEWSBEE_READER_SITE_URL ?? "https://newsbee-reader-site.vercel.app",
+          drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw",
+          enabled: true,
+        },
+      },
+      { upsert: true },
+    );
+    await collection.updateOne(
+      { _id: "reader-site", drive_folder_id: { $exists: false } },
+      { $set: { drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw" } },
+    );
+  }
+  return outputChannelFromDocument(await collection.findOne({ _id: channelId }));
+}
+
+export async function listOutputChannels() {
+  await getOutputChannel();
+  const channels = await (await getMongoDatabase())
+    .collection<OutputChannelDocument>("output_channels")
+    .find({})
+    .sort({ _id: 1 })
+    .toArray();
+  return channels.map(outputChannelFromDocument);
+}
+
+export async function createOutputChannel(channel: OutputChannel) {
+  const database = await getMongoDatabase();
+  await database.collection<OutputChannelDocument>("output_channels").insertOne({
+    _id: channel.id,
+    name: channel.name,
+    url: channel.url,
+    drive_folder_id: channel.driveFolderId,
+    selected_source_ids: channel.selectedSourceIds,
+    enabled: channel.enabled,
+  });
+  return channel;
+}
+
+export async function updateOutputChannel(
+  channelId: string,
+  channel: Omit<OutputChannel, "id" | "driveFolderId">,
+) {
   const database = await getMongoDatabase();
   const collection = database.collection<OutputChannelDocument>("output_channels");
   await collection.updateOne(
-    { _id: "reader-site" },
+    { _id: channelId },
     {
       $set: {
         name: channel.name,
         url: channel.url,
-        drive_folder_id: channel.driveFolderId,
         selected_source_ids: channel.selectedSourceIds,
         enabled: channel.enabled,
       },
     },
-    { upsert: true },
   );
-  return { id: "reader-site", ...channel } satisfies OutputChannel;
+  return getOutputChannel(channelId);
 }
 
 export async function listConfiguredSources(): Promise<ConfiguredSource[]> {

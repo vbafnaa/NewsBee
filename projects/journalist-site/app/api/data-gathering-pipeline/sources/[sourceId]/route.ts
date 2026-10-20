@@ -1,7 +1,6 @@
 import {
   auth,
   getMongoDatabase,
-  getOutputChannel,
   isAdminEmail,
   listConfiguredSources,
 } from "@/auth";
@@ -18,19 +17,25 @@ export async function GET(_request: Request, context: RouteContext) {
       return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
     }
     const { sourceId } = await context.params;
-    const channel = await getOutputChannel();
     const source = (await listConfiguredSources()).find((entry) => entry.id === sourceId);
     if (!source) return Response.json({ detail: "Configured source was not found" }, { status: 404 });
     const database = await getMongoDatabase();
-    const ingestion = await database.collection("source_ingestion_state").find(
-      { channel_id: channel.id, source_id: sourceId },
+    const ingestionRecords = await database.collection("source_ingestion_state").find(
+      { source_id: sourceId },
       { projection: { _id: 0 } },
     ).sort({ last_ingested_at: -1 }).toArray();
-    const runs = await listSourceRuns(channel.id, sourceId);
+    const latestByLocation = new Map<string, typeof ingestionRecords[number]>();
+    for (const record of ingestionRecords) {
+      const existing = latestByLocation.get(record.location_id);
+      if (!existing || new Date(record.last_ingested_at).valueOf() >
+        new Date(existing.last_ingested_at).valueOf()) {
+        latestByLocation.set(record.location_id, record);
+      }
+    }
+    const runs = await listSourceRuns(sourceId);
     return Response.json({
       source,
-      selected: channel.selectedSourceIds.includes(sourceId),
-      ingestion,
+      ingestion: [...latestByLocation.values()],
       runs,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

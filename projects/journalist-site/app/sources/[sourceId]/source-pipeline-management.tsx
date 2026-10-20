@@ -61,7 +61,6 @@ function stageName(stage: string | null) {
 
 export default function SourcePipelineManagement({ sourceId }: { sourceId: string }) {
   const [source, setSource] = useState<Source | null>(null);
-  const [selected, setSelected] = useState(false);
   const [ingestion, setIngestion] = useState<Ingestion[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -78,7 +77,6 @@ export default function SourcePipelineManagement({ sourceId }: { sourceId: strin
       { cache: "no-store" },
     ));
     setSource(data.source as Source);
-    setSelected(data.selected as boolean);
     setIngestion(data.ingestion as Ingestion[]);
     setRuns(data.runs as Run[]);
   }, [sourceId]);
@@ -175,15 +173,13 @@ export default function SourcePipelineManagement({ sourceId }: { sourceId: strin
           <section className="panel">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">{source.category} · {source.id}</p>
+                <p className="eyebrow">Stage 1 · {source.category} · {source.id}</p>
                 <h2>{source.name}</h2>
                 <p>{source.location}{source.region ? ` · ${source.region}` : ""}</p>
                 {source.url && <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>}
                 {source.platform && <p>{source.platform} · tenant {source.tenant}</p>}
               </div>
-              <span className={`state ${selected ? "active" : ""}`}>
-                {selected ? "Selected for reader channel" : "Not selected for reader channel"}
-              </span>
+              <span className="state active">Independent source ingestion</span>
             </div>
             <label className="field pipeline-location">
               <span>Ingestion location</span>
@@ -194,12 +190,11 @@ export default function SourcePipelineManagement({ sourceId }: { sourceId: strin
                   <option key={location.id} value={location.id}>{location.name}</option>
                 ))}
               </select>
-              <small>Locations are loaded from `locations.json` in the output channel’s Drive folder.</small>
+              <small>Locations are loaded from `locations.json` in the shared pipeline Drive folder.</small>
             </label>
-            {!selected && <p className="alert" role="status">
-              Select this source on the <Link href="/output-channel">output channel page</Link> before queueing an ingestion run.
-            </p>}
-            <button type="button" disabled={!selected || !locationId || busy !== ""}
+            <p>Ingestion runs are independent of output channels. To include this source in an edition,
+              select it on the <Link href="/output-channel">output channel page</Link>.</p>
+            <button type="button" disabled={!locationId || busy !== ""}
               onClick={() => void queueRun()}>
               {busy === "queue" ? "Queueing…" : "Queue ingestion"}
             </button>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -21,7 +22,6 @@ type ConfiguredSource = {
   url?: string;
   platform?: string;
   tenant?: string;
-  selected: boolean;
   ingestion: Array<{
     locationId: string;
     lastIngestedAt: string;
@@ -54,6 +54,7 @@ async function readResponse(response: Response) {
 
 function stageName(stage: string | null) {
   if (!stage) return "Complete";
+  if (stage === "rank") return "Aggregate and rank";
   return stage.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -65,8 +66,8 @@ function prettyDate(value: string | undefined) {
 
 export default function OutputChannelManagement() {
   const [channel, setChannel] = useState<OutputChannel | null>(null);
+  const [channels, setChannels] = useState<OutputChannel[]>([]);
   const [savedSourceIds, setSavedSourceIds] = useState<string[]>([]);
-  const [savedDriveFolderId, setSavedDriveFolderId] = useState("");
   const [sources, setSources] = useState<ConfiguredSource[]>([]);
   const [runs, setRuns] = useState<PipelineRun[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -75,9 +76,16 @@ export default function OutputChannelManagement() {
   const [pipelineError, setPipelineError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
+  const [newChannelId, setNewChannelId] = useState("");
+  const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelUrl, setNewChannelUrl] = useState("");
 
-  async function refreshRuns() {
-    const data = await readResponse(await fetch("/api/data-gathering-pipeline/runs", { cache: "no-store" }));
+  async function refreshRuns(channelId = channel?.id) {
+    if (!channelId) return;
+    const data = await readResponse(await fetch(
+      `/api/data-gathering-pipeline/runs?channelId=${encodeURIComponent(channelId)}`,
+      { cache: "no-store" },
+    ));
     setRuns(data.runs as PipelineRun[]);
   }
 
@@ -89,19 +97,30 @@ export default function OutputChannelManagement() {
       ? current : available[0]?.id ?? "");
   }
 
+  async function refreshChannelData(channelId: string) {
+    const [sourceData, runData] = await Promise.all([
+      fetch(`/api/data-gathering-pipeline/sources?channelId=${encodeURIComponent(channelId)}`, {
+        cache: "no-store",
+      }).then(readResponse),
+      fetch(`/api/data-gathering-pipeline/runs?channelId=${encodeURIComponent(channelId)}`, {
+        cache: "no-store",
+      }).then(readResponse),
+    ]);
+    setSources(sourceData.sources as ConfiguredSource[]);
+    setRuns(runData.runs as PipelineRun[]);
+  }
+
   useEffect(() => {
     void (async () => {
       try {
-        const [channelData, sourceData, runData] = await Promise.all([
-          fetch("/api/output-channel", { cache: "no-store" }).then(readResponse),
-          fetch("/api/data-gathering-pipeline/sources", { cache: "no-store" }).then(readResponse),
-          fetch("/api/data-gathering-pipeline/runs", { cache: "no-store" }).then(readResponse),
-        ]);
-        setChannel(channelData.channel as OutputChannel);
-        setSavedSourceIds(channelData.channel.selectedSourceIds as string[]);
-        setSavedDriveFolderId(channelData.channel.driveFolderId as string);
-        setSources(sourceData.sources as ConfiguredSource[]);
-        setRuns(runData.runs as PipelineRun[]);
+        const channelData = await readResponse(await fetch("/api/output-channel", { cache: "no-store" }));
+        const available = channelData.channels as OutputChannel[];
+        const initial = (available.find((item) => item.id === channelData.channel.id) ??
+          available[0]) as OutputChannel;
+        setChannels(available);
+        setChannel(initial);
+        setSavedSourceIds(initial.selectedSourceIds);
+        await refreshChannelData(initial.id);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
       }
@@ -112,6 +131,20 @@ export default function OutputChannelManagement() {
       }
     })();
   }, []);
+
+  async function selectChannel(channelId: string) {
+    const selected = channels.find((item) => item.id === channelId);
+    if (!selected) return;
+    setChannel(selected);
+    setSavedSourceIds(selected.selectedSourceIds);
+    setError("");
+    setPipelineError("");
+    try {
+      await refreshChannelData(selected.id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,19 +158,20 @@ export default function OutputChannelManagement() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: channel.id,
           name: String(values.get("name") ?? ""),
           url: String(values.get("url") ?? ""),
-          driveFolderId: String(values.get("driveFolderId") ?? ""),
           selectedSourceIds: channel.selectedSourceIds,
           enabled: values.get("enabled") === "on",
         }),
       });
       const data = await readResponse(response);
       setChannel(data.channel as OutputChannel);
+      setChannels((current) => current.map((item) =>
+        item.id === data.channel.id ? data.channel as OutputChannel : item));
       setSavedSourceIds(data.channel.selectedSourceIds as string[]);
-      setSavedDriveFolderId(data.channel.driveFolderId as string);
       setNotice("Output channel settings and selected sources saved.");
-      await refreshSources();
+      await refreshSources(channel.id);
       await refreshLocations().catch((caught: unknown) => {
         setPipelineError(caught instanceof Error ? caught.message : String(caught));
       });
@@ -148,29 +182,44 @@ export default function OutputChannelManagement() {
     }
   }
 
-  async function refreshSources() {
-    const data = await readResponse(await fetch("/api/data-gathering-pipeline/sources", { cache: "no-store" }));
-    setSources(data.sources as ConfiguredSource[]);
-  }
-
-  async function triggerSource(sourceId: string) {
-    if (!locationId) return;
-    setBusy(`source:${sourceId}`);
-    setPipelineError("");
+  async function createChannel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy("create-channel");
+    setError("");
     setNotice("");
     try {
-      const data = await readResponse(await fetch("/api/data-gathering-pipeline/runs", {
+      const channelData = await readResponse(await fetch("/api/output-channel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId, locationId }),
+        body: JSON.stringify({
+          id: newChannelId.trim(),
+          name: newChannelName.trim(),
+          url: newChannelUrl.trim(),
+        }),
       }));
-      await refreshRuns();
-      setNotice(`Source run ready. Trigger its ${stageName(data.run.current_stage)} stage to continue.`);
+      const created = channelData.channel as OutputChannel;
+      setChannels((current) => [...current, created].sort((left, right) => left.id.localeCompare(right.id)));
+      setChannel(created);
+      setSavedSourceIds(created.selectedSourceIds);
+      setNewChannelId("");
+      setNewChannelName("");
+      setNewChannelUrl("");
+      await refreshChannelData(created.id);
+      setNotice(`Output channel created. Its Drive folder ID is ${created.driveFolderId}. Share it with the reader site's service account.`);
     } catch (caught) {
-      setPipelineError(caught instanceof Error ? caught.message : String(caught));
+      setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusy("");
     }
+  }
+
+  async function refreshSources(channelId = channel?.id) {
+    if (!channelId) return;
+    const data = await readResponse(await fetch(
+      `/api/data-gathering-pipeline/sources?channelId=${encodeURIComponent(channelId)}`,
+      { cache: "no-store" },
+    ));
+    setSources(data.sources as ConfiguredSource[]);
   }
 
   async function triggerStage(run: PipelineRun, stage: string) {
@@ -200,10 +249,10 @@ export default function OutputChannelManagement() {
       await readResponse(await fetch("/api/data-gathering-pipeline/editions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId }),
+        body: JSON.stringify({ locationId, channelId: channel?.id }),
       }));
       await refreshRuns();
-      setNotice("Edition run created. Trigger its Rank stage to continue.");
+      setNotice("Channel aggregation queued. Run its Aggregate and rank stage to combine selected source data.");
     } catch (caught) {
       setPipelineError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -223,8 +272,7 @@ export default function OutputChannelManagement() {
   const selectionUnsaved = channel
     ? [...channel.selectedSourceIds].sort().join("\n") !== [...savedSourceIds].sort().join("\n")
     : false;
-  const folderUnsaved = Boolean(channel && savedDriveFolderId && channel.driveFolderId !== savedDriveFolderId);
-  const pipelineSettingsUnsaved = selectionUnsaved || folderUnsaved;
+  const pipelineSettingsUnsaved = selectionUnsaved;
 
   return (
     <>
@@ -235,8 +283,15 @@ export default function OutputChannelManagement() {
           <div>
             <p className="eyebrow">MongoDB · output_channels</p>
             <h2>{channel?.name ?? "Newsbee reader site"}</h2>
-            <p>There is currently one output channel. Its identifier is <code>reader-site</code>.</p>
+            <p>Each output channel owns a Drive folder that is created automatically and cannot be changed here.</p>
           </div>
+          <label className="field channel-picker">
+            <span>Output channel</span>
+            <select value={channel?.id ?? ""} onChange={(event) => void selectChannel(event.target.value)}
+              disabled={!channels.length || busy !== "" || selectionUnsaved}>
+              {channels.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}
+            </select>
+          </label>
           {channel && <span className={channel.enabled ? "state active" : "state"}>
             {channel.enabled ? "Enabled" : "Disabled"}
           </span>}
@@ -255,13 +310,10 @@ export default function OutputChannelManagement() {
                 onChange={(event) => setChannel({ ...channel, url: event.target.value })} />
               <small>Keep this aligned with the reader site’s deployed domain; the dashboard uses it as the channel link.</small>
             </label>
-            <label className="field">
-              <span>Google Drive folder ID</span>
-              <input name="driveFolderId" required maxLength={200} pattern="[A-Za-z0-9_-]{10,200}"
-                value={channel.driveFolderId}
-                onChange={(event) => setChannel({ ...channel, driveFolderId: event.target.value })} />
-              <small>Published edition JSON files and a hidden `.newsbee-pipeline` folder are stored under this Drive folder.</small>
-            </label>
+            <p className="muted">
+              Channel Drive folder: <code>{channel.driveFolderId}</code>. Published editions and
+              channel-specific intermediate artifacts are stored there.
+            </p>
             <label className="channel-toggle">
               <input name="enabled" type="checkbox" checked={channel.enabled}
                 onChange={(event) => setChannel({ ...channel, enabled: event.target.checked })} />
@@ -280,9 +332,41 @@ export default function OutputChannelManagement() {
       <section className="panel">
         <div className="section-heading">
           <div>
+            <p className="eyebrow">New destination</p>
+            <h2>Create an output channel</h2>
+            <p>The system creates a Drive folder under the configured pipeline Drive folder and copies its locations index there.</p>
+          </div>
+        </div>
+        <form className="channel-form" onSubmit={(event) => void createChannel(event)}>
+          <label className="field">
+            <span>Channel ID</span>
+            <input required maxLength={64} pattern="[a-z0-9][a-z0-9-]{1,63}"
+              value={newChannelId} onChange={(event) => setNewChannelId(event.target.value)}
+              placeholder="community-news" />
+            <small>Use 2–64 lowercase letters, numbers, and hyphens.</small>
+          </label>
+          <label className="field">
+            <span>Channel name</span>
+            <input required maxLength={120} value={newChannelName}
+              onChange={(event) => setNewChannelName(event.target.value)} />
+          </label>
+          <label className="field source-url">
+            <span>Reader site URL</span>
+            <input required type="url" maxLength={2048} value={newChannelUrl}
+              onChange={(event) => setNewChannelUrl(event.target.value)} placeholder="https://reader.example.org" />
+          </label>
+          <div><button type="submit" disabled={busy !== ""}>
+            {busy === "create-channel" ? "Creating…" : "Create channel and Drive folder"}
+          </button></div>
+        </form>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
             <p className="eyebrow">Source selection</p>
             <h2>Sources for this channel</h2>
-            <p>Choose which sources this channel can run. Each source gets its own folder under the channel’s Drive folder.</p>
+            <p>Select which independently ingested sources this channel will aggregate into editions. Manage ingestion from each source page.</p>
           </div>
         </div>
         {!sources.length && !error && <p>No configured sources are available.</p>}
@@ -302,14 +386,9 @@ export default function OutputChannelManagement() {
                   </span>
                 </label>
                 <div className="source-actions">
-                  <button className="secondary" type="button"
-                    disabled={!selected || !locationId || busy !== "" || pipelineSettingsUnsaved ||
-                      !savedSourceIds.includes(source.id) ||
-                      (source.kind === "government" && source.location !== locationId)}
-                    onClick={() => void triggerSource(source.id)}>
-                    {busy === `source:${source.id}` ? "Creating…" :
-                      source.kind === "government" && source.location !== locationId ? "Location mismatch" : "Start source run"}
-                  </button>
+                  <Link className="button secondary" href={`/sources/${encodeURIComponent(source.id)}`}>
+                    Manage ingestion
+                  </Link>
                 </div>
                 {ingestion && (
                   <small className="ingestion-note">
@@ -326,14 +405,14 @@ export default function OutputChannelManagement() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Manual pipeline stages</p>
-            <h2>Run status and edition stages</h2>
-            <p>Each button makes one API call. Source artifacts are written to the selected channel’s Drive folder.</p>
+            <p className="eyebrow">Stage 2 · channel aggregation</p>
+            <h2>Aggregate source data into an edition</h2>
+            <p>Each button makes one API call. This channel aggregates completed source artifacts from the shared pipeline Drive folder and writes its edition outputs to this channel’s Drive folder.</p>
           </div>
         </div>
         {pipelineError && <p className="alert" role="alert">{pipelineError}</p>}
         {pipelineSettingsUnsaved && <p className="alert" role="status">
-          Save the selected sources and Drive folder changes before starting a run.
+          Save this channel’s source selection before starting aggregation.
         </p>}
         <label className="field pipeline-location">
           <span>Location</span>
@@ -341,14 +420,14 @@ export default function OutputChannelManagement() {
             {!locations.length && <option value="">No locations loaded</option>}
             {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
           </select>
-          <small>Loaded from `locations.json` in the configured output-channel Drive folder.</small>
+          <small>Loaded from `locations.json` in the shared pipeline Drive folder.</small>
         </label>
-        {pipelineError && !locations.length && <p>Check Drive credentials and confirm the service account can read the channel folder.</p>}
+        {pipelineError && !locations.length && <p>Check Drive credentials and confirm the service account can read the pipeline folder.</p>}
         <div className="pipeline-actions">
           <button type="button" className="secondary" disabled={!locationId || busy !== "" ||
             pipelineSettingsUnsaved || !channel?.selectedSourceIds.length}
             onClick={() => void createEditionRun()}>
-            {busy === "edition" ? "Creating…" : "Create edition from completed sources"}
+            {busy === "edition" ? "Queueing aggregation…" : "Queue channel aggregation"}
           </button>
         </div>
         {!selectedRuns.length && <p>No runs for this location yet.</p>}
@@ -362,7 +441,7 @@ export default function OutputChannelManagement() {
               <article className="pipeline-run" key={run._id}>
                 <div className="pipeline-run-heading">
                   <div>
-                    <strong>{run.kind === "source" ? run.source_name : `Edition · ${run.location_name}`}</strong>
+                    <strong>Edition · {run.location_name}</strong>
                     <small>{run.location_name} · {run.period_start}–{run.period_end}</small>
                   </div>
                   <span className={`state ${run.status === "completed" ? "active" : ""}`}>

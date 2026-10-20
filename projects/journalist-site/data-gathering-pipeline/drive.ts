@@ -1,5 +1,4 @@
 import { createSign } from "node:crypto";
-import { getOutputChannel } from "@/auth";
 import type { PipelineRun } from "./types";
 
 type DriveFile = { id: string; name?: string; mimeType?: string };
@@ -115,6 +114,14 @@ export async function pipelineRunFolder(run: PipelineRun) {
   return pipelineFolder(run.drive_folder_id, kind, name, run._id);
 }
 
+export async function createOutputChannelFolder(channelId: string) {
+  const parent = await ensureFolder(getPipelineDriveFolderId(), "output-channels");
+  const folderId = await ensureFolder(parent, channelId);
+  const locations = await readLocationIndex();
+  await saveJson(folderId, "locations.json", { locations });
+  return folderId;
+}
+
 export async function pipelineFolder(driveFolderId: string, kind: "sources" | "editions", name: string, runId?: string) {
   if (!/^[A-Za-z0-9_-]{10,200}$/.test(driveFolderId)) throw new Error("Pipeline run has an invalid Drive folder ID");
   const root = await ensureFolder(driveFolderId, ".newsbee-pipeline");
@@ -161,9 +168,8 @@ export async function readJson<T>(fileId: string): Promise<T> {
 }
 
 export async function readLocationIndex() {
-  const channel = await getOutputChannel();
-  const file = await findFile(channel.driveFolderId, "locations.json");
-  if (!file) throw new Error("locations.json was not found in the output channel Drive folder");
+  const file = await findFile(getPipelineDriveFolderId(), "locations.json");
+  if (!file) throw new Error("locations.json was not found in the pipeline Drive folder");
   const data = await readJson<{ locations?: unknown }>(file.id);
   if (!Array.isArray(data.locations)) throw new Error("Drive locations.json has no locations array");
   return data.locations.flatMap((value) => {
@@ -172,4 +178,12 @@ export async function readLocationIndex() {
     if (typeof location.id !== "string" || typeof location.name !== "string") return [];
     return [{ id: location.id, name: location.name }];
   });
+}
+
+export function getPipelineDriveFolderId() {
+  const folderId = process.env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID;
+  if (!folderId || !/^[A-Za-z0-9_-]{10,200}$/.test(folderId)) {
+    throw new Error("Configure NEWSBEE_PIPELINE_DRIVE_FOLDER_ID with the shared pipeline Google Drive folder ID");
+  }
+  return folderId;
 }
