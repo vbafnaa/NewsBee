@@ -114,6 +114,28 @@ removing manual links. Legacy global source configuration is read-only through t
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
 | `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |
 
+### Configure Google Drive
+
+1. In Google Cloud Console, create or select a project, enable the **Google Drive API**,
+   and create a service account with a JSON key.
+2. Create a Drive folder for Newsbee's pipeline files. Copy its ID from the URL
+   (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
+   service account's `client_email`, granting **Editor** access. The same account needs
+   access to the output-channel folders where published editions are stored.
+3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
+   `GOOGLE_SERVICE_ACCOUNT_JSON` containing the JSON key, and
+   `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` containing the root folder ID. Alternatively, set
+   `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` instead of the
+   JSON variable. Keep credentials in Vercel's encrypted environment variables; never commit
+   the key.
+4. Redeploy the journalist site so the variables take effect.
+
+The configured pipeline root holds run artifacts and is the parent folder for channel
+folders created in **Output channel**. Each output channel stores its own Drive folder ID in
+MongoDB; the reader site reads published editions from that channel folder, not directly
+from the pipeline root. If a channel folder is changed or created manually, share it with
+the service account as well.
+
 `vercel.json` schedules the tick every minute, which needs a Vercel Pro plan.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
