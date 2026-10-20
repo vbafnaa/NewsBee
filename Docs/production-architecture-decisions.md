@@ -12,7 +12,7 @@ directory describe the project's evolution, not necessarily its current deployme
 | MongoDB Atlas | Locations, source configuration, jobs, runs, admins, output channels and signups |
 | Google Drive | Pipeline artifacts, published edition JSON, directory indexes and saved email previews |
 | Hosted model APIs | Configurable ordered fallback providers; Ollama is local-only |
-| Vercel Cron | Calls the protected journalist `/api/pipeline/tick` route every minute |
+| Vercel Cron | Optional minute calls to the protected journalist `/api/pipeline/tick` route; currently disabled |
 
 Pipeline work is split into MongoDB jobs for collection, authoring and publication rather
 than a continuously running Python worker. Each source records its outcome independently;
@@ -27,7 +27,8 @@ the browser. Journalist access checks enabled accounts in `journalist_admins`.
 
 Deploy the apps as separate Vercel projects, rooted at their respective `apps/`
 directories, with access to files outside each project root for shared code/configuration.
-The journalist project's `vercel.json` provides the minute cron schedule (Vercel Pro).
+The journalist project's `vercel.mjs` retains a commented-out minute cron schedule;
+scheduled cloud ticks are currently disabled. Re-enabling them requires Vercel Pro.
 Configure separate Drive permissions: writer for the pipeline, Viewer for the reader.
 Keep all credentials in hosting environment secrets, never in checked-in configuration.
 
