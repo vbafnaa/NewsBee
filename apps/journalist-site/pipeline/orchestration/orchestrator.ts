@@ -24,9 +24,9 @@ import type { ModelRuntime } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
-import { claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
+import { cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
 import { publishToChannels } from "./publish";
-import { failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
+import { ACTIVE_RUN_STATUSES, failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
 
 export type OrchestratorDeps = {
   db: Db;
@@ -52,7 +52,7 @@ function connectorsOf(deps: OrchestratorDeps) {
 /** Start a run for one location: today and the window come from the location's own timezone. */
 export async function startRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"]) {
   const location = await getLocation(deps.db, locationId);
-  const existing = await runs(deps.db).findOne({ location_id: location.id, status: "collecting" });
+  const existing = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (existing) return { run: existing, started: false };
   const today = localToday(location.state);
   const window = ingestWindow(today);
@@ -63,7 +63,7 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
     await runs(deps.db).insertOne(run);
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      const raced = await runs(deps.db).findOne({ location_id: location.id, status: "collecting" });
+      const raced = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
       if (raced) return { run: raced, started: false };
     }
     throw error;
@@ -77,6 +77,10 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
       dedupe_key: `collect:${run._id}:${task.source_id}`,
     });
     await updateSource(deps.db, run._id, task.source_id, { job_id: jobId });
+    if ((await getRun(deps.db, run._id))?.status === "cancelled") {
+      await cancelRunJobs(deps.db, run._id);
+      break;
+    }
   }
   log.info("run_started", { run_id: run._id, location_id: location.id, sources: tasks.length, trigger: trigger.kind, today });
   if (tasks.length === 0) await advanceToAuthoring(deps, run._id, location.id);
@@ -176,6 +180,7 @@ async function authorStart(deps: OrchestratorDeps, job: Job) {
     });
     await setRun(deps.db, run._id, { draft_id: draftId });
   }
+  if ((await getRun(deps.db, run._id))?.status !== "authoring") return { cancelled: true };
   await enqueue(deps.db, { kind: "author_story", run_id: run._id, location_id: run.location_id, payload: { draft_id: draftId, step: 0 }, dedupe_key: `author_story:${run._id}:0` });
   return { draft_id: draftId };
 }
@@ -184,6 +189,7 @@ async function authorStory(deps: OrchestratorDeps, job: Job) {
   const draftId = String(job.payload.draft_id);
   const step = Number(job.payload.step ?? 0);
   const result = await authorNextStory(authoringDeps(deps), draftId);
+  if ((await getRun(deps.db, job.run_id))?.status !== "authoring") return { cancelled: true };
   if (result.more) {
     await enqueue(deps.db, { kind: "author_story", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId, step: step + 1 }, dedupe_key: `author_story:${job.run_id}:${step + 1}` });
   } else {
@@ -193,8 +199,14 @@ async function authorStory(deps: OrchestratorDeps, job: Job) {
 }
 
 async function authorFinish(deps: OrchestratorDeps, job: Job) {
-  const run = await getRun(deps.db, job.run_id);
-  if (!run || run.status !== "authoring") return { skipped: true };
+  // Publication is the commit boundary: cancellation wins before this transition;
+  // once publishing begins, cancellation is rejected to avoid a half-published edition.
+  const run = await runs(deps.db).findOneAndUpdate(
+    { _id: job.run_id, status: "authoring" },
+    { $set: { status: "publishing", updated_at: now() } },
+    { returnDocument: "after" },
+  );
+  if (!run) return { skipped: true };
   const draftId = String(job.payload.draft_id);
   const finished = await finishAuthoring(authoringDeps(deps), draftId);
   if (!("edition" in finished) || !finished.edition) throw new Error("Authoring has unwritten stories");
@@ -244,6 +256,12 @@ async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
 export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; kinds?: readonly JobKind[] } = {}): Promise<boolean> {
   const job = await claim(deps.db, options.kinds, options.jobId);
   if (!job) return false;
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || !ACTIVE_RUN_STATUSES.includes(run.status)) {
+    await cancelRunJobs(deps.db, job.run_id);
+    await cancelClaimedJob(deps.db, job);
+    return true;
+  }
   const started = Date.now();
   const records: LogRecord[] = [];
   let executionFailed = false;
@@ -253,6 +271,12 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
       logger("job").info("job_started", { kind: job.kind, job_id: job._id, run_id: job.run_id, attempt: job.attempts });
       try {
         const result = await executeJob(deps, job);
+        if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
+          await cancelRunJobs(deps.db, job.run_id);
+          await cancelClaimedJob(deps.db, job);
+          logger("job").info("job_cancelled", { kind: job.kind, job_id: job._id, run_id: job.run_id });
+          return;
+        }
         await complete(deps.db, job, result);
         log.info("job_completed", { kind: job.kind, job_id: job._id, run_id: job.run_id, duration_ms: Date.now() - started });
       } catch (error) {
@@ -260,9 +284,18 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
           log.warn("job_lease_lost", { kind: job.kind, job_id: job._id });
           return;
         }
+        if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
+          await cancelRunJobs(deps.db, job.run_id);
+          await cancelClaimedJob(deps.db, job);
+          logger("job").info("job_cancelled", { kind: job.kind, job_id: job._id, run_id: job.run_id });
+          return;
+        }
         const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
         log.error("job_execution_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
         const outcome = await fail(deps.db, job, error, !(error instanceof PermanentJobError));
+        if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
+          await cancelRunJobs(deps.db, job.run_id);
+        }
         if (outcome === "failed") await finalFailure(deps, job, error instanceof Error ? error.message : String(error));
       }
     });

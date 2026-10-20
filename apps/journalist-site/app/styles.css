@@ -115,6 +115,7 @@ th { font-size: .82rem; }
 .tone-warning, .tone-degraded, .tone-stale { --status-ink: #76500e; --status-bg: #fff1d3; --status-line: #c49236; }
 .tone-failed, .tone-unavailable { --status-ink: #922b24; --status-bg: #fbe8e5; --status-line: #c86158; }
 .tone-running { --status-ink: #275f91; --status-bg: #e5effa; --status-line: #6b95bd; }
+.tone-cancelled { --status-ink: #5b5660; --status-bg: #eeecef; --status-line: #aaa4ae; }
 .metric-card[class*="tone-"] { border-top-color: var(--status-line, #b9b0a2); }
 .status-badge { display: inline-flex; align-items: center; gap: .4rem; padding: .25rem .65rem; border-radius: 1rem; background: var(--status-bg, #eee8dd); color: var(--status-ink, var(--muted)); font-size: .78rem; font-weight: 700; white-space: nowrap; }
 .status-badge::before { content: ""; height: .45rem; width: .45rem; border-radius: 50%; background: currentColor; flex-shrink: 0; }
@@ -146,6 +147,7 @@ th { font-size: .82rem; }
 .pipeline-steps li { flex: 1; border-top: 3px solid var(--line); padding-top: .5rem; font-size: .8rem; color: var(--muted); }
 .pipeline-steps li.complete { border-color: #367857; color: #205a43; }
 .pipeline-steps li.current { border-color: #5285b4; color: #275f91; font-weight: 700; }
+.pipeline-steps li.stopped { border-color: #aaa4ae; color: #5b5660; font-weight: 700; }
 .run-counts { display: flex; gap: .8rem; margin-bottom: .8rem; }
 .run-counts span { display: grid; gap: .2rem; font-size: .75rem; color: var(--muted); }
 .run-counts strong { color: var(--ink); font-size: 1.2rem; }

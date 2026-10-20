@@ -14,9 +14,9 @@ import { addLocationsToChannel, refreshChannelDirectory } from "../../orchestrat
 import { locationHealth } from "../../orchestration/health";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { sourceResult, type CollectedEvent, type Connector, type LocationProfile, type SourceType } from "../../connectors/types";
-import { recentJobs } from "../../orchestration/jobs";
+import { cancelRunJobs, recentJobs, runJobs } from "../../orchestration/jobs";
 import { runOne, startRun, tick } from "../../orchestration/orchestrator";
-import { getRun } from "../../orchestration/runs";
+import { cancelRun, ensureRunIndexes, getRun, RunConflict } from "../../orchestration/runs";
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
 import { FakeModel } from "../support/fake-model";
@@ -222,6 +222,72 @@ describe("orchestrator", () => {
     const jobs = await recentJobs(mongo.db, 50);
     expect(jobs.find((job) => job._id === target)?.status).toBe("completed");
     expect(jobs.filter((job) => job.kind === "collect_source" && job.status === "completed")).toHaveLength(1);
+  });
+
+  it("cancels queued jobs, keeps the old attempt, and starts a fresh run", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    const cancelled = await cancelRun(d.db, run._id, "editor");
+    await cancelRunJobs(d.db, run._id);
+    expect(cancelled).toMatchObject({ status: "cancelled", error: "Cancelled by editor" });
+    expect((await runJobs(d.db, run._id)).every((job) => job.status === "cancelled")).toBe(true);
+    await drain(d);
+    expect((await getRun(d.db, run._id))?.status).toBe("cancelled");
+    expect(await d.db.collection(COLLECTIONS.editions).countDocuments({ run_id: run._id })).toBe(0);
+
+    const restarted = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    expect(restarted.started).toBe(true);
+    expect(restarted.run._id).not.toBe(run._id);
+    await drain(d);
+    expect((await getRun(d.db, restarted.run._id))?.status).toBe("published");
+    expect((await getRun(d.db, run._id))?.status).toBe("cancelled");
+  });
+
+  it("does not let an in-flight collection advance a cancelled run", async () => {
+    const d = deps();
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    d.connectors.library.collect = async (task) => {
+      entered();
+      await blocked;
+      return { result: sourceResult(task.source_id, task.name, "ingested", "ok"), events: [] };
+    };
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    const worker = runOne(d);
+    await started;
+    await cancelRun(d.db, run._id, "editor");
+    await cancelRunJobs(d.db, run._id);
+    expect((await runJobs(d.db, run._id)).some((job) => job.status === "running")).toBe(true);
+    release();
+    await worker;
+    await drain(d);
+    expect((await runJobs(d.db, run._id)).every((job) => job.status === "cancelled")).toBe(true);
+    expect((await getRun(d.db, run._id))?.status).toBe("cancelled");
+    expect(await d.db.collection(COLLECTIONS.editions).countDocuments({ run_id: run._id })).toBe(0);
+  });
+
+  it("blocks overlapping authoring and refuses cancellation after publishing starts", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await d.db.collection(COLLECTIONS.runs).updateOne({ _id: run._id as never }, { $set: { status: "authoring" } });
+    const duplicate = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    expect(duplicate).toMatchObject({ started: false, run: { _id: run._id } });
+    await d.db.collection(COLLECTIONS.runs).updateOne({ _id: run._id as never }, { $set: { status: "publishing" } });
+    await expect(cancelRun(d.db, run._id, "editor")).rejects.toBeInstanceOf(RunConflict);
+  });
+
+  it("migrates the run index and enforces one active attempt per location", async () => {
+    const collection = mongo.db.collection(COLLECTIONS.runs);
+    await collection.createIndex({ location_id: 1 }, { unique: true, name: "one_collecting_run_per_location", partialFilterExpression: { status: "collecting" } });
+    await ensureRunIndexes(mongo.db);
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
+    expect((await collection.indexes()).map((index) => index.name)).not.toContain("one_collecting_run_per_location");
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await collection.updateOne({ _id: run._id as never }, { $set: { status: "authoring" } });
+    await expect(collection.insertOne({ ...run, _id: "overlap" as never })).rejects.toMatchObject({ code: 11000 });
   });
 
   it("shows a connector-reported failure in health even when its job completes", async () => {

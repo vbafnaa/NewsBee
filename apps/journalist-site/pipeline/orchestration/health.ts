@@ -8,7 +8,7 @@ import type { ComponentHealth, ModelRuntime } from "../model/runtime";
 import { COLLECTIONS } from "../storage/mongo";
 import { runs, type PipelineRun, type RunSource } from "./runs";
 
-export type HealthLevel = "ok" | "warning" | "failed" | "idle";
+export type HealthLevel = "ok" | "warning" | "failed" | "idle" | "cancelled";
 type ModelHealth = Omit<ComponentHealth, "status"> & { status: ComponentHealth["status"] | "failed" };
 
 export type LocationHealth = {
@@ -38,6 +38,7 @@ function sourceFailed(source: RunSource) {
 
 function level(run: PipelineRun | null, modelErrors: string[]): HealthLevel {
   if (!run) return "idle";
+  if (run.status === "cancelled") return "cancelled";
   if (run.status === "failed") return "failed";
   const failed = run.sources.some(sourceFailed);
   if (failed || modelErrors.length || (run.published?.held ?? 0) > 0) return "warning";
@@ -106,6 +107,7 @@ export async function healthSummary(db: Db, model: ModelRuntime | null) {
       ok: rows.filter((row) => row.level === "ok").length,
       warning: rows.filter((row) => row.level === "warning").length,
       failed: rows.filter((row) => row.level === "failed").length,
+      cancelled: rows.filter((row) => row.level === "cancelled").length,
       never_run: rows.filter((row) => row.level === "idle").length,
     },
     locations: rows,

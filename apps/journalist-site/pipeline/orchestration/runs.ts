@@ -7,7 +7,8 @@ import type { Db } from "mongodb";
 import type { SourceResult, SourceTask, SourceType } from "../connectors/types";
 import { COLLECTIONS } from "../storage/mongo";
 
-export type RunStatus = "collecting" | "authoring" | "published" | "failed";
+export type RunStatus = "collecting" | "authoring" | "publishing" | "published" | "failed" | "cancelled";
+export const ACTIVE_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "publishing"];
 export type SourceStatus = "pending" | "completed" | "failed";
 
 export type RunSource = {
@@ -57,16 +58,24 @@ export function runs(db: Db) {
 }
 
 export async function ensureRunIndexes(db: Db) {
+  // Install the stronger index before retiring the earlier collecting-only one.
   await runs(db).createIndexes([
     { key: { location_id: 1, created_at: -1 } },
     { key: { status: 1, created_at: -1 } },
     {
       key: { location_id: 1 },
       unique: true,
-      name: "one_collecting_run_per_location",
-      partialFilterExpression: { status: "collecting" },
+      name: "one_active_run_per_location",
+      partialFilterExpression: { status: { $in: ACTIVE_RUN_STATUSES } },
     },
   ]);
+  if ((await runs(db).indexes()).some((index) => index.name === "one_collecting_run_per_location")) {
+    try {
+      await runs(db).dropIndex("one_collecting_run_per_location");
+    } catch (error) {
+      if ((error as { codeName?: string }).codeName !== "IndexNotFound") throw error;
+    }
+  }
 }
 
 export function newRun(
@@ -116,7 +125,7 @@ export async function getRun(db: Db, runId: string) {
 export async function updateSource(db: Db, runId: string, sourceId: string, values: Partial<RunSource>) {
   const set: Record<string, unknown> = { updated_at: now() };
   for (const [key, value] of Object.entries(values)) set[`sources.$[source].${key}`] = value;
-  await runs(db).updateOne({ _id: runId }, { $set: set }, { arrayFilters: [{ "source.source_id": sourceId }] });
+  await runs(db).updateOne({ _id: runId, status: "collecting" }, { $set: set }, { arrayFilters: [{ "source.source_id": sourceId }] });
 }
 
 /**
@@ -132,14 +141,29 @@ export async function startAuthoringWhenReady(db: Db, runId: string): Promise<bo
 }
 
 export async function setRun(db: Db, runId: string, values: Partial<PipelineRun>) {
-  await runs(db).updateOne({ _id: runId }, { $set: { ...values, updated_at: now() } });
+  await runs(db).updateOne({ _id: runId, status: { $in: ACTIVE_RUN_STATUSES } }, { $set: { ...values, updated_at: now() } });
 }
 
 export async function failRun(db: Db, runId: string, error: string) {
   await runs(db).updateOne(
-    { _id: runId, status: { $in: ["collecting", "authoring"] } },
+    { _id: runId, status: { $in: ACTIVE_RUN_STATUSES } },
     { $set: { status: "failed", error, completed_at: now(), updated_at: now() } },
   );
+}
+
+export class RunConflict extends Error {}
+
+/** A terminal transition; competing publication must acquire the publishing stage first. */
+export async function cancelRun(db: Db, runId: string, by: string) {
+  const current = now();
+  const result = await runs(db).findOneAndUpdate(
+    { _id: runId, status: { $in: ["collecting", "authoring"] } },
+    { $set: { status: "cancelled", error: `Cancelled by ${by}`, completed_at: current, updated_at: current } },
+    { returnDocument: "after" },
+  );
+  if (result) return result;
+  if (!(await getRun(db, runId))) throw new Error(`Unknown run: ${runId}`);
+  throw new RunConflict("Only collecting or authoring runs can be cancelled; publication may already have started");
 }
 
 export async function recentRuns(db: Db, options: { locationId?: string; limit?: number } = {}) {

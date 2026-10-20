@@ -11,7 +11,7 @@ import { COLLECTIONS } from "../storage/mongo";
 
 export const JOB_KINDS = ["collect_source", "author_start", "author_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
-export type JobStatus = "pending" | "running" | "completed" | "failed";
+export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export const MAX_ATTEMPTS = 3;
 /** Longer than the longest function call (Vercel maxDuration 300 s) so a live job keeps its lease. */
@@ -194,6 +194,21 @@ export async function fail(db: Db, job: Job, error: unknown, retryable: boolean)
 
 export async function runJobs(db: Db, runId: string) {
   return jobs(db).find({ run_id: runId }).sort({ created_at: 1, _id: 1 }).toArray();
+}
+
+/** Discard queued work; in-flight work retains its lease until the worker exits. */
+export async function cancelRunJobs(db: Db, runId: string) {
+  return jobs(db).updateMany(
+    { run_id: runId, status: "pending" },
+    { $set: { status: "cancelled", completed_at: now(), lease_until: null, claim_token: null, error: "Run cancelled" } },
+  );
+}
+
+export async function cancelClaimedJob(db: Db, job: Job) {
+  await jobs(db).updateOne(
+    { _id: job._id, status: "running", claim_token: job.claim_token },
+    { $set: { status: "cancelled", completed_at: now(), lease_until: null, claim_token: null, error: "Run cancelled" } },
+  );
 }
 
 export async function recentJobs(db: Db, limit = 50, locationId?: string) {
