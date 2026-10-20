@@ -20,9 +20,12 @@ environment and MongoDB Database Tools installed:
 mongoimport --uri "$env:MONGODB_URI" --db "$env:MONGODB_DATABASE" --collection source_configs --jsonArray --mode upsert --upsertFields _id --file config\sources\mongodb-source-configs.json
 ```
 
-The journalist site's dashboard reads the library websites, government platforms, and
-state newsroom feeds from these MongoDB documents. Its source-management page can add,
-edit, and remove these entries in MongoDB. Those changes currently affect the journalist
-site's catalog only: backend ingestion still reads the checked-in files. The seed reflects
-only the three files listed above. It does not contain onboarded location profiles from
-SQLite or journalist-admin accounts.
+The TypeScript pipeline reads library websites, government platforms and state newsroom
+feeds from these MongoDB documents. It automatically inserts missing seed documents from
+the three checked-in source files; it does not overwrite existing documents. The portal
+exposes this global configuration read-only. Location-specific manual links are validated
+and stored separately in `location_source_links`.
+
+The import file is a snapshot of only the three files listed above. Refresh it if you
+intend to import updated checked-in seeds; upserting it replaces live global overrides.
+It does not contain onboarded location profiles or journalist-admin accounts.
