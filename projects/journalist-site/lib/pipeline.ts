@@ -1,4 +1,4 @@
-import { loadSettings } from "@/pipeline/core/config";
+import { loadSettings, rankingSettings } from "@/pipeline/core/config";
 import { createRuntime } from "@/pipeline/model/runtime";
 import { ensureJobIndexes } from "@/pipeline/orchestration/jobs";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
@@ -17,7 +17,7 @@ export async function pipelineDeps(): Promise<OrchestratorDeps> {
     throw error;
   });
   await indexes;
-  return { db, settings, store: getArtifacts(), model: createRuntime(settings) };
+  return { db, settings, store: getArtifacts(), model: createRuntime(settings), rankingModel: createRuntime(rankingSettings(settings)) };
 }
 
 export function errorResponse(error: unknown, status = 500) {

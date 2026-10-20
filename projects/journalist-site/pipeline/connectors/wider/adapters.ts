@@ -56,8 +56,10 @@ export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
     if (!title || !link || !Number.isFinite(millis) || seen.has(link)) continue;
     seen.add(link);
     const id = textOf(node.guid) ?? textOf(node.id) ?? link;
-    const summary = textOf(node.description) ?? textOf(node.summary) ?? textOf(node.content);
-    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary: plainText(summary) });
+    const summaries = [node.description, node.summary, node.content, node["content:encoded"]]
+      .map((value) => plainText(textOf(value))).filter((value): value is string => Boolean(value));
+    const summary = summaries.sort((a, b) => b.length - a.length)[0] ?? null;
+    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary });
   }
   return items.sort((a, b) => b.published.getTime() - a.published.getTime());
 }

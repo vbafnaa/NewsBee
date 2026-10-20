@@ -3,17 +3,17 @@ import { httpsLink, MAX_FEED_BYTES } from "../common";
 import { Fetcher } from "../fetcher";
 import type { ConnectorContext } from "../types";
 import { pageLinks } from "../ai-discovery";
-import { blueskySearchUrl } from "./adapters";
+import { blueskySearchUrl, sensitive } from "./adapters";
 import { publicSourceTransport } from "../public-http";
+import { trendTier, type Region } from "./regions";
 export { assertPublicReportingUrl } from "../public-http";
 
 const MAX_REPORTS = 3;
 const MAX_AGE_DAYS = 7;
 const ATTENTION = /\b(?:trending|viral|attention|public interest|search interest|searches|page views|readership)\b/i;
-const CAUSE = /\b(?:because|after|following|due to|driven by|sparked by|prompted by|as a result of)\b/i;
 const EXCLUDED_HOST = /(?:^|\.)(?:wikipedia\.org|wikimedia\.org|bsky\.app|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com)$/i;
 
-export type TrendContext = { url: string; publisher: string; published_at: string; excerpt: string; reason: string };
+export type TrendContext = { url: string; publisher: string; published_at: string; headline: string; excerpt: string };
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -47,15 +47,15 @@ export function reportingLinks(bytes: Uint8Array, since: Date) {
   return [...urls];
 }
 
-/** Require recent reporting that explicitly connects attention to a development, not mere correlation. */
-export function parseTrendReport(html: string, url: string, topic: string, today: string): TrendContext | null {
+/** Require an actual recent local development; attention is discovery metadata, not reporting. */
+export function parseTrendReport(html: string, url: string, topic: string, today: string, place: Region): TrendContext | null {
   let title = "", publisher = "", published = "", paragraph = "", script = "", scriptType = "";
   let hidden = 0, inParagraph = false, inTitle = false;
   const paragraphs: string[] = [];
   const structured: unknown[] = [];
   const parser = new Parser({
     onopentag(name, attributes) {
-      if (["script", "style", "nav", "header", "footer", "form", "noscript"].includes(name)) hidden++;
+      if (["script", "style", "nav", "aside", "header", "footer", "form", "noscript"].includes(name)) hidden++;
       if (name === "script") { scriptType = attributes.type ?? ""; script = ""; }
       if (name === "title") inTitle = true;
       if (name === "meta") {
@@ -81,7 +81,7 @@ export function parseTrendReport(html: string, url: string, topic: string, today
         }
         scriptType = "";
       }
-      if (["script", "style", "nav", "header", "footer", "form", "noscript"].includes(name)) hidden = Math.max(0, hidden - 1);
+      if (["script", "style", "nav", "aside", "header", "footer", "form", "noscript"].includes(name)) hidden = Math.max(0, hidden - 1);
     },
   }, { decodeEntities: true });
   parser.end(html);
@@ -99,42 +99,57 @@ export function parseTrendReport(html: string, url: string, topic: string, today
   structured.forEach(articleMetadata);
   const age = Date.parse(`${today}T23:59:59Z`) - Date.parse(published);
   if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 || !publisher.trim()) return null;
-  const relevant = paragraphs.filter((text) => topicMention(text, topic));
-  const explanation = relevant.find((text) => ATTENTION.test(text) && CAUSE.test(text) && text.length <= 1500);
-  if (!explanation || !topicMention(`${title} ${relevant.join(" ")}`, topic)) return null;
-  const excerpt = relevant.filter((text) => text !== explanation).slice(0, 2).join(" ");
-  return { url, publisher: publisher.trim(), published_at: published, excerpt: excerpt.length <= 2000 ? excerpt : "", reason: explanation };
+  const relevant = paragraphs.filter((text) => topicMention(`${title} ${text}`, topic)
+    && trendTier(place, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
+  // Do not let a sidebar's town name or a popularity-only paragraph establish relevance.
+  const evidence = relevant.filter((text) => !ATTENTION.test(text) && !/\b(?:pageviews|daily views|post count)\b/i.test(text));
+  if (!title.trim() || ATTENTION.test(title) || !evidence.length) return null;
+  return { url, publisher: publisher.trim(), published_at: published, headline: title.trim(),
+    excerpt: evidence.slice(0, 2).join(" ").slice(0, 4000) };
 }
 
-export async function trendContext(context: ConnectorContext, topic: string, wikipediaUrl?: string): Promise<TrendContext | null> {
+export async function trendReports(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext[]> {
   const since = new Date(Date.parse(`${context.today}T00:00:00Z`) - MAX_AGE_DAYS * 86400000);
   const urls: string[] = [];
+  let discovered = false;
+  const eligible = (url: string) => httpsLink(url) !== null && !EXCLUDED_HOST.test(new URL(url).hostname);
   const fetcher = new Fetcher(publicSourceTransport(context.transport));
   try {
-    const [, bytes] = await context.fetcher.get(blueskySearchUrl(`"${topic}"`, since), MAX_FEED_BYTES, "application/json");
-    urls.push(...reportingLinks(bytes, since));
+    const [, bytes] = await context.fetcher.get(blueskySearchUrl(`"${topic}" "${place.state_name ?? place.state_code}"`, since), MAX_FEED_BYTES, "application/json");
+    urls.push(...reportingLinks(bytes, since).filter(eligible).slice(0, MAX_REPORTS));
+    discovered = true;
   } catch (error) { context.log.warn("trend_reporting_discovery_failed", { topic, error: String(error) }); }
-  if (!urls.length && wikipediaUrl) {
+  if (wikipediaUrl) {
     try {
       const [, html] = await context.fetcher.getText(wikipediaUrl, MAX_FEED_BYTES, "text/html");
-      urls.push(...pageLinks(html, wikipediaUrl, 1000).map((link) => link.url));
+      urls.push(...pageLinks(html, wikipediaUrl, 1000).map((link) => link.url).filter(eligible).slice(0, MAX_REPORTS));
+      discovered = true;
     } catch (error) { context.log.warn("trend_reference_discovery_failed", { topic, error: String(error) }); }
   }
-  const candidates = [...new Set(urls)].filter((url) => httpsLink(url) && !EXCLUDED_HOST.test(new URL(url).hostname)).slice(0, MAX_REPORTS);
+  if (!discovered) throw new Error(`Local reporting discovery unavailable for ${topic}`);
+  const candidates = [...new Set(urls)];
+  const reports: TrendContext[] = [];
+  let fetched = 0;
   for (const url of candidates) {
     try {
       const [finalUrl, html] = await fetcher.getText(url, MAX_FEED_BYTES, "text/html");
-      const report = parseTrendReport(html, finalUrl, topic, context.today);
+      fetched++;
+      const report = parseTrendReport(html, finalUrl, topic, context.today, place);
       if (report) {
         context.log.info("trend_context_verified", { topic, url: finalUrl, publisher: report.publisher });
-        return report;
+        reports.push(report);
       }
     } catch (error) { context.log.warn("trend_reporting_fetch_failed", { topic, url, error: String(error) }); }
   }
-  context.log.info("trend_context_missing", { topic, reports_checked: candidates.length });
-  return null;
+  if (candidates.length && !fetched) throw new Error(`All linked reporting unavailable for ${topic}`);
+  if (!reports.length) context.log.info("trend_context_missing", { topic, reports_checked: candidates.length, location_id: place.location_id });
+  return reports;
+}
+
+export async function trendContext(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext | null> {
+  return (await trendReports(context, topic, place, wikipediaUrl))[0] ?? null;
 }
 
 export function reportedDescription(report: TrendContext) {
-  return `Reporting by ${report.publisher}, published ${report.published_at.slice(0, 10)}. ${report.excerpt} Source-reported explanation of attention: ${report.reason}`;
+  return `Reporting by ${report.publisher}, published ${report.published_at.slice(0, 10)}. ${report.excerpt}`;
 }

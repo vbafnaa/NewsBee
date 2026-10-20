@@ -86,6 +86,7 @@ describe("resumable edition authoring", () => {
       ["statenews:wa", "Nearby overflow", "2026-11-02", "state_news", "nearby"],
     ].map(([source_id, title, event_date, kind, tier], index) => ({ source_id, facts: { source_event_id: `extra-${index}`, title, event_date, schedule_text: "November 1, 2026", venue: "Town Hall", room: null, source_url: `https://example.org/extra/${index}`, description: "Neighbors discuss practical local resources.", kind, tier: tier ?? "local", section: tier === "region" ? "Around the county" : tier === "nearby" ? "Near town" : null } }));
     const writingOrder: string[] = [];
+    const frontLeads: string[] = [];
     const model = new FakeModel(({ prompt }) => {
       if (prompt.startsWith("Rate each candidate")) {
         const candidates = JSON.parse(prompt.split("\nCandidates:\n")[1]) as Array<{ id: string; title: string }>;
@@ -96,7 +97,11 @@ describe("resumable edition authoring", () => {
         writingOrder.push(item.title);
         return { headline: `${item.title} brings neighbors together`, summary: "Neighbors discuss practical local resources." };
       }
-      if (prompt.startsWith("You edit a friendly local community newsletter.")) return { headline: "Library one leads the edition", intro: "Neighbors can explore the week ahead." };
+      if (prompt.startsWith("You edit a friendly local community newsletter.")) {
+        const context = JSON.parse(prompt.split("\nEdition:\n")[1]) as { stories: Array<{ title: string }> };
+        frontLeads.push(context.stories[0].title);
+        return { headline: `${context.stories[0].title} leads the edition`, intro: "Neighbors can explore the week ahead." };
+      }
       return { blurb: "Discover the latest local community stories." };
     });
     const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
@@ -108,11 +113,14 @@ describe("resumable edition authoring", () => {
     while (step.more && safety++ < 20) step = await authorNextStory(deps, id);
     const output = await finishAuthoring(deps, id);
     if (!("edition" in output) || !output.edition || !("summary" in output) || !output.summary) throw new Error("Edition was not published");
-    expect(writingOrder.slice(0, 3)).toEqual(["Library one", "Board meeting", "Library two"]);
+    expect(writingOrder.slice(0, 4)).toEqual(["Regional roads", "Regional update", "County ferry", "County alert"]);
+    expect(writingOrder.slice(4)).toEqual(["Library one", "Board meeting", "Library two"]);
     expect(output.summary).toMatchObject({ local_included: 3, wider_included: 4, wider_attempted: 4, attempted: 7 });
-    expect(output.edition.items.slice(0, 3).every((item: any) => item.local)).toBe(true);
-    expect(output.edition.items.slice(3).every((item: any) => !item.local)).toBe(true);
-    expect(output.edition.items[3].section).toBe("Around the county");
+    expect(output.edition.items.slice(0, 4).every((item) => item.kind === "state_news")).toBe(true);
+    expect(output.edition.items.slice(4).every((item) => item.section === "Upcoming events")).toBe(true);
+    expect(output.edition.items[0].section).toBe("Around the county");
+    expect(frontLeads.length).toBeGreaterThan(0);
+    expect(frontLeads.every((title) => title === "Regional roads")).toBe(true);
   });
 
   it("reuses checked story prose by evidence, model and validation policy", async () => {

@@ -1,6 +1,6 @@
 /** Provider onboarding from env vars, the OpenAI-compatible adapter and ordered fallback. */
 import { afterEach, describe, expect, it } from "vitest";
-import { loadSettings, modelProviders } from "../../core/config";
+import { loadSettings, modelProviders, rankingCandidateLimit, rankingSettings } from "../../core/config";
 import type { HttpRequest, HttpTransport } from "../../core/http";
 import { logger, setLogSink, type LogRecord } from "../../core/log";
 import { createRuntime, FallbackRuntime, GeminiRuntime, ModelUnavailableError, OpenAICompatibleRuntime, type ModelRuntime } from "../../model/runtime";
@@ -35,6 +35,19 @@ afterEach(() => {
 });
 
 describe("model provider config", () => {
+  it("prefers only hosted providers for expanded ranking while preserving explicit Ollama-only mode", () => {
+    const local = loadSettings(env({}));
+    expect(rankingSettings(local)).toBe(local);
+    expect(rankingCandidateLimit(local)).toBe(5);
+    const mixed = loadSettings(env({
+      NEWSBEE_MODEL_PROVIDERS: "ollama,gemini,groq",
+      NEWSBEE_LLM_GROQ_BASE_URL: "https://api.groq.com/openai/v1",
+      NEWSBEE_LLM_GROQ_MODEL: "openai/gpt-oss-120b",
+    }));
+    expect(rankingSettings(mixed).modelProviders.map(({ name }) => name)).toEqual(["gemini", "groq"]);
+    expect(mixed.modelProviders[0].name).toBe("ollama");
+    expect(rankingCandidateLimit(mixed)).toBe(15);
+  });
   it("defaults to Ollama locally and Gemini in cloud mode", () => {
     expect(modelProviders(env({}), "local").map((item) => item.name)).toEqual(["ollama"]);
     expect(modelProviders(env({}), "cloud").map((item) => item.name)).toEqual(["gemini"]);
