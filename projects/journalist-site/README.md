@@ -48,6 +48,12 @@ is failed when none can serve requests and warning when running on a fallback.
 Hosted structured calls reserve at least 4,096 tokens for reasoning and output; story-length
 limits and publication validation remain unchanged.
 
+Ranking prefers the configured **hosted providers only**, in their listed order, whenever
+any are configured; it does not silently spill the larger workload onto Ollama. No new API
+key is needed if Gemini/Groq is already configured. Ollama-only configuration remains
+available and uses the smaller candidate pool. Hosted APIs may impose rate limits or
+charges; a free tier is not an unlimited quota.
+
 ## Test
 
 ```text
@@ -60,12 +66,22 @@ npm run lint        # tsc --noEmit
 One run per location; each step is a job in MongoDB `pipeline_jobs`, sized for one Vercel
 function call, and `/api/pipeline/tick` (cron every minute) runs them.
 
-1. **Collect**: one job per source (library, meetings, hazards, state news, trending). Each
-   source keeps its own top 5 stories. Failed sources are retried, then recorded; the run
-   continues.
-2. **Author**: after every source finishes, stories are ranked across sources and written one
-   per job by the model. Each story gets all validation checks and one retry; failures are
-   held with their reasons.
+1. **Collect**: one job per source (library, meetings, hazards, state news, trending).
+   Rule-based preselection keeps up to **15 candidates per source** with hosted models
+   configured (5 in Ollama-only mode); the combined pool is capped again at the same
+   limit per connector type. With five types, at most 75 candidates reach hosted ranking,
+   rather than 25. State feeds retain up to 25 geographically relevant items per newsroom,
+   use the richest available RSS/Atom content and exclude announcements older than 14
+   days or future-dated items. Older onboarded locations without a government profile
+   get a real meeting-discovery task rather than silently skipping meetings.
+   Failed sources are retried, then recorded without blocking the other sources.
+2. **Author**: score candidates in batches of at most 12 with up to 600 characters of
+   source context for hosted ranking (280 for Ollama). Retry missing/invalid ratings once,
+   then report deterministic fallback scores explicitly. Ranking reports retain provider,
+   model, pool size, attempts, errors and fallback counts. News candidates are authored
+   before upcoming listings, preferring town news to wider news. Write one story per job,
+   with validation and one retry; failures are held with reasons. The edition remains
+   bounded at 9 items and at most 4 county/nearby items, not 75 authored stories.
 3. **Publish**: the edition and email preview (saved, never sent) go to every enabled output
    channel that selects the location.
 
@@ -75,11 +91,22 @@ scheduler and queue, plus 7/30-day charts filtered by location: completed/failed
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
 
-Articles use short reported-style prose (up to 120 words), keep dates/venues separate,
+Articles use short reported-style prose (up to 120 words), prefer dates/venues separately,
 and receive complete-headline and unsupported-claim checks with one retry before holding.
+Source-supported date context is allowed in event prose; mentioning the headline in a
+summary is not itself a publication failure. Invented date words, unsupported factual
+claims, repeated sentences, incomplete headlines, sensitive topics, unsafe source URLs
+and geographic mismatches are still rejected. Presentation relaxations do not authorize
+inventing missing context or dropping the sourced explanation required for trends.
 Checks are rule-based safeguards, not a guarantee of factual entailment. Trend counts
 measure attention, not its cause: a trend needs recent linked reporting explicitly
 explaining the underlying story and attention; unexplained trends are omitted.
+
+The published newsletter puts news articles first, followed by **Upcoming events**
+(library events and public-meeting previews). Recorded meeting outcomes remain news.
+The reader applies the same grouping to older editions without changing their stored copy,
+and hides an empty upcoming section. New edition headlines lead with news when available;
+an event can lead an event-only edition.
 
 ## Connectors & links
 

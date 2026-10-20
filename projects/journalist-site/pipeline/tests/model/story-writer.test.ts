@@ -21,7 +21,7 @@ describe("story writing validation", () => {
   it("validates headline identity, prose, claims, dates and repetitions", () => {
     expect(validateItem(story, draft("Build and program small robots with LEGO kits. Ages 8 to 12 can join in."))).toEqual([]);
     expect(validateItem(story, draft("Build robots. Win a raffle."))).toContain("summary:unsupported_claim_word:raffle");
-    expect(validateItem(story, draft("Build robots on Tuesday."))).toContain("summary:repeats_when_where");
+    expect(validateItem(story, draft("Build robots on Tuesday."))).toContain("summary:unsupported_date_word:tuesday");
     expect(validateItem(story, draft("Build robots. Build robots."))).toContain("summary:repeated_sentence");
     expect(validateItem(story, draft("Build robots.", "Kids have fun"))).toContain("headline:drops_event_name");
   });
@@ -61,11 +61,10 @@ describe("story writing validation", () => {
     ["Read more at https://example.org.", "summary:link_or_handle"],
     ["Build robots. They create. Everyone learns. Neighbors share. Skills develop. People connect.", "summary:too_many_sentences"],
     ["Build robots. Win a raffle.", "summary:unsupported_claim_word:raffle"],
-    ["Build robots on Tuesday.", "summary:repeats_when_where"],
+    ["Build robots on Tuesday.", "summary:unsupported_date_word:tuesday"],
     ["Build robots", "summary:unfinished_sentence"],
     ["- Build robots.", "summary:list_formatting"],
     ["Build robots. Build robots.", "summary:repeated_sentence"],
-    ["Robot Lab welcomes young builders. Build robots.", "summary:repeats_headline"],
     ["Build robots.\u7121", "summary:foreign_characters"],
   ])("holds a story validation violation: %s", (summary, error) => {
     expect(validateItem(story, draft(summary))).toContain(error);
@@ -73,8 +72,16 @@ describe("story writing validation", () => {
   it("keeps news date policy and model prompts aligned", () => {
     const news = { ...story, kind: "state_news" };
     expect(validateItem(news, draft("The U.S. Geological Survey published this on Tuesday.", "Robot Lab publishes news"))).not.toContain("summary:repeats_when_where");
-    expect(itemPrompt(story)).toContain("Do not mention days, dates, times or the location");
+    expect(itemPrompt(story)).toContain("Mention a deadline or other date in prose only when it is stated in the source");
     expect(itemPrompt({ ...story, title: "Café Robot Lab" })).toContain("Caf\\u00e9 Robot Lab");
+  });
+  it("allows grounded date context and headline overlap without weakening factual or repetition checks", () => {
+    const deadline = { ...story, description: `${story.description} Apply by Tuesday.` };
+    expect(validateItem(deadline, draft("Apply by Tuesday to build small robots."))).toEqual([]);
+    expect(validateItem(deadline, draft("Apply by Wednesday to build small robots."))).toContain("summary:unsupported_date_word:wednesday");
+    expect(validateItem(story, draft("Robot Lab welcomes young builders. Build robots with LEGO kits."))).toEqual([]);
+    expect(validateItem(story, draft("Build robots. Build robots."))).toContain("summary:repeated_sentence");
+    expect(validateItem(story, draft("Builders may explore robot designs."))).toEqual([]);
   });
   it("rejects the truncated Vancouver front and dangling item headlines", () => {
     const vancouver = { id: "tax", title: "Business Tax Basics with the Department of Revenue", description: "Washington business taxes and excise tax filing." };

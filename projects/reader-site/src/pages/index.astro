@@ -79,6 +79,10 @@ const apiUrl = "";
         <p id="edition-intro" class="deck"></p>
         <div id="edition-lead"></div>
         <div id="edition-items" class="columns"></div>
+        <section id="upcoming-events" aria-labelledby="upcoming-events-title" hidden>
+          <h2 id="upcoming-events-title">Upcoming events</h2>
+          <div id="upcoming-items" class="columns"></div>
+        </section>
         <footer>
           <p id="edition-window"></p>
           <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official county, nearby-town and trend sources. Not independent reporting. Check the original source before you go.</p>
@@ -86,6 +90,7 @@ const apiUrl = "";
       </article>
     </main>
     <script>
+      import { newsletterSections } from "../../../../shared/newsletter-layout";
       type Listing = { location_id: string; location_name: string; edition_id: string | null };
       type Town = { id: string; name: string };
       type Item = {
@@ -162,7 +167,7 @@ const apiUrl = "";
         const section = document.createElement("section");
         section.className = lead ? `story lead${repeatsFront ? " repeats-front" : ""}` : "story";
         if (item.story_id) section.id = `story-${item.story_id}`;
-        if (item.section) section.append(text("p", item.section, "kicker"));
+        if (item.section && item.section !== "Upcoming events") section.append(text("p", item.section, "kicker"));
         section.append(text("h3", item.headline), text("p", item.blurb, "blurb"));
         section.append(text("p", item.when_where, "when-where"));
         const labels = {
@@ -402,20 +407,16 @@ const apiUrl = "";
               text("p", `Correction (${new Date(notice.created_at * 1000).toLocaleDateString("en-US")}): ${notice.reason}`),
             ),
           );
-          const items = edition.items;
-          // Town news leads; county or nearby stories lead only when there is no town news.
-          const localItems = items.filter((item) => item.local !== false);
-          const pool = localItems.length ? localItems : items;
-          const ranked = pool.filter((item) => item.rank !== null);
-          const lead = ranked.length
-            ? ranked.reduce((best, item) => (item.rank! < best.rank! ? item : best))
-            : pool[0];
+          const { news, upcoming } = newsletterSections(edition.items);
+          const lead = news[0];
           document.querySelector("#edition-lead")!.replaceChildren(
             ...(lead ? [story(lead, true, same(lead.headline, edition.headline))] : []),
           );
           document
             .querySelector("#edition-items")!
-            .replaceChildren(...items.filter((item) => item !== lead).map((item) => story(item, false)));
+            .replaceChildren(...news.filter((item) => item !== lead).map((item) => story(item, false)));
+          document.querySelector<HTMLElement>("#upcoming-events")!.hidden = upcoming.length === 0;
+          document.querySelector("#upcoming-items")!.replaceChildren(...upcoming.map((item) => story(item, false)));
           article.hidden = false;
           status.textContent = "";
         } catch (error) {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
-import { configuredModel } from "../core/config";
+import { configuredModel, rankingCandidateLimit } from "../core/config";
 import type { Logger } from "../core/log";
 import type { SourceResult, CollectedEvent } from "../connectors/types";
 import { collapse, whenWhere, weekLabel, type SourceEvent, type Story } from "./stories";
@@ -14,6 +14,7 @@ import * as policy from "../editorial/policy";
 import * as withdrawals from "../editorial/withdrawals";
 import { previewContent } from "../email/preview";
 import { sourceType, rank as rankSource } from "../ranking";
+import { isUpcoming, newsletterOrder } from "../../../../shared/newsletter-layout";
 
 export const DEFAULT_MODEL = "qwen3:4b";
 export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}`;
@@ -24,7 +25,7 @@ export const MAX_WIDER_ATTEMPTS = 6;
 export const WIDER_TIERS = new Set(["region", "nearby"]);
 export const WIDER_SOURCES = ["hazards:", "statenews:", "trending:"] as const;
 export const TOP_PER_SOURCE = 5;
-export type AuthoringDeps = { db: Db; model: ModelRuntime; settings: Settings; log: Logger };
+export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; settings: Settings; log: Logger };
 export type AuthoringInput = { location: { id: string; name: string }; runId: string; today: string; window: [string, string]; events: SourceEvent[]; sourceResults: SourceResult[] };
 type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule"; rank: number; source_id: string; source_type: string; tier: string; section: string | null };
 type EditionPayload = { id: string; location_id: string; location_name: string; window_start: string; window_end: string; published_at: number; headline: string; intro: string; items: Array<Record<string, any>>; coverage: string[]; corrections: Array<{ story_id: string; reason: string; created_at: number }> };
@@ -33,16 +34,16 @@ type DraftDoc = { id: string; run_id: string; location_id: string; location_name
 function community(name: string) { return name.split(",")[0]; }
 function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: story.description, occurrences: story.occurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
 function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
-export function shortlistSource(events: SourceEvent[], kind: string): { stories: Story[]; summary: Record<string, number> } {
+export function shortlistSource(events: SourceEvent[], kind: string, limit = TOP_PER_SOURCE): { stories: Story[]; summary: Record<string, number> } {
   const stories = collapse(events).filter((story) => sourceType(story.first.source_id) === kind);
-  const ranked = rankSource(kind, stories).slice(0, TOP_PER_SOURCE);
-  return { stories: ranked, summary: { stories: stories.length, considered: stories.length, shortlisted: ranked.length } };
+  const ranked = rankSource(kind, stories).slice(0, limit);
+  return { stories: ranked, summary: { stories: stories.length, considered: stories.length, shortlisted: ranked.length, preselection_limit: limit } };
 }
-function shortlist(stories: Story[]) {
+function shortlist(stories: Story[], limit: number) {
   const grouped = new Map<string, Story[]>();
   for (const story of stories) { const kind = sourceType(story.first.source_id); const list = grouped.get(kind) ?? []; list.push(story); grouped.set(kind, list); }
   const selected: Story[] = []; const summary: Record<string, { stories: number; considered: number; shortlisted: number }> = {};
-  for (const kind of [...grouped.keys()].sort()) { const all = grouped.get(kind)!; const top = rankSource(kind, all).slice(0, TOP_PER_SOURCE); selected.push(...top); summary[kind] = { stories: all.length, considered: all.length, shortlisted: top.length }; }
+  for (const kind of [...grouped.keys()].sort()) { const all = grouped.get(kind)!; const top = rankSource(kind, all).slice(0, limit); selected.push(...top); summary[kind] = { stories: all.length, considered: all.length, shortlisted: top.length }; }
   return { selected, summary };
 }
 function nextCandidate(pending: RankedCandidate[], covered: Set<string>) { return pending.find((item) => !covered.has(item.source_type)) ?? pending[0]; }
@@ -73,10 +74,14 @@ export async function startAuthoring(deps: AuthoringDeps, input: AuthoringInput)
   if (old) return old.id;
   const start = Date.now();
   const allStories = collapse(input.events);
-  const picked = shortlist(allStories);
+  const limit = rankingCandidateLimit(deps.settings);
+  const picked = shortlist(allStories, limit);
   const withdrawn = await withdrawals.forLocation(deps.db, input.location.id);
   const activeStories = picked.selected.filter((story) => !withdrawals.matching(story, withdrawn).length);
-  const [ranked, rankSummary] = await ranking.rank(deps.model, storyCandidates(activeStories));
+  const rankingModel = deps.rankingModel ?? deps.model;
+  const [ranked, rankSummary] = await ranking.rank(rankingModel, storyCandidates(activeStories));
+  Object.assign(rankSummary, { provider: rankingModel.provider, model: rankingModel.model, preselection_limit: limit });
+  if (Number(rankSummary.fallback_ratings)) deps.log.warn("ranking_fallback_used", { run_id: input.runId, ...rankSummary });
   rankSummary.sources = picked.summary;
   const ids = new Map<string, Story>(activeStories.map((story) => [story.id, story]));
   const sourceResults = input.sourceResults ?? [];
@@ -113,7 +118,11 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
     await collection.updateOne({ id: draftId }, { $set: { status: "ready", attempted: entries.length, held: entries.filter((entry) => entry.disposition === "held").length, held_reasons: heldReasons(entries) } });
     return { more: false, done: true };
   }
-  const candidate = canLocal ? nextCandidate(local, covered) : nextCandidate(wider, covered);
+  const localNews = canLocal ? local.filter((item) => !isUpcoming(item.kind)) : [];
+  const widerNews = canWider ? wider.filter((item) => !isUpcoming(item.kind)) : [];
+  const candidate = localNews.length ? nextCandidate(localNews, covered)
+    : widerNews.length ? nextCandidate(widerNews, covered)
+    : canLocal ? nextCandidate(local, covered) : nextCandidate(wider, covered);
   const story = collapse(draft.events).find((item) => item.id === candidate.id);
   if (!story) throw new Error(`Story no longer exists in draft: ${candidate.id}`);
   const candidateForWrite = { ...candidate, community_id: draft.location_id } as RankedCandidate & { community_id: string };
@@ -164,14 +173,17 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   if (draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary };
   const entries = await getEntries(deps.db, draftId);
   if (entries.length < draft.candidates.length && draft.status !== "ready") return { done: false, more: true };
-  const passed = entries.filter((entry) => entry.disposition !== "held").sort((a, b) => (a.tier === "local" ? 0 : 1) - (b.tier === "local" ? 0 : 1) || Number(a.result.ranking.rank) - Number(b.result.ranking.rank));
+  const passed = entries.filter((entry) => entry.disposition !== "held").sort((a, b) => newsletterOrder(
+    { kind: a.result.story.kind ?? "event", local: a.tier === "local", rank: Number(a.result.ranking.rank) },
+    { kind: b.result.story.kind ?? "event", local: b.tier === "local", rank: Number(b.result.ranking.rank) },
+  ));
   const itemStories = passed.map((entry) => entry.result.story as writer.StoryInput);
   const itemDrafts = passed.map((entry) => entry.result.draft as writer.ItemDraft);
   const week = weekLabel(draft.window_start, draft.window_end);
   const front = await writer.writeFront(deps.model, community(draft.location_name), week, itemStories, itemDrafts);
   const email = await writer.writeEmail(deps.model, community(draft.location_name), week, itemStories, itemDrafts, { headline: String(front.headline), intro: String(front.intro) });
   const now = Date.now() / 1000;
-  const items = passed.map((entry) => ({ story_id: entry.result.story.id, headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date, source_url: entry.result.source_url ?? null, rank: entry.result.ranking.rank, kind: entry.result.story.kind ?? "event", source_name: draft.source_results.find((result) => result.source_id === entry.source_id)?.name ?? "Local source", section: entry.result.section ?? null, local: entry.tier === "local" }));
+  const items = passed.map((entry) => ({ story_id: entry.result.story.id, headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date, source_url: entry.result.source_url ?? null, rank: entry.result.ranking.rank, kind: entry.result.story.kind ?? "event", source_name: draft.source_results.find((result) => result.source_id === entry.source_id)?.name ?? "Local source", section: isUpcoming(entry.result.story.kind ?? "event") ? "Upcoming events" : entry.result.section ?? null, local: entry.tier === "local" }));
   const payload: EditionPayload = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }> };
   if (!validEditionShape(payload)) throw new Error("Generated edition does not match the published edition contract");
   const emailPreview = previewContent(draft.location_name, draft.location_id, { headline: payload.headline, intro: payload.intro, email: email as { blurb?: string } });

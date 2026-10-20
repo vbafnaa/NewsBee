@@ -154,23 +154,21 @@ export async function collectMeetingLink(context: Parameters<Connector["collect"
 export const meetingsConnector: Connector = {
   type: "meetings",
   sources(location: LocationProfile) {
-    if (!location.government) return [];
     const government = location.government;
-    return [{ source_id: sourceId(government), name: sourceName(location), type: "meetings", params: { government } }];
+    return [{ source_id: sourceId(government), name: sourceName(location), type: "meetings", params: government ? { government } : {} }];
   },
   async collect(task: SourceTask, context): Promise<CollectedSource> {
     const original = (task.params?.government as GovernmentSource | undefined) ?? context.location.government;
-    if (!original) return { result: sourceResult(task.source_id, task.name, "no_feed", "No government meeting platform configured"), events: [] };
     const fetcher = new Fetcher(context.transport, USER_AGENT);
-    let government = original;
+    let government: GovernmentSource = original ?? { status: "pending", platform: null, tenant: null, website: null, wikidata_id: null, pages_checked: [], detail: "Government source discovery pending" };
     let method: "cache" | "rules" | "ai" = "rules";
     const cached = await context.linkCache.get(context.location.id, task.source_id);
     if (cached) {
-      const restored = cacheGovernment(original, cached);
+      const restored = cacheGovernment(government, cached);
       if (restored) { government = restored; method = "cache"; }
       else await context.linkCache.invalidate(context.location.id, task.source_id);
     }
-    if (!usablePlatform(government) && ["no_platform", "unresolved_website", "blocked", "failed"].includes(government.status)) {
+    if (!usablePlatform(government) && ["no_platform", "unresolved_website"].includes(government.status)) {
       const skipped = initialResult(context.location, government);
       context.log.info("government_meetings_result", { source_id: skipped.source_id, status: skipped.status, meetings: 0, skipped: {}, detail: skipped.detail });
       return { result: skipped, events: [] };
@@ -183,6 +181,7 @@ export const meetingsConnector: Connector = {
         method = discovered.discovery_method ?? "rules";
         await cacheEntry(context, task, government, method === "ai" ? "ai" : "rules");
       } else {
+        context.log.warn("government_discovery_unavailable", { location_id: context.location.id, status: discovered.status, detail: discovered.detail });
         const skipped = initialResult(context.location, discovered);
         skipped.source_id = sourceId(discovered);
         skipped.link_discovery = { method: discovered.discovery_method ?? "rules" };

@@ -122,3 +122,13 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
 export function configuredModel(settings: Settings) {
   return settings.modelProviders[0]?.model ?? null;
 }
+
+export function rankingSettings(settings: Settings): Settings {
+  const hosted = settings.modelProviders.filter((provider) => provider.kind !== "ollama");
+  return hosted.length ? { ...settings, modelProviders: hosted } : settings;
+}
+
+/** More recall before hosted scoring, without making the local-model path more expensive. */
+export function rankingCandidateLimit(settings: Settings) {
+  return settings.modelProviders.some((provider) => provider.kind !== "ollama") ? 15 : 5;
+}

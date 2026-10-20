@@ -9,7 +9,7 @@
  * Every step is one bounded job, so it fits one function call and survives restarts.
  */
 import type { Db } from "mongodb";
-import type { Settings } from "../core/config";
+import { rankingCandidateLimit, type Settings } from "../core/config";
 import { fetchTransport, type HttpTransport } from "../core/http";
 import { logger, type Logger } from "../core/log";
 import { ingestWindow, localToday } from "../core/time";
@@ -33,6 +33,7 @@ export type OrchestratorDeps = {
   store: ArtifactStore;
   settings: Settings;
   model: ModelRuntime;
+  rankingModel?: ModelRuntime;
   transport?: HttpTransport;
   connectors?: Record<SourceType, Connector>;
   log?: Logger;
@@ -130,7 +131,7 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   if (typeof manualId === "string" && !manual) throw new PermanentJobError("Manual link was removed before collection");
   const collected: CollectedSource = manual ? await collectManualLink(manual, context) : await connector.collect(task, context);
   const events: SourceEvent[] = collected.events.map((facts) => ({ source_id: task.source_id, facts }));
-  const { stories, summary } = shortlistSource(events, task.type);
+  const { stories, summary } = shortlistSource(events, task.type, rankingCandidateLimit(deps.settings));
   const chosen = new Set(stories.flatMap((story) => story.occurrences.map((item) => `${item.source_id}\u0000${item.source_event_id}`)));
   const kept = events.filter((event) => chosen.has(`${event.source_id}\u0000${event.facts.source_event_id}`));
   const id = `${run._id}:${task.source_id}`;
@@ -151,7 +152,7 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
 }
 
 function authoringDeps(deps: OrchestratorDeps) {
-  return { db: deps.db, model: deps.model, settings: deps.settings, log: deps.log ?? logger("authoring") };
+  return { db: deps.db, model: deps.model, rankingModel: deps.rankingModel, settings: deps.settings, log: deps.log ?? logger("authoring") };
 }
 
 async function authorStart(deps: OrchestratorDeps, job: Job) {

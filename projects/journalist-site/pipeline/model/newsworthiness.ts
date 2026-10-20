@@ -2,10 +2,10 @@
 import type { ModelRuntime } from "./runtime";
 import { compareText } from "../editions/stories";
 
-export const RANKING_POLICY = "newsworthiness_v3";
+export const RANKING_POLICY = "newsworthiness_v4_recall";
 export const WEIGHTS = { civic: 3, appeal: 2, special: 1 } as const;
 export const BATCH_SIZE = 12;
-export const DESCRIPTION_PREVIEW = 280;
+export const DESCRIPTION_PREVIEW = 600;
 export const MEETING_KINDS = new Set(["meeting_preview", "meeting_outcome"]);
 export const NEWS_KINDS = new Set(["state_news", "earthquake", "trending_topic", "social_trend"]);
 export const AREAS: Record<string, string> = { local: "town", region: "county", nearby: "nearby" };
@@ -59,8 +59,8 @@ export function pythonJson(value: unknown): string {
   return output;
 }
 
-export function prompt(batch: Candidate[]) {
-  const data = batch.map((item) => ({ id: item.id, title: item.title, description: Array.from(item.description || "").slice(0, DESCRIPTION_PREVIEW).join(""), kind: item.kind ?? "event", area: AREAS[item.tier ?? "local"] ?? "town", occurrences: item.occurrences, venues: item.venues }));
+export function prompt(batch: Candidate[], descriptionPreview = DESCRIPTION_PREVIEW) {
+  const data = batch.map((item) => ({ id: item.id, title: item.title, description: Array.from(item.description || "").slice(0, descriptionPreview).join(""), kind: item.kind ?? "event", area: AREAS[item.tier ?? "local"] ?? "town", occurrences: item.occurrences, venues: item.venues }));
   return `${RUBRIC}\nOutput JSON matching this schema:\n${pythonJson(RatingsSchema)}\nCandidates:\n${pythonJson(data)}`;
 }
 
@@ -71,22 +71,30 @@ function parseRatings(value: unknown, wanted: Set<string>): Map<string, Rating> 
     if (!raw || typeof raw !== "object") throw new Error("Invalid rating");
     const item = raw as Record<string, unknown>;
     if (typeof item.id !== "string" || !CATEGORIES.includes(item.category as Category) || !["civic", "appeal", "special"].every((key) => Number.isInteger(item[key]) && Number(item[key]) >= 0 && Number(item[key]) <= 3) || Object.keys(item).some((key) => !["id", "category", "civic", "appeal", "special"].includes(key))) throw new Error("Invalid rating");
-    if (wanted.has(item.id) && !ratings.has(item.id)) ratings.set(item.id, item as unknown as Rating);
+    if (!wanted.has(item.id) || ratings.has(item.id)) throw new Error("Ranking returned an unexpected or duplicate candidate ID");
+    ratings.set(item.id, item as unknown as Rating);
   }
   return ratings;
 }
 
 async function rateBatch(runtime: ModelRuntime, batch: Candidate[]) {
   const started = Date.now();
-  const report: Record<string, unknown> = { size: batch.length, fallback: 0 };
+  const report: Record<string, unknown> = { size: batch.length, fallback: 0, attempts: 0, errors: [] as string[] };
   const ratings = new Map<string, Rating>();
-  try {
-    const generation = await runtime.generateStructured(prompt(batch), RatingsSchema, { numCtx: 4096, numPredict: 1200, keepAlive: "10m" });
-    if (!generation.done || generation.done_reason === "length") throw new Error("Ranking did not finish within the output budget");
-    const parsed = parseRatings(JSON.parse(generation.response), new Set(batch.map((item) => item.id)));
-    for (const [id, rating] of parsed) ratings.set(id, rating);
-  } catch (error) {
-    report.error = `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const missing = batch.filter((item) => !ratings.has(item.id));
+    if (!missing.length) break;
+    report.attempts = attempt + 1;
+    try {
+      const local = runtime.provider === "ollama";
+      const generation = await runtime.generateStructured(prompt(missing, local ? 280 : DESCRIPTION_PREVIEW), RatingsSchema, { numCtx: local ? 4096 : 8192, numPredict: local ? 1200 : 1800, keepAlive: "10m" });
+      if (!generation.done || generation.done_reason === "length") throw new Error("Ranking did not finish within the output budget");
+      const parsed = parseRatings(JSON.parse(generation.response), new Set(missing.map((item) => item.id)));
+      for (const [id, rating] of parsed) ratings.set(id, rating);
+      if (parsed.size !== missing.length) (report.errors as string[]).push(`Missing ${missing.length - parsed.size} candidate ratings`);
+    } catch (error) {
+      (report.errors as string[]).push(`${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   const fallbackIds = batch.filter((item) => !ratings.has(item.id)).map((item) => item.id);
   for (const item of batch) if (!ratings.has(item.id)) ratings.set(item.id, fallbackRating(item));

@@ -149,6 +149,31 @@ describe("orchestrator", () => {
     expect(kinds.filter((kind) => kind === "collect_source")).toHaveLength(5);
     expect(kinds).toContain("author_finish");
   });
+  it("retains 15 hosted candidates through both shortlist stages and uses the injected ranking model", async () => {
+    const base = deps();
+    const libraryEvents = Array.from({ length: 20 }, (_, index) => event(`workshop-${index}`, `Workshop ${String(index).padStart(2, "0")}`, 2));
+    const rankingModel = new FakeModel(({ prompt }) => {
+      const candidates = JSON.parse(prompt.split("\nCandidates:\n")[1]) as Array<{ id: string; title: string }>;
+      return { ratings: candidates.map(({ id, title }) => ({ id, category: "other", civic: title === "Workshop 14" ? 3 : 0, appeal: 0, special: 0 })) };
+    });
+    const d = { ...base,
+      settings: loadSettings({ ...process.env, NEWSBEE_ROOT: dir, NEWSBEE_MODEL_PROVIDERS: "gemini" }),
+      rankingModel,
+      connectors: { ...base.connectors, library: fakeConnector("library", () => "ok", libraryEvents) },
+    };
+    const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await drain(d);
+    const source = (await getRun(mongo.db, run._id))?.sources.find(({ source_id }) => source_id === "library:main");
+    expect(source).toMatchObject({ event_count: 20, shortlisted: 15 });
+    const draft = await mongo.db.collection(COLLECTIONS.editions).findOne({ run_id: run._id });
+    expect(draft?.source_summary.library).toMatchObject({ considered: 15, shortlisted: 15 });
+    expect(draft?.ranking).toMatchObject({ provider: "fake", preselection_limit: 15, candidates: 16, fallback_ratings: 0 });
+    expect(draft?.candidates[0].title).toBe("Workshop 14");
+    const edition = await latestPublished({ db: d.db, settings: d.settings, model: d.model, log: logger("test") }, LOCATION.id);
+    expect(edition?.items.some(({ headline }) => headline.startsWith("Workshop 14"))).toBe(true);
+    expect(rankingModel.calls).toHaveLength(2);
+    expect(base.model.calls.some(({ prompt }) => prompt.startsWith("Rate each candidate"))).toBe(false);
+  });
 
   it("still publishes when a source fails every attempt, and records why", async () => {
     const d = deps({ meetings: "throw" });

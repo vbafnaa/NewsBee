@@ -54,6 +54,19 @@ it("parses RSS and Atom safely, orders feed items, and rejects unsafe XML", () =
   expect(() => parseNewsFeed(new TextEncoder().encode('<!DOCTYPE x [<!ENTITY a "b">]><rss/>'))).toThrow(FeedFormatError);
   expect(() => parseNewsFeed(new TextEncoder().encode("<rss><channel>"))).toThrow(FeedFormatError);
 });
+it("uses longer encoded article content instead of discarding it behind a short feed teaser", () => {
+  const rss = new TextEncoder().encode(`<rss xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item><title>Road changes</title><link>https://gov.example/change</link><pubDate>Sat, 17 Oct 2026 00:00:00 GMT</pubDate><description>Read more.</description><content:encoded><![CDATA[<p>Auburn bridge lanes close for repairs, with a signed detour.</p>]]></content:encoded></item></channel></rss>`);
+  expect(parseNewsFeed(rss)[0].summary).toBe("Auburn bridge lanes close for repairs, with a signed detour.");
+});
+it("allows up to 25 relevant recent items per newsroom, while retaining freshness and geographic filters", async () => {
+  const feedItems = Array.from({ length: 30 }, (_, n) => `<item><title>Auburn service update ${n}</title><link>https://gov.example/${n}</link><pubDate>Sat, 17 Oct 2026 00:00:00 GMT</pubDate><description>Auburn road maintenance details.</description></item>`).join("");
+  const replay = new ReplayTransport().on("https://gov.example/rss.xml", { body: `<rss><channel>${feedItems}</channel></rss>` })
+    .on("https://dot.example/rss.xml", fixtureResponse("empty-rss.xml"));
+  const result = await stateNewsConnector.collect(newsTask, context(replay));
+  expect(result.events).toHaveLength(25);
+  expect(result.result.skipped_unusable.over_limit).toBe(5);
+  expect(result.events.every(({ tier }) => tier === "local")).toBe(true);
+});
 
 it("parses USGS, Wikimedia, and Bluesky aggregate fixture data", () => {
   const quakes = parseUsgs(fixture("wider/usgs.geojson"), 47.3073, -122.2285);
@@ -108,9 +121,9 @@ it("keeps only local or nearby state news and filters sensitive and old items", 
   expect(result.result).toMatchObject({ status: "ingested", source_id: "statenews", skipped_outside_window: 0 });
   expect(result.events.map(({ title, tier }) => [title, tier])).toEqual([
     ["Grants open for Auburn small businesses", "local"], ["Governor appoints judge", "region"],
-    ["Ferry schedule changes in Seattle", "nearby"], ["Auburn Tigers win", "local"], ["Old Auburn announcement", "local"],
+    ["Ferry schedule changes in Seattle", "nearby"], ["Auburn Tigers win", "local"],
   ]);
-  expect(result.result.skipped_unusable).toEqual({ sensitive_topic: 1, not_near_town: 1 });
+  expect(result.result.skipped_unusable).toEqual({ sensitive_topic: 1, not_near_town: 1, outside_news_window: 1 });
   expect(result.result.pages_checked).toEqual(["https://gov.example/rss.xml", "https://dot.example/rss.xml"]);
 });
 

@@ -104,7 +104,8 @@ function mergedQuakeFacts(quakes: ReturnType<typeof parseUsgs>, town: string): C
     kind: "earthquake", tier: quakeTier(closest), section: "Earthquakes nearby", signals: { magnitude: strongest.magnitude, distance_km: closest, felt, depth_km: strongest.depth_km, count: quakes.length } });
 }
 
-const MAX_PER_NEWSROOM = 10;
+const MAX_PER_NEWSROOM = 25;
+const NEWS_LOOKBACK_DAYS = 14;
 export const stateNewsConnector: Connector = {
   type: "statenews",
   sources(_location, settings) { return settings.widerSources ? [{ source_id: "statenews", name: "State newsrooms", type: "statenews" }] : []; },
@@ -137,6 +138,9 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
       let kept = 0;
       for (const item of items!) {
         const day = item.published_day;
+        if (day < dateDelta(context.today, -NEWS_LOOKBACK_DAYS) || day > context.today) {
+          skipped.outside_news_window = (skipped.outside_news_window ?? 0) + 1; continue;
+        }
         if (sensitive(item.title, item.summary)) { skipped.sensitive_topic = (skipped.sensitive_topic ?? 0) + 1; continue; }
         const tier = itemTier(place, item.title, item.summary, true);
         if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }

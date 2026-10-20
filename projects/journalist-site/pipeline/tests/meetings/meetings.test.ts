@@ -183,6 +183,26 @@ describe("Legistar and CivicClerk", () => {
 });
 
 describe("government platform discovery", () => {
+  it("creates a collection task for a legacy location without a government profile and caches discovered meetings", async () => {
+    await mongo.db.collection<{ _id: string; config_path: string; data: Record<string, unknown> }>("source_configs").insertOne({ _id: "government-sources", config_path: "config/government-sources.json", data: {} });
+    const replay = new ReplayTransport(); wiki(replay);
+    replay.on(WEBSITE, { body: `<a href="https://${LEGISTAR}.legistar.com/Calendar.aspx">Meetings</a>` });
+    replay.on(legistar.confirmUrl(LEGISTAR), { body: [{ Id: 1 }] });
+    legistarRoutes(replay);
+    const location = profile(null);
+    const tasks = meetingsConnector.sources(location, loadSettings());
+    expect(tasks).toHaveLength(1);
+    const ctx = { ...context(replay), location };
+    const first = await meetingsConnector.collect(tasks[0], ctx);
+    expect(first.result.status).toBe("ingested");
+    expect(first.events).toHaveLength(2);
+    expect(await ctx.linkCache.get(location.id, tasks[0].source_id)).toMatchObject({ kind: "legistar" });
+    const cachedReplay = new ReplayTransport(); legistarRoutes(cachedReplay);
+    const second = await meetingsConnector.collect(tasks[0], { ...ctx, transport: cachedReplay.transport });
+    expect(second.result.link_discovery?.method).toBe("cache");
+    expect(second.events).toHaveLength(2);
+    expect(cachedReplay.requests.some(({ url }) => url.includes("wikidata"))).toBe(false);
+  });
   it("confirms linked Legistar and follows same-site agenda pages", async () => {
     const direct = new ReplayTransport(); wiki(direct);
     direct.on(WEBSITE, { body: `<a href="https://${LEGISTAR}.legistar.com/Calendar.aspx">Calendar</a>` });
