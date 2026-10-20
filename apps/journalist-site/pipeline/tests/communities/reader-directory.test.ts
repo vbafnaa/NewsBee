@@ -21,3 +21,18 @@ it("suggests unserved Census towns by prefix, ranks exact names first and filter
   expect(await searchTownDirectory("S", mongo.db)).toEqual([]);
   expect(await searchTownDirectory(".*", mongo.db)).toEqual([]);
 });
+
+it("searches and resolves reviewed neighborhoods for reader interest before publication", async () => {
+  await mongo.db.collection<{ _id: string; name: string; name_lower: string; state: string }>("census_places").insertOne({
+    _id: "fremont-ca", name: "Fremont", name_lower: "fremont", state: "CA",
+  });
+  expect((await searchTownDirectory("Fremont", mongo.db)).map((place) => place.id)).toEqual(["fremont-seattle-wa", "fremont-ca"]);
+  expect(await searchTownDirectory("Freemont, Washington", mongo.db)).toEqual([
+    { id: "fremont-seattle-wa", name: "Fremont, Seattle, WA" },
+  ]);
+  expect(await directoryTown("ballard-seattle-wa", mongo.db)).toEqual({ id: "ballard-seattle-wa", name: "Ballard, Seattle, WA" });
+  expect(await searchTownDirectory("Ballard, OR", mongo.db)).toEqual([]);
+  await mongo.db.collection<{ _id: string; data: object }>("source_configs").insertOne({ _id: "communities", data: {} });
+  expect(await searchTownDirectory("Ballard", mongo.db)).toEqual([]);
+  expect(await directoryTown("ballard-seattle-wa", mongo.db)).toBeNull();
+});

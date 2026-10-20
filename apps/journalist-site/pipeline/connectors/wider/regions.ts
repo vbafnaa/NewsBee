@@ -1,5 +1,8 @@
 import { httpsLink } from "../common";
 import type { LocationProfile } from "../types";
+import { communityEvidence, mentions } from "../community";
+import type { Point as GeographicPoint } from "../../../../../shared/geography";
+export { mentions } from "../community";
 
 export const LOCAL_KM = 15;
 export const NEARBY_KM = 50;
@@ -23,6 +26,8 @@ export type Region = {
   latitude: number | null; longitude: number | null; aliases: string[]; place_suffix: string | null;
   newsrooms: Newsroom[]; watchlist: WatchlistEntry[]; nearby: string[]; nearby_topics: WatchlistEntry[];
   ambiguous: Set<string>; configured: boolean;
+  community_terms?: string[];
+  community_location?: LocationProfile;
 };
 
 export function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -54,27 +59,23 @@ export function validateStateSources(value: unknown): Record<string, StateConfig
   }
   return states;
 }
-export function mentions(text: string | null | undefined, name: string | null | undefined): boolean {
-  if (!text || !name) return false;
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, "i").test(text);
-}
-
 function named(place: Region, texts: Array<string | null | undefined>, name: string, qualified: boolean) {
   if (!texts.some((text) => mentions(text, name))) return false;
   if (qualified || !place.ambiguous.has(name)) return true;
   return texts.some((text) => [place.state_name, place.state_code, place.county].some((anchor) => mentions(text, anchor)));
 }
 
-export function tierFor(place: Region, texts: Array<string | null | undefined>, qualified = false): "local" | "region" | "nearby" | null {
+export function tierFor(place: Region, texts: Array<string | null | undefined>, qualified = false, coordinates?: GeographicPoint): "local" | "region" | "nearby" | null {
+  if (place.community_location) return communityEvidence(place.community_location, texts, coordinates) ? "local" : null;
+  if (place.community_terms) return [place.town, ...place.community_terms].some((name) => texts.some((text) => mentions(text, name))) ? "local" : null;
   if (named(place, texts, place.town, qualified)) return "local";
   if (place.county && texts.some((text) => mentions(text, place.county))) return "region";
   if (place.nearby.some((name) => named(place, texts, name, qualified))) return "nearby";
   return null;
 }
 
-export function itemTier(place: Region, title: string | null | undefined, body: string | null | undefined, qualified = false) {
-  const tier = tierFor(place, [title, body], qualified);
+export function itemTier(place: Region, title: string | null | undefined, body: string | null | undefined, qualified = false, coordinates?: GeographicPoint) {
+  const tier = tierFor(place, [title, body], qualified, coordinates);
   if (tier === "nearby" && tierFor(place, [title], qualified) !== "nearby") return null;
   return tier;
 }
@@ -86,7 +87,7 @@ export function section(place: Region, tier: "local" | "region" | "nearby") {
 }
 
 export function resolveRegion(location: LocationProfile, states: Record<string, StateConfig>, radiusKm = NEARBY_KM): Region {
-  const stateCode = location.id.split("-").at(-1)?.toUpperCase() ?? "";
+  const stateCode = location.state || location.id.split("-").at(-1)?.toUpperCase() || "";
   const town = location.name.split(",")[0].trim();
   // The Python profile uses the first library system with reviewed coordinates. Census coordinates
   // are the approved fallback for towns without a configured centre or library coordinates.
@@ -94,9 +95,10 @@ export function resolveRegion(location: LocationProfile, states: Record<string, 
   const systemLat = system.latitude === undefined || system.latitude === null ? null : Number(system.latitude);
   const systemLon = system.longitude === undefined || system.longitude === null ? null : Number(system.longitude);
   const state = states[stateCode];
-  if (!state) return { location_id: location.id, town, state_code: stateCode, state_name: null, county: null,
-    latitude: systemLat, longitude: systemLon,
-    aliases: [], place_suffix: null, newsrooms: [], watchlist: [], nearby: [], nearby_topics: [], ambiguous: new Set(), configured: false };
+  if (!state) return { location_id: location.id, town, state_code: stateCode, state_name: location.community?.state_name ?? null, county: null,
+    latitude: location.community?.latitude ?? systemLat, longitude: location.community?.longitude ?? systemLon,
+    aliases: [], place_suffix: null, newsrooms: location.community?.newsrooms ?? [], watchlist: [], nearby: [], nearby_topics: [], ambiguous: new Set(), configured: !!location.community,
+    ...(location.community ? { community_terms: location.community.coverage_terms, community_location: location } : {}) };
   const local = state.locations?.[location.id] ?? {};
   const latitude = local.point?.[0] ?? location.latitude ?? systemLat;
   const longitude = local.point?.[1] ?? location.longitude ?? systemLon;
@@ -105,9 +107,11 @@ export function resolveRegion(location: LocationProfile, states: Record<string, 
     .sort((a, b) => a[1] - b[1]).map(([name]) => name);
   return { location_id: location.id, town, state_code: stateCode, state_name: state.name, county: local.county ?? null,
     latitude: latitude ?? null, longitude: longitude ?? null, aliases: state.aliases ?? [], place_suffix: state.place_suffix ?? null,
-    newsrooms: state.newsrooms ?? [], watchlist: state.watchlist ?? [], nearby: near.filter((name) => name !== town),
+    newsrooms: [...(location.community?.newsrooms ?? []), ...(state.newsrooms ?? [])].filter((room, index, rooms) => rooms.findIndex((item) => item.feed === room.feed) === index),
+    watchlist: state.watchlist ?? [], nearby: location.community ? [] : near.filter((name) => name !== town),
     nearby_topics: (state.watchlist ?? []).filter((entry) => near.includes(entry.place)),
-    ambiguous: new Set(state.ambiguous_places ?? []), configured: true };
+    ambiguous: new Set(state.ambiguous_places ?? []), configured: true,
+    ...(location.community ? { community_terms: location.community.coverage_terms, community_location: location } : {}) };
 }
 
 export const TREND_RADIUS_KM = 15 * 1.609344;

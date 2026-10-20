@@ -8,7 +8,8 @@ import type { DiscoveryResult } from "./discovery";
 import { discoverGovernmentWithMethod, overrides, sourceId, USER_AGENT, PAST_DAYS, MAX_MEETINGS } from "./discovery";
 import * as civicclerk from "./civicclerk";
 import * as legistar from "./legistar";
-import { outcome, preview, type MeetingFacts } from "./meetings";
+import { outcome, preview, type Meeting, type MeetingFacts } from "./meetings";
+import { communityEvidence } from "../community";
 
 const NO_PLATFORM = new Set(["unresolved_website", "no_platform", "blocked", "failed"]);
 type PlatformData = { events: MeetingFacts[]; skipped: Record<string, number>; content: Uint8Array; url: string };
@@ -16,7 +17,17 @@ type Attempt = { result: SourceResult; events: MeetingFacts[] };
 function day(value: { year: number; month: number; day: number }) {
   return `${String(value.year).padStart(4, "0")}-${String(value.month).padStart(2, "0")}-${String(value.day).padStart(2, "0")}`;
 }
-function sourceName(location: LocationProfile) { return `${location.name.split(",")[0]} public meetings`; }
+function jurisdiction(location: LocationProfile) { return location.community?.parent_name ?? location.name.split(",")[0]; }
+function sourceName(location: LocationProfile) { return `${jurisdiction(location)} public meetings${location.community ? ` affecting ${location.community.name}` : ""}`; }
+export function scopeMeeting(meeting: Meeting, location: LocationProfile): Meeting {
+  if (!location.community) return meeting;
+  // The meeting's venue (often City Hall) is not evidence of neighborhood impact.
+  const items = meeting.items.filter((item) => communityEvidence(location, [meeting.body, item.title]));
+  return { ...meeting, items, community_relevance: items.flatMap((item) => {
+    const evidence = communityEvidence(location, [meeting.body, item.title]);
+    return evidence ? [evidence] : [];
+  }) };
+}
 function bytesFetcher(fetcher: Fetcher) { return async (url: string) => (await fetcher.get(url, 4 * 1024 * 1024, "application/json"))[1]; }
 function errorName(error: unknown) { return error instanceof Error ? error.name : "Error"; }
 function retryable(error: HttpStatusError) { return error.status === 429 || error.status >= 500; }
@@ -40,7 +51,7 @@ function compareStart(a: { year: number; month: number; day: number; hour?: numb
   const right = `${day(b)}T${String(b.hour ?? 0).padStart(2, "0")}:${String(b.minute ?? 0).padStart(2, "0")}`;
   return left < right ? -1 : left > right ? 1 : 0;
 }
-async function collectLegistar(fetcher: Fetcher, tenant: string, place: string, today: string, window: [string, string]): Promise<PlatformData> {
+async function collectLegistar(fetcher: Fetcher, tenant: string, location: LocationProfile, today: string, window: [string, string]): Promise<PlatformData> {
   const first = addDays(today, -PAST_DAYS), last = window[1], upcomingFrom = window[0];
   const url = legistar.eventsUrl(tenant, first, last);
   const content = await bytesFetcher(fetcher)(url);
@@ -54,7 +65,9 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, place: string, 
     if (legistar.isCancelled(event)) { skipped.cancelled = (skipped.cancelled ?? 0) + 1; continue; }
     if (fetched >= MAX_MEETINGS) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
     fetched += 1;
-    const meeting = await legistar.meeting(tenant, event, bytesFetcher(fetcher));
+    const meeting = scopeMeeting(await legistar.meeting(tenant, event, bytesFetcher(fetcher)), location);
+    if (location.community && !meeting.items.length) { skipped.outside_community = (skipped.outside_community ?? 0) + 1; continue; }
+    const place = jurisdiction(location);
     const made = day(start) < today ? outcome(meeting, place) : preview(meeting, place);
     if (!made) {
       const key = day(start) < today ? "no_recorded_outcomes" : "no_substantive_agenda";
@@ -63,7 +76,7 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, place: string, 
   }
   return { events: facts, skipped: Object.fromEntries(Object.entries(skipped).filter(([, count]) => count > 0)), content, url };
 }
-async function collectCivicclerk(fetcher: Fetcher, tenant: string, place: string, window: [string, string]): Promise<PlatformData> {
+async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: LocationProfile, window: [string, string]): Promise<PlatformData> {
   const first = window[0], last = window[1];
   const url = civicclerk.eventsUrl(tenant, first, addDays(last, 1));
   const content = await bytesFetcher(fetcher)(url);
@@ -71,13 +84,17 @@ async function collectCivicclerk(fetcher: Fetcher, tenant: string, place: string
   const skipped: Record<string, number> = {};
   const facts: MeetingFacts[] = [];
   const inc = (key: string) => { skipped[key] = (skipped[key] ?? 0) + 1; };
+  let fetched = 0;
   for (const event of events.sort((a, b) => compareStart(civicclerk.start(a), civicclerk.start(b)))) {
     const start = civicclerk.start(event);
     if (day(start) < first || day(start) > last) { inc("outside_window"); continue; }
     if (typeof event.eventName === "string" && /cancel/i.test(event.eventName)) { inc("cancelled"); continue; }
     if (!civicclerk.usable(event)) { inc("agenda_not_posted"); continue; }
-    if (facts.length + (skipped.no_substantive_agenda ?? 0) >= MAX_MEETINGS) { inc("over_limit"); continue; }
-    const made = preview(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), place);
+    if (fetched >= MAX_MEETINGS) { inc("over_limit"); continue; }
+    fetched++;
+    const meeting = scopeMeeting(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), location);
+    if (location.community && !meeting.items.length) { inc("outside_community"); continue; }
+    const made = preview(meeting, jurisdiction(location));
     if (!made) inc("no_substantive_agenda");
     else facts.push(made);
   }
@@ -105,8 +122,8 @@ async function attempt(government: GovernmentSource, location: LocationProfile, 
   if (!usablePlatform(government)) return { result: initialResult(location, government), events: [] };
   try {
     const data = government.platform === "legistar"
-      ? await collectLegistar(fetcher, government.tenant, location.name.split(",")[0], today, window)
-      : await collectCivicclerk(fetcher, government.tenant, location.name.split(",")[0], window);
+      ? await collectLegistar(fetcher, government.tenant, location, today, window)
+      : await collectCivicclerk(fetcher, government.tenant, location, window);
     return { result: sourceResultFromData(government, location, data), events: data.events };
   } catch (error) {
     if (error instanceof HttpStatusError && retryable(error)) throw error;
@@ -120,7 +137,8 @@ function tenantFromCached(entry: { kind: string; url: string }): string | null {
   return null;
 }
 async function rediscover(context: Parameters<Connector["collect"]>[1]): Promise<DiscoveryResult> {
-  const configured = (await overrides(context.settings.root, context.db))[context.location.id] ?? null;
+  const configuredSources = await overrides(context.settings.root, context.db);
+  const configured = configuredSources[context.location.id] ?? configuredSources[context.location.community?.parent_id ?? ""] ?? null;
   return discoverGovernmentWithMethod(context.transport, context.location, configured, { model: context.model, log: context.log });
 }
 async function cacheEntry(context: Parameters<Connector["collect"]>[1], task: SourceTask, government: GovernmentSource, method: "rules" | "ai") {

@@ -9,6 +9,7 @@ import { chooseLinks, moreEvents, pageLinks } from "../ai-discovery";
 import { parseNewsFeed, parseUsgs, parseWikiDaily, parseWikiTop, publishedText, sensitive, sha256, spike, usgsQueryUrl, wikiArticleUrl, wikiDailyUrl, wikiLabel, wikiRecentDays, wikiTopUrl, wikiTopic, type NewsFacts } from "./adapters";
 import { itemTier, mentions, NEARBY_KM, resolveRegion, resolveTrendRegion, trendTier, section, validateStateSources, type Region } from "./regions";
 import { trendContext, trendReports, reportedDescription, type TrendContext } from "./trend-context";
+import { communityEvidence } from "../community";
 
 const ACCEPT_JSON = "application/json";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
@@ -108,7 +109,7 @@ const MAX_PER_NEWSROOM = 25;
 const NEWS_LOOKBACK_DAYS = 14;
 export const stateNewsConnector: Connector = {
   type: "statenews",
-  sources(_location, settings) { return settings.widerSources ? [{ source_id: "statenews", name: "State newsrooms", type: "statenews" }] : []; },
+  sources(location, settings) { return settings.widerSources ? [{ source_id: "statenews", name: location.community ? "Community and state newsrooms" : "State newsrooms", type: "statenews" }] : []; },
   async collect(task, context) {
     try { return await collectStateNews(task, context); } catch (error) { return emptyFailure(task, context, error); }
   },
@@ -142,12 +143,13 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
           skipped.outside_news_window = (skipped.outside_news_window ?? 0) + 1; continue;
         }
         if (sensitive(item.title, item.summary)) { skipped.sensitive_topic = (skipped.sensitive_topic ?? 0) + 1; continue; }
-        const tier = itemTier(place, item.title, item.summary, true);
+        const tier = itemTier(place, item.title, item.summary, true, item.coordinates);
         if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }
         if (kept >= MAX_PER_NEWSROOM) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
         kept++;
         facts.push(createNewsFacts({ source_event_id: sha256(item.id).slice(0, 16), title: item.title, event_date: day, schedule_text: publishedText(day), venue: newsroom.name,
-          source_url: item.link, description: item.summary, kind: "state_news", tier, section: section(place, tier), signals: { publisher: newsroom.name } }));
+          source_url: item.link, description: item.summary, kind: "state_news", tier, section: section(place, tier), signals: { publisher: newsroom.name },
+          ...(context.location.community ? { community_relevance: communityEvidence(context.location, [item.title, item.summary], item.coordinates) } : {}) }));
       }
     }
     const ok = newsrooms.length - Object.values(failures).reduce((a, b) => a + b, 0);
@@ -155,7 +157,9 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
     const tiers = { local: 0, region: 0, nearby: 0 };
     for (const fact of facts) tiers[fact.tier as keyof typeof tiers]++;
     record.status = status;
-    record.detail = `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items near ${place.town} (${tiers.local} name the town, ${tiers.region} the county, ${tiers.nearby} a nearby place)`;
+    record.detail = place.community_terms
+      ? `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items have ${place.town} community, selected-venue or geographic evidence`
+      : `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items near ${place.town} (${tiers.local} name the town, ${tiers.region} the county, ${tiers.nearby} a nearby place)`;
     record.response_sha256 = ok ? digest.digest("hex") : null; record.event_count = facts.length;
     record.skipped_unusable = skipped;
     context.log.info("state_news_result", { source_id: task.source_id, status, items: facts.length, tiers, skipped });
@@ -248,6 +252,7 @@ function topicFacts(topic: WikiTopic, place: Region, report: TrendContext): Coll
   return createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline, event_date: day, schedule_text: publishedText(day), venue: report.publisher,
     source_url: report.url, description: reportedDescription(report), kind: "trending_topic", tier, section: section(place, tier),
     trend_context: report, attention_source_url: wikiArticleUrl(topic.article),
+    ...(place.community_location ? { community_relevance: communityEvidence(place.community_location, [report.headline, report.excerpt]) } : {}),
     signals: { ratio, recent_daily_views: views, baseline_daily_views: topic.baseline_daily_views, origin: topic.origin, ...(topic.best_rank === undefined ? {} : { best_rank: topic.best_rank }) },
     social_mentions: topic.social_mentions });
 }
@@ -340,7 +345,8 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
       facts.push(createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline,
         event_date: report.published_at.slice(0, 10), schedule_text: publishedText(report.published_at.slice(0, 10)),
         venue: report.publisher, source_url: report.url, description: reportedDescription(report), kind: "social_trend",
-        tier, section: section(place, tier), trend_context: report, signals: { discovery: "local_reporting_link" } }));
+        tier, section: section(place, tier), trend_context: report, signals: { discovery: "local_reporting_link" },
+        ...(place.community_location ? { community_relevance: communityEvidence(place.community_location, [report.headline, report.excerpt]) } : {}) }));
     }
     if (facts.length >= TREND_MAX_ITEMS) break;
   }

@@ -11,8 +11,8 @@ const DETAILS: Record<SourceType, { name: string; formats: string; manual: boole
   library: { name: "Library events", formats: "Trumba RSS, iCalendar, JSON-LD event pages and BiblioCommons", manual: true },
   meetings: { name: "Government meetings", formats: "Legistar and CivicClerk tenant APIs", manual: true },
   hazards: { name: "Weather & earthquakes", formats: "National Weather Service alerts and USGS earthquake feeds", manual: false },
-  statenews: { name: "State newsrooms", formats: "Agency RSS and Atom feeds, filtered for local relevance", manual: true },
-  trending: { name: "Locally reported stories", formats: "Wikipedia topic discovery and Bluesky reporting links; town plus 15 miles, recent local reporting required", manual: false },
+  statenews: { name: "Community and state newsrooms", formats: "Reviewed local publisher and agency RSS/Atom feeds, filtered for community relevance", manual: true },
+  trending: { name: "Locally reported stories", formats: "Wikipedia topic discovery and Bluesky reporting links; recent local reporting required, with explicit community evidence for neighborhoods", manual: false },
 };
 
 export async function connectorInventory(db: Db, settings: Settings) {
@@ -31,7 +31,12 @@ export async function connectorInventory(db: Db, settings: Settings) {
   }))).flat();
   return {
     connectors: Object.values(CONNECTORS).map(({ type }) => ({ id: type, ...DETAILS[type] })),
-    locations: locations.map(({ id, name, systems }) => ({ id, name, systems: systems.map(({ fscskey, name }) => ({ fscskey, name })) })),
+    locations: locations.map(({ id, name, systems, community, source_coverage }) => ({
+      id, name, systems: systems.map(({ fscskey, name, branches }) => ({ fscskey, name, branches })),
+      community: community ? { parent_name: community.parent_name, jurisdiction_resolved: !community.geography || !!community.parent_kind,
+        coverage_terms: community.coverage_terms, newsrooms: community.newsrooms } : null,
+      source_coverage,
+    })),
     sources, cached_links: cached.filter((link) => locations.some((location) => location.id === link.location_id)),
     manual_links: saved.filter((link) => locations.some((location) => location.id === link.location_id)),
   };

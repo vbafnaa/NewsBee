@@ -70,7 +70,13 @@ is skipped on localhost; Drive files and MongoDB data live under ignored `.local
 The first run downloads MongoDB. No Python, uv or Mailpit is required.
 Hosted model providers can replace Ollama; see the [journalist guide](apps/journalist-site/README.md).
 
-In **Runs & locations**, search for and add a town, then **Start run**. Directories are
+In **Runs & locations**, enter a neighborhood and city/state and press **Search all communities**
+or Enter, select a result, then add it. OpenStreetMap/Photon discovery is not restricted to
+a neighborhood catalog: try **Wallingford, Seattle, Washington**, **Ballard**, or
+**West Seattle, WA**. Existing Census town/city suggestions remain available. Review the
+reported coverage area and source gaps before **Start run**. Neighborhood editions use scoped library branches and community-relevant
+news rather than the whole parent city's news. See [community coverage](apps/journalist-site/README.md#neighborhood-and-community-coverage).
+Directories are
 prepared on first use. Select the town in **Output channel** and save to expose it on the
 reader. Email previews are saved, not sent.
 

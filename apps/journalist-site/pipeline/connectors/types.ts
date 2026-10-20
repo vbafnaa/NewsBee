@@ -5,12 +5,13 @@ import type { Logger } from "../core/log";
 import type { ModelRuntime } from "../model/runtime";
 import type { EventFacts } from "./common";
 import type { Fetcher } from "./fetcher";
+import type { Community } from "../../../../shared/community-directory";
 
 /** Source types the orchestrator can run; each has its own connector and per-source ranker. */
 export type SourceType = "library" | "meetings" | "hazards" | "statenews" | "trending";
 export const SOURCE_TYPES: readonly SourceType[] = ["library", "meetings", "hazards", "statenews", "trending"];
 
-export type LibraryBranch = { name: string; address: string };
+export type LibraryBranch = { name: string; address: string; latitude?: number | null; longitude?: number | null };
 
 export type WebsiteLookup = {
   status: string;
@@ -51,6 +52,8 @@ export type LocationProfile = {
   systems: LibrarySystem[];
   government?: GovernmentSource | null;
   onboarded_at?: string;
+  community?: Community;
+  source_coverage?: { status: "ready" | "partial" | "no_local_sources"; area: string; gaps: string[]; discovery_gaps?: string[]; checked_at: string };
 };
 
 /** The per-source ingestion record every collector returns (Python SystemIngestion). */

@@ -186,7 +186,9 @@ function keptEvents(outcome: Outcome, system: LocationProfile["systems"][number]
     if (fact.event_date < window[0] || fact.event_date > window[1]) { skippedOutside += 1; continue; }
     const branch = matchBranch(fact.venue, system.branches);
     if (!branch) { unmatched.set(fact.venue, (unmatched.get(fact.venue) ?? 0) + 1); continue; }
-    events.push({ ...fact, branch });
+    events.push({ ...fact, branch, ...(system.branches.length ? { community_relevance: {
+      method: "selected_venue", matches: [branch], detail: "Event venue matched an onboarded library branch",
+    } } : {}) });
   }
   return { events, skippedOutside, unmatched };
 }

@@ -7,7 +7,7 @@ import LocationOnboarding from "./location-onboarding";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
-type Location = { id: string; name: string; systems: System[]; government: Government | null };
+type Location = { id: string; name: string; systems: System[]; government: Government | null; source_coverage?: { status: "ready" | "partial" | "no_local_sources"; area: string; gaps: string[] } };
 type RunIssue = { code: string; severity: "info" | "warning" | "failed"; message: string };
 type Diagnostics = { deadline_at: number | null; overdue: boolean; issues: RunIssue[] };
 type LocationHealth = {
@@ -278,6 +278,7 @@ export default function Dashboard() {
           {health?.locations.map((row) => {
             const running = ACTIVE.includes(row.stage);
             const badge = runBadge(row.stage, row.diagnostics, row.level);
+            const coverage = locations.find((location) => location.id === row.location_id)?.source_coverage;
             return <article className="run-card" key={row.location_id}>
               <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
               <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
@@ -288,6 +289,9 @@ export default function Dashboard() {
               </ol>
               <div className="run-counts"><span><strong>{row.sources.completed}/{row.sources.total}</strong> sources completed</span><span><strong>{row.published_items ?? "-"}</strong> published</span><span><strong>{row.held ?? "-"}</strong> held</span></div>
               <p className="chart-caption">Last started: {time(row.started_at)}</p>
+              {coverage && <details className="location-settings"><summary>Location resolved / sources {coverage.status.replaceAll("_", " ")}</summary>
+                  <p>{coverage.area}</p><ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul><Link href="/sources">Review source coverage</Link>
+                </details>}
               {running && <RunIssues diagnostics={row.diagnostics} compact />}
               {(row.error || row.failed_sources.length > 0 || row.model_errors.length > 0) && <p className="stage-error">
                 {[row.error, ...row.model_errors, ...row.failed_sources.map((source) => `${source.name}: ${source.error ?? "failed"}`)].filter(Boolean).join("; ")}

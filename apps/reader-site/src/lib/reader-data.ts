@@ -1,6 +1,9 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
+import { COMMUNITY_SEED, communityDirectory, communityName, matchingCommunities } from "../../../../shared/community-directory";
+import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
+import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
 
 export type EditionItem = {
   story_id?: string | null;
@@ -348,13 +351,23 @@ async function readerDatabase() {
   return client.db(databaseName);
 }
 
+export async function discoverReaderCommunities(query: string, db?: Db): Promise<Location[]> {
+  return (await searchGeography(db ?? await readerDatabase(), query))
+    .map((place) => ({ id: place.id, name: place.label }));
+}
+
 type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };
 
-/** The Census directory includes towns that have not been onboarded or published yet. */
+async function readerCommunities(db: Db) {
+  const config = await db.collection<{ _id: string; data: unknown }>("source_configs").findOne({ _id: "communities" });
+  return communityDirectory(config ? config.data : COMMUNITY_SEED);
+}
+
+/** Readers search Census places, optional overrides and saved geographic communities. */
 export async function searchTownDirectory(query: string, db?: Db): Promise<Location[]> {
   const [cityPart, statePart = ""] = query.split(",", 2);
   const city = cityPart.trim().toLowerCase();
-  const state = statePart.trim().toUpperCase();
+  const state = stateCode(query.split(",").at(-1)?.trim() ?? "") ?? statePart.trim().toUpperCase();
   if (city.length < 2) return [];
   const database = db ?? await readerDatabase();
   const places = await database.collection<DirectoryPlace>("census_places").aggregate<DirectoryPlace>([
@@ -364,11 +377,25 @@ export async function searchTownDirectory(query: string, db?: Db): Promise<Locat
     { $limit: 10 },
     { $project: { _id: 1, name: 1, state: 1 } },
   ]).toArray();
-  return places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }));
+  const communities = matchingCommunities(await readerCommunities(database), query).map(([id, community]) => ({ id, name: communityName(community) }));
+  const geographic = await database.collection<GeographicPlace & { _id: string; name_lower: string }>(GEOGRAPHIC_PLACES).find({
+    name_lower: { $regex: `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` }, ...(state ? { state } : {}),
+    ...(query.split(",").length > 2 ? { parent_name: { $regex: `^${query.split(",").slice(1, -1).join(",").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } } : {}),
+  }).limit(10).toArray();
+  communities.push(...geographic.map((place) => ({ id: place.id, name: place.label })));
+  const communityIds = new Set(communities.map((community) => community.id));
+  return [...communities, ...places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }))]
+    .sort((a, b) => Number(a.name.split(",")[0].toLowerCase() !== city) - Number(b.name.split(",")[0].toLowerCase() !== city)
+      || Number(communityIds.has(b.id)) - Number(communityIds.has(a.id))
+      || a.name.split(",")[0].localeCompare(b.name.split(",")[0]) || a.name.localeCompare(b.name)).slice(0, 10);
 }
 
 export async function directoryTown(id: string, db?: Db): Promise<Location | null> {
   const database = db ?? await readerDatabase();
+  const geographic = await database.collection<GeographicPlace & { _id: string }>(GEOGRAPHIC_PLACES).findOne({ _id: id });
+  if (geographic) return { id, name: geographic.label };
+  const community = (await readerCommunities(database))[id];
+  if (community) return { id, name: communityName(community) };
   const place = await database.collection<DirectoryPlace>("census_places").findOne({ _id: id });
   return place ? { id: place._id, name: `${place.name}, ${place.state}` } : null;
 }

@@ -29,7 +29,7 @@ const apiUrl = "";
             <div id="edition-picker" hidden>
               <p class="picker-heading">Choose your edition</p>
               <div id="onboarded-editions" aria-label="Available editions"></div>
-              <label for="location">Find another town</label>
+              <label for="location">Find another community</label>
               <div class="location-field">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   stroke-width="1.5" aria-hidden="true">
@@ -38,10 +38,12 @@ const apiUrl = "";
                 </svg>
                 <input id="location" type="text" role="combobox" aria-autocomplete="list"
                   aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
-                  placeholder="Town or city, ST" autocomplete="off" maxlength="80" disabled />
+                  placeholder="Neighborhood, town or city, ST" autocomplete="off" maxlength="80" disabled />
                 <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
               </div>
-              <p id="location-help" aria-live="polite">Search US towns, e.g. Seattle, WA.</p>
+              <button id="discover-communities" type="button" disabled>Search all communities</button>
+              <p id="location-help" aria-live="polite">Search saved communities, or press Search all communities to find more US neighborhoods and towns.</p>
+              <p class="geographic-attribution">Geographic search by Photon / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>. Finding a community does not create an edition.</p>
             </div>
           </div>
         </div>
@@ -55,7 +57,7 @@ const apiUrl = "";
       <p id="edition-status" role="status">Loading locations...</p>
       <button id="retry" type="button" hidden>Try again</button>
       <section id="expansion" aria-labelledby="expansion-title" hidden>
-        <p class="eyebrow">Your town deserves its own front page</p>
+        <p class="eyebrow">Your community deserves its own front page</p>
         <h2 id="expansion-title"></h2>
         <p>Every community has stories worth telling. Help bring local events, civic updates,
           and a little more connection to yours.</p>
@@ -63,7 +65,7 @@ const apiUrl = "";
           <label for="signup-email">Your email</label>
           <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" required />
           <button type="submit">Help bring Newsbee here</button>
-          <p class="signup-note">Join the interest list for this town. Your email and requested town
+          <p class="signup-note">Join the interest list for this community. Your email and requested community
             are saved locally for this prototype; no emails are sent automatically.</p>
         </form>
         <p id="signup-status" role="status"></p>
@@ -119,6 +121,7 @@ const apiUrl = "";
       const main = document.querySelector("main")!;
       const api = main.dataset.apiUrl;
       const input = document.querySelector<HTMLInputElement>("#location")!;
+      const discoverButton = document.querySelector<HTMLButtonElement>("#discover-communities")!;
       const options = document.querySelector<HTMLUListElement>("#location-options")!;
       const help = document.querySelector<HTMLParagraphElement>("#location-help")!;
       const picker = document.querySelector<HTMLElement>(".picker")!;
@@ -140,6 +143,7 @@ const apiUrl = "";
       let active = -1;
       let searchVersion = 0;
       let searchTimer: ReturnType<typeof setTimeout>;
+      let discovering = false;
 
       const text = (tag: string, value: string, className?: string) => {
         const node = document.createElement(tag);
@@ -154,7 +158,7 @@ const apiUrl = "";
 
       async function getJson(path: string, init?: RequestInit) {
         const response = await fetch(`${api}${path}`, {
-          ...init, signal: AbortSignal.timeout(5000),
+          ...init, signal: AbortSignal.timeout(path.includes("discover=true") ? 30000 : 5000),
         });
         if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
         return response.json();
@@ -230,7 +234,8 @@ const apiUrl = "";
           return;
         }
         input.value = "";
-        help.textContent = "Search US towns, e.g. Seattle, WA.";
+        discoverButton.disabled = true;
+        help.textContent = "Search saved communities, or press Search all communities to find more US neighborhoods and towns.";
         pickerPanel.hidden = false;
         pickerToggle.setAttribute("aria-expanded", "true");
         const current = onboarded.querySelector<HTMLButtonElement>('[aria-current="true"]');
@@ -263,7 +268,7 @@ const apiUrl = "";
         }
       }
 
-      async function searchTowns() {
+      async function searchTowns(discover = false) {
         closeOptions();
         const query = input.value.trim();
         if (query.split(",")[0].trim().length < 2) {
@@ -271,9 +276,15 @@ const apiUrl = "";
           return;
         }
         const version = searchVersion;
-        help.textContent = "Searching towns...";
+        if (discover) {
+          discovering = true;
+          input.focus({ preventScroll: true });
+          discoverButton.disabled = true;
+          discoverButton.textContent = "Searching...";
+        }
+        help.textContent = discover ? "Searching all US communities..." : "Searching saved communities...";
         try {
-          const data = await getJson(`/api/locations/search?q=${encodeURIComponent(query)}`);
+          const data = await getJson(`/api/locations/search?q=${encodeURIComponent(query)}${discover ? "&discover=true" : ""}`);
           if (version !== searchVersion) return;
           candidates = data.results as Town[];
           options.replaceChildren(...candidates.map((town, index) => {
@@ -288,10 +299,18 @@ const apiUrl = "";
           options.hidden = candidates.length === 0;
           input.setAttribute("aria-expanded", String(candidates.length > 0));
           help.textContent = candidates.length
-            ? `${candidates.length} towns found. Use arrow keys and Enter, or select a town.`
-            : "No matching towns in the imported US Census directory. Try a nearby town or add a state.";
+            ? `${candidates.length} communities found. Use arrow keys and Enter, or select a community.`
+            : discover
+              ? "No matching communities. Try a different spelling or include the city and state."
+              : "No saved matches. Press Search all communities to find more neighborhoods and towns.";
         } catch (error) {
           if (version === searchVersion) help.textContent = `Location search unavailable: ${failure(error)}`;
+        } finally {
+          if (discover) {
+            discovering = false;
+            discoverButton.textContent = "Search all communities";
+            discoverButton.disabled = input.value.split(",")[0].trim().length < 2;
+          }
         }
       }
 
@@ -315,11 +334,15 @@ const apiUrl = "";
 
       input.addEventListener("input", () => {
         closeOptions();
+        discoverButton.disabled = discovering || input.value.split(",")[0].trim().length < 2;
         searchTimer = setTimeout(searchTowns, 250);
+      });
+      discoverButton.addEventListener("click", () => {
+        if (!discovering) void searchTowns(true);
       });
       input.addEventListener("focus", () => {
         input.select();
-        searchTowns();
+        if (!discovering) void searchTowns();
       });
       input.addEventListener("blur", () => {
         closeOptions();
@@ -336,7 +359,8 @@ const apiUrl = "";
         } else if (event.key === "Enter") {
           event.preventDefault();
           if (!options.hidden && active >= 0) choose(candidates[active]);
-          else help.textContent = "Select a town from the suggestions.";
+          else if (!discovering && !discoverButton.disabled) void searchTowns(true);
+          else help.textContent = "Select a community from the suggestions.";
         }
       });
 
@@ -452,10 +476,10 @@ const apiUrl = "";
             const town = await getJson(`/api/locations/${encodeURIComponent(requested)}`);
             await choose(town, false);
           } catch (error) {
-            status.textContent = `Location unavailable: ${failure(error)}. Choose a town from Change edition.`;
+            status.textContent = `Location unavailable: ${failure(error)}. Choose a community from Change edition.`;
           }
         } else {
-          status.textContent = "Find your community. Open Change edition to search for your town.";
+          status.textContent = "Find your community. Open Change edition to search for your neighborhood or town.";
         }
         input.disabled = false;
         pickerToggle.disabled = false;
@@ -578,6 +602,17 @@ const apiUrl = "";
         font: italic 1.1rem/1.4 var(--display);
         color: var(--ink);
       }
+      #discover-communities {
+        margin-top: 0.6rem;
+        padding: 0.5rem 0.7rem;
+        border: 1px solid var(--accent);
+        background: transparent;
+        color: var(--accent);
+        font: 0.8rem/1.4 var(--serif);
+        cursor: pointer;
+      }
+      #discover-communities:disabled { opacity: 0.6; cursor: default; }
+      .geographic-attribution { font-size: 0.7rem; line-height: 1.5; color: var(--muted); }
       #onboarded-editions { max-height: 12rem; overflow-y: auto; }
       #onboarded-editions:not(:empty) { margin-bottom: 1rem; border-bottom: 1px solid #c9c0ae; }
       #onboarded-editions button {

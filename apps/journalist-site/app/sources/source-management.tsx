@@ -43,6 +43,16 @@ export default function SourceManagement() {
         <option value="">All onboarded locations</option>
         {data?.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select></label>
+      {location?.source_coverage && <div className="notice" role="status">
+        <p><strong>Location resolved / sources {location.source_coverage.status.replaceAll("_", " ")}.</strong> {location.source_coverage.area}.</p>
+        {location.source_coverage.gaps.length > 0 && <ul>{location.source_coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>}
+      </div>}
+      {location?.community && <div className="notice">
+        <p><strong>Community coverage:</strong> {location.community.jurisdiction_resolved ? `Government discovery uses ${location.community.parent_name}` : "Governing jurisdiction is unresolved"}; agenda items and news require a community/coverage-term mention, selected-venue reference or available geographic evidence. Nearby city news is not included automatically.</p>
+        <p>Coverage terms: {location.community.coverage_terms.join(", ")}. Library branches: {location.systems.flatMap((system) => system.branches.map((branch) => branch.name)).join(", ") || "None configured"}.</p>
+        {location.community.newsrooms.length ? <p>Configured local feeds: {location.community.newsrooms.map((room, index) => <span key={room.feed}>{index ? ", " : ""}<a href={room.feed} target="_blank" rel="noreferrer">{room.name}</a></span>)}.</p>
+          : <p>No automatic community news feed is configured. Add a validated local publisher RSS/Atom link below; retained manual links are listed separately and require the same community evidence.</p>}
+      </div>}
       {!data && !error && <p role="status">Loading connectors and links...</p>}
       <div className="connector-grid">{data?.connectors.map((item) => {
         const tasks = data.sources.filter((source) => source.type === item.id && (!locationId || source.location_id === locationId));
@@ -92,7 +102,7 @@ export default function SourceManagement() {
         </select></label>}
         {connector === "library" && !location.systems.length && <p className="alert">This location has no onboarded library system. Library links must match its onboarded branches.</p>}
         <label className="field"><span>Source name</span><input name="name" required maxLength={120} disabled={busy} /></label>
-        <label className="field"><span>{connector === "meetings" ? "Legistar or CivicClerk tenant URL" : connector === "statenews" ? "Official agency RSS or Atom feed URL" : "Library event page or supported feed URL"}</span>
+        <label className="field"><span>{connector === "meetings" ? "Legistar or CivicClerk tenant URL" : connector === "statenews" ? "Local publisher or agency RSS/Atom feed URL" : "Library event page or supported feed URL"}</span>
           <input name="url" type="url" required pattern="https://.*" maxLength={2000} placeholder="https://..." disabled={busy} /></label>
         <p className="chart-caption">Manual links supplement automatic discovery, apply only to {location.name}, and remain until removed. Normal date, venue, geographic and editorial checks still apply.</p>
         <button disabled={busy || (connector === "library" && !location.systems.length)}>{busy ? "Validating link..." : "Validate & save link"}</button>
