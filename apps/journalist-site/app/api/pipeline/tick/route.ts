@@ -3,7 +3,7 @@ import { authorizedPipelineRequest } from "@/lib/pipeline-auth";
 import { pipelineDeps } from "@/lib/pipeline";
 import { logger } from "@/pipeline/core/log";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
-import { nextPendingJob, pendingJobs } from "@/pipeline/orchestration/jobs";
+import { nextJobWake, pendingJobs } from "@/pipeline/orchestration/jobs";
 import { describeInternalFailure, markDispatch, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { oldestActiveRun } from "@/pipeline/orchestration/runs";
 
@@ -23,15 +23,15 @@ async function handle(request: Request) {
     const result = await tick(deps, cloud
       ? { budgetMs: 30_000, kinds: ["author_start", "author_story", "author_finish"] }
       : { budgetMs: 30_000 });
-    const active = cloud ? await oldestActiveRun(deps.db) : null;
-    const sources = active ? await pendingJobs(deps.db, "collect_source", 1, active._id) : [];
-    const next = active ? await nextPendingJob(deps.db, active._id) : null;
+    const active = await oldestActiveRun(deps.db);
+    const sources = cloud && active?.status === "collecting" ? await pendingJobs(deps.db, "collect_source", 1, active._id) : [];
+    const next = active ? await nextJobWake(deps.db, active._id) : null;
     if (sources.length || next) {
       after(async () => {
-        const secret = process.env.CRON_SECRET;
+        const secret = ctx.settings.cronSecret;
         if (!secret) {
           await recordSchedulerSafely(ctx.db, "dispatch", "CRON_SECRET is not set, so source workers and follow-up ticks cannot be started.");
-          throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
+          throw new Error("CRON_SECRET is required to dispatch pipeline jobs");
         }
         const sourceUrl = new URL("/api/pipeline/collect-source", request.url);
         const results = await Promise.all(sources.map(async (job) => {

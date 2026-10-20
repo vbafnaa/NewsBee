@@ -3,7 +3,7 @@ import { logger } from "@/pipeline/core/log";
 import { callNextJob } from "./job-chain";
 import { LocationBusy } from "@/pipeline/communities/locations";
 import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
-import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
+import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { RunConflict } from "@/pipeline/orchestration/runs";
 import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { adminGuard } from "./admin-session";
@@ -35,15 +35,11 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
   }
 }
 
-/** Start the first job directly after responding; each cloud job triggers the next call. */
+/** Start the first job after responding; every mode chains within the current stage. */
 export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
-      if (deps.settings.mode === "cloud") {
-        await callNextJob(requestUrl);
-      } else {
-        await tick(deps, { budgetMs: 20_000 });
-      }
+      await callNextJob(requestUrl);
       await recordSchedulerSafely(deps.db, "kick", null);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);

@@ -9,11 +9,33 @@ import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { cancelRunJobs } from "./jobs";
 
-export type RunStatus = "collecting" | "authoring" | "publishing" | "published" | "failed" | "cancelled";
-export const ACTIVE_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "publishing"];
+export type RunStatus = "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "published" | "failed" | "cancelled";
+export const PROCESSING_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "finishing", "publishing"];
+export const ACTIVE_RUN_STATUSES: RunStatus[] = [...PROCESSING_RUN_STATUSES, "awaiting_authoring", "awaiting_finish"];
+export const CANCELLABLE_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter((status) => status !== "publishing");
 
 export async function oldestActiveRun(db: Db) {
-  return runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES } }).sort({ created_at: 1, _id: 1 }).limit(1).next();
+  return runs(db).aggregate<PipelineRun>([
+    { $match: { status: { $in: PROCESSING_RUN_STATUSES } } },
+    { $sort: { created_at: 1, _id: 1 } },
+    { $lookup: {
+      from: COLLECTIONS.jobs, let: { runId: "$_id", stage: "$status" }, as: "work",
+      pipeline: [
+        { $match: { status: { $in: ["pending", "running"] }, $expr: { $and: [
+          { $eq: ["$run_id", "$$runId"] },
+          { $or: [
+            { $and: [{ $eq: ["$$stage", "collecting"] }, { $eq: ["$kind", "collect_source"] }] },
+            { $and: [{ $eq: ["$$stage", "authoring"] }, { $in: ["$kind", ["author_start", "author_story"]] }] },
+            { $and: [{ $in: ["$$stage", ["finishing", "publishing"]] }, { $eq: ["$kind", "author_finish"] }] },
+          ] },
+        ] } } },
+        { $limit: 1 },
+      ],
+    } },
+    { $match: { "work.0": { $exists: true } } },
+    { $limit: 1 },
+    { $project: { work: 0 } },
+  ]).next();
 }
 
 export type SourceStatus = "pending" | "completed" | "failed";
@@ -42,6 +64,7 @@ export type PipelineRun = {
   today: string;
   window: [string, string];
   sources: RunSource[];
+  collection_tasks?: SourceTask[];
   draft_id: string | null;
   edition_id: string | null;
   published: {
@@ -55,6 +78,9 @@ export type PipelineRun = {
   created_at: number;
   updated_at: number;
   authoring_started_at: number | null;
+  /** Resets only on an editor-triggered stage, never on a resume. */
+  stage_started_at?: number;
+  stage_transitions?: { status: RunStatus; by: string; at: number }[];
   completed_at: number | null;
 };
 
@@ -74,7 +100,7 @@ async function reconcileLegacyActiveRuns(db: Db) {
   ]).toArray();
   let overlappingPublication = false;
   for (const group of duplicates) {
-    const priority: Record<string, number> = { publishing: 2, authoring: 1, collecting: 0 };
+    const priority: Record<string, number> = { publishing: 5, finishing: 4, awaiting_finish: 3, authoring: 2, awaiting_authoring: 1, collecting: 0 };
     group.attempts.sort((a, b) => priority[b.status] - priority[a.status] || b.created_at - a.created_at || a._id.localeCompare(b._id));
     const [keep, ...superseded] = group.attempts;
     for (const attempt of superseded) {
@@ -85,7 +111,7 @@ async function reconcileLegacyActiveRuns(db: Db) {
       }
       const timestamp = now();
       const changed = await runs(db).updateOne(
-        { _id: attempt._id, status: { $in: ["collecting", "authoring"] } },
+        { _id: attempt._id, status: { $in: CANCELLABLE_RUN_STATUSES } },
         { $set: { status: "cancelled", error: `Superseded by active run ${keep._id} during run-index migration`, completed_at: timestamp, updated_at: timestamp } },
       );
       if (changed.modifiedCount) {
@@ -111,7 +137,7 @@ export async function ensureRunIndexes(db: Db) {
         { location_id: 1 },
         {
           unique: true,
-          name: "one_active_run_per_location",
+          name: "one_open_run_per_location",
           partialFilterExpression: { status: { $in: ACTIVE_RUN_STATUSES } },
         },
       );
@@ -120,9 +146,10 @@ export async function ensureRunIndexes(db: Db) {
       if ((error as { code?: number }).code !== 11000 || attempt === 2) throw error;
     }
   }
-  if ((await runs(db).indexes()).some((index) => index.name === "one_collecting_run_per_location")) {
+  for (const name of ["one_collecting_run_per_location", "one_active_run_per_location"]) {
+    if (!(await runs(db).indexes()).some((index) => index.name === name)) continue;
     try {
-      await runs(db).dropIndex("one_collecting_run_per_location");
+      await runs(db).dropIndex(name);
     } catch (error) {
       if ((error as { codeName?: string }).codeName !== "IndexNotFound") throw error;
     }
@@ -158,6 +185,7 @@ export function newRun(
       link_discovery: null,
       error: null,
     })),
+    collection_tasks: tasks,
     draft_id: null,
     edition_id: null,
     published: null,
@@ -165,6 +193,8 @@ export function newRun(
     created_at: created,
     updated_at: created,
     authoring_started_at: null,
+    stage_started_at: created,
+    stage_transitions: [{ status: "collecting", by: trigger.by, at: created }],
     completed_at: null,
   };
 }
@@ -180,13 +210,14 @@ export async function updateSource(db: Db, runId: string, sourceId: string, valu
 }
 
 /**
- * Atomically move a run from collecting to authoring once every source is finished
+ * Atomically stop at the editor gate once every source is finished
  * (completed or failed). Returns true for exactly one caller.
  */
-export async function startAuthoringWhenReady(db: Db, runId: string): Promise<boolean> {
+export async function awaitAuthoringWhenReady(db: Db, runId: string): Promise<boolean> {
+  const at = now();
   const updated = await runs(db).updateOne(
     { _id: runId, status: "collecting", sources: { $not: { $elemMatch: { status: "pending" } } } },
-    { $set: { status: "authoring", authoring_started_at: now(), updated_at: now() } },
+    { $set: { status: "awaiting_authoring", updated_at: at }, $push: { stage_transitions: { status: "awaiting_authoring", by: "worker", at } } },
   );
   return updated.modifiedCount === 1;
 }
@@ -208,13 +239,13 @@ export class RunConflict extends Error {}
 export async function cancelRun(db: Db, runId: string, by: string) {
   const current = now();
   const result = await runs(db).findOneAndUpdate(
-    { _id: runId, status: { $in: ["collecting", "authoring"] } },
+    { _id: runId, status: { $in: CANCELLABLE_RUN_STATUSES } },
     { $set: { status: "cancelled", error: `Cancelled by ${by}`, completed_at: current, updated_at: current } },
     { returnDocument: "after" },
   );
   if (result) return result;
   if (!(await getRun(db, runId))) throw new Error(`Unknown run: ${runId}`);
-  throw new RunConflict("Only collecting or authoring runs can be cancelled; publication may already have started");
+  throw new RunConflict("Only waiting or in-progress stages can be cancelled; publication may already have started");
 }
 
 export async function recentRuns(db: Db, options: { locationId?: string; limit?: number } = {}) {

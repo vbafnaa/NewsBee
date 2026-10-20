@@ -6,6 +6,8 @@ import { getRun, RunConflict } from "@/pipeline/orchestration/runs";
 
 type Context = { params: Promise<{ runId: string }> };
 
+export const maxDuration = 300;
+
 /** Rerun a completed/cancelled attempt as a new run, preserving the original history. */
 export async function POST(request: Request, context: Context) {
   const { runId } = await context.params;

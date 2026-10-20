@@ -16,22 +16,27 @@ npm run local
 
 `npm run local` starts a local MongoDB (data in `.local/stage2/mongo`), this site on
 http://127.0.0.1:3000, the reader site on http://127.0.0.1:4321, and a pipeline tick every
-5 s in place of Vercel Cron. Drive is a local folder (`.local/stage2/drive`). Google sign-in
+5 s as a recovery aid. Drive is a local folder (`.local/stage2/drive`). Google sign-in
 is skipped on localhost.
 
 On **Runs & locations**, search for a town, select a suggestion and click **Add location**,
-then **Start run**. Census and library directories are prepared automatically on first
+then **Start pipeline (collection)**. When collection finishes, click **Start authoring**;
+when stories finish, click **Write front page and email, then publish**. Each click starts
+and chains that stage's jobs immediately, without cron. The local poller never crosses
+these editor gates. Census and library directories are prepared automatically on first
 use; that first search can take a minute. To publish a town on the reader site, select it
 on **Output channel** and save. The reader search also finds imported towns without an
 edition and lets readers register interest.
 
 **Run orchestration** shows recent attempts with their stages, stories and expandable per-job
 logs (including source outcomes and errors). **Cancel run** stops queued jobs and marks a
-collecting/authoring attempt cancelled; a job already executing may finish before its
+collecting, authoring, finishing or editor-waiting attempt cancelled; a job already executing may finish before its
 cancellation is reflected in the log. Once publication begins, cancellation is unavailable
 to avoid partially published editions. **Restart run** creates a fresh attempt for a
 published, failed or cancelled run;
-the earlier attempt remains in history. Only one run per location can be active at a time.
+the earlier attempt remains in history. Cancel a waiting attempt before restarting it.
+**Resume** re-kicks an in-progress stage without creating duplicate jobs or resetting
+its timeout/backoff. Only one run per location can be open (including editor-waiting) at a time.
 When upgrading from the collecting-only index, startup reconciles legacy overlapping
 attempts before installing the active-run index. The furthest-progressed attempt is kept;
 the others retain their own run IDs and history as cancelled, with queued jobs stopped and
@@ -79,21 +84,27 @@ npm run lint        # tsc --noEmit
 
 ## How a run works
 
-One run per location; each step is a job in MongoDB `pipeline_jobs`, sized for one Vercel
-function call. Portal actions call `/api/pipeline/advance` to execute the first job; each
-cloud job starts the next invocation when it finishes. The calls use short-lived tokens
-signed with `AUTH_SECRET`, so `CRON_SECRET` is not required for portal-started runs. A
-deferred retry wakes through the same endpoint. The deployed Vercel cron is currently
-disabled; `npm run local` runs the tick every 5 seconds during local development.
+One run per location, with three manually triggered stages; each step is a job in MongoDB
+`pipeline_jobs`, sized for one Vercel function call. The deployed Vercel cron remains
+disabled. Admin triggers call `/api/pipeline/advance` after responding; each job starts
+the next invocation within the current stage, including durable backoff and worker-lease
+waits. Calls use short-lived tokens signed with `AUTH_SECRET`, so `CRON_SECRET` is not
+required for portal-started stages. `npm run local` generates `AUTH_SECRET` automatically.
+When using `npm run dev` directly, configure it yourself. Internal deployment protection
+must permit the authenticated worker calls; rejected calls appear in Health and run diagnostics.
 
 Locations execute **sequentially**, including across overlapping local ticks, job calls
 and manual triggers. A renewable MongoDB worker lease prevents parallel model requests
-from different scheduler calls. The oldest active run finishes (or fails) before the next
-location starts; a run waiting for backoff keeps later locations queued.
-Each cloud job executes in its own invocation, preserving the Vercel function boundary
-without bypassing serialization or backoff. Optional ticks can recover interrupted work.
+from different scheduler calls. The oldest run with pending/running jobs in its
+in-progress stage finishes that stage (or fails) before the next location starts; a run
+waiting for backoff keeps later locations queued. A run waiting for an editor holds no
+worker lease and does not block another location.
+Each job executes in its own invocation in local and cloud mode, preserving the separate
+Vercel function boundary without bypassing serialization or backoff. Optional ticks can
+also recover interrupted work, but never cross a gate.
 
-1. **Collect**: one job per source (library, meetings, hazards, state news, trending).
+1. **Start pipeline (collection)**, per location or all locations: one job per source
+   (library, meetings, hazards, state news, trending).
    Rule-based preselection keeps up to **5 candidates per source** in hosted and local
    modes; the combined pool is capped again at five per connector type. With five types,
    at most **25 candidates per location** reach model ranking. State feeds still retain up
@@ -102,15 +113,24 @@ without bypassing serialization or backoff. Optional ticks can recover interrupt
    days or future-dated items. Older onboarded locations without a government profile
    get a real meeting-discovery task rather than silently skipping meetings.
    Failed sources are retried, then recorded without blocking the other sources.
-2. **Author**: score candidates in batches of at most 12 with up to 600 characters of
+   The run stops at `awaiting_authoring`; no ranking or writing starts automatically.
+2. **Start authoring**: score candidates in batches of at most 12 with up to 600 characters of
    source context for hosted ranking (280 for Ollama). Retry missing/invalid ratings once,
    then report deterministic fallback scores explicitly. Ranking reports retain provider,
    model, pool size, attempts, errors and fallback counts. News candidates are authored
    before upcoming listings, preferring town news to wider news. Write one story per job,
    with validation and one retry; failures are held with reasons. The edition remains
    bounded at 9 items and at most 4 county/nearby items, not 25 authored stories.
-3. **Publish**: the edition and email preview (saved, never sent) go to every enabled output
-   channel that selects the location.
+   The run stops at `awaiting_finish`; front-page/email writing and publication wait.
+3. **Write front page and email, then publish**: write the edition front page and email
+   preview, save the artifacts, and publish the edition to every enabled output channel
+   that selects the location. Email is preview-only: **no email is sent**.
+
+The run list/detail and Health show both waiting states. Authenticated same-origin admin
+POSTs to `/api/admin/runs/<run-id>/authoring`, `/finish` and `/resume` back the controls.
+Stage triggers return 409 from an incompatible state; re-clicking the current in-progress
+stage resumes it. Stage transitions record the editor email (or worker identity).
+Neither manual ticks, the local poller nor a future cron can bypass a gate.
 
 HTTP **429** is an infrastructure delay, not an editorial rejection. Try configured backup
 providers first; if none succeeds, return the unfinished job to MongoDB with exponential
@@ -132,8 +152,9 @@ published/held stories, source outcomes and average run duration. History uses r
 run data, not estimated provider uptime. Every step writes structured JSON logs.
 Runs that aren't progressing are marked **stalled** with the cause (no recent worker
 call, rejected job call, worker dispatch failure, retries, expired leases).
-Runs still active after `NEWSBEE_RUN_TIMEOUT_MINUTES` (default 60, `0` disables) are
-failed on the next tick or portal load, so they time out even when the cron is down.
+In-progress stages still active after `NEWSBEE_RUN_TIMEOUT_MINUTES` (default 60, `0`
+disables) are failed on the next worker call, tick or portal load. Each manually started stage gets
+its own timeout; time waiting for an editor is neither stalled nor counted toward it.
 
 Articles use short reported-style prose (up to 120 words), prefer dates/venues separately,
 and receive complete-headline and unsupported-claim checks with one retry before holding.
@@ -198,7 +219,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; portal runs use `AUTH_SECRET` instead |
-| `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail runs active longer than this (default 60, `0` disables) |
+| `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
 | `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |
 
@@ -227,8 +248,9 @@ MongoDB; the reader site reads published editions from that channel folder, not 
 from the pipeline root. If a channel folder is changed or created manually, share it with
 the service account as well.
 
-The Vercel cron is currently commented out in `vercel.mjs`. To resume automatic cloud runs,
-uncomment its schedule for `/api/pipeline/tick`; scheduled functions require a Vercel Pro plan.
+The Vercel cron remains commented out in `vercel.mjs`; it is not needed for this manual
+flow. Re-enabling a scheduler in future would only process already-started stages, not
+start authoring or publication through an editor gate.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
 `journalist_admins` (lowercase); the **Administrators** page adds more. Reviewed source

@@ -7,7 +7,7 @@ import type { Db } from "mongodb";
 import { COLLECTIONS } from "../storage/mongo";
 import type { Job } from "./jobs";
 
-/** Scheduler ticks are expected every minute; older than this means cron is not running. */
+/** While work is in progress, this much tick silence merits a Resume diagnostic. */
 export const STALE_TICK_SECONDS = 180;
 
 export const SCHEDULER_CHANNELS = ["tick", "kick", "dispatch", "followup"] as const;

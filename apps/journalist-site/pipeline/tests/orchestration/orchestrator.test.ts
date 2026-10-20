@@ -12,12 +12,13 @@ import { loadSettings } from "../../core/config";
 import { logger } from "../../core/log";
 import { latestPublished } from "../../editions/authoring";
 import { addLocationsToChannel, refreshChannelDirectory } from "../../orchestration/publish";
-import { locationHealth } from "../../orchestration/health";
+import { healthSummary, locationHealth } from "../../orchestration/health";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { sourceResult, type CollectedEvent, type Connector, type LocationProfile, type SourceType } from "../../connectors/types";
-import { acquireWorker, releaseWorker, renewWorker, claim, MAX_RATE_LIMIT_RETRIES, cancelRunJobs, nextPendingJob, pendingJobs, recentJobs, runJobs } from "../../orchestration/jobs";
-import { runOne, startRun, tick } from "../../orchestration/orchestrator";
-import { cancelRun, ensureRunIndexes, getRun, RunConflict } from "../../orchestration/runs";
+import { acquireWorker, releaseWorker, renewWorker, claim, ensureJobIndexes, MAX_RATE_LIMIT_RETRIES, cancelRunJobs, nextPendingJob, pendingJobs, recentJobs, runJobs } from "../../orchestration/jobs";
+import { resumeRun, runOne, startRun, tick, triggerStage } from "../../orchestration/orchestrator";
+import { cancelRun, ensureRunIndexes, getRun, oldestActiveRun, RunConflict } from "../../orchestration/runs";
+import { diagnoseRuns, expireOverdueRuns } from "../../orchestration/diagnostics";
 import { ModelRateLimitError } from "../../model/runtime";
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
@@ -119,15 +120,152 @@ describe("orchestrator", () => {
     };
   }
 
-  /** Tick until idle, making retry backoffs due immediately. */
+  /** Explicitly act as an editor at each gate; ticks themselves must never cross one. */
   async function drain(d: ReturnType<typeof deps>) {
     for (let i = 0; i < 20; i += 1) {
       await mongo.db.collection(COLLECTIONS.jobs).updateMany({ status: "pending" }, { $set: { available_at: 0 } });
       const { executed } = await tick(d, { budgetMs: 10_000, concurrency: 3 });
+      const waiting = await d.db.collection(COLLECTIONS.runs).find({ status: { $in: ["awaiting_authoring", "awaiting_finish"] } }).toArray();
+      for (const run of waiting) await triggerStage(d, String(run._id), run.status === "awaiting_authoring" ? "authoring" : "finish", "test-editor");
+      if (waiting.length) continue;
       if (!executed) return;
     }
     throw new Error("Queue did not drain");
   }
+
+  it("requires three editor actions, and repeated ticks never cross either gate", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "collector@example.org", kind: "manual" });
+    await expect(triggerStage(d, run._id, "authoring", "editor")).rejects.toBeInstanceOf(RunConflict);
+    await expect(triggerStage(d, run._id, "finish", "editor")).rejects.toBeInstanceOf(RunConflict);
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, run._id))?.status).toBe("awaiting_authoring");
+    expect(d.model.calls).toHaveLength(0);
+    for (let i = 0; i < 3; i++) expect(await tick(d)).toEqual({ executed: 0 });
+    expect(await oldestActiveRun(d.db)).toBeNull();
+    expect(await acquireWorker(d.db)).toBeTypeOf("string");
+    await d.db.collection(COLLECTIONS.heartbeat).deleteOne({ _id: "pipeline-worker" as never });
+    expect((await runJobs(d.db, run._id)).every((job) => job.kind === "collect_source")).toBe(true);
+    await expect(resumeRun(d, run._id, "editor")).rejects.toBeInstanceOf(RunConflict);
+    await expect(triggerStage(d, run._id, "finish", "editor")).rejects.toBeInstanceOf(RunConflict);
+
+    await triggerStage(d, run._id, "authoring", "writer@example.org");
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, run._id))?.status).toBe("awaiting_finish");
+    const calls = d.model.calls.length;
+    for (let i = 0; i < 3; i++) expect(await tick(d)).toEqual({ executed: 0 });
+    expect(d.model.calls).toHaveLength(calls);
+    expect((await runJobs(d.db, run._id)).some((job) => job.kind === "author_finish")).toBe(false);
+    expect(await d.db.collection(COLLECTIONS.editionEntries).countDocuments({})).toBeGreaterThan(0);
+    expect((await getRun(d.db, run._id))?.published).toBeNull();
+    await expect(triggerStage(d, run._id, "authoring", "editor")).rejects.toBeInstanceOf(RunConflict);
+
+    await triggerStage(d, run._id, "finish", "publisher@example.org");
+    await tick(d, { budgetMs: 10_000 });
+    const done = await getRun(d.db, run._id);
+    expect(done?.status).toBe("published");
+    expect(done?.stage_transitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: "collecting", by: "collector@example.org" }),
+      expect.objectContaining({ status: "authoring", by: "writer@example.org" }),
+      expect.objectContaining({ status: "finishing", by: "publisher@example.org" }),
+    ]));
+    await expect(triggerStage(d, run._id, "finish", "editor")).rejects.toBeInstanceOf(RunConflict);
+    await expect(resumeRun(d, run._id, "editor")).rejects.toBeInstanceOf(RunConflict);
+  });
+
+  it.each(["awaiting_authoring", "awaiting_finish"] as const)("does not timeout, stall or block another location while %s", async (gate) => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    if (gate === "awaiting_finish") {
+      await triggerStage(d, run._id, "authoring", "editor");
+      await tick(d, { budgetMs: 10_000 });
+    }
+    await d.db.collection(COLLECTIONS.runs).updateOne({ _id: run._id as never }, { $set: { created_at: 1, stage_started_at: 1, updated_at: 1 } });
+    expect(await expireOverdueRuns(d.db, 1)).toEqual([]);
+    const waiting = (await getRun(d.db, run._id))!;
+    expect((await diagnoseRuns(d.db, [waiting], 1)).get(run._id)).toBeUndefined();
+    expect((await locationHealth(d.db, waiting, LOCATION, { runTimeoutSeconds: 1 })).diagnostics).toBeNull();
+    await d.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_at: 0 } });
+    const summary = await healthSummary(d.db, d.model, { runTimeoutSeconds: 1, modelProviders: [] });
+    expect(summary.scheduler.status).toBe("stale");
+    expect(summary.status).toBe("ok");
+    expect(summary.locations[0].stage).toBe(gate);
+    expect((await startRun(d, LOCATION.id, { by: "editor", kind: "manual" })).started).toBe(false);
+    await d.db.collection(COLLECTIONS.locations).insertOne({ ...LOCATION, id: "kent-wa", _id: "kent-wa" as never });
+    const next = await startRun(d, "kent-wa", { by: "editor", kind: "manual" });
+    expect((await oldestActiveRun(d.db))?._id).toBe(next.run._id);
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, next.run._id))?.status).toBe("awaiting_authoring");
+    await triggerStage(d, run._id, gate === "awaiting_authoring" ? "authoring" : "finish", "editor");
+    expect(await expireOverdueRuns(d.db, 3600)).toEqual([]);
+    expect((await getRun(d.db, run._id))?.stage_started_at).toBeGreaterThan(Date.now() / 1000 - 5);
+  });
+
+  it("re-kicks stalled stages concurrently without duplicate jobs or resetting backoff", async () => {
+    const d = deps();
+    await ensureJobIndexes(d.db);
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await Promise.all(Array.from({ length: 4 }, () => resumeRun(d, run._id, "editor")));
+    expect(await d.db.collection(COLLECTIONS.jobs).countDocuments({ run_id: run._id })).toBe(5);
+    await tick(d, { budgetMs: 10_000 });
+    await Promise.all(Array.from({ length: 4 }, () => triggerStage(d, run._id, "authoring", "editor")));
+    const future = Date.now() / 1000 + 90;
+    await d.db.collection(COLLECTIONS.jobs).updateMany({ run_id: run._id, kind: "author_start" }, { $set: { available_at: future } });
+    await resumeRun(d, run._id, "editor");
+    expect((await runJobs(d.db, run._id)).filter((job) => job.kind === "author_start")).toHaveLength(1);
+    expect((await runJobs(d.db, run._id)).find((job) => job.kind === "author_start")?.available_at).toBe(future);
+    const started = (await getRun(d.db, run._id))?.stage_started_at;
+    await d.db.collection(COLLECTIONS.jobs).updateMany({ run_id: run._id, status: "pending" }, { $set: { available_at: 0 } });
+    await runOne(d);
+    await resumeRun(d, run._id, "editor");
+    expect((await runJobs(d.db, run._id)).filter((job) => job.kind === "author_start")).toHaveLength(1);
+    expect((await getRun(d.db, run._id))?.stage_started_at).toBe(started);
+    await tick(d, { budgetMs: 10_000 });
+    await Promise.all(Array.from({ length: 4 }, () => triggerStage(d, run._id, "finish", "editor")));
+    expect((await runJobs(d.db, run._id)).filter((job) => job.kind === "author_finish")).toHaveLength(1);
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, run._id))?.status).toBe("published");
+  });
+
+  it("repairs a stage transition interrupted before enqueue and ignores an in-progress run with no work", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    await d.db.collection(COLLECTIONS.runs).updateOne({ _id: run._id as never }, { $set: { status: "authoring" } });
+    expect(await oldestActiveRun(d.db)).toBeNull();
+    await resumeRun(d, run._id, "editor");
+    expect((await oldestActiveRun(d.db))?._id).toBe(run._id);
+    await runOne(d);
+    // Simulate a crash losing the next queued step after persisting the completed start.
+    await d.db.collection(COLLECTIONS.jobs).deleteMany({ run_id: run._id, kind: "author_story" });
+    await resumeRun(d, run._id, "editor");
+    expect((await runJobs(d.db, run._id)).filter((job) => job.kind === "author_story")).toHaveLength(1);
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, run._id))?.status).toBe("awaiting_finish");
+  });
+
+  it.each(["awaiting_authoring", "awaiting_finish"] as const)("allows cancel and fresh restart from %s and indexes the gate as open", async (gate) => {
+    const d = deps();
+    await ensureRunIndexes(d.db);
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    if (gate === "awaiting_finish") {
+      await triggerStage(d, run._id, "authoring", "editor");
+      await tick(d, { budgetMs: 10_000 });
+    }
+    await expect(d.db.collection(COLLECTIONS.runs).insertOne({ ...run, _id: randomUUID() as never })).rejects.toMatchObject({ code: 11000 });
+    await cancelRun(d.db, run._id, "editor");
+    await cancelRunJobs(d.db, run._id);
+    expect(await runOne(d)).toBe(false);
+    await expect(triggerStage(d, run._id, gate === "awaiting_authoring" ? "authoring" : "finish", "editor")).rejects.toBeInstanceOf(RunConflict);
+    const restarted = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    expect(restarted.started).toBe(true);
+    expect(restarted.run._id).not.toBe(run._id);
+    expect((await getRun(d.db, run._id))?.status).toBe("cancelled");
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, restarted.run._id))?.status).toBe("awaiting_authoring");
+  });
 
   it("runs every source, authors once all finish, holds failures and publishes to the channel", async () => {
     const d = deps();
@@ -211,15 +349,12 @@ describe("orchestrator", () => {
     expect(await runOne(d)).toBe(false);
     unblock();
     await running;
-    const completed: string[] = [];
     for (let i = 0; i < 50; i++) {
       if (!await runOne(d)) break;
-      if ((await getRun(d.db, first.run._id))?.status === "published") completed.push("first");
-      if ((await getRun(d.db, second.run._id))?.status === "published") {
-        expect(completed).toContain("first");
-        break;
-      }
     }
+    expect((await getRun(d.db, first.run._id))?.status).toBe("awaiting_authoring");
+    expect((await getRun(d.db, second.run._id))?.status).toBe("awaiting_authoring");
+    await drain(d);
     expect((await getRun(d.db, second.run._id))?.status).toBe("published");
   });
 
@@ -235,7 +370,13 @@ describe("orchestrator", () => {
       });
       const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
       await tick(d, { budgetMs: 10_000 });
-      expect((await getRun(d.db, run._id))?.status).toBe("authoring");
+      await triggerStage(d, run._id, "authoring", "test-editor");
+      await tick(d, { budgetMs: 10_000 });
+      if (stage === "front" || stage === "email") {
+        await triggerStage(d, run._id, "finish", "test-editor");
+        await tick(d, { budgetMs: 10_000 });
+      }
+      expect((await getRun(d.db, run._id))?.status).toBe(stage === "front" || stage === "email" ? "finishing" : "authoring");
       const pending = await d.db.collection(COLLECTIONS.jobs).findOne({ run_id: run._id, status: "pending", rate_limit_retries: 1 });
       expect(pending).not.toBeNull();
       expect(pending!.available_at).toBeGreaterThan(Date.now() / 1000 + 80);
@@ -253,6 +394,8 @@ describe("orchestrator", () => {
     await drain(d);
     d.model = new FakeModel(() => { throw new ModelRateLimitError("Daily quota exhausted"); });
     const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    await triggerStage(d, run._id, "authoring", "test-editor");
     await tick(d, { budgetMs: 10_000 });
     for (let retry = 1; retry <= MAX_RATE_LIMIT_RETRIES; retry++) {
       const pending = await d.db.collection(COLLECTIONS.jobs).findOne({ run_id: run._id, status: "pending" });
@@ -289,6 +432,8 @@ describe("orchestrator", () => {
     const d = deps();
     d.model = new FakeModel(() => { throw new ModelRateLimitError("daily quota", 86400); });
     const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    await triggerStage(d, run._id, "authoring", "test-editor");
     await tick(d, { budgetMs: 10_000 });
     expect((await getRun(d.db, run._id))?.status).toBe("failed");
     expect((await getRun(d.db, run._id))?.edition_id).toBeNull();
@@ -410,12 +555,30 @@ describe("orchestrator", () => {
     const collection = mongo.db.collection(COLLECTIONS.runs);
     await collection.createIndex({ location_id: 1 }, { unique: true, name: "one_collecting_run_per_location", partialFilterExpression: { status: "collecting" } });
     await ensureRunIndexes(mongo.db);
-    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_open_run_per_location");
     expect((await collection.indexes()).map((index) => index.name)).not.toContain("one_collecting_run_per_location");
     const d = deps();
     const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
     await collection.updateOne({ _id: run._id as never }, { $set: { status: "authoring" } });
     await expect(collection.insertOne({ ...run, _id: "overlap" as never })).rejects.toMatchObject({ code: 11000 });
+  });
+
+  it("upgrades the existing active-stage index to protect editor-waiting runs too", async () => {
+    const d = deps();
+    const collection = mongo.db.collection(COLLECTIONS.runs);
+    await collection.createIndex({ location_id: 1 }, {
+      unique: true, name: "one_active_run_per_location",
+      partialFilterExpression: { status: { $in: ["collecting", "authoring", "publishing"] } },
+    });
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    await ensureRunIndexes(d.db);
+    const names = (await collection.indexes()).map((index) => index.name);
+    expect(names).toContain("one_open_run_per_location");
+    expect(names).not.toContain("one_active_run_per_location");
+    await expect(collection.insertOne({ ...run, _id: randomUUID() as never })).rejects.toMatchObject({ code: 11000 });
+    await ensureRunIndexes(d.db);
+    expect((await getRun(d.db, run._id))?.status).toBe("awaiting_authoring");
   });
 
   it("reconciles legacy overlaps without deleting run IDs or interrupting the furthest attempt", async () => {
@@ -440,7 +603,7 @@ describe("orchestrator", () => {
     expect((await getRun(d.db, overlap._id))?.error).toContain(first.run._id);
     expect((await runJobs(d.db, overlap._id))[0].status).toBe("cancelled");
     expect(await collection.countDocuments({ location_id: LOCATION.id })).toBe(2);
-    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_open_run_per_location");
     await ensureRunIndexes(d.db); // safe across repeated cold starts
   });
 
@@ -454,10 +617,10 @@ describe("orchestrator", () => {
     await ensureRunIndexes(d.db);
     expect((await getRun(d.db, run._id))?.status).toBe("publishing");
     expect((await getRun(d.db, otherRunId))?.status).toBe("publishing");
-    expect((await collection.indexes()).map((index) => index.name)).not.toContain("one_active_run_per_location");
+    expect((await collection.indexes()).map((index) => index.name)).not.toContain("one_open_run_per_location");
     await collection.updateOne({ _id: otherRunId as never }, { $set: { status: "published" } });
     await ensureRunIndexes(d.db);
-    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_open_run_per_location");
   });
 
   it("shows a connector-reported failure in health even when its job completes", async () => {

@@ -7,7 +7,7 @@ import type { Db } from "mongodb";
 import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { cancelRunJobs, MAX_ATTEMPTS, type Job } from "./jobs";
-import { ACTIVE_RUN_STATUSES, runs, type PipelineRun } from "./runs";
+import { PROCESSING_RUN_STATUSES, runs, type PipelineRun } from "./runs";
 import { schedulerState, type SchedulerState } from "./scheduler";
 
 export type IssueSeverity = "info" | "warning" | "failed";
@@ -42,8 +42,8 @@ function jobLabel(run: PipelineRun, job: Job) {
 const ACTIVE_JOB = (job: Job) => job.status === "pending" || job.status === "running";
 
 export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerState, timeoutSeconds: number | null, current = now()): RunDiagnostics {
-  if (!ACTIVE_RUN_STATUSES.includes(run.status)) return { deadline_at: null, overdue: false, issues: [] };
-  const deadline = timeoutSeconds ? run.created_at + timeoutSeconds : null;
+  if (!PROCESSING_RUN_STATUSES.includes(run.status)) return { deadline_at: null, overdue: false, issues: [] };
+  const deadline = timeoutSeconds ? (run.stage_started_at ?? run.created_at) + timeoutSeconds : null;
   const issues: RunIssue[] = [];
   const pending = jobs.filter((job) => job.status === "pending");
   const ready = pending.filter((job) => job.available_at <= current);
@@ -55,7 +55,7 @@ export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerS
     issues.push({
       code: "scheduler_not_running",
       severity: waiting > 120 ? "failed" : "warning",
-      message: `No pipeline worker has run recently (${since}); ${ready.length} queued job(s) are waiting. Start a run from the portal or check the job dispatch problems. An optional scheduler can recover interrupted work.`,
+      message: `No pipeline worker has run recently (${since}); ${ready.length} queued job(s) are waiting. Use Resume for this stage to re-kick /api/pipeline/advance; check the dispatch errors if it stops again.`,
     });
   }
   for (const issue of scheduler.issues) {
@@ -92,7 +92,7 @@ export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerS
 
 /** Diagnostics for many runs with one jobs query and one heartbeat read. */
 export async function diagnoseRuns(db: Db, items: PipelineRun[], timeoutSeconds: number | null, current = now()) {
-  const active = items.filter((run) => ACTIVE_RUN_STATUSES.includes(run.status));
+  const active = items.filter((run) => PROCESSING_RUN_STATUSES.includes(run.status));
   const result = new Map<string, RunDiagnostics>();
   if (!active.length) return result;
   const scheduler = await schedulerState(db, current);
@@ -107,7 +107,13 @@ export async function diagnoseRuns(db: Db, items: PipelineRun[], timeoutSeconds:
  */
 export async function expireOverdueRuns(db: Db, timeoutSeconds: number | null, current = now()) {
   if (!timeoutSeconds) return [];
-  const overdue = await runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES }, created_at: { $lt: current - timeoutSeconds } }).toArray();
+  const overdue = await runs(db).find({
+    status: { $in: PROCESSING_RUN_STATUSES },
+    $or: [
+      { stage_started_at: { $lt: current - timeoutSeconds } },
+      { stage_started_at: { $exists: false }, created_at: { $lt: current - timeoutSeconds } },
+    ],
+  }).toArray();
   if (!overdue.length) return [];
   const diagnostics = await diagnoseRuns(db, overdue, timeoutSeconds, current);
   const expired: PipelineRun[] = [];
@@ -119,7 +125,7 @@ export async function expireOverdueRuns(db: Db, timeoutSeconds: number | null, c
     const cause = diagnostics.get(run._id)?.issues.find((issue) => issue.code !== "overdue" && issue.code !== "deadline" && issue.severity !== "info");
     const error = `Timed out after ${duration(timeoutSeconds)} while ${run.status}.${cause ? ` ${cause.message}` : ""}`;
     const updated = await runs(db).findOneAndUpdate(
-      { _id: run._id, status: run.status },
+      { _id: run._id, status: run.status, updated_at: run.updated_at },
       { $set: { status: "failed", error, completed_at: current, updated_at: current } },
       { returnDocument: "after" },
     );

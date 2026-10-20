@@ -5,6 +5,7 @@ import type { GovernmentSource, LocationProfile, LibrarySystem } from "../connec
 import { COLLECTIONS } from "../storage/mongo";
 import { loadSourceConfig } from "../storage/source-configs";
 import { logger } from "../core/log";
+import { ACTIVE_RUN_STATUSES } from "../orchestration/runs";
 const log = logger("communities.locations");
 import { display, systemsForPlace } from "./directory";
 import { lookupWebsite, httpsOrigin } from "./wikidata";
@@ -134,7 +135,7 @@ export async function removeLocation(db: Db, id: string): Promise<Record<string,
   await getLocation(db, id);
   const running = await db.collection<LocationRef>(COLLECTIONS.jobs).countDocuments({ location_id: id, status: "running" });
   if (running) throw new LocationBusy(`${id} has a running job; wait for it to finish`);
-  const active = await db.collection(COLLECTIONS.runs).countDocuments({ location_id: id, status: { $in: ["collecting", "authoring", "publishing"] } });
+  const active = await db.collection(COLLECTIONS.runs).countDocuments({ location_id: id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (active) throw new LocationBusy(`${id} has an active run; cancel it before removal`);
   const counts: Record<string, number> = {};
   for (const [name, collectionName] of LOCATION_COLLECTIONS) {

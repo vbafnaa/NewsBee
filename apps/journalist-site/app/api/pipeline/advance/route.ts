@@ -5,7 +5,7 @@ import { pipelineDeps } from "@/lib/pipeline";
 import { logger } from "@/pipeline/core/log";
 import { expireOverdueRuns } from "@/pipeline/orchestration/diagnostics";
 import { runOne } from "@/pipeline/orchestration/orchestrator";
-import { nextPendingJob } from "@/pipeline/orchestration/jobs";
+import { nextJobWake } from "@/pipeline/orchestration/jobs";
 import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { oldestActiveRun } from "@/pipeline/orchestration/runs";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     );
     await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
     const active = await oldestActiveRun(deps.db);
-    const pending = active ? await nextPendingJob(deps.db, active._id) : null;
+    const pending = active ? await nextJobWake(deps.db, active._id) : null;
     if (pending && pending.available_at * 1000 > Date.now()) {
       // Delay in a separate call, so a rate-limit wait cannot consume a worker's function lifetime.
       const delay = Math.min(120_000, Math.max(0, pending.available_at * 1000 - Date.now()));
