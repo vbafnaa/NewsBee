@@ -71,7 +71,9 @@ The Drive folder ID is read from `output_channels.drive_folder_id` on the docume
 reader site does not use a Drive folder ID environment variable. Share the configured Drive
 folder with the service account email as a Viewer. The service account only requests
 Drive's read-only scope. The MongoDB database user needs read/write access to
-`reader_interest_signups` and read access to `output_channels`. MongoDB creates a unique
+`reader_interest_signups`, `geographic_places`, `geographic_search_cache`, and
+`geographic_search_leases`, plus read access to `output_channels`, `census_places`, and
+`source_configs`. Geographic search creates a TTL index on its shared cache. MongoDB creates a unique
 `(location_id, email)` index in the signup collection so repeat signups are idempotent.
 When the channel's `enabled` field is `false`, edition listing and edition detail APIs
 return HTTP 503 without serving cached edition responses.
@@ -80,7 +82,11 @@ return HTTP 503 without serving cached edition responses.
 
 - `GET /api/editions`: lists towns and their latest edition metadata.
 - `GET /api/editions/<location_id>`: returns the latest edition for a town.
-- `GET /api/locations/search?q=<prefix>[,%20ST]`: searches `locations.json`.
+- `GET /api/locations/search?q=<prefix>[,%20ST]`: searches Census towns, reviewed communities,
+  and saved geographic communities.
+- `GET /api/locations/search?q=<community>&discover=true`: explicitly searches US neighborhoods
+  and towns through Photon/OpenStreetMap, using the same MongoDB cache and provider throttle
+  as editor onboarding. `NEWSBEE_GEOCODER_URL` can override the HTTPS Photon endpoint.
 - `GET /api/locations/<location_id>`: resolves a town in the directory.
 - `POST /api/locations/<location_id>/interest`: validates and stores an interest email in
   MongoDB; addresses are never returned by a public endpoint.
@@ -88,6 +94,12 @@ return HTTP 503 without serving cached edition responses.
 The reader calls these same-origin routes. Google Drive content is read on the server;
 the browser never receives service-account credentials. Search and edition content are
 public. Interest signups require a same-origin request and are stored durably in MongoDB.
+
+In **Choose your edition**, type a community name and city/state, then press **Search all
+communities** (or Enter without a highlighted suggestion). Typing alone only searches the
+local directory; provider lookup is explicit. A discovered community is saved for later
+lookup and interest signups, not automatically onboarded or published. Selecting it opens
+the published edition when available, otherwise the interest form.
 
 For the complete local cloud stack, use `npm run local` in
 [`../journalist-site`](../journalist-site/README.md); it supplies the local MongoDB and

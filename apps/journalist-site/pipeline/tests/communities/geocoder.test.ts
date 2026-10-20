@@ -12,7 +12,7 @@ import { stateNewsConnector } from "../../connectors/wider";
 import { Fetcher } from "../../connectors/fetcher";
 import { logger } from "../../core/log";
 import { loadSettings } from "../../core/config";
-import { searchTownDirectory, directoryTown } from "../../../../reader-site/src/lib/reader-data";
+import { searchTownDirectory, directoryTown, discoverReaderCommunities } from "../../../../reader-site/src/lib/reader-data";
 import { GET as searchRoute } from "@/app/api/admin/places/route";
 import { POST as onboardRoute } from "@/app/api/admin/locations/route";
 import { withMongo } from "../support/mongo";
@@ -79,6 +79,10 @@ it("caches explicit provider searches and persists results without trusting clie
   const first = await searchGeography(mongo.db, "Wallingford, Seattle, WA", replay.transport);
   const second = await searchGeography(mongo.db, "Wallingford, Seattle, WA", replay.transport);
   expect(first.map((item) => item.id)).toEqual(second.map((item) => item.id));
+  expect(replay.requests).toHaveLength(1);
+  expect(await discoverReaderCommunities("Wallingford, Seattle, WA", mongo.db)).toEqual([
+    { id: first[0].id, name: first[0].label },
+  ]);
   expect(replay.requests).toHaveLength(1);
   expect(new URL(replay.requests[0].url).searchParams.get("countrycode")).toBe("US");
   expect(await mongo.db.collection(GEOGRAPHIC_PLACES).countDocuments()).toBe(1);

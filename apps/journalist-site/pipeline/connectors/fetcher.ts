@@ -3,10 +3,11 @@
  * redirects and robots.txt checks. Every source connector fetches through this.
  */
 import robotsParser from "robots-parser";
+import { COMMUNITY_USER_AGENT } from "../../../../shared/geography";
 import { type HttpTransport, HttpStatusError, isRedirect } from "../core/http";
 import { FeedFormatError, httpsLink } from "./common";
 
-export const USER_AGENT = "Newsbee/0.2 (community newsletter; +https://github.com/g2minhle/Newsbee)";
+export const USER_AGENT = COMMUNITY_USER_AGENT;
 export const MAX_REDIRECTS = 3;
 
 export class DiscoveryBlockedError extends Error {}

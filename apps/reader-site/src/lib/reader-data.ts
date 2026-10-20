@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
 import { COMMUNITY_SEED, communityDirectory, communityName, matchingCommunities } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
+import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
 
 export type EditionItem = {
   story_id?: string | null;
@@ -348,6 +349,11 @@ export function searchLocations(locations: Location[], query: string) {
 async function readerDatabase() {
   const { client, databaseName } = await readerMongoClient();
   return client.db(databaseName);
+}
+
+export async function discoverReaderCommunities(query: string, db?: Db): Promise<Location[]> {
+  return (await searchGeography(db ?? await readerDatabase(), query))
+    .map((place) => ({ id: place.id, name: place.label }));
 }
 
 type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };

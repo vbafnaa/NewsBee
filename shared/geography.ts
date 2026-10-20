@@ -1,3 +1,5 @@
+export const COMMUNITY_USER_AGENT = "Newsbee/0.2 (community newsletter; +https://github.com/g2minhle/Newsbee)";
+
 export type Point = [number, number]; // longitude, latitude
 export type Polygon = { type: "Polygon"; coordinates: Point[][] };
 export type MultiPolygon = { type: "MultiPolygon"; coordinates: Point[][][] };

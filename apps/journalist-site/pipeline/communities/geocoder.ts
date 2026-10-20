@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
-import { GEOGRAPHIC_PLACES, parsePhoton, type GeographicPlace } from "../../../../shared/geography";
+import { COMMUNITY_USER_AGENT, GEOGRAPHIC_PLACES, parsePhoton, type GeographicPlace } from "../../../../shared/geography";
 import { fetchTransport, HttpStatusError, json, type HttpTransport } from "../core/http";
-import { USER_AGENT } from "../connectors/fetcher";
 import { logger } from "../core/log";
 
 export type GeographicDocument = GeographicPlace & { _id: string; name_lower: string; fetched_at: number };
@@ -61,7 +60,7 @@ export async function searchGeography(db: Db, query: string, transport: HttpTran
     // A concurrent identical request may have filled the cache while we waited.
     const ready = await cachedPlaces(db, key);
     if (ready) return ready;
-    const response = await transport({ url: url.toString(), headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, maxBytes: 2 * 1024 * 1024, timeoutMs: 12_000 });
+    const response = await transport({ url: url.toString(), headers: { "User-Agent": COMMUNITY_USER_AGENT, Accept: "application/json" }, maxBytes: 2 * 1024 * 1024, timeoutMs: 12_000 });
     if (response.status >= 300) throw new HttpStatusError(response.status, url.origin);
     const results = parsePhoton(json(response));
     for (const place of results) {
