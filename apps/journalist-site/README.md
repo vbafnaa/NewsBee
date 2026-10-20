@@ -180,15 +180,16 @@ Artifacts and `smoke-result.json` persist under `.local/community-smoke`
 ## How a run works
 
 One run per location, with three manually triggered stages; each step is a job in MongoDB
-`pipeline_jobs`, sized for one Vercel function call. The deployed Vercel cron remains
-disabled. Admin triggers call `/api/pipeline/advance` after responding; each job starts
-the next invocation within the current stage, including durable backoff and worker-lease
-waits. Calls use short-lived tokens signed with `AUTH_SECRET`, so `CRON_SECRET` is not
-required for portal-started stages. `npm run local` generates `AUTH_SECRET` automatically.
-When using `npm run dev` directly, configure it yourself. Internal deployment protection
-must permit the authenticated worker calls; rejected calls appear in Health and run diagnostics.
+`pipeline_jobs`, sized for one Vercel function call. Cloud admin triggers publish a wake-up
+to Vercel Queues; its private `/api/pipeline/queue` consumer executes one job and publishes
+the next within the current stage. Retries and worker-lease waits use delayed deliveries;
+editor gates never start automatically. No self-HTTP calls or `CRON_SECRET` are needed for
+portal-started cloud stages. The deployed Vercel cron remains disabled. Locally, admin
+triggers use `/api/pipeline/advance` with short-lived tokens signed with `AUTH_SECRET`,
+and `npm run local` supplies that secret automatically. Configure it yourself when using
+`npm run dev` directly.
 
-Locations execute **sequentially**, including across overlapping local ticks, job calls
+Locations execute **sequentially**, including across overlapping local ticks, queue deliveries
 and manual triggers. A renewable MongoDB worker lease prevents parallel model requests
 from different scheduler calls. The oldest run with pending/running jobs in its
 in-progress stage finishes that stage (or fails) before the next location starts; a run
@@ -313,7 +314,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_EMAIL` and `_PRIVATE_KEY`) | Drive writer (Editor on the folders below) |
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
-| `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; portal runs use `AUTH_SECRET` instead |
+| `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
 | `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |
@@ -343,9 +344,10 @@ MongoDB; the reader site reads published editions from that channel folder, not 
 from the pipeline root. If a channel folder is changed or created manually, share it with
 the service account as well.
 
-The Vercel cron remains commented out in `vercel.mjs`; it is not needed for this manual
-flow. Re-enabling a scheduler in future would only process already-started stages, not
-start authoring or publication through an editor gate.
+`vercel.mjs` configures the private queue consumer and keeps the optional
+`/api/pipeline/tick` Cron schedule commented out. To enable minute-by-minute recovery,
+uncomment that schedule and set `CRON_SECRET`; scheduled functions require a Vercel Pro plan.
+Optional recovery only processes an editor-started stage; it cannot cross an editor gate.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
 `journalist_admins` (lowercase); the **Administrators** page adds more. Reviewed source

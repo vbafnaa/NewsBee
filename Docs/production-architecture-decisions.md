@@ -27,8 +27,8 @@ the browser. Journalist access checks enabled accounts in `journalist_admins`.
 
 Deploy the apps as separate Vercel projects, rooted at their respective `apps/`
 directories, with access to files outside each project root for shared code/configuration.
-The journalist project's `vercel.mjs` retains a commented-out minute cron schedule;
-scheduled cloud ticks are currently disabled. Re-enabling them requires Vercel Pro.
+The journalist project's `vercel.mjs` configures a private queue consumer for cloud
+jobs and keeps minute Cron recovery commented out; enabling it requires Vercel Pro.
 Configure separate Drive permissions: writer for the pipeline, Viewer for the reader.
 Keep all credentials in hosting environment secrets, never in checked-in configuration.
 

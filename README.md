@@ -86,9 +86,10 @@ Create two Vercel projects with root directories `apps/journalist-site` and
 `apps/reader-site`. Enable access to files outside each project's root directory so the
 journalist build can bundle root `config/` seeds and both apps can import `shared/` code.
 The journalist project uses `NEWSBEE_MODE=cloud`, MongoDB Atlas, a Drive writer service
-account, hosted model credentials, Google sign-in and `CRON_SECRET`. Scheduled cloud
-ticks are currently disabled in `vercel.mjs`; re-enabling the minute cron requires
-Vercel Pro. Seed an enabled account in `journalist_admins` before signing in.
+account, hosted model credentials, Google sign-in and Vercel Queues. Portal-started runs
+use the queue trigger in `apps/journalist-site/vercel.mjs`; the optional Cron schedule
+is commented out and requires `CRON_SECRET` and Vercel Pro if enabled. Seed an
+enabled account in `journalist_admins` before signing in.
 The reader uses MongoDB and a Drive service account with Viewer access to its configured
 output-channel folder; keep all credentials server-side.
 

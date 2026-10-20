@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { logger } from "@/pipeline/core/log";
+import { queueNextJob } from "./pipeline-queue";
 import { callNextJob } from "./job-chain";
 import { LocationBusy } from "@/pipeline/communities/locations";
 import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
@@ -35,11 +36,15 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
   }
 }
 
-/** Start the first job after responding; every mode chains within the current stage. */
+/** Queue cloud jobs; local development chains one job per HTTP invocation. */
 export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
-      await callNextJob(requestUrl);
+      if (deps.settings.mode === "cloud") {
+        await queueNextJob();
+      } else {
+        await callNextJob(requestUrl);
+      }
       await recordSchedulerSafely(deps.db, "kick", null);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
