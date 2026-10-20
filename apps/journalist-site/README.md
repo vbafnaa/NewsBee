@@ -31,6 +31,10 @@ cancelled; a job already executing may finish before its cancellation is reflect
 job list. Once publication begins, cancellation is unavailable to avoid partially published
 editions. **Restart run** creates a fresh attempt for a published, failed or cancelled run;
 the earlier attempt remains in history. Only one run per location can be active at a time.
+When upgrading from the collecting-only index, startup reconciles legacy overlapping
+attempts before installing the active-run index. The furthest-progressed attempt is kept;
+the others retain their own run IDs and history as cancelled, with queued jobs stopped and
+a superseded-by reason. Publication already in progress is never interrupted.
 
 To remove an onboarded town, expand its card's **Location actions**, choose **Remove**
 and confirm. Removal is blocked while a job is running. It clears the town's pipeline

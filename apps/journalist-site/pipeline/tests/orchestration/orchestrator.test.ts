@@ -4,6 +4,7 @@
  * model, fake connectors and the local Drive stand-in.
  */
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -288,6 +289,48 @@ describe("orchestrator", () => {
     const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
     await collection.updateOne({ _id: run._id as never }, { $set: { status: "authoring" } });
     await expect(collection.insertOne({ ...run, _id: "overlap" as never })).rejects.toMatchObject({ code: 11000 });
+  });
+
+  it("reconciles legacy overlaps without deleting run IDs or interrupting the furthest attempt", async () => {
+    const d = deps();
+    const collection = mongo.db.collection(COLLECTIONS.runs);
+    await collection.createIndex({ location_id: 1 }, { unique: true, name: "one_collecting_run_per_location", partialFilterExpression: { status: "collecting" } });
+    const first = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await collection.updateOne({ _id: first.run._id as never }, { $set: { status: "authoring" } });
+    const newer = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    // startRun now checks every active stage, but legacy deployments allowed the second insert.
+    expect(newer.started).toBe(false);
+    const overlap = { ...first.run, _id: randomUUID() as never, status: "collecting", created_at: first.run.created_at + 1 };
+    await collection.insertOne(overlap);
+    await mongo.db.collection(COLLECTIONS.jobs).insertOne({
+      _id: randomUUID(), run_id: overlap._id, location_id: LOCATION.id, kind: "collect_source",
+      status: "pending", available_at: 0, created_at: 0, dedupe_key: `legacy:${overlap._id}`, payload: {},
+    });
+
+    await ensureRunIndexes(d.db);
+    expect((await getRun(d.db, first.run._id))?.status).toBe("authoring");
+    expect((await getRun(d.db, overlap._id))?.status).toBe("cancelled");
+    expect((await getRun(d.db, overlap._id))?.error).toContain(first.run._id);
+    expect((await runJobs(d.db, overlap._id))[0].status).toBe("cancelled");
+    expect(await collection.countDocuments({ location_id: LOCATION.id })).toBe(2);
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
+    await ensureRunIndexes(d.db); // safe across repeated cold starts
+  });
+
+  it("keeps concurrent publication attempts intact until their Drive writes finish", async () => {
+    const d = deps();
+    const collection = mongo.db.collection(COLLECTIONS.runs);
+    const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
+    await collection.updateOne({ _id: run._id as never }, { $set: { status: "publishing" } });
+    const otherRunId = randomUUID();
+    await collection.insertOne({ ...run, _id: otherRunId as never, status: "publishing" });
+    await ensureRunIndexes(d.db);
+    expect((await getRun(d.db, run._id))?.status).toBe("publishing");
+    expect((await getRun(d.db, otherRunId))?.status).toBe("publishing");
+    expect((await collection.indexes()).map((index) => index.name)).not.toContain("one_active_run_per_location");
+    await collection.updateOne({ _id: otherRunId as never }, { $set: { status: "published" } });
+    await ensureRunIndexes(d.db);
+    expect((await collection.indexes()).map((index) => index.name)).toContain("one_active_run_per_location");
   });
 
   it("shows a connector-reported failure in health even when its job completes", async () => {

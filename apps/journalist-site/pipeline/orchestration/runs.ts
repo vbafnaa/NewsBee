@@ -5,7 +5,9 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
 import type { SourceResult, SourceTask, SourceType } from "../connectors/types";
+import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
+import { cancelRunJobs } from "./jobs";
 
 export type RunStatus = "collecting" | "authoring" | "publishing" | "published" | "failed" | "cancelled";
 export const ACTIVE_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "publishing"];
@@ -52,23 +54,67 @@ export type PipelineRun = {
 };
 
 const now = () => Date.now() / 1000;
+const log = logger("runs");
 
 export function runs(db: Db) {
   return db.collection<PipelineRun>(COLLECTIONS.runs);
 }
 
+/** The old index only guarded collecting; preserve the furthest active attempt. */
+async function reconcileLegacyActiveRuns(db: Db) {
+  const duplicates = await runs(db).aggregate<{ _id: string; attempts: Pick<PipelineRun, "_id" | "status" | "created_at">[] }>([
+    { $match: { status: { $in: ACTIVE_RUN_STATUSES } } },
+    { $group: { _id: "$location_id", attempts: { $push: { _id: "$_id", status: "$status", created_at: "$created_at" } }, count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+  ]).toArray();
+  let overlappingPublication = false;
+  for (const group of duplicates) {
+    const priority: Record<string, number> = { publishing: 2, authoring: 1, collecting: 0 };
+    group.attempts.sort((a, b) => priority[b.status] - priority[a.status] || b.created_at - a.created_at || a._id.localeCompare(b._id));
+    const [keep, ...superseded] = group.attempts;
+    for (const attempt of superseded) {
+      if (attempt.status === "publishing") {
+        overlappingPublication = true;
+        log.warn("overlapping_publication", { location_id: group._id, run_id: attempt._id });
+        continue; // A Drive write may already be in progress; do not interrupt it.
+      }
+      const timestamp = now();
+      const changed = await runs(db).updateOne(
+        { _id: attempt._id, status: { $in: ["collecting", "authoring"] } },
+        { $set: { status: "cancelled", error: `Superseded by active run ${keep._id} during run-index migration`, completed_at: timestamp, updated_at: timestamp } },
+      );
+      if (changed.modifiedCount) {
+        await cancelRunJobs(db, attempt._id);
+        log.warn("legacy_run_superseded", { location_id: group._id, run_id: attempt._id, active_run_id: keep._id });
+      }
+    }
+  }
+  return overlappingPublication;
+}
+
 export async function ensureRunIndexes(db: Db) {
-  // Install the stronger index before retiring the earlier collecting-only one.
   await runs(db).createIndexes([
     { key: { location_id: 1, created_at: -1 } },
     { key: { status: 1, created_at: -1 } },
-    {
-      key: { location_id: 1 },
-      unique: true,
-      name: "one_active_run_per_location",
-      partialFilterExpression: { status: { $in: ACTIVE_RUN_STATUSES } },
-    },
   ]);
+  // Index builds are repeated across serverless instances. Reconciliation is idempotent,
+  // and the collecting-only index remains in place until the stronger index exists.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await reconcileLegacyActiveRuns(db)) return;
+    try {
+      await runs(db).createIndex(
+        { location_id: 1 },
+        {
+          unique: true,
+          name: "one_active_run_per_location",
+          partialFilterExpression: { status: { $in: ACTIVE_RUN_STATUSES } },
+        },
+      );
+      break;
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000 || attempt === 2) throw error;
+    }
+  }
   if ((await runs(db).indexes()).some((index) => index.name === "one_collecting_run_per_location")) {
     try {
       await runs(db).dropIndex("one_collecting_run_per_location");
