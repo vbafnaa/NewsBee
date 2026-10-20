@@ -58,7 +58,8 @@ npm run lint        # tsc --noEmit
 ## How a run works
 
 One run per location; each step is a job in MongoDB `pipeline_jobs`, sized for one Vercel
-function call, and `/api/pipeline/tick` (cron every minute) runs them.
+function call. The deployed Vercel cron is currently disabled; `npm run local` runs the tick
+every 5 seconds during local development.
 
 1. **Collect**: one job per source (library, meetings, hazards, state news, trending). Each
    source keeps its own top 5 stories. Failed sources are retried, then recorded; the run
@@ -136,7 +137,8 @@ MongoDB; the reader site reads published editions from that channel folder, not 
 from the pipeline root. If a channel folder is changed or created manually, share it with
 the service account as well.
 
-`vercel.json` schedules the tick every minute, which needs a Vercel Pro plan.
+The Vercel cron is currently commented out in `vercel.mjs`. To resume automatic cloud runs,
+uncomment its schedule for `/api/pipeline/tick`; scheduled functions require a Vercel Pro plan.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
 `journalist_admins` (lowercase); the **Administrators** page adds more. Reviewed source

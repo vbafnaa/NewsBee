@@ -1,3 +1,0 @@
-{
-  "crons": [{ "path": "/api/pipeline/tick", "schedule": "* * * * *" }]
-}
