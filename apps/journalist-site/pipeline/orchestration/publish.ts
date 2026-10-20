@@ -5,7 +5,7 @@
  */
 import type { Db } from "mongodb";
 import type { LocationProfile } from "../connectors/types";
-import { journalistDriveFolder, type ArtifactStore } from "../storage/artifacts";
+import type { ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
 
 export type ChannelDocument = {
@@ -110,17 +110,16 @@ export async function addLocationsToChannel(
 
 /**
  * A new channel's folder, starting with an empty locations.json. Drive: under
- * newsbee/output-channels/ beneath the configured pipeline root. Local: a top-level
- * folder in the Drive stand-in.
+ * output-channels/ beneath the configured pipeline root. Local: a top-level folder in
+ * the Drive stand-in.
  */
 export async function createChannelFolder(store: ArtifactStore, pipelineFolderId: string | null, channelId: string) {
   let folder: string;
   if (store.kind === "local") {
     folder = `channel-${channelId}`;
   } else {
-    folder = await store.ensureFolder(await store.ensureFolder(
-      await journalistDriveFolder(store, pipelineFolderId), "output-channels",
-    ), channelId);
+    if (!pipelineFolderId) throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
+    folder = await store.ensureFolder(await store.ensureFolder(pipelineFolderId, "output-channels"), channelId);
   }
   await store.saveJson(folder, "locations.json", { locations: [] });
   return folder;

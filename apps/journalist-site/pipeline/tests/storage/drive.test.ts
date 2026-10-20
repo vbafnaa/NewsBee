@@ -67,6 +67,65 @@ describe("Drive service-account configuration", () => {
     expectSignedToken();
   });
 
+  it("includes Shared Drive support when listing files", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    await list();
+
+    const [url] = fetchMock.mock.calls.find(([input]) =>
+      typeof input === "string" && input.startsWith("https://www.googleapis.com/drive/v3/files?"),
+    )!;
+    const params = new URL(url).searchParams;
+    expect(params.get("supportsAllDrives")).toBe("true");
+    expect(params.get("includeItemsFromAllDrives")).toBe("true");
+  });
+
+  it("includes Shared Drive support when creating folders and uploading files", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    fetchMock.mockImplementation(async (input) => {
+      if (input === "https://oauth2.googleapis.com/token") {
+        return Response.json({ access_token: "test-access-token" });
+      }
+      if (typeof input === "string" && input.includes("/upload/")) return Response.json({});
+      if (typeof input === "string" && input.includes("fields=id")) return Response.json({ id: "created-file-id" });
+      return Response.json({ files: [] });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const drive = new DriveArtifacts();
+
+    await drive.ensureFolder("shared-drive-root", "output-channels");
+    await drive.saveText("shared-drive-root", "log.txt", "log", "text/plain");
+
+    const driveCalls = fetchMock.mock.calls
+      .map(([input]) => input)
+      .filter((input) => typeof input === "string" && input.startsWith("https://www.googleapis.com/"));
+    expect(driveCalls.length).toBeGreaterThanOrEqual(5);
+    expect(driveCalls.every((input) => new URL(input).searchParams.get("supportsAllDrives") === "true")).toBe(true);
+  });
+
+  it("explains that a Shared Drive is required for service-account quota errors", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    fetchMock.mockImplementation(async (input) => {
+      if (input === "https://oauth2.googleapis.com/token") {
+        return Response.json({ access_token: "test-access-token" });
+      }
+      if (typeof input === "string" && input.includes("/upload/")) {
+        return Response.json(
+          { error: { message: "Service Accounts do not have storage quota." } },
+          { status: 403 },
+        );
+      }
+      if (typeof input === "string" && input.includes("fields=id")) return Response.json({ id: "created-file-id" });
+      return Response.json({ files: [] });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+
+    await expect(new DriveArtifacts().saveText("my-drive-folder", "log.txt", "log", "text/plain"))
+      .rejects.toThrow("a My Drive folder shared with the account is not sufficient");
+  });
+
   it.each(["key.json", `GOOGLE_SERVICE_ACCOUNT_JSON=${json}`, "{broken", JSON.stringify("{broken")])(
     "reports malformed JSON without exposing its value",
     async (value) => {

@@ -20,25 +20,26 @@ describe("journalist Drive workspace", () => {
     vi.stubEnv("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID", "pipeline-root");
   });
 
-  it("stores run artifacts in the app folder beneath the configured Drive root", async () => {
+  it("stores run artifacts directly beneath the configured Drive root", async () => {
     const store = driveStore();
 
     await expect(runFolder(store, "editions", "kent")).resolves.toBe(
-      "pipeline-root/newsbee/.newsbee-pipeline/editions/kent",
+      "pipeline-root/.newsbee-pipeline/editions/kent",
     );
   });
 
-  it("creates output channels under the same app folder", async () => {
+  it("creates output channels beneath the configured Drive root", async () => {
     const store = driveStore();
 
     await expect(createChannelFolder(store, "pipeline-root", "reader-site")).resolves.toBe(
-      "pipeline-root/newsbee/output-channels/reader-site",
+      "pipeline-root/output-channels/reader-site",
     );
     expect(store.saveJson).toHaveBeenCalledWith(
-      "pipeline-root/newsbee/output-channels/reader-site",
+      "pipeline-root/output-channels/reader-site",
       "locations.json",
       { locations: [] },
     );
+    expect(store.ensureFolder).not.toHaveBeenCalledWith("pipeline-root", "newsbee");
   });
 
   it("requires the configured Drive root for cloud artifact storage", async () => {
