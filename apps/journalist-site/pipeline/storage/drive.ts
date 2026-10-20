@@ -3,7 +3,6 @@ import { createSign } from "node:crypto";
 import type { ArtifactStore, StoredFile } from "./artifacts";
 
 type DriveFile = { id: string; name?: string; mimeType?: string };
-type ServiceAccount = { client_email?: string; private_key?: string };
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,200}$/;
 
@@ -18,11 +17,27 @@ function serviceAccount() {
   let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   let privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    let credentials: ServiceAccount;
+    let credentials: unknown;
+    let json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON.trim();
+    if (json.startsWith("'") && json.endsWith("'")) json = json.slice(1, -1);
     try {
-      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON) as ServiceAccount;
+      credentials = JSON.parse(json);
+      if (typeof credentials === "string") credentials = JSON.parse(credentials);
     } catch {
-      throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON must contain valid service-account JSON");
+      throw new Error(
+        "GOOGLE_SERVICE_ACCOUNT_JSON must contain valid service-account JSON. " +
+        "In Vercel, paste the full downloaded JSON key as the value, not a file path or a variable assignment. " +
+        "Alternatively, remove GOOGLE_SERVICE_ACCOUNT_JSON and set GOOGLE_SERVICE_ACCOUNT_EMAIL and " +
+        "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY. Redeploy after changing environment variables.",
+      );
+    }
+    if (typeof credentials !== "object" || credentials === null || Array.isArray(credentials) ||
+      !("client_email" in credentials) || typeof credentials.client_email !== "string" || !credentials.client_email.trim() ||
+      !("private_key" in credentials) || typeof credentials.private_key !== "string" || !credentials.private_key.trim()) {
+      throw new Error(
+        "GOOGLE_SERVICE_ACCOUNT_JSON must be a service-account key object with non-empty client_email and private_key strings. " +
+        "Use the downloaded service-account JSON key, not an OAuth client secret or an API key.",
+      );
     }
     email = credentials.client_email;
     privateKey = credentials.private_key;
