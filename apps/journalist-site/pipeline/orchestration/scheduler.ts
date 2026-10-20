@@ -15,9 +15,9 @@ export type SchedulerChannel = (typeof SCHEDULER_CHANNELS)[number];
 
 const LABELS: Record<SchedulerChannel, string> = {
   tick: "Scheduler tick failed",
-  kick: "Starting the first job after a portal action failed",
-  dispatch: "Source worker dispatch failed",
-  followup: "Following up with the next pipeline job failed",
+  kick: "Queueing the first job after a portal action failed",
+  dispatch: "Pipeline worker dispatch failed",
+  followup: "Queueing the next pipeline job failed",
 };
 
 export type SchedulerIssue = { channel: SchedulerChannel; at: number; message: string };

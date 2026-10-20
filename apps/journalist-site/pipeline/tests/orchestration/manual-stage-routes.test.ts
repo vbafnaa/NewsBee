@@ -9,6 +9,8 @@ import { POST as resume } from "@/app/api/admin/runs/[runId]/resume/route";
 import { POST as cancel } from "@/app/api/admin/runs/[runId]/cancel/route";
 import { POST as restart } from "@/app/api/admin/runs/[runId]/restart/route";
 import { POST as advance } from "@/app/api/pipeline/advance/route";
+import { processNextJob } from "@/lib/pipeline-queue-worker";
+import { send } from "@vercel/queue";
 import { authorizedJobChain, jobChainToken } from "@/lib/pipeline-auth";
 import { loadSettings } from "../../core/config";
 import { sourceResult, type Connector, type SourceType } from "../../connectors/types";
@@ -23,6 +25,7 @@ import { withMongo } from "../support/mongo";
 
 const runtime = vi.hoisted(() => ({
   callbacks: [] as Array<() => Promise<void>>,
+  deliveries: [] as Array<{ at: number }>,
   deps: null as OrchestratorDeps | null,
   email: "editor@example.org" as string | null,
 }));
@@ -33,6 +36,12 @@ vi.mock("@/auth", () => ({
   isAdminEmail: async () => true,
 }));
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: async () => runtime.deps }));
+vi.mock("@vercel/queue", () => ({
+  send: vi.fn(async (_topic: string, _message: unknown, options?: { delaySeconds?: number }) => {
+    runtime.deliveries.push({ at: Date.now() + (options?.delaySeconds ?? 0) * 1000 });
+    return { messageId: `test-${runtime.deliveries.length}` };
+  }),
+}));
 
 const origin = "https://portal.example.org";
 const internalSecret = "test-worker-authorization";
@@ -53,6 +62,8 @@ describe("manual stage HTTP flow", () => {
     vi.stubEnv("AUTH_SECRET", internalSecret);
     vi.stubEnv("CRON_SECRET", "");
     runtime.callbacks = [];
+    runtime.deliveries = [];
+    vi.mocked(send).mockClear();
     runtime.email = "editor@example.org";
     await mongo.db.collection(COLLECTIONS.locations).insertOne({ ...location, _id: location.id as never });
     await ensureRunIndexes(mongo.db);
@@ -92,9 +103,16 @@ describe("manual stage HTTP flow", () => {
 
   async function drainCallbacks() {
     let calls = 0;
-    while (runtime.callbacks.length) {
+    while (runtime.callbacks.length || runtime.deliveries.length) {
       if (++calls > 50) throw new Error("Worker chain failed to reach an editor gate");
-      await runtime.callbacks.shift()!();
+      if (runtime.callbacks.length) {
+        await runtime.callbacks.shift()!();
+      } else {
+        runtime.deliveries.sort((a, b) => a.at - b.at);
+        const delivery = runtime.deliveries.shift()!;
+        if (delivery.at > Date.now()) await new Promise((resolve) => setTimeout(resolve, delivery.at - Date.now()));
+        await processNextJob();
+      }
     }
   }
 
@@ -116,13 +134,20 @@ describe("manual stage HTTP flow", () => {
     await drainCallbacks();
     expect((await getRun(mongo.db, runId))?.status).toBe("awaiting_authoring");
     expect((await runJobs(mongo.db, runId)).every((job) => job.kind === "collect_source" && job.status === "completed")).toBe(true);
-    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5);
-    const count = fetchMock.mock.calls.length;
-    expect((await advance(new Request(`${origin}/api/pipeline/advance`, {
-      method: "POST", headers: { "x-newsbee-job-token": jobChainToken(internalSecret) },
-    }))).status).toBe(200);
+    if (mode === "local") {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5);
+      const count = fetchMock.mock.calls.length;
+      expect((await advance(new Request(`${origin}/api/pipeline/advance`, {
+        method: "POST", headers: { "x-newsbee-job-token": jobChainToken(internalSecret) },
+      }))).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(count);
+    } else {
+      expect(send).toHaveBeenCalledTimes(6); // Five sources and one final gate check.
+      expect(fetchMock).not.toHaveBeenCalled();
+      await processNextJob(); // A stray delivery cannot cross the editor gate.
+      expect(runtime.deliveries).toHaveLength(0);
+    }
     expect(runtime.callbacks).toHaveLength(0);
-    expect(fetchMock).toHaveBeenCalledTimes(count);
 
     expect((await author(request(`runs/${runId}/authoring`), context(runId))).status).toBe(200);
     await drainCallbacks();
@@ -175,7 +200,8 @@ describe("manual stage HTTP flow", () => {
     await drainCallbacks();
     expect((await getRun(mongo.db, runId))?.status).toBe("awaiting_authoring");
     expect((await runJobs(mongo.db, runId)).every((job) => job.attempts === 1)).toBe(true);
-    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    if (mode === "local") expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    else expect(vi.mocked(send).mock.calls.length).toBeGreaterThan(1);
   });
 
   it.each(["awaiting_authoring", "awaiting_finish"] as const)("cancels and restarts a waiting run through protected endpoints: %s", async (status) => {
@@ -191,7 +217,8 @@ describe("manual stage HTTP flow", () => {
     expect((await getRun(mongo.db, result.run_id))?.status).toBe("awaiting_authoring");
   });
 
-  it("a single resume waits for an interrupted worker lease and recovers it without a poller", async () => {
+  it.each(["local", "cloud"] as const)("a single resume waits for an interrupted worker lease and recovers it without a poller in %s mode", async (mode) => {
+    runtime.deps!.settings.mode = mode;
     const response = await ingest(request("ingestion"));
     const { jobs } = await response.json() as { jobs: { job_id: string }[] };
     runtime.callbacks = []; // The original request died before dispatching its kick.
@@ -210,6 +237,7 @@ describe("manual stage HTTP flow", () => {
   });
 
   it("surfaces a rejected worker kick instead of silently claiming stage completion", async () => {
+    runtime.deps!.settings.mode = "local";
     const run = await seed("awaiting_authoring");
     fetchMock.mockResolvedValue(new Response('{"detail":"Unauthorized"}', { status: 401 }));
     expect((await author(request(`runs/${run._id}/authoring`), context(run._id))).status).toBe(200);
