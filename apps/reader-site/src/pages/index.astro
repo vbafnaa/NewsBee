@@ -278,6 +278,7 @@ const apiUrl = "";
         const version = searchVersion;
         if (discover) {
           discovering = true;
+          input.focus({ preventScroll: true });
           discoverButton.disabled = true;
           discoverButton.textContent = "Searching...";
         }
@@ -341,7 +342,7 @@ const apiUrl = "";
       });
       input.addEventListener("focus", () => {
         input.select();
-        void searchTowns();
+        if (!discovering) void searchTowns();
       });
       input.addEventListener("blur", () => {
         closeOptions();
