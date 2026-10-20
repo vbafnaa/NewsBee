@@ -15,9 +15,10 @@ import { addLocationsToChannel, refreshChannelDirectory } from "../../orchestrat
 import { locationHealth } from "../../orchestration/health";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { sourceResult, type CollectedEvent, type Connector, type LocationProfile, type SourceType } from "../../connectors/types";
-import { cancelRunJobs, recentJobs, runJobs } from "../../orchestration/jobs";
+import { acquireWorker, releaseWorker, renewWorker, claim, MAX_RATE_LIMIT_RETRIES, cancelRunJobs, nextPendingJob, pendingJobs, recentJobs, runJobs } from "../../orchestration/jobs";
 import { runOne, startRun, tick } from "../../orchestration/orchestrator";
 import { cancelRun, ensureRunIndexes, getRun, RunConflict } from "../../orchestration/runs";
+import { ModelRateLimitError } from "../../model/runtime";
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
 import { FakeModel } from "../support/fake-model";
@@ -158,12 +159,12 @@ describe("orchestrator", () => {
     }
     expect(jobs.map((job) => job.kind)).toContain("author_finish");
   });
-  it("retains 15 hosted candidates through both shortlist stages and uses the injected ranking model", async () => {
+  it("caps hosted candidates at five through both shortlist stages and uses the injected ranking model", async () => {
     const base = deps();
     const libraryEvents = Array.from({ length: 20 }, (_, index) => event(`workshop-${index}`, `Workshop ${String(index).padStart(2, "0")}`, 2));
     const rankingModel = new FakeModel(({ prompt }) => {
       const candidates = JSON.parse(prompt.split("\nCandidates:\n")[1]) as Array<{ id: string; title: string }>;
-      return { ratings: candidates.map(({ id, title }) => ({ id, category: "other", civic: title === "Workshop 14" ? 3 : 0, appeal: 0, special: 0 })) };
+      return { ratings: candidates.map(({ id, title }) => ({ id, category: "other", civic: title === "Workshop 04" ? 3 : 0, appeal: 0, special: 0 })) };
     });
     const d = { ...base,
       settings: loadSettings({ ...process.env, NEWSBEE_ROOT: dir, NEWSBEE_MODEL_PROVIDERS: "gemini" }),
@@ -173,15 +174,141 @@ describe("orchestrator", () => {
     const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
     await drain(d);
     const source = (await getRun(mongo.db, run._id))?.sources.find(({ source_id }) => source_id === "library:main");
-    expect(source).toMatchObject({ event_count: 20, shortlisted: 15 });
+    expect(source).toMatchObject({ event_count: 20, shortlisted: 5 });
     const draft = await mongo.db.collection(COLLECTIONS.editions).findOne({ run_id: run._id });
-    expect(draft?.source_summary.library).toMatchObject({ considered: 15, shortlisted: 15 });
-    expect(draft?.ranking).toMatchObject({ provider: "fake", preselection_limit: 15, candidates: 16, fallback_ratings: 0 });
-    expect(draft?.candidates[0].title).toBe("Workshop 14");
+    expect(draft?.source_summary.library).toMatchObject({ considered: 5, shortlisted: 5 });
+    expect(draft?.ranking).toMatchObject({ provider: "fake", preselection_limit: 5, candidates: 6, fallback_ratings: 0 });
+    expect(draft?.candidates[0].title).toBe("Workshop 04");
     const edition = await latestPublished({ db: d.db, settings: d.settings, model: d.model, log: logger("test") }, LOCATION.id);
-    expect(edition?.items.some(({ headline }) => headline.startsWith("Workshop 14"))).toBe(true);
-    expect(rankingModel.calls).toHaveLength(2);
+    expect(edition?.items.some(({ headline }) => headline.startsWith("Workshop 04"))).toBe(true);
+    expect(rankingModel.calls).toHaveLength(1);
     expect(base.model.calls.some(({ prompt }) => prompt.startsWith("Rate each candidate"))).toBe(false);
+  });
+
+  it("serializes locations even across overlapping ticks and holds the oldest run during backoff", async () => {
+    const d = deps();
+    await mongo.db.collection(COLLECTIONS.locations).insertOne({ ...LOCATION, id: "kent-wa", _id: "kent-wa" as never, name: "Kent, WA" });
+    const first = await startRun(d, LOCATION.id, { by: "test", kind: "all" });
+    await mongo.db.collection(COLLECTIONS.runs).updateOne({ _id: first.run._id as never }, { $set: { created_at: 1 } });
+    const second = await startRun(d, "kent-wa", { by: "test", kind: "all" });
+    await mongo.db.collection(COLLECTIONS.jobs).updateMany({ run_id: first.run._id }, { $set: { available_at: Date.now() / 1000 + 60 } });
+    expect(await runOne(d)).toBe(false);
+    expect(await runOne(d, { jobId: second.run.sources[0].job_id!, kinds: ["collect_source"] })).toBe(false);
+    expect(await pendingJobs(d.db, "collect_source", 1, first.run._id)).toEqual([]);
+    expect((await nextPendingJob(d.db, first.run._id))?.available_at).toBeGreaterThan(Date.now() / 1000 + 50);
+    expect((await recentJobs(d.db, 50)).filter(({ run_id }) => run_id === second.run._id).every(({ attempts }) => attempts === 0)).toBe(true);
+    await mongo.db.collection(COLLECTIONS.jobs).updateMany({ run_id: first.run._id }, { $set: { available_at: 0 } });
+    let unblock!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { unblock = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const collect = d.connectors.library.collect;
+    d.connectors.library.collect = async (...args) => { entered(); await gate; return collect(...args); };
+    // Explicitly choose this connector as the next job, so the second scheduler meets a live lease.
+    await mongo.db.collection(COLLECTIONS.jobs).updateOne({ run_id: first.run._id, "payload.task.type": "library" }, { $set: { created_at: 0 } });
+    const running = runOne(d);
+    await started;
+    expect(await runOne(d)).toBe(false);
+    unblock();
+    await running;
+    const completed: string[] = [];
+    for (let i = 0; i < 50; i++) {
+      if (!await runOne(d)) break;
+      if ((await getRun(d.db, first.run._id))?.status === "published") completed.push("first");
+      if ((await getRun(d.db, second.run._id))?.status === "published") {
+        expect(completed).toContain("first");
+        break;
+      }
+    }
+    expect((await getRun(d.db, second.run._id))?.status).toBe("published");
+  });
+
+  it("defers ranking, prose, front and email 429s without holding or publishing, then resumes", async () => {
+    for (const stage of ["ranking", "prose", "front", "email"]) {
+      const d = deps();
+      const normal = d.model;
+      let blocked = true;
+      const prefix = { ranking: "Rate each candidate", prose: "You write for a friendly", front: "You edit a friendly", email: "You write the email" }[stage]!;
+      d.model = new FakeModel(async ({ prompt }) => {
+        if (blocked && prompt.startsWith(prefix)) throw new ModelRateLimitError("TPM exceeded", 90);
+        return JSON.parse((await normal.generateStructured(prompt, {})).response);
+      });
+      const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+      await tick(d, { budgetMs: 10_000 });
+      expect((await getRun(d.db, run._id))?.status).toBe("authoring");
+      const pending = await d.db.collection(COLLECTIONS.jobs).findOne({ run_id: run._id, status: "pending", rate_limit_retries: 1 });
+      expect(pending).not.toBeNull();
+      expect(pending!.available_at).toBeGreaterThan(Date.now() / 1000 + 80);
+      expect(await d.db.collection(COLLECTIONS.editionEntries).countDocuments({ edition_id: run._id, "result.error": /TPM/ })).toBe(0);
+      expect((await startRun(d, LOCATION.id, { by: "test", kind: "manual" })).started).toBe(false);
+      blocked = false;
+      await drain(d);
+      expect((await getRun(d.db, run._id))?.published?.items).toBe(2);
+    }
+  });
+
+  it("fails a persistently rate-limited run after bounded backoff instead of replacing the previous edition", async () => {
+    const d = deps();
+    const previous = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await drain(d);
+    d.model = new FakeModel(() => { throw new ModelRateLimitError("Daily quota exhausted"); });
+    const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    for (let retry = 1; retry <= MAX_RATE_LIMIT_RETRIES; retry++) {
+      const pending = await d.db.collection(COLLECTIONS.jobs).findOne({ run_id: run._id, status: "pending" });
+      expect(pending?.rate_limit_retries).toBe(retry);
+      expect(pending?.available_at).toBeGreaterThan(Date.now() / 1000 + Math.min(15 * 2 ** (retry - 1), 300) - 2);
+      await d.db.collection(COLLECTIONS.jobs).updateMany({ run_id: run._id, status: "pending" }, { $set: { available_at: 0 } });
+      await tick(d, { budgetMs: 10_000 });
+    }
+    expect((await getRun(d.db, run._id))?.status).toBe("failed");
+    expect((await latestPublished({ db: d.db, settings: d.settings, model: d.model, log: logger("test") }, LOCATION.id))?.id).toBe(previous.run._id);
+  });
+
+  it("renews both leases and recovers an expired worker without releasing another owner's lease", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    const token = await acquireWorker(d.db);
+    expect(token).toBeTypeOf("string");
+    const job = await claim(d.db, undefined, undefined, run._id);
+    expect(job).not.toBeNull();
+    await renewWorker(d.db, token!, job!);
+    expect((await d.db.collection(COLLECTIONS.jobs).findOne({ _id: job!._id as never }))?.lease_until).toBeGreaterThan(Date.now() / 1000 + 300);
+    expect(await acquireWorker(d.db)).toBeNull();
+    await d.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "pipeline-worker" as never }, { $set: { lease_until: 0 } });
+    const replacement = await acquireWorker(d.db);
+    expect(replacement).toBeTypeOf("string");
+    await releaseWorker(d.db, token!);
+    expect(await acquireWorker(d.db)).toBeNull();
+    await expect(renewWorker(d.db, token!, job!)).rejects.toThrow("Lost pipeline worker lease");
+    await releaseWorker(d.db, replacement!);
+    expect(await acquireWorker(d.db)).toBeTypeOf("string");
+  });
+
+  it("fails explicitly for an excessive provider wait instead of retrying sooner than instructed", async () => {
+    const d = deps();
+    d.model = new FakeModel(() => { throw new ModelRateLimitError("daily quota", 86400); });
+    const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    await tick(d, { budgetMs: 10_000 });
+    expect((await getRun(d.db, run._id))?.status).toBe("failed");
+    expect((await getRun(d.db, run._id))?.edition_id).toBeNull();
+  });
+
+  it("keeps the previous edition when front or email quota waits exceed the retry limit", async () => {
+    for (const prefix of ["You edit a friendly", "You write the email"]) {
+      const d = deps();
+      const previous = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+      await drain(d);
+      const normal = d.model;
+      d.model = new FakeModel(async ({ prompt }) => {
+        if (prompt.startsWith(prefix)) throw new ModelRateLimitError("daily quota", 86400);
+        return JSON.parse((await normal.generateStructured(prompt, {})).response);
+      });
+      const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+      await drain(d);
+      expect((await getRun(d.db, run._id))?.status).toBe("failed");
+      expect((await latestPublished({ db: d.db, settings: d.settings, model: d.model, log: logger("test") }, LOCATION.id))?.id).toBe(previous.run._id);
+    }
   });
 
   it("still publishes when a source fails every attempt, and records why", async () => {

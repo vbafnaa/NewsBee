@@ -16,14 +16,14 @@ export class FakeModel implements ModelRuntime {
 
   async generate(prompt: string) {
     this.calls.push({ prompt });
-    const value = this.handler({ prompt });
+    const value = await this.handler({ prompt });
     return typeof value === "string" ? value : JSON.stringify(value);
   }
 
   async generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions): Promise<StructuredGeneration> {
     const call = { prompt, schema, options };
     this.calls.push(call);
-    const value = this.handler(call);
+    const value = await this.handler(call);
     if (value instanceof Error) throw value;
     return { response: typeof value === "string" ? value : JSON.stringify(value), done: true, done_reason: "stop" };
   }

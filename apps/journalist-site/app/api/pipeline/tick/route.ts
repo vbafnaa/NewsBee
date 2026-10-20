@@ -4,6 +4,7 @@ import { pipelineDeps } from "@/lib/pipeline";
 import { logger } from "@/pipeline/core/log";
 import { tick } from "@/pipeline/orchestration/orchestrator";
 import { nextPendingJob, pendingJobs } from "@/pipeline/orchestration/jobs";
+import { oldestActiveRun } from "@/pipeline/orchestration/runs";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -19,8 +20,9 @@ async function handle(request: Request) {
     const result = await tick(deps, cloud
       ? { budgetMs: 30_000, kinds: ["author_start", "author_story", "author_finish"] }
       : { budgetMs: 30_000 });
-    const sources = cloud ? await pendingJobs(deps.db, "collect_source", 10) : [];
-    const next = cloud ? await nextPendingJob(deps.db) : null;
+    const active = cloud ? await oldestActiveRun(deps.db) : null;
+    const sources = active ? await pendingJobs(deps.db, "collect_source", 1, active._id) : [];
+    const next = active ? await nextPendingJob(deps.db, active._id) : null;
     if (sources.length || next) {
       after(async () => {
         const secret = process.env.CRON_SECRET;

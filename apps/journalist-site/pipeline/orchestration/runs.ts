@@ -11,6 +11,11 @@ import { cancelRunJobs } from "./jobs";
 
 export type RunStatus = "collecting" | "authoring" | "publishing" | "published" | "failed" | "cancelled";
 export const ACTIVE_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "publishing"];
+
+export async function oldestActiveRun(db: Db) {
+  return runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES } }).sort({ created_at: 1, _id: 1 }).limit(1).next();
+}
+
 export type SourceStatus = "pending" | "completed" | "failed";
 
 export type RunSource = {
