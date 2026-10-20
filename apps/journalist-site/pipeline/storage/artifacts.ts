@@ -91,10 +91,16 @@ export function getArtifacts(): ArtifactStore {
   return loadSettings().mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
 }
 
+/** The journalist app's managed Drive workspace, nested beneath the configured root. */
+export async function journalistDriveFolder(store: ArtifactStore, pipelineFolderId = loadSettings().pipelineDriveFolderId) {
+  const root = store.kind === "drive" ? pipelineFolderId : pipelineFolderId ?? "pipeline";
+  if (!root) throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
+  return store.ensureFolder(root, "newsbee");
+}
+
 /** Folder that holds pipeline run artifacts (not visible to the reader site). */
 export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews" | "logs", ...names: string[]) {
-  const root = loadSettings().pipelineDriveFolderId ?? "pipeline";
-  let folder = await store.ensureFolder(root, ".newsbee-pipeline");
+  let folder = await store.ensureFolder(await journalistDriveFolder(store), ".newsbee-pipeline");
   folder = await store.ensureFolder(folder, kind);
   for (const name of names) folder = await store.ensureFolder(folder, name);
   return folder;
