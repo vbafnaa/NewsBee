@@ -97,10 +97,26 @@ Source-supported date context is allowed in event prose; mentioning the headline
 summary is not itself a publication failure. Invented date words, unsupported factual
 claims, repeated sentences, incomplete headlines, sensitive topics, unsafe source URLs
 and geographic mismatches are still rejected. Presentation relaxations do not authorize
-inventing missing context or dropping the sourced explanation required for trends.
-Checks are rule-based safeguards, not a guarantee of factual entailment. Trend counts
-measure attention, not its cause: a trend needs recent linked reporting explicitly
-explaining the underlying story and attention; unexplained trends are omitted.
+inventing missing context. Checks are rule-based safeguards, not a guarantee of factual
+entailment.
+
+Wikipedia and Bluesky discover **locally reported news**, not popularity statistics.
+Their area is the selected town plus reviewed places whose centres are within **15 miles**
+of its centre; county/state names alone do not qualify, and the broader state-news/hazard
+radius is unchanged. Unknown coordinates do not expand this area. Wikipedia measures only
+eligible local topics; its cache is location-specific and versioned. Bluesky searches for
+recent reporting links naming the town and nearby places with the state qualifier, instead
+of filtering a national trending list or requiring a minimum post count. It never treats
+users' posts as factual reporting or retains their authors/text.
+
+Both connectors fetch the original public HTTPS report and require a named publisher,
+a publication date within seven days, a real headline and substantive locally relevant
+body text. A generic topic description, a sidebar's town name or a page-view statistic is
+not sufficient. The report's headline, publication date, publisher, source link and local
+story details become the candidate; popularity counts stay out of writing prompts.
+Items without this context are omitted with an observable `no_context` outcome. This does
+not prove why a topic attracted attention, and the writer must not invent a reason or
+report view counts as news. Saved editions are not silently rewritten by these changes.
 
 The published newsletter puts news articles first, followed by **Upcoming events**
 (library events and public-meeting previews). Recorded meeting outcomes remain news.

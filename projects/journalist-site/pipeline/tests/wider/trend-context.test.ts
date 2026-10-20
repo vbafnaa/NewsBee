@@ -1,31 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 import { assertPublicReportingUrl, parseTrendReport, reportingLinks } from "../../connectors/wider/trend-context";
+import { resolveTrendRegion } from "../../connectors/wider/regions";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async (hostname: string) => [{ address: hostname === "internal.example" ? "127.0.0.1" : "93.184.216.34" }]) }));
 
-const article = `<html><head><meta property="og:site_name" content="Regional News"><meta property="og:title" content="Seattle Seahawks win">
+const place = resolveTrendRegion({ id: "auburn-wa", name: "Auburn, WA", state: "WA", systems: [], latitude: 47.3073, longitude: -122.2285 }, {
+  WA: { name: "Washington", ambiguous_places: ["Auburn"], places: { Seattle: [47.6062, -122.3321], Kent: [47.3809, -122.2348] } },
+});
+const parse = (html: string, topic = "Auburn") => parseTrendReport(html, "https://news.example/story", topic, "2026-10-19", place);
+const article = `<html><head><meta property="og:site_name" content="Regional News"><meta property="og:title" content="Auburn bridge repairs close two lanes">
 <meta property="article:published_time" content="2026-10-18T12:00:00Z"></head><body>
-<article><p>The Seattle Seahawks won their game with a late touchdown.</p><p>Seattle Seahawks searches surged after the team's last-minute victory.</p></article></body></html>`;
+<article><p>Auburn, Washington has announced bridge repairs that will close two lanes next week, with a signed detour for drivers.</p>
+<p>Auburn searches surged after the bridge closure announcement.</p></article></body></html>`;
 
 describe("sourced trend context", () => {
-  it("requires a recent report naming the topic and explicitly explaining attention", () => {
-    expect(parseTrendReport(article, "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toMatchObject({
+  it("requires recent substantive local reporting, not an explanation of popularity", () => {
+    expect(parse(article)).toMatchObject({
       publisher: "Regional News", url: "https://news.example/story",
-      reason: "Seattle Seahawks searches surged after the team's last-minute victory.",
-      excerpt: "The Seattle Seahawks won their game with a late touchdown.",
+      headline: "Auburn bridge repairs close two lanes",
+      excerpt: "Auburn, Washington has announced bridge repairs that will close two lanes next week, with a signed detour for drivers.",
     });
-    expect(parseTrendReport(article, "https://news.example/story", "Unrelated Topic", "2026-10-19")).toBeNull();
-    expect(parseTrendReport(article.replace("2026-10-18", "2026-09-01"), "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toBeNull();
-    expect(parseTrendReport(article.replace("2026-10-18", "2026-11-01"), "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toBeNull();
-    expect(parseTrendReport(article.replace("searches surged after", "won following"), "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toBeNull();
-    expect(parseTrendReport(article.replace("surged after", "surged around"), "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toBeNull();
+    expect(parse(article, "Unrelated Topic")).toBeNull();
+    expect(parse(article.replace("2026-10-18", "2026-09-01"))).toBeNull();
+    expect(parse(article.replace("2026-10-18", "2026-11-01"))).toBeNull();
+    expect(parse(article.replace(/Auburn/g, "Seattle"), "Seattle")).toBeNull();
+    expect(parse(article.replace(/Auburn, Washington/g, "King County"))).toBeNull();
+    expect(parse(article.replace("Auburn, Washington", "Auburn, Alabama"))).toBeNull();
   });
   it("does not use navigation, scripts, popularity counts or a generic topic description as reporting", () => {
     const noArticle = `<meta property="og:site_name" content="News"><meta property="article:published_time" content="2026-10-18">
-      <nav><p>Seattle Seahawks trending after a win.</p></nav><p>Seattle Seahawks have 4,000 page views.</p>`;
-    expect(parseTrendReport(noArticle, "https://news.example/story", "Seattle Seahawks", "2026-10-19")).toBeNull();
-    const ld = `<script type="application/ld+json">${JSON.stringify({ "@type": "NewsArticle", datePublished: "2026-10-18", publisher: { name: "News" }, articleBody: "Seattle Seahawks are trending after winning their game." })}</script>`;
-    expect(parseTrendReport(ld, "https://news.example/story", "Seattle Seahawks", "2026-10-19")?.publisher).toBe("News");
+      <nav><p>Auburn, Washington repairs close two lanes for a full week while workers replace the surface of the bridge.</p></nav><p>Auburn has 4,000 page views.</p>`;
+    expect(parse(noArticle)).toBeNull();
+    expect(parse(article.replace(/<p>Auburn, Washington.*?<\/p>/, ""))).toBeNull();
+    expect(parse(article.replace("Auburn bridge repairs close two lanes", "Auburn is trending after 10,000 daily views"))).toBeNull();
+    const ld = `<script type="application/ld+json">${JSON.stringify({ "@type": "NewsArticle", headline: "Auburn repairs close two lanes", datePublished: "2026-10-18", publisher: { name: "News" }, articleBody: "Auburn, Washington repairs will close two lanes of the bridge next week, with a signed detour in place for drivers." })}</script>`;
+    expect(parse(ld)?.publisher).toBe("News");
   });
   it("extracts recent linked reporting without retaining post text or authors", () => {
     const bytes = new TextEncoder().encode(JSON.stringify({ posts: [

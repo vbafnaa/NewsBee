@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addedClaims } from "../../model/news-blurb";
-import { headlineErrors, itemPrompt, styleErrors, validateFront, editionContext, validateItem, writeItem, writeEmail, writeFront, type StoryInput } from "../../model/story-writer";
+import { headlineErrors, itemPrompt, styleErrors, validateFront, validateEmail, editionContext, validateItem, writeItem, writeEmail, writeFront, type StoryInput } from "../../model/story-writer";
 import { FakeModel } from "../support/fake-model";
 
 const story: StoryInput = { id: "robot-lab", title: "Robot Lab", description: "Build and program small robots with LEGO kits. Ages 8 to 12.", venues: ["Ballard Branch"] };
@@ -100,7 +100,16 @@ describe("story writing validation", () => {
     expect(validateItem(story, draft(`${"Robots ".repeat(121)}work.`))).toContain("summary:too_many_words");
     expect(itemPrompt(story)).toContain("short reported-style article, not a calendar listing");
     expect(itemPrompt(story)).toContain("never pad or fabricate context");
-    expect(itemPrompt({ ...story, kind: "trending_topic" })).toContain("page views are a supporting signal, never proof of a cause");
+    expect(itemPrompt({ ...story, kind: "trending_topic" })).toContain("do not mention trending, page views");
+  });
+  it("rejects attention statistics as news even when they appear in source evidence", () => {
+    const trend = { ...story, kind: "trending_topic", description: `${story.description} Robot Lab is trending on Wikipedia with 10,765 daily views.` };
+    expect(validateItem(trend, { headline: "Robot Lab is trending on Wikipedia", summary: "Robot Lab has 10,765 daily views." })).toContain("attention_statistic_not_news");
+    expect(validateItem({ ...trend, kind: "social_trend" }, draft("Robot Lab has viral posts on Bluesky."))).toContain("attention_statistic_not_news");
+    expect(validateItem(trend, draft("Build and program small robots with LEGO kits."))).not.toContain("attention_statistic_not_news");
+    const context = editionContext("Auburn", "Oct 20-26", [trend], [draft("Build robots.")]);
+    expect(validateFront(context, [trend], { headline: "Robot Lab is trending", intro: "Robot Lab gets 10,765 daily views." })).toContain("attention_statistic_not_news");
+    expect(validateEmail({ ...context, headline: "Robot Lab", intro: "Build robots." }, [trend], { blurb: "Robot Lab is trending." })).toContain("attention_statistic_not_news");
   });
   it("retries an incomplete front then uses the safe fallback if it stays incomplete", async () => {
     const model = new FakeModel(() => ({ headline: "Robot Lab welcomes new builders for", intro: "Explore robot programming." }));

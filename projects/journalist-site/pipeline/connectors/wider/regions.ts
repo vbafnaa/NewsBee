@@ -85,7 +85,7 @@ export function section(place: Region, tier: "local" | "region" | "nearby") {
   return `Near ${place.town}`;
 }
 
-export function resolveRegion(location: LocationProfile, states: Record<string, StateConfig>): Region {
+export function resolveRegion(location: LocationProfile, states: Record<string, StateConfig>, radiusKm = NEARBY_KM): Region {
   const stateCode = location.id.split("-").at(-1)?.toUpperCase() ?? "";
   const town = location.name.split(",")[0].trim();
   // The Python profile uses the first library system with reviewed coordinates. Census coordinates
@@ -101,11 +101,21 @@ export function resolveRegion(location: LocationProfile, states: Record<string, 
   const latitude = local.point?.[0] ?? location.latitude ?? systemLat;
   const longitude = local.point?.[1] ?? location.longitude ?? systemLon;
   const near = Object.entries(state.places ?? {}).map(([name, point]) => [name, distanceKm(latitude ?? NaN, longitude ?? NaN, point[0], point[1])] as const)
-    .filter(([, km]) => latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined && km <= NEARBY_KM)
+    .filter(([, km]) => latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined && km <= radiusKm)
     .sort((a, b) => a[1] - b[1]).map(([name]) => name);
   return { location_id: location.id, town, state_code: stateCode, state_name: state.name, county: local.county ?? null,
     latitude: latitude ?? null, longitude: longitude ?? null, aliases: state.aliases ?? [], place_suffix: state.place_suffix ?? null,
     newsrooms: state.newsrooms ?? [], watchlist: state.watchlist ?? [], nearby: near.filter((name) => name !== town),
     nearby_topics: (state.watchlist ?? []).filter((entry) => near.includes(entry.place)),
     ambiguous: new Set(state.ambiguous_places ?? []), configured: true };
+}
+
+export const TREND_RADIUS_KM = 15 * 1.609344;
+export function resolveTrendRegion(location: LocationProfile, states: Record<string, StateConfig>): Region {
+  return { ...resolveRegion(location, states, TREND_RADIUS_KM), county: null };
+}
+
+/** A county mention alone is not evidence of a story within the town's trend radius. */
+export function trendTier(place: Region, title: string, body?: string | null) {
+  return tierFor({ ...place, county: null }, [title, body]);
 }

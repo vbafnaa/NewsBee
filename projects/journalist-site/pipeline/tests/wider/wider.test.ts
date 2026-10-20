@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSourceConfig } from "../../storage/source-configs";
 import { Fetcher } from "../../connectors/fetcher";
 import { hazardsConnector, stateNewsConnector, trendingConnector } from "../../connectors/wider";
-import { itemTier, resolveRegion, tierFor, validateStateSources } from "../../connectors/wider/regions";
+import { itemTier, resolveRegion, resolveTrendRegion, trendTier, distanceKm, TREND_RADIUS_KM, tierFor, validateStateSources } from "../../connectors/wider/regions";
 import { countBlueskyMentions, parseNewsFeed, parseUsgs, parseWikiTop, spike } from "../../connectors/wider/adapters";
 import { type CachedLinks, type ConnectorContext, type LinkCache, type LocationProfile, type SourceTask } from "../../connectors/types";
 import { logger } from "../../core/log";
@@ -11,7 +11,7 @@ import { COLLECTIONS } from "../../storage/mongo";
 import { withMongo } from "../support/mongo";
 import { FakeModel } from "../support/fake-model";
 import { fixture, ReplayTransport } from "../support/replay";
-import { Story } from "../../editions/stories";
+import { Story, collapse, whenWhere } from "../../editions/stories";
 import { hazards, stateNews, trending } from "../../ranking/wider";
 import { FeedFormatError } from "../../connectors/common";
 
@@ -165,7 +165,7 @@ it("reports all-newsroom failures and wraps unexpected crashes as failed source 
   expect(crashed).toMatchObject({ result: { status: "failed", detail: "Error: fixture crash" }, events: [] });
 });
 
-it("caches successful Wikipedia and Bluesky statewide calls in Mongo by state and day", async () => {
+it("discovers actual local reporting from both connectors and excludes Seattle for Auburn", async () => {
   const replay = new ReplayTransport()
     .on(/metrics\/pageviews\/top\//, fixtureResponse("wiki-top.json"))
     .on(/user\/Seattle_Seahawks\/daily\//, fixtureResponse("wiki-seahawks.json"))
@@ -174,29 +174,40 @@ it("caches successful Wikipedia and Bluesky statewide calls in Mongo by state an
     .on(/app\.bsky\.unspecced\.getTrends/, fixtureResponse("bluesky-trends.json"))
     .on(/app\.bsky\.feed\.searchPosts/, (request) => {
       const query = new URL(request.url).searchParams.get("q") ?? "";
-      const topic = query.includes("Kent") ? "Kent, Washington" : "Seattle Seahawks";
+      const topic = query.includes("Kent") ? "Kent, Washington" : "Auburn, Washington";
       return { body: { posts: [{ record: { createdAt: "2026-10-18T00:00:00Z" }, embed: { external: { uri: `https://news.example/${encodeURIComponent(topic)}` } } }] } };
     })
     .on(/^https:\/\/news\.example\//, (request) => {
       const topic = decodeURIComponent(new URL(request.url).pathname.slice(1));
-      return { body: `<meta property="og:site_name" content="Regional News"><meta property="article:published_time" content="2026-10-18T12:00:00Z"><article><p>${topic} is drawing public attention after a new community announcement.</p><p>${topic} residents can read the announcement.</p></article>` };
+      return { body: `<meta property="og:site_name" content="Regional News"><meta property="og:title" content="${topic} bridge repairs close lanes"><meta property="article:published_time" content="2026-10-18T12:00:00Z"><article><p>${topic} has announced bridge repairs that close two lanes next week, with a signed detour for drivers using the road.</p></article>` };
     });
   const ctx = context(replay);
   const wiki = await trendingConnector.collect(wikiTask, ctx);
   expect(wiki.result.status).toBe("ingested");
-  expect(wiki.events.map((event) => [event.title, event.tier])).toEqual([["Seattle Seahawks", "nearby"], ["Kent, Washington", "nearby"]]);
-  expect(wiki.events.every((event) => event.source_url.startsWith("https://news.example/") && event.description?.includes("Source-reported explanation"))).toBe(true);
-  expect(wiki.result.skipped_unusable).toMatchObject({ not_near_town: 1 });
-  const statewideBefore = replay.requests.filter((request) => /user\/Mount_Rainier/.test(request.url)).length;
+  expect(wiki.events.map((event) => [event.title, event.tier])).toEqual([["Kent, Washington bridge repairs close lanes", "nearby"]]);
+  expect(wiki.events.every((event) => event.source_url.startsWith("https://news.example/") && event.description?.includes("Reporting by Regional News"))).toBe(true);
+  expect(wiki.events[0]).toMatchObject({ event_date: "2026-10-18", venue: "Regional News" });
+  expect(wiki.events[0].description).not.toMatch(/views|posts|trending|attention/i);
+  expect(replay.requests.filter((request) => /user\/(?:Seattle_Seahawks|Mount_Rainier)/.test(request.url))).toHaveLength(0);
+  const statewideBefore = replay.requests.filter((request) => /pageviews\/top/.test(request.url)).length;
   await trendingConnector.collect(wikiTask, ctx);
-  expect(replay.requests.filter((request) => /user\/Mount_Rainier/.test(request.url))).toHaveLength(statewideBefore);
+  expect(replay.requests.filter((request) => /pageviews\/top/.test(request.url))).toHaveLength(statewideBefore);
   const bsky = await trendingConnector.collect(bskyTask, ctx);
-  expect(bsky.events.map((event) => [event.title, event.kind, event.tier])).toEqual([["Seattle Seahawks", "social_trend", "nearby"]]);
-  expect(bsky.result.skipped_unusable).toEqual({ not_near_town: 4, excluded_topic: 2, too_few_posts: 1 });
+  expect(bsky.events.map((event) => [event.title, event.kind, event.tier])).toEqual([
+    ["Auburn, Washington bridge repairs close lanes", "social_trend", "local"],
+    ["Kent, Washington bridge repairs close lanes", "social_trend", "nearby"],
+  ]);
+  expect(bsky.events.every((event) => !/views|posts|trending|attention/i.test(event.description ?? ""))).toBe(true);
+  const stories = collapse([...wiki.events.map((facts) => ({ source_id: wikiTask.source_id, facts })),
+    ...bsky.events.map((facts) => ({ source_id: bskyTask.source_id, facts }))]);
+  expect(stories).toHaveLength(2);
+  const kent = stories.find(({ title }) => title.includes("Kent"))!;
+  expect(kent.occurrences).toHaveLength(2);
+  expect(whenWhere(kent)).toMatch(/^Published .* by Regional News\.$/);
   await trendingConnector.collect(bskyTask, ctx);
-  expect(replay.requests.filter((request) => request.url.includes("getTrends"))).toHaveLength(1);
+  expect(replay.requests.filter((request) => request.url.includes("getTrends"))).toHaveLength(0);
   const records = await mongo.db.collection(COLLECTIONS.wideCache).countDocuments();
-  expect(records).toBe(4);
+  expect(records).toBe(2);
 });
 
 it("omits popularity-only trends with observable reasons instead of inventing a story", async () => {
@@ -207,8 +218,54 @@ it("omits popularity-only trends with observable reasons instead of inventing a 
   expect(result.events).toEqual([]);
   expect(result.result.status).toBe("no_context");
   expect(result.result.skipped_unusable.no_story_context).toBe(1);
-  expect(result.result.detail).toContain("omitted without sourced story/attention context");
+  expect(result.result.detail).toContain("popularity counts and national trends are not news");
   expect(await mongo.db.collection(COLLECTIONS.wideCache).countDocuments({ key: /^trend-context/ })).toBe(0);
+});
+
+it("uses a 15-mile trend radius, not county/state names or the general 50 km news radius", async () => {
+  const states = validateStateSources(await loadSourceConfig(mongo.db, ROOT, "state-sources"));
+  const place = resolveTrendRegion(LOCATION, states);
+  expect(TREND_RADIUS_KM).toBeCloseTo(24.14016);
+  expect(place.nearby).toEqual(["Kent"]);
+  expect(trendTier(place, "The Real World: Seattle", "Seattle, Washington television series")).toBeNull();
+  expect(trendTier(place, "King County announcement")).toBeNull();
+  expect(trendTier(place, "Auburn Tigers", "Alabama")).toBeNull();
+  expect(trendTier(place, "Kent, Washington repairs")).toBe("nearby");
+  const lat = LOCATION.latitude!;
+  const degrees = TREND_RADIUS_KM / distanceKm(lat, 0, lat + 1, 0);
+  states.WA.places = { Inside: [lat + degrees - 0.00001, LOCATION.longitude!], Outside: [lat + degrees + 0.00001, LOCATION.longitude!] };
+  expect(resolveTrendRegion(LOCATION, states).nearby).toEqual(["Inside"]);
+  expect(resolveTrendRegion({ ...LOCATION, id: "unknown-wa", systems: [], latitude: undefined, longitude: undefined }, states).nearby).toEqual([]);
+});
+
+it("rejects unrelated Seattle reporting returned by local Bluesky search and ignores old statewide caches", async () => {
+  await mongo.db.collection(COLLECTIONS.wideCache).insertMany([
+    { key: `bluesky:WA:${TODAY}`, value: { trends: [{ name: "The Real World: Seattle", post_count: 10000 }] } },
+    { key: `trend-context-v1:old:${TODAY}`, value: { report: { title: "The Real World: Seattle" } } },
+  ]);
+  const replay = new ReplayTransport()
+    .on(/app\.bsky\.feed\.searchPosts/, { body: { posts: [
+      { record: { createdAt: "2026-10-18" }, embed: { external: { uri: "https://news.example/seattle" } } },
+    ] } })
+    .on("https://news.example/seattle", { body: `<meta property="og:site_name" content="News"><meta property="og:title" content="The Real World: Seattle returns"><meta property="article:published_time" content="2026-10-18"><p>The Real World: Seattle returns for an anniversary broadcast in Seattle, Washington, featuring interviews and footage from the television series.</p><aside><p>Auburn, Washington drivers will see a detour after city staff announced repairs to the local bridge next week.</p></aside>` });
+  const result = await trendingConnector.collect(bskyTask, context(replay));
+  expect(result.events).toEqual([]);
+  expect(result.result.status).toBe("no_context");
+  const queries = replay.requests.filter(({ url }) => url.includes("searchPosts")).map(({ url }) => new URL(url).searchParams.get("q"));
+  expect(queries).toEqual(['"Auburn" "Washington"', '"Kent" "Washington"']);
+});
+
+it("reports failed local reporting discovery as a failure rather than a successful empty result", async () => {
+  const result = await trendingConnector.collect(bskyTask, context(new ReplayTransport()));
+  expect(result.events).toEqual([]);
+  expect(result.result.status).toBe("failed");
+  expect(result.result.detail).toContain("Local reporting discovery unavailable");
+  const brokenReport = new ReplayTransport().on(/app\.bsky\.feed\.searchPosts/, { body: { posts: [
+    { record: { createdAt: "2026-10-18" }, embed: { external: { uri: "https://news.example/unavailable" } } },
+  ] } });
+  const unavailable = await trendingConnector.collect(bskyTask, context(brokenReport));
+  expect(unavailable.result.status).toBe("failed");
+  expect(unavailable.result.detail).toContain("All linked reporting unavailable");
 });
 
 it("does not persist failed Wikipedia statewide measurements", async () => {

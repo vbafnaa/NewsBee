@@ -12,7 +12,7 @@ const DETAILS: Record<SourceType, { name: string; formats: string; manual: boole
   meetings: { name: "Government meetings", formats: "Legistar and CivicClerk tenant APIs", manual: true },
   hazards: { name: "Weather & earthquakes", formats: "National Weather Service alerts and USGS earthquake feeds", manual: false },
   statenews: { name: "State newsrooms", formats: "Agency RSS and Atom feeds, filtered for local relevance", manual: true },
-  trending: { name: "Trending stories", formats: "Wikipedia and Bluesky attention signals with supporting reporting", manual: false },
+  trending: { name: "Locally reported stories", formats: "Wikipedia topic discovery and Bluesky reporting links; town plus 15 miles, recent local reporting required", manual: false },
 };
 
 export async function connectorInventory(db: Db, settings: Settings) {

@@ -11,8 +11,8 @@ const YEAR = /,\s*\d{4}(?=,|$)/g;
 export const NEWS_LINES: Record<string, string> = {
   state_news: "Published {when} by {source}.",
   earthquake: "Recorded {when}. Where: {source}.",
-  trending_topic: "Measured through {when}. Source: {source}.",
-  social_trend: "Trending as of {when}. Source: {source}.",
+  trending_topic: "Published {when} by {source}.",
+  social_trend: "Published {when} by {source}.",
 };
 
 export type Occurrence = {
@@ -95,6 +95,7 @@ export function collapse(events: SourceEvent[]): Story[] {
     const kind = (facts.kind as string | undefined) ?? "event";
     let key = storyKey(facts.title);
     if (kind !== "event") key = `${kind}:${facts.event_date}:${key}`;
+    if (facts.trend_context && ["trending_topic", "social_trend"].includes(kind)) key = `reported:${facts.event_date}:${facts.source_url}`;
     let story = stories.get(key);
     if (!story) {
       story = new Story(storyId(key), facts.title, null, kind, facts);

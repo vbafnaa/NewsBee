@@ -2,7 +2,7 @@
 import type { ModelRuntime, JsonSchema } from "./runtime";
 import { addedClaims } from "./news-blurb";
 
-export const WRITING_POLICY = "story_v4_presentation";
+export const WRITING_POLICY = "story_v5_local_reporting";
 export const HEADLINE_MAX = 90;
 export const SUMMARY_MAX = 900;
 export const SUMMARY_WORDS_MAX = 120;
@@ -37,13 +37,19 @@ const PURPOSE: Record<string, string> = {
   meeting_outcome: "tells neighbours what this public body decided, exactly as the recorded outcomes state, and why it matters to residents, in plain language for someone new to local government",
   state_news: "tells neighbours what this official announcement says, naming the agency that made it, in plain language. Do not claim it affects the town unless the description says so",
   earthquake: "tells neighbours calmly and plainly what the U.S. Geological Survey recorded. Do not mention damage, injuries, aftershocks or safety advice unless the description does",
-  trending_topic: "explains the underlying news development and the source-reported reason it is attracting attention. Attribute that explanation to the reporting publisher; page views are a supporting signal, never proof of a cause",
-  social_trend: "explains the underlying news development and the source-reported reason it is attracting attention. Attribute that explanation to the reporting publisher; post counts are a supporting signal, not the story or proof of a cause. Do not quote individual social-media users",
+  trending_topic: "reports the actual local development and its sourced local relevance, attributing reporting to the publisher. Wikipedia was only a discovery signal: do not mention trending, page views, searches, readership or speculate about why it attracted attention",
+  social_trend: "reports the actual local development and its sourced local relevance, attributing reporting to the publisher. Bluesky was only a link-discovery source: do not mention trending, post counts, virality or quote individual social-media users",
 };
 export type StoryInput = { id: string; title: string; description?: string | null; venues?: string[]; kind?: string; [key: string]: unknown };
 export type ItemDraft = { headline: string; summary: string };
 export type FrontDraft = { headline: string; intro: string };
 export type EmailDraft = { blurb: string };
+
+function attentionErrors(stories: StoryInput[], text: string) {
+  return stories.some((story) => ["trending_topic", "social_trend"].includes(story.kind ?? ""))
+    && /\b(?:trending|viral|page\s?views?|daily views|post counts?|search interest|readership|posts? on bluesky)\b/i.test(text)
+    ? ["attention_statistic_not_news"] : [];
+}
 
 function pythonJson(value: unknown) {
   const compact = JSON.stringify(value);
@@ -119,6 +125,7 @@ export function validateItem(story: StoryInput, draft: ItemDraft) {
   const allowed = storyAllowed(story);
   const dates = !NEWS_KINDS.has(story.kind ?? "event");
   const errors: string[] = [];
+  errors.push(...attentionErrors([story], `${draft.headline} ${draft.summary}`));
   errors.push(...addedClaims(draft.headline, allowed, 1).map((error) => `headline:${error}`));
   errors.push(...styleErrors(draft.headline, undefined, false, false).filter((error) => error !== "repeated_sentence").map((error) => `headline:${error}`));
   if (dates) errors.push(...dateClaimErrors(draft.headline, allowed).map((error) => `headline:${error}`));
@@ -193,11 +200,12 @@ function editionAllowed(context: ReturnType<typeof editionContext>, stories: Sto
 export function validateFront(context: ReturnType<typeof editionContext>, stories: StoryInput[], draft: FrontDraft) {
   const allowed = editionAllowed(context, stories);
   const original = stories.flatMap(storyAllowed);
-  return [...new Set([...addedClaims(draft.headline, allowed, 1).map((e) => `headline:${e}`), ...headlineErrors(draft.headline).map((e) => `headline:${e}`), ...editorialClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...(foreignScript(draft.headline) ? ["headline:foreign_characters"] : []), ...nameErrors(draft.headline, stories[0].title).map((e) => `headline:${e}`), ...addedClaims(draft.intro, allowed, 2).map((e) => `intro:${e}`), ...editorialClaimErrors(draft.intro, original).map((e) => `intro:${e}`), ...styleErrors(draft.intro, draft.headline).map((e) => `intro:${e}`)])];
+  const attention = attentionErrors(stories, `${draft.headline} ${draft.intro}`);
+  return [...new Set([...attention, ...addedClaims(draft.headline, allowed, 1).map((e) => `headline:${e}`), ...headlineErrors(draft.headline).map((e) => `headline:${e}`), ...editorialClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...(foreignScript(draft.headline) ? ["headline:foreign_characters"] : []), ...nameErrors(draft.headline, stories[0].title).map((e) => `headline:${e}`), ...addedClaims(draft.intro, allowed, 2).map((e) => `intro:${e}`), ...editorialClaimErrors(draft.intro, original).map((e) => `intro:${e}`), ...styleErrors(draft.intro, draft.headline).map((e) => `intro:${e}`)])];
 }
 export function validateEmail(context: ReturnType<typeof editionContext> & { headline: string; intro: string }, stories: StoryInput[], draft: EmailDraft) {
   const allowed = [...editionAllowed(context, stories), context.headline, context.intro];
-  return [...new Set([...addedClaims(draft.blurb, allowed, 2).map((e) => `blurb:${e}`), ...editorialClaimErrors(draft.blurb, stories.flatMap(storyAllowed)).map((e) => `blurb:${e}`), ...styleErrors(draft.blurb, context.headline).map((e) => `blurb:${e}`)])];
+  return [...new Set([...attentionErrors(stories, draft.blurb), ...addedClaims(draft.blurb, allowed, 2).map((e) => `blurb:${e}`), ...editorialClaimErrors(draft.blurb, stories.flatMap(storyAllowed)).map((e) => `blurb:${e}`), ...styleErrors(draft.blurb, context.headline).map((e) => `blurb:${e}`)])];
 }
 async function editionText(runtime: ModelRuntime, context: ReturnType<typeof editionContext> & { headline?: string; intro?: string }, stories: StoryInput[], promptFn: (context: Record<string, unknown>) => string, schema: JsonSchema, fields: string[], limits: Record<string, number>, validate: (context: any, stories: StoryInput[], draft: any) => string[], label: string) {
   const result: Record<string, unknown> = { fallback: true, validation_errors: [] };
