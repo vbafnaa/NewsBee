@@ -42,7 +42,87 @@ attempts before installing the active-run index. The furthest-progressed attempt
 the others retain their own run IDs and history as cancelled, with queued jobs stopped and
 a superseded-by reason. Publication already in progress is never interrupted.
 
-To remove an onboarded town, expand its card's **Location actions**, choose **Remove**
+## Neighborhood and community coverage
+
+Enter a US neighborhood/community and its city/state, then press **Search all communities**
+or Enter. Photon/OpenStreetMap resolves places beyond any checked-in catalog, for example
+`Wallingford, Seattle, Washington`. Select the matching result and add it. Results depend
+on the provider's mapped places and spelling: no geographic directory guarantees every
+informal community. Typing alone searches the local Census directory, optional reviewed
+overrides and previously resolved places; it never sends autocomplete requests upstream.
+`Freemont` remains an alias for the optional Fremont override.
+
+Each provider place has a stable OSM-based ID, separate run history, source settings,
+link cache, output selection and reader interest signup. Onboarding reads the saved
+provider record, not client-supplied coordinates. Existing Census city editions and IDs
+are unchanged. Reader search includes saved provider communities without making public
+geocoder requests. No catalog entry or matching Census parent row is required.
+
+**Location resolved is not sources ready.** Source discovery runs independently; missing
+branches, websites, supported government platforms and community feeds are visible gaps,
+not a reason to reject a valid place. Location cards and **Sources** report `ready`,
+`partial` or `no_local_sources`. These statuses describe configuration availability, not
+a guarantee of fresh content; run inspection still reports actual connector outcomes.
+Validated manual links are included when evaluating readiness.
+
+Use a provider polygon when present. Standard Photon results often contain only a center
+or extent; an extent is explicitly an **approximate bounding box**, and a point-only
+result uses an **approximate 2 km radius**, never a claimed neighborhood boundary.
+IMLS library outlet coordinates select candidate branches within that area. Approximate
+selection can include nearby branches; review the selected branch names before publication.
+Outlets without coordinates are not silently selected from the whole parent city.
+
+| Connector | Community behavior |
+| --- | --- |
+| Library | Reuse system calendars, retaining events only at spatially selected branches (or optional reviewed branch overrides). Missing configured branches produce a gap, never a citywide fallback. Existing IMLS imports are upgraded once to include outlet coordinates. |
+| Government | Discover the governing city/county supplied by the provider, honoring community then parent overrides. Missing jurisdiction stays unresolved. Filter agenda **items before summarization**, not the council meeting venue, by community mention, selected-venue address or available geographic evidence. Manual meeting links use the same filter. |
+| Community/state news (`statenews`) | Reuse the news connector. Validate actual RSS/Atom links from the community website supplied by OSM or exact-name, nearby-US Wikidata discovery, plus reviewed overrides. Retain only items with community relevance evidence; parent-city/county mentions alone are insufficient. This is not general web crawling or arbitrary HTML-news extraction. |
+| Trends | Apply the same community evidence requirement to recent linked reporting. Popularity or nearby city mentions do not qualify. |
+| Hazards | Keep regional USGS coverage centered on the neighborhood, labeled as nearby earthquakes rather than neighborhood reporting. |
+
+The **Sources** location filter shows coverage terms, selected branches, feed configuration,
+area uncertainty and discovery gaps. Additional validated
+publisher RSS/Atom feeds can be added with the **Community and state newsrooms** connector.
+All normal date, safety and editorial checks still apply. Broad citywide policy changes
+without community/venue/geographic evidence are intentionally omitted. Retained candidate
+facts record the evidence method and matches; editors should select coverage terms
+carefully to balance missed stories against false positives.
+
+Optional reviewed overrides live in `config/communities.json` and are seeded once into the
+`communities` document in MongoDB `source_configs`. They enrich matching provider places
+and retain legacy catalog IDs; they do not gate discovery. Entries specify an ID ending in the parent's
+Census ID, a display name, state code/name, parent city, center coordinates, search aliases,
+coverage terms, exact library branch selections (name normalization is supported), and
+reviewed HTTPS RSS/Atom feeds. Use the official
+[Seattle Public Library branch directory](https://www.spl.org/hours-and-locations) to review
+branch selections; the current local feeds are
+[My Ballard](https://www.myballard.com/feed/) and
+[West Seattle Blog](https://westseattleblog.com/feed/).
+
+To discover another community, use the search UI; **do not add a catalog entry**.
+To maintain reviewed overrides, update MongoDB as well if it was already seeded.
+Changing a checked-in seed never overwrites live configuration. Re-onboard affected communities to refresh their saved
+coverage/branch/feed snapshot; manually managed library websites and government settings
+are preserved. Reader search reads the same directory, so communities can collect interest
+before their first edition. Census re-imports do not erase saved provider identities.
+
+### Geographic provider operations
+
+`NEWSBEE_GEOCODER_URL` selects an HTTPS Photon-compatible API (default
+`https://photon.komoot.io/api/`). Explicit searches are cached in MongoDB for seven days
+(empty results: one hour); a shared Mongo lease serializes upstream requests across
+instances with at least a 1.1-second cooldown. Provider errors are surfaced, not cached
+as successful empty searches. Results are US-only settlement/district features;
+businesses, parks and other POIs are excluded. Responses are size/time bounded.
+The UI attributes OpenStreetMap contributors; stored records retain attribution.
+
+The public Photon demo has fair-use limits and no availability guarantee. For production
+traffic, configure a hosted or self-managed Photon endpoint and follow its usage policy.
+OSM coverage, jurisdiction metadata, boundaries and publisher websites vary; missing
+sources require editorial configuration, not broader citywide scraping. Feed discovery
+uses the existing public-HTTPS/robots/DNS/redirect protections and validates feed format.
+
+To remove an onboarded community or town, expand its card's **Location actions**, choose **Remove**
 and confirm. Removal is blocked while a job is running. It clears the town's pipeline
 records and manual links and removes it from output-channel directories.
 
@@ -81,6 +161,21 @@ charges; a free tier is not an unlimited quota.
 npm test            # vitest: connectors, ranking, authoring, model providers, orchestration (in-memory MongoDB; no real model or API calls)
 npm run lint        # tsc --noEmit
 ```
+
+Opt-in live neighborhood smoke (Ollama running with `qwen3:4b` installed):
+
+```powershell
+$env:NEWSBEE_TEST_OLLAMA = "1"
+npm test -- pipeline/tests/communities/ollama.integration.test.ts --maxWorkers=1
+```
+
+This searches uncataloged Wallingford through live Photon, adds and validates the live
+Wallyhood RSS feed, and runs the real news connector, ranking, authoring and local
+publication with **Ollama only**, explicitly advancing both editor gates. Automatic
+sources are disabled to bound the smoke to that feed. Missing reference-library
+branches remain a visible gap; this is not a full live library/government crawl.
+Artifacts and `smoke-result.json` persist under `.local/community-smoke`
+(override with `NEWSBEE_SMOKE_ROOT`); the isolated test MongoDB is temporary.
 
 ## How a run works
 

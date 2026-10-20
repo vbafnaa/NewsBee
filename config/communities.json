@@ -1,0 +1,45 @@
+{
+  "fremont-seattle-wa": {
+    "name": "Fremont",
+    "state": "WA",
+    "state_name": "Washington",
+    "parent_id": "seattle-wa",
+    "parent_name": "Seattle",
+    "latitude": 47.651,
+    "longitude": -122.35,
+    "aliases": ["Freemont"],
+    "coverage_terms": ["Fremont"],
+    "library_branches": ["Fremont Branch"],
+    "newsrooms": []
+  },
+  "ballard-seattle-wa": {
+    "name": "Ballard",
+    "state": "WA",
+    "state_name": "Washington",
+    "parent_id": "seattle-wa",
+    "parent_name": "Seattle",
+    "latitude": 47.669,
+    "longitude": -122.385,
+    "aliases": [],
+    "coverage_terms": ["Ballard"],
+    "library_branches": ["Ballard Branch"],
+    "newsrooms": [
+      { "name": "My Ballard", "feed": "https://www.myballard.com/feed/" }
+    ]
+  },
+  "west-seattle-seattle-wa": {
+    "name": "West Seattle",
+    "state": "WA",
+    "state_name": "Washington",
+    "parent_id": "seattle-wa",
+    "parent_name": "Seattle",
+    "latitude": 47.562,
+    "longitude": -122.387,
+    "aliases": [],
+    "coverage_terms": ["West Seattle", "Alki", "Admiral District", "Admiral Junction", "North Admiral", "Delridge", "High Point, Seattle", "Highland Park, Seattle"],
+    "library_branches": ["West Seattle Branch", "Southwest Branch", "Delridge Branch", "High Point Branch"],
+    "newsrooms": [
+      { "name": "West Seattle Blog", "feed": "https://westseattleblog.com/feed/" }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 # MongoDB source configuration seed
 
 `mongodb-source-configs.json` is an importable JSON array for the `source_configs`
-collection. It contains one document for each current source configuration file:
+collection. It contains the three original source configuration documents:
 
 | `_id` | Source file |
 | --- | --- |
@@ -29,3 +29,5 @@ and stored separately in `location_source_links`.
 The import file is a snapshot of only the three files listed above. Refresh it if you
 intend to import updated checked-in seeds; upserting it replaces live global overrides.
 It does not contain onboarded location profiles or journalist-admin accounts.
+The reviewed neighborhood catalog (`config/communities.json`, `_id: "communities"`) is
+seeded separately on first use and is not replaced by this legacy import snapshot.

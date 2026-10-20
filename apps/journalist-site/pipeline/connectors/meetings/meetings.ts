@@ -1,4 +1,5 @@
 import { plainText, scheduleText, type EventFacts, type LocalMoment } from "../common";
+import type { CommunityEvidence } from "../community";
 
 export const MAX_ITEMS = 5;
 export const ITEM_MAX = 200;
@@ -37,6 +38,7 @@ export type MeetingItem = { title: string; consent?: boolean; weight?: number; o
 export type Meeting = {
   source_event_id: string; body: string; start: LocalMoment; venue?: string | null; source_url: string;
   items: MeetingItem[]; draft_agenda?: boolean; minutes_final?: boolean; note?: string | null;
+  community_relevance?: CommunityEvidence[];
 };
 export type MeetingFacts = EventFacts & { kind: "meeting_preview" | "meeting_outcome"; body: string; agenda_items: number };
 
@@ -83,6 +85,7 @@ function facts(meeting: Meeting, kind: MeetingFacts["kind"], title: string, desc
     kind,
     body: meeting.body,
     agenda_items: count,
+    ...(meeting.community_relevance ? { community_relevance: meeting.community_relevance } : {}),
   };
 }
 function withoutLinks(note: string) {

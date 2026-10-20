@@ -177,6 +177,13 @@ async function confirmationCount(fetcher: Fetcher, candidate: [string, string]) 
   } catch { return 0; }
 }
 async function internalDiscover(transport: HttpTransport, profile: LocationProfile, override?: object | null, options: DiscoveryOptions = {}): Promise<DiscoveryResult> {
+  if (profile.community) {
+    if (profile.community.geography && !profile.community.parent_kind && !override) {
+      return found("unresolved_website", "No parent jurisdiction was resolved. Configure a government meeting tenant in Sources.");
+    }
+    const parent = { ...profile, id: profile.community.parent_id, name: `${profile.community.parent_name}, ${profile.state}`, community: undefined };
+    return internalDiscover(transport, parent, override, options);
+  }
   if (override) {
     const value = override as { platform: string; tenant: string };
     return found("override", "Platform from config/government-sources.json", { platform: value.platform, tenant: value.tenant });

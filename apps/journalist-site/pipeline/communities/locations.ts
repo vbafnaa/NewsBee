@@ -7,8 +7,14 @@ import { loadSourceConfig } from "../storage/source-configs";
 import { logger } from "../core/log";
 import { ACTIVE_RUN_STATUSES } from "../orchestration/runs";
 const log = logger("communities.locations");
-import { display, systemsForPlace } from "./directory";
+import { loadCommunities, placeId, systemsForPlace, systemsInArea, type Place } from "./directory";
+import { communityName } from "../../../../shared/community-directory";
 import { lookupWebsite, httpsOrigin } from "./wikidata";
+import { nameKey } from "./venues";
+import { GEOGRAPHIC_PLACES } from "../../../../shared/geography";
+import type { GeographicDocument } from "./geocoder";
+import { sourceCoverage } from "./source-coverage";
+import { discoverCommunityNews } from "./news-discovery";
 
 type LocationDocument = LocationProfile & { _id: string; [key: string]: any };
 type LocationRef = { _id?: string; location_id: string; status?: string; [key: string]: any };
@@ -20,6 +26,7 @@ export type OnboardOptions = {
   settings?: Pick<Settings, "root">;
   overrides?: Record<string, WebsiteOverride>;
   discoverGovernment?: (profile: LocationProfile) => Promise<GovernmentSource>;
+  discoverNews?: typeof discoverCommunityNews;
 };
 
 export function websiteOverrides(data: Record<string, unknown>): Record<string, WebsiteOverride> {
@@ -44,40 +51,91 @@ export async function getLocation(db: Db, id: string): Promise<LocationProfile> 
   const profile = await db.collection<LocationDocument>(COLLECTIONS.locations).findOne({ _id: id });
   if (!profile) throw new Error(`Location is not onboarded: ${id}`);
   const { _id: _ignored, ...result } = profile;
+  if (result.community) {
+    const manual = await db.collection(COLLECTIONS.manualLinks).find({ location_id: id }).project<{ connector: string }>({ connector: 1 }).toArray();
+    result.source_coverage = sourceCoverage(result, result.source_coverage?.discovery_gaps, manual.map((link) => link.connector));
+  }
   return result as LocationProfile;
 }
 
 export async function listLocations(db: Db): Promise<LocationProfile[]> {
   const docs = await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).find({}).sort({ name: 1 }).toArray();
-  return docs.map(({ _id: _ignored, ...profile }) => profile as LocationProfile);
+  return Promise.all(docs.map(async ({ _id: _ignored, ...profile }) => profile.community ? getLocation(db, profile.id) : profile));
 }
 
 export async function onboardLocation(db: Db, transport: HttpTransport, placeIdentity: string, options: OnboardOptions = {}): Promise<LocationProfile> {
-  const place = await db.collection<{ _id: string; name: string; state: string; geoid: string; latitude: number; longitude: number }>(COLLECTIONS.places).findOne({ _id: placeIdentity });
-  if (!place) throw new Error(`Census place is not available: ${placeIdentity}`);
-  const { systems, edition } = await systemsForPlace(db, placeIdentity);
+  const catalog = await loadCommunities(db);
+  const geographic = await db.collection<GeographicDocument>(GEOGRAPHIC_PLACES).findOne({ _id: placeIdentity });
+  const reviewed = geographic ? Object.values(catalog).find((entry) => entry.name.toLowerCase() === geographic.name.toLowerCase()
+    && entry.state === geographic.state && entry.parent_name.toLowerCase() === geographic.parent_name?.toLowerCase()) : catalog[placeIdentity];
+  const community = geographic ? {
+    name: geographic.name, state: geographic.state, state_name: geographic.state_name,
+    parent_id: placeId(geographic.parent_name ?? geographic.name, geographic.state), parent_name: geographic.parent_name ?? geographic.name,
+    parent_kind: geographic.parent_kind, latitude: geographic.latitude, longitude: geographic.longitude,
+    aliases: reviewed?.aliases ?? [], coverage_terms: reviewed?.coverage_terms ?? [geographic.name],
+    library_branches: reviewed?.library_branches ?? [], newsrooms: reviewed?.newsrooms ?? [], geography: geographic,
+  } : reviewed;
+  const place = await db.collection<Place>(COLLECTIONS.places).findOne({ _id: community?.parent_id ?? placeIdentity });
+  if (!place && !geographic) throw new Error(`Census place is not available: ${community?.parent_id ?? placeIdentity}`);
+  if (!geographic && community && place && (community.state !== place.state || community.parent_name.toLowerCase() !== place.name.toLowerCase())) {
+    throw new Error(`Community ${placeIdentity} parent does not match Census place ${place._id}`);
+  }
+  const { systems, edition } = geographic && !reviewed ? await systemsInArea(db, geographic)
+    : await systemsForPlace(db, place?._id ?? community!.parent_id, community?.library_branches);
+  const gaps: string[] = [];
+  if (community && reviewed) {
+    const missing = community.library_branches.filter((name) => !systems.some((system) => system.branches.some((branch) => nameKey(branch.name) === nameKey(name))));
+    if (missing.length) gaps.push(`Configured library branches missing from the directory: ${missing.join(", ")}. No citywide fallback was applied.`);
+  }
   const profile: LocationProfile = {
     id: placeIdentity,
-    name: `${place.name}, ${place.state}`,
-    state: place.state,
-    census_geoid: place.geoid,
-    latitude: place.latitude,
-    longitude: place.longitude,
+    name: geographic?.label ?? (community ? communityName(community) : `${place!.name}, ${place!.state}`),
+    state: community?.state ?? place!.state,
+    census_geoid: community ? null : place!.geoid,
+    latitude: community?.latitude ?? place!.latitude,
+    longitude: community?.longitude ?? place!.longitude,
     directory_edition: `IMLS PLS ${edition}`,
     systems,
     government: null,
+    ...(community ? { community } : {}),
   };
+  if (community && geographic) {
+    const discovered = await (options.discoverNews ?? discoverCommunityNews)(transport, community);
+    community.newsrooms = discovered.newsrooms;
+    community.library_branches = systems.flatMap((system) => system.branches.map((branch) => branch.name));
+    gaps.push(...discovered.gaps);
+  }
   const overrideData = options.overrides ?? await loadSourceConfig(db, options.settings?.root ?? process.cwd(), "library-websites");
   const overrides = websiteOverrides(overrideData as Record<string, unknown>);
   for (const system of profile.systems) {
     const entry = overrides[system.fscskey];
-    const lookup = entry ? overrideLookup(system, entry) : await lookupWebsite(transport, system.name, system.latitude == null ? null : Number(system.latitude), system.longitude == null ? null : Number(system.longitude));
+    let lookup;
+    try {
+      lookup = entry ? overrideLookup(system, entry) : await lookupWebsite(transport, system.name, system.latitude == null ? null : Number(system.latitude), system.longitude == null ? null : Number(system.longitude));
+    } catch (error) {
+      if (!geographic || entry) throw error;
+      const detail = `Library website discovery unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      log.warn("library_discovery_unavailable", { location_id: placeIdentity, detail });
+      gaps.push(detail);
+      lookup = { status: "unresolved", website: null, wikidata_id: null, detail };
+    }
     system.website_lookup = lookup;
     system.website = lookup.website;
     log.info("library_system_onboarded", { location_id: placeIdentity, fscskey: system.fscskey, website_status: lookup.status, detail: lookup.detail });
   }
   if (options.discoverGovernment) {
-    profile.government = await options.discoverGovernment(profile);
+    try {
+      profile.government = geographic && !geographic.parent_kind ? {
+        status: "unresolved_website", platform: null, tenant: null, website: null, wikidata_id: null, pages_checked: [],
+        detail: "Geocoder has no governing city or county; configure a meeting tenant in Sources.",
+      } : await options.discoverGovernment(profile);
+    } catch (error) {
+      if (!geographic) throw error;
+      const detail = `Government discovery unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      log.warn("government_discovery_unavailable", { location_id: placeIdentity, detail });
+      gaps.push(detail);
+      profile.government = { status: "unresolved_website", platform: null, tenant: null, website: null, wikidata_id: null, pages_checked: [], detail };
+    }
     log.info("government_source_onboarded", { location_id: placeIdentity, status: profile.government.status, platform: profile.government.platform, tenant: profile.government.tenant, detail: profile.government.detail });
   }
   const existing = await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).findOne({ _id: placeIdentity });
@@ -94,6 +152,7 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     const oldGovernment = previous.government;
     if (oldGovernment?.detail === MANAGED_SOURCE_DETAIL || oldGovernment?.detail === DISABLED_GOVERNMENT_DETAIL) profile.government = oldGovernment;
   }
+  if (profile.community) profile.source_coverage = sourceCoverage(profile, gaps);
   await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: placeIdentity }, { ...profile, _id: placeIdentity }, { upsert: true });
   log.info("location_onboarded", { location_id: placeIdentity, systems: profile.systems.length });
   return profile;
@@ -117,6 +176,7 @@ export async function updateSources(db: Db, id: string, websites: Record<string,
     status: "no_platform", platform: null, tenant: null, website: null, wikidata_id: null,
     pages_checked: [], detail: DISABLED_GOVERNMENT_DETAIL,
   };
+  if (profile.community) profile.source_coverage = sourceCoverage(profile, profile.source_coverage?.discovery_gaps);
   await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: id }, { ...profile, _id: id }, { upsert: false });
   log.info("location_sources_updated", { location_id: id });
   return profile;
