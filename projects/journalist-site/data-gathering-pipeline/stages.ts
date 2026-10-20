@@ -1,6 +1,6 @@
 import { listConfiguredSources } from "@/auth";
 import { randomUUID } from "node:crypto";
-import { pipelineFolder, readJson, saveJson } from "./drive";
+import { pipelineRunFolder, readJson, saveJson } from "./drive";
 import { gatherSource } from "./gather";
 import { getCompletedSourceRunsById } from "./store";
 import { normalizeForState } from "./states";
@@ -14,19 +14,13 @@ function sourceForRun(sources: ConfiguredSource[], run: PipelineRun) {
   return source;
 }
 
-function sourceFolderName(sourceId: string) {
-  const safe = sourceId.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 90);
-  if (!safe) throw new Error("Source identifier cannot be used as a Drive folder name");
-  return safe;
-}
-
 async function sourceRunFolder(run: PipelineRun) {
   if (!run.source_id) throw new Error("Source run is missing its source identifier");
-  return pipelineFolder(run.drive_folder_id, "sources", sourceFolderName(run.source_id), run._id);
+  return pipelineRunFolder(run);
 }
 
 async function editionRunFolder(run: PipelineRun) {
-  return pipelineFolder(run.drive_folder_id, "editions", run.location_id, run._id);
+  return pipelineRunFolder(run);
 }
 
 export async function executeStage(run: PipelineRun, stage: PipelineStage) {

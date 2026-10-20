@@ -67,7 +67,10 @@ The output-channel page also stores `selected_source_ids` in `output_channels` a
 manual, one-request-at-a-time source and edition stages. Source artifacts live under the
 configured channel folder at
 `.newsbee-pipeline/sources/<source-id>/<run-id>/`; edition intermediate artifacts live under
-`.newsbee-pipeline/editions/<location-id>/<run-id>/`. Only published edition JSON files are
+`.newsbee-pipeline/editions/<location-id>/<run-id>/`. Each run folder contains the JSON
+artifact produced by each completed stage. Run status, stage history, and artifact file IDs
+are stored in MongoDB's `data_gathering_runs` collection; Drive is used only for pipeline
+data artifacts. Only published edition JSON files are
 written to the Drive folder root for the reader site. Source-run stages are `gather` and
 `normalize`; channel edition stages are `rank`, `write`, and `publish`. A successful gather
 records the period and timestamp in `source_ingestion_state`; every stage's status and Drive
