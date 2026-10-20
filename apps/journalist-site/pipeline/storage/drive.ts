@@ -144,6 +144,15 @@ export class DriveArtifacts implements ArtifactStore {
     return response.json() as Promise<T>;
   }
 
+  async readText(fileId: string) {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media`,
+      { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
+    return response.text();
+  }
+
   async list(parentId: string): Promise<StoredFile[]> {
     const files: StoredFile[] = [];
     let pageToken: string | undefined;

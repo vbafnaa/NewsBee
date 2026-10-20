@@ -11,7 +11,7 @@ export async function POST(request: Request, context: Context) {
   const { locationId } = await context.params;
   return adminRoute(request, async (deps) => {
     const { run, started } = await startRun(deps, locationId, { by: (await currentAdmin()) ?? "admin", kind: "manual" });
-    kickPipeline(deps);
+    kickPipeline(deps, request.url);
     return { run_id: run._id, started, jobs: started ? run.sources.map((source) => ({ job_id: source.job_id })) : [] };
   });
 }

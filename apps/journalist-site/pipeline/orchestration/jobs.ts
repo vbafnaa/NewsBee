@@ -35,6 +35,8 @@ export type Job = {
   claim_token: string | null;
   error: string | null;
   result: Record<string, unknown> | null;
+  log_file: string | null;
+  log_error: string | null;
 };
 
 const log = logger("jobs");
@@ -86,6 +88,8 @@ export async function enqueue(
       claim_token: null,
       error: null,
       result: null,
+      log_file: null,
+      log_error: null,
     });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
@@ -122,10 +126,11 @@ export async function recoverExpired(db: Db) {
 }
 
 /** Atomically claim the oldest available job. */
-export async function claim(db: Db, kinds?: readonly JobKind[]): Promise<Job | null> {
+export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string): Promise<Job | null> {
   const current = now();
   const filter: Filter<Job> = { status: "pending", available_at: { $lte: current } };
   if (kinds) filter.kind = { $in: [...kinds] };
+  if (jobId) filter._id = jobId;
   return jobs(db).findOneAndUpdate(
     filter,
     {
@@ -134,6 +139,24 @@ export async function claim(db: Db, kinds?: readonly JobKind[]): Promise<Job | n
     },
     { sort: { created_at: 1, _id: 1 }, returnDocument: "after" },
   );
+}
+
+export async function pendingJobs(db: Db, kind: JobKind, limit = 50) {
+  return jobs(db)
+    .find({ kind, status: "pending", available_at: { $lte: now() } })
+    .sort({ created_at: 1, _id: 1 })
+    .limit(limit)
+    .toArray();
+}
+
+export async function nextPendingJob(db: Db) {
+  return jobs(db)
+    .findOne({ status: "pending" }, { projection: { available_at: 1 }, sort: { available_at: 1 } })
+    .then((job) => job ? { available_at: job.available_at } : null);
+}
+
+export async function setJobLog(db: Db, jobId: string, file: string | null, error: string | null) {
+  await jobs(db).updateOne({ _id: jobId }, { $set: { log_file: file, log_error: error } });
 }
 
 export class LostLeaseError extends Error {}

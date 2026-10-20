@@ -11,7 +11,7 @@
 import type { Db } from "mongodb";
 import { rankingCandidateLimit, type Settings } from "../core/config";
 import { fetchTransport, type HttpTransport } from "../core/http";
-import { logger, type Logger } from "../core/log";
+import { logger, withLogSink, type LogRecord, type Logger } from "../core/log";
 import { ingestWindow, localToday } from "../core/time";
 import { Fetcher } from "../connectors/fetcher";
 import { CONNECTORS, selectSources } from "../connectors/registry";
@@ -24,7 +24,7 @@ import type { ModelRuntime } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
-import { claim, complete, enqueue, fail, LostLeaseError, recoverExpired, type Job } from "./jobs";
+import { claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
 import { publishToChannels } from "./publish";
 import { failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
 
@@ -241,22 +241,53 @@ async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
 }
 
 /** Claim and run one job; returns false when the queue is empty. */
-export async function runOne(deps: OrchestratorDeps): Promise<boolean> {
-  const job = await claim(deps.db);
+export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; kinds?: readonly JobKind[] } = {}): Promise<boolean> {
+  const job = await claim(deps.db, options.kinds, options.jobId);
   if (!job) return false;
   const started = Date.now();
+  const records: LogRecord[] = [];
+  let executionFailed = false;
+  let executionError: unknown;
   try {
-    const result = await executeJob(deps, job);
-    await complete(deps.db, job, result);
-    log.info("job_completed", { kind: job.kind, job_id: job._id, run_id: job.run_id, duration_ms: Date.now() - started });
+    await withLogSink((record) => records.push(record), async () => {
+      logger("job").info("job_started", { kind: job.kind, job_id: job._id, run_id: job.run_id, attempt: job.attempts });
+      try {
+        const result = await executeJob(deps, job);
+        await complete(deps.db, job, result);
+        log.info("job_completed", { kind: job.kind, job_id: job._id, run_id: job.run_id, duration_ms: Date.now() - started });
+      } catch (error) {
+        if (error instanceof LostLeaseError) {
+          log.warn("job_lease_lost", { kind: job.kind, job_id: job._id });
+          return;
+        }
+        const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        log.error("job_execution_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
+        const outcome = await fail(deps.db, job, error, !(error instanceof PermanentJobError));
+        if (outcome === "failed") await finalFailure(deps, job, error instanceof Error ? error.message : String(error));
+      }
+    });
   } catch (error) {
-    if (error instanceof LostLeaseError) {
-      log.warn("job_lease_lost", { kind: job.kind, job_id: job._id });
-      return true;
-    }
-    const outcome = await fail(deps.db, job, error, !(error instanceof PermanentJobError));
-    if (outcome === "failed") await finalFailure(deps, job, error instanceof Error ? error.message : String(error));
+    executionFailed = true;
+    executionError = error;
   }
+  try {
+    const folder = await runFolder(deps.store, "logs", job.run_id);
+    const previous = job.log_file ? await deps.store.readText(job.log_file) : "";
+    const attemptLog = records.map((record) => JSON.stringify(record)).join("\n");
+    const content = [previous.trimEnd(), attemptLog].filter(Boolean).join("\n");
+    const file = await deps.store.saveText(
+      folder,
+      `${job._id}.jsonl`,
+      `${content}\n`,
+      "application/x-ndjson",
+    );
+    await setJobLog(deps.db, job._id, file, null);
+  } catch (error) {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    log.error("job_log_upload_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
+    await setJobLog(deps.db, job._id, job.log_file, detail);
+  }
+  if (executionFailed) throw executionError;
   return true;
 }
 
@@ -265,7 +296,7 @@ export async function runOne(deps: OrchestratorDeps): Promise<boolean> {
  * interrupted jobs, then run jobs in parallel until the queue is empty or the start
  * budget is spent. Jobs already started run to completion.
  */
-export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number; concurrency?: number } = {}) {
+export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number; concurrency?: number; kinds?: readonly JobKind[] } = {}) {
   const budgetMs = options.budgetMs ?? 30_000;
   const concurrency = Math.max(1, options.concurrency ?? 4);
   const deadline = Date.now() + budgetMs;
@@ -273,7 +304,7 @@ export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number;
   for (const job of await recoverExpired(deps.db)) await finalFailure(deps, job, job.error ?? "Worker lease expired");
   let executed = 0;
   const worker = async () => {
-    while (Date.now() < deadline && (await runOne(deps))) executed += 1;
+    while (Date.now() < deadline && (await runOne(deps, { kinds: options.kinds }))) executed += 1;
   };
   await Promise.all(Array.from({ length: concurrency }, worker));
   await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_finished_at: now(), last_tick_executed: executed } });

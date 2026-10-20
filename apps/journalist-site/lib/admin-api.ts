@@ -33,10 +33,21 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
 }
 
 /** Start running queued jobs right after responding instead of waiting for the next cron tick. */
-export function kickPipeline(deps: OrchestratorDeps) {
+export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
-      await tick(deps, { budgetMs: 20_000 });
+      if (deps.settings.mode === "cloud") {
+        const secret = deps.settings.cronSecret;
+        if (!secret) throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
+        const response = await fetch(new URL("/api/pipeline/tick", requestUrl), {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}` },
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error(`Scheduler returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+      } else {
+        await tick(deps, { budgetMs: 20_000 });
+      }
     } catch (error) {
       log.error("kick_failed", { error: error instanceof Error ? error.message : String(error) });
     }

@@ -33,7 +33,7 @@ type Health = {
 };
 type RunSource = { source_id: string; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
 type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[] };
-type Job = { id: string; kind: string; status: string; attempts: number; error: string | null };
+type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null };
 type RunDetail = {
   run: { _id: string; location_id: string; location_name: string; status: string; draft_id: string | null; window: [string, string]; sources: RunSource[]; error: string | null };
   stories: Story[];
@@ -214,9 +214,15 @@ export default function Dashboard() {
           ))}</ul>}
           <h3>Jobs</h3>
           <div className="table-wrap"><table>
-            <thead><tr><th>Job</th><th>Status</th><th>Attempts</th><th>Error</th></tr></thead>
+            <thead><tr><th>Job</th><th>Status</th><th>Attempts</th><th>Error</th><th>Log</th></tr></thead>
             <tbody>{detail.jobs.map((job) => (
-              <tr key={job.id}><td>{job.kind}</td><td>{job.status}</td><td>{job.attempts}</td><td>{job.error ?? "—"}</td></tr>
+              <tr key={job.id}>
+                <td>{job.kind}</td><td>{job.status}</td><td>{job.attempts}</td>
+                <td>{[job.error, job.log_error && `Log save failed: ${job.log_error}`].filter(Boolean).join("; ") || "—"}</td>
+                <td>{job.log_file
+                  ? <a href={`/api/admin/jobs/${encodeURIComponent(job.id)}/log`} target="_blank" rel="noreferrer">View log</a>
+                  : "—"}</td>
+              </tr>
             ))}</tbody>
           </table></div>
         </section>

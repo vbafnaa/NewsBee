@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /** Structured JSON-line logging; Vercel and local terminals both show one event per line. */
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -15,9 +17,14 @@ function defaultSink(record: LogRecord) {
 }
 
 let sink: LogSink = defaultSink;
+const scopedSink = new AsyncLocalStorage<LogSink>();
 
 export function setLogSink(next: LogSink | null) {
   sink = next ?? defaultSink;
+}
+
+export function withLogSink<T>(next: LogSink, operation: () => T): T {
+  return scopedSink.run(next, operation);
 }
 
 function threshold(): number {
@@ -43,8 +50,9 @@ export type Logger = {
 
 export function logger(component: string, base: LogFields = {}): Logger {
   const emit = (level: LogLevel, event: string, fields: LogFields = {}) => {
-    if (ORDER[level] < threshold()) return;
-    sink({ level, component, event, time: new Date().toISOString(), ...base, ...errorFields(fields) });
+    const record = { level, component, event, time: new Date().toISOString(), ...base, ...errorFields(fields) };
+    scopedSink.getStore()?.(record);
+    if (ORDER[level] >= threshold()) sink(record);
   };
   return {
     debug: (event, fields) => emit("debug", event, fields),

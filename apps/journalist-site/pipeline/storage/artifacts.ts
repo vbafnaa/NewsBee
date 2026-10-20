@@ -16,6 +16,7 @@ export interface ArtifactStore {
   saveJson(parentId: string, name: string, value: unknown): Promise<string>;
   saveText(parentId: string, name: string, value: string, mimeType: string): Promise<string>;
   readJson<T>(fileId: string): Promise<T>;
+  readText(fileId: string): Promise<string>;
   list(parentId: string): Promise<StoredFile[]>;
 }
 
@@ -60,6 +61,10 @@ export class LocalArtifacts implements ArtifactStore {
     return JSON.parse(await readFile(this.resolve(fileId), "utf8")) as T;
   }
 
+  async readText(fileId: string) {
+    return readFile(this.resolve(fileId), "utf8");
+  }
+
   async list(parentId: string) {
     try {
       const entries = await readdir(this.resolve(parentId), { withFileTypes: true });
@@ -87,7 +92,7 @@ export function getArtifacts(): ArtifactStore {
 }
 
 /** Folder that holds pipeline run artifacts (not visible to the reader site). */
-export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews", ...names: string[]) {
+export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews" | "logs", ...names: string[]) {
   const root = loadSettings().pipelineDriveFolderId ?? "pipeline";
   let folder = await store.ensureFolder(root, ".newsbee-pipeline");
   folder = await store.ensureFolder(folder, kind);

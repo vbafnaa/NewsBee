@@ -87,7 +87,10 @@ every 5 seconds during local development.
    channel that selects the location.
 
 **Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
-for each source, story (with held reasons) and job. **Health** shows current providers,
+for each source, story (with held reasons) and job. Each cloud source collection runs in
+its own authenticated Vercel function invocation; structured per-attempt JSON-line logs
+are stored under `.newsbee-pipeline/logs/<run-id>` in the configured Drive folder and
+are available from each job in **Inspect run**. **Health** shows current providers,
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.

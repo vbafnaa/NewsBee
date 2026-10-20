@@ -15,7 +15,7 @@ import { locationHealth } from "../../orchestration/health";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { sourceResult, type CollectedEvent, type Connector, type LocationProfile, type SourceType } from "../../connectors/types";
 import { recentJobs } from "../../orchestration/jobs";
-import { startRun, tick } from "../../orchestration/orchestrator";
+import { runOne, startRun, tick } from "../../orchestration/orchestrator";
 import { getRun } from "../../orchestration/runs";
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
@@ -145,9 +145,17 @@ describe("orchestrator", () => {
     const directory = JSON.parse(await readFile(path.join(dir, "channel", "locations.json"), "utf8"));
     expect(directory.locations.map((entry: { id: string }) => entry.id)).toEqual([LOCATION.id]);
     expect(done?.published?.artifacts.email_html).toMatch(/email-previews/);
-    const kinds = (await recentJobs(mongo.db, 50)).map((job) => job.kind);
-    expect(kinds.filter((kind) => kind === "collect_source")).toHaveLength(5);
-    expect(kinds).toContain("author_finish");
+    const jobs = await recentJobs(mongo.db, 50);
+    const sourceJobs = jobs.filter((job) => job.kind === "collect_source");
+    expect(sourceJobs).toHaveLength(5);
+    for (const job of sourceJobs) {
+      expect(job.log_file).toBeTruthy();
+      expect(job.log_error).toBeNull();
+      const records = (await store.readText(job.log_file!)).trim().split("\n").map((line) => JSON.parse(line) as { event: string });
+      expect(records.map((record) => record.event)).toContain("job_started");
+      expect(records.map((record) => record.event)).toContain("job_completed");
+    }
+    expect(jobs.map((job) => job.kind)).toContain("author_finish");
   });
   it("retains 15 hosted candidates through both shortlist stages and uses the injected ranking model", async () => {
     const base = deps();
@@ -183,6 +191,10 @@ describe("orchestrator", () => {
     expect(done?.status).toBe("published");
     expect(done?.sources.find((source) => source.type === "meetings")).toMatchObject({ status: "failed", error: "meetings unavailable" });
     expect(done?.published?.items).toBe(1);
+    const failedJob = (await recentJobs(mongo.db, 50)).find((job) => job.kind === "collect_source" && job.error);
+    expect(failedJob?.log_file).toBeTruthy();
+    const attempts = (await store.readText(failedJob!.log_file!)).trim().split("\n").map((line) => JSON.parse(line) as { event: string });
+    expect(attempts.filter((record) => record.event === "job_execution_failed")).toHaveLength(3);
   });
 
   it("retries a transient connector failure", async () => {
@@ -200,6 +212,16 @@ describe("orchestrator", () => {
     const second = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
     expect(second.started).toBe(false);
     expect(second.run._id).toBe(first.run._id);
+  });
+
+  it("claims only the requested source job", async () => {
+    const d = deps();
+    const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
+    const target = run.sources[0].job_id!;
+    expect(await runOne(d, { jobId: target, kinds: ["collect_source"] })).toBe(true);
+    const jobs = await recentJobs(mongo.db, 50);
+    expect(jobs.find((job) => job._id === target)?.status).toBe("completed");
+    expect(jobs.filter((job) => job.kind === "collect_source" && job.status === "completed")).toHaveLength(1);
   });
 
   it("shows a connector-reported failure in health even when its job completes", async () => {
