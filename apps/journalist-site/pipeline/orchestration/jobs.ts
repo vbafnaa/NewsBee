@@ -1,19 +1,21 @@
 /**
  * MongoDB job queue: port of orchestration/jobs.py for serverless execution. Each job is one
  * bounded step (one connector source, one authoring step) that fits one function call.
- * Same states, attempts and backoff as Stage 1; the lease covers a whole function call
- * instead of being renewed by a long-lived worker.
+ * Job and singleton worker leases are renewed during execution. Quota retries use
+ * durable bounded backoff separately from ordinary failed attempts.
  */
 import { randomUUID } from "node:crypto";
 import type { Db, Filter } from "mongodb";
 import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
+import { ModelRateLimitError } from "../model/runtime";
 
 export const JOB_KINDS = ["collect_source", "author_start", "author_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export const MAX_ATTEMPTS = 3;
+export const MAX_RATE_LIMIT_RETRIES = 8;
 /** Longer than the longest function call (Vercel maxDuration 300 s) so a live job keeps its lease. */
 export const LEASE_SECONDS = 330;
 
@@ -27,6 +29,7 @@ export type Job = {
   payload: Record<string, unknown>;
   status: JobStatus;
   attempts: number;
+  rate_limit_retries?: number;
   created_at: number;
   available_at: number;
   started_at: number | null;
@@ -126,11 +129,12 @@ export async function recoverExpired(db: Db) {
 }
 
 /** Atomically claim the oldest available job. */
-export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string): Promise<Job | null> {
+export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string, runId?: string): Promise<Job | null> {
   const current = now();
   const filter: Filter<Job> = { status: "pending", available_at: { $lte: current } };
   if (kinds) filter.kind = { $in: [...kinds] };
   if (jobId) filter._id = jobId;
+  if (runId) filter.run_id = runId;
   return jobs(db).findOneAndUpdate(
     filter,
     {
@@ -141,17 +145,17 @@ export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string):
   );
 }
 
-export async function pendingJobs(db: Db, kind: JobKind, limit = 50) {
+export async function pendingJobs(db: Db, kind: JobKind, limit = 50, runId?: string) {
   return jobs(db)
-    .find({ kind, status: "pending", available_at: { $lte: now() } })
+    .find({ kind, status: "pending", available_at: { $lte: now() }, ...(runId ? { run_id: runId } : {}) })
     .sort({ created_at: 1, _id: 1 })
     .limit(limit)
     .toArray();
 }
 
-export async function nextPendingJob(db: Db) {
+export async function nextPendingJob(db: Db, runId?: string) {
   return jobs(db)
-    .findOne({ status: "pending" }, { projection: { available_at: 1 }, sort: { available_at: 1 } })
+    .findOne({ status: "pending", ...(runId ? { run_id: runId } : {}) }, { projection: { available_at: 1 }, sort: { available_at: 1 } })
     .then((job) => job ? { available_at: job.available_at } : null);
 }
 
@@ -160,6 +164,38 @@ export async function setJobLog(db: Db, jobId: string, file: string | null, erro
 }
 
 export class LostLeaseError extends Error {}
+
+type WorkerLease = { _id: string; token: string; lease_until: number };
+export async function acquireWorker(db: Db) {
+  const token = randomUUID();
+  try {
+    const lease = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOneAndUpdate(
+      { _id: "pipeline-worker", lease_until: { $lte: now() } },
+      { $set: { token, lease_until: now() + LEASE_SECONDS } },
+      { upsert: true, returnDocument: "after" },
+    );
+    return lease?.token === token ? token : null;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) return null;
+    throw error;
+  }
+}
+
+export async function releaseWorker(db: Db, token: string) {
+  await db.collection<WorkerLease>(COLLECTIONS.heartbeat).deleteOne({ _id: "pipeline-worker", token });
+}
+
+export async function renewWorker(db: Db, token: string, job: Job) {
+  const lease = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).updateOne(
+    { _id: "pipeline-worker", token }, { $set: { lease_until: now() + LEASE_SECONDS } },
+  );
+  if (!lease.matchedCount) throw new LostLeaseError("Lost pipeline worker lease");
+  const updated = await jobs(db).updateOne(
+    { _id: job._id, claim_token: job.claim_token, status: "running" },
+    { $set: { lease_until: now() + LEASE_SECONDS } },
+  );
+  if (!updated.matchedCount) throw new LostLeaseError(`Lost job lease: ${job._id}`);
+}
 
 export async function complete(db: Db, job: Job, result: Record<string, unknown>) {
   const updated = await jobs(db).updateOne(
@@ -171,7 +207,14 @@ export async function complete(db: Db, job: Job, result: Record<string, unknown>
 
 /** Retry with 2^attempts seconds backoff when retryable and attempts remain; else fail. */
 export async function fail(db: Db, job: Job, error: unknown, retryable: boolean): Promise<"retry" | "failed"> {
-  const retry = retryable && job.attempts < MAX_ATTEMPTS;
+  const limited = error instanceof ModelRateLimitError;
+  const limitRetries = job.rate_limit_retries ?? 0;
+  const retry = retryable && (limited
+    ? limitRetries < MAX_RATE_LIMIT_RETRIES && error.retryAfterSeconds <= 3600
+    : job.attempts < MAX_ATTEMPTS);
+  const delay = limited
+    ? Math.max(Math.min(15 * 2 ** limitRetries, 300), error.retryAfterSeconds)
+    : 2 ** job.attempts;
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   const current = now();
   const updated = await jobs(db).updateOne(
@@ -180,7 +223,8 @@ export async function fail(db: Db, job: Job, error: unknown, retryable: boolean)
       $set: {
         status: retry ? "pending" : "failed",
         error: detail,
-        available_at: current + 2 ** job.attempts,
+        available_at: current + delay,
+        ...(limited ? { rate_limit_retries: limitRetries + 1, attempts: retry ? job.attempts - 1 : job.attempts } : {}),
         completed_at: retry ? null : current,
         lease_until: null,
         claim_token: null,
@@ -188,7 +232,7 @@ export async function fail(db: Db, job: Job, error: unknown, retryable: boolean)
     },
   );
   if (updated.modifiedCount !== 1) throw new LostLeaseError(`Cannot record failure after lost lease: ${job._id}`);
-  log.error(retry ? "job_retry_scheduled" : "job_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
+  log.error(retry ? "job_retry_scheduled" : "job_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail, retry_in_seconds: retry ? delay : null, rate_limit_retries: limited ? limitRetries + 1 : null });
   return retry ? "retry" : "failed";
 }
 

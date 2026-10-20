@@ -128,7 +128,7 @@ export function rankingSettings(settings: Settings): Settings {
   return hosted.length ? { ...settings, modelProviders: hosted } : settings;
 }
 
-/** More recall before hosted scoring, without making the local-model path more expensive. */
-export function rankingCandidateLimit(settings: Settings) {
-  return settings.modelProviders.some((provider) => provider.kind !== "ollama") ? 15 : 5;
+/** Keep both shortlist stages bounded regardless of the inference provider. */
+export function rankingCandidateLimit(_settings: Settings) {
+  return 5;
 }

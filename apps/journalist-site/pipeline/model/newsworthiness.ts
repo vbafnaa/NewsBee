@@ -1,5 +1,6 @@
 /** Cross-source newsworthiness scoring, ported from shared/model_inference/newsworthiness.py. */
 import type { ModelRuntime } from "./runtime";
+import { ModelRateLimitError } from "./runtime";
 import { compareText } from "../editions/stories";
 
 export const RANKING_POLICY = "newsworthiness_v4_recall";
@@ -93,6 +94,7 @@ async function rateBatch(runtime: ModelRuntime, batch: Candidate[]) {
       for (const [id, rating] of parsed) ratings.set(id, rating);
       if (parsed.size !== missing.length) (report.errors as string[]).push(`Missing ${missing.length - parsed.size} candidate ratings`);
     } catch (error) {
+      if (error instanceof ModelRateLimitError) throw error;
       (report.errors as string[]).push(`${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
