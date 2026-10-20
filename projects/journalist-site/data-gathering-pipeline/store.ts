@@ -111,6 +111,15 @@ export async function listRuns(channelId: string, limit = 50) {
     .toArray();
 }
 
+export async function listSourceRuns(channelId: string, sourceId: string, limit = 30) {
+  return (await getMongoDatabase())
+    .collection<PipelineRun>(RUNS)
+    .find({ channel_id: channelId, kind: "source", source_id: sourceId })
+    .sort({ created_at: -1 })
+    .limit(limit)
+    .toArray();
+}
+
 export async function getCompletedSourceRunsBySource(
   channelId: string,
   locationId: string,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -252,6 +253,9 @@ export default function SourceManagement() {
                       {source.platform && <p>{source.platform} · tenant {source.tenant}</p>}
                     </div>
                     <div className="source-actions">
+                      <Link className="button secondary" href={`/sources/${encodeURIComponent(source.id)}`}>
+                        Manage pipeline
+                      </Link>
                       <button className="secondary" type="button" disabled={busy}
                         onClick={() => setEditing(editing === source.id ? null : source.id)}>
                         {editing === source.id ? "Cancel" : "Edit"}

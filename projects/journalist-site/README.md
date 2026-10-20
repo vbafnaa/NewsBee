@@ -83,6 +83,12 @@ Trumba discovery, USGS/Wikipedia/Bluesky enrichment, geographic branch matching,
 editorial publication checks, or retry-safe model fallback behavior; the existing Python
 worker remains unchanged.
 
+Each configured source also has a management page at `/sources/<source-id>`, linked from
+the source list. It shows the source's ingestion history and recent pipeline runs, allows an
+admin to queue a source run when it is selected for the reader channel, and exposes the
+current gather/normalize stage as a separate action. Completed Drive artifacts can be
+previewed per run; previews are fetched only when opened.
+
 The reader output channel document has this shape:
 
 ```json
