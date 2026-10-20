@@ -189,7 +189,7 @@ describe("orchestrator", () => {
     const d = deps();
     await mongo.db.collection(COLLECTIONS.locations).insertOne({ ...LOCATION, id: "kent-wa", _id: "kent-wa" as never, name: "Kent, WA" });
     const first = await startRun(d, LOCATION.id, { by: "test", kind: "all" });
-    await mongo.db.collection(COLLECTIONS.runs).updateOne({ _id: first.run._id as never }, { $set: { created_at: 1 } });
+    await mongo.db.collection(COLLECTIONS.runs).updateOne({ _id: first.run._id as never }, { $set: { created_at: Date.now() / 1000 - 60 } });
     const second = await startRun(d, "kent-wa", { by: "test", kind: "all" });
     await mongo.db.collection(COLLECTIONS.jobs).updateMany({ run_id: first.run._id }, { $set: { available_at: Date.now() / 1000 + 60 } });
     expect(await runOne(d)).toBe(false);

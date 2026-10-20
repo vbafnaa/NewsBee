@@ -1,12 +1,19 @@
 /**
  * Product health at a glance: one row per location (last run, stage, published/held,
- * failed sources, model errors) plus scheduler, queue and model status.
+ * failed sources, model errors, why an active run is stalled) plus scheduler, queue,
+ * model status and model usage.
  */
 import type { Db } from "mongodb";
 import { listLocations } from "../communities/locations";
+import type { Settings } from "../core/config";
 import type { ComponentHealth, ModelRuntime } from "../model/runtime";
+import { modelUsageSummary } from "../model/usage";
 import { COLLECTIONS } from "../storage/mongo";
+import { diagnoseRuns, type RunDiagnostics } from "./diagnostics";
 import { runs, type PipelineRun, type RunSource } from "./runs";
+import { schedulerState } from "./scheduler";
+
+export { STALE_TICK_SECONDS } from "./scheduler";
 
 export type HealthLevel = "ok" | "warning" | "failed" | "idle" | "cancelled";
 type ModelHealth = Omit<ComponentHealth, "status"> & { status: ComponentHealth["status"] | "failed" };
@@ -27,25 +34,34 @@ export type LocationHealth = {
   held_reasons: Record<string, number>;
   model_errors: string[];
   error: string | null;
+  /** Why an active run is not advancing, and its timeout; null for finished runs. */
+  diagnostics: RunDiagnostics | null;
 };
-
-/** Scheduler ticks are expected every minute; older than this means cron is not running. */
-export const STALE_TICK_SECONDS = 180;
 
 function sourceFailed(source: RunSource) {
   return source.status === "failed" || source.result_status === "failed";
 }
 
-function level(run: PipelineRun | null, modelErrors: string[]): HealthLevel {
+function level(run: PipelineRun | null, modelErrors: string[], diagnostics: RunDiagnostics | null): HealthLevel {
   if (!run) return "idle";
   if (run.status === "cancelled") return "cancelled";
   if (run.status === "failed") return "failed";
+  if (diagnostics?.issues.some((issue) => issue.severity === "failed")) return "failed";
+  if (diagnostics?.issues.some((issue) => issue.severity === "warning")) return "warning";
   const failed = run.sources.some(sourceFailed);
   if (failed || modelErrors.length || (run.published?.held ?? 0) > 0) return "warning";
   return "ok";
 }
 
-export async function locationHealth(db: Db, run: PipelineRun | null, location: { id: string; name: string }): Promise<LocationHealth> {
+export async function locationHealth(
+  db: Db,
+  run: PipelineRun | null,
+  location: { id: string; name: string },
+  context: { runTimeoutSeconds?: number | null; diagnostics?: RunDiagnostics | null } = {},
+): Promise<LocationHealth> {
+  const diagnostics = context.diagnostics !== undefined || !run
+    ? context.diagnostics ?? null
+    : (await diagnoseRuns(db, [run], context.runTimeoutSeconds ?? null)).get(run._id) ?? null;
   let modelErrors: string[] = [];
   if (run?.draft_id) {
     const draft = await db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id }, { projection: { model_errors: 1 } });
@@ -55,7 +71,7 @@ export async function locationHealth(db: Db, run: PipelineRun | null, location: 
   return {
     location_id: location.id,
     location_name: location.name,
-    level: level(run, modelErrors),
+    level: level(run, modelErrors, diagnostics),
     run_id: run?._id ?? null,
     stage: run?.status ?? "never_run",
     started_at: run?.created_at ?? null,
@@ -73,35 +89,46 @@ export async function locationHealth(db: Db, run: PipelineRun | null, location: 
     held_reasons: run?.published?.held_reasons ?? {},
     model_errors: modelErrors,
     error: run?.error ?? null,
+    diagnostics,
   };
 }
 
-export async function healthSummary(db: Db, model: ModelRuntime | null) {
+export async function healthSummary(db: Db, model: ModelRuntime | null, settings?: Pick<Settings, "runTimeoutSeconds" | "modelProviders">) {
   const locations = await listLocations(db);
+  const latestRuns = new Map<string, PipelineRun | null>();
+  for (const location of locations) {
+    latestRuns.set(location.id, await runs(db).find({ location_id: location.id }).sort({ created_at: -1 }).limit(1).next());
+  }
+  const timeout = settings?.runTimeoutSeconds ?? null;
+  const diagnostics = await diagnoseRuns(db, [...latestRuns.values()].filter((run): run is PipelineRun => run !== null), timeout);
   const rows: LocationHealth[] = [];
   for (const location of locations) {
-    const latest = await runs(db).find({ location_id: location.id }).sort({ created_at: -1 }).limit(1).next();
-    rows.push(await locationHealth(db, latest, location));
+    const latest = latestRuns.get(location.id) ?? null;
+    rows.push(await locationHealth(db, latest, location, { diagnostics: latest ? diagnostics.get(latest._id) ?? null : null }));
   }
-  const heartbeat = await db.collection(COLLECTIONS.heartbeat).findOne({ _id: "scheduler" as never });
-  const lastTick = typeof heartbeat?.last_tick_at === "number" ? heartbeat.last_tick_at : null;
-  const age = lastTick === null ? null : Math.round(Date.now() / 1000 - lastTick);
+  const scheduler = await schedulerState(db);
   const counts = await db.collection(COLLECTIONS.jobs).aggregate<{ _id: string; count: number }>([
     { $match: { status: { $in: ["pending", "running", "failed"] } } },
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]).toArray();
   const queue = Object.fromEntries(["pending", "running", "failed"].map((status) => [status, counts.find((item) => item._id === status)?.count ?? 0]));
   const modelHealth: ModelHealth | null = model ? await model.health().catch((error: unknown): ModelHealth => ({ status: "failed", detail: error instanceof Error ? error.message : String(error) })) : null;
-  const schedulerStatus = age !== null && age <= STALE_TICK_SECONDS ? "ok" : "stale";
-  // At a glance: failed when no model provider can write stories; warning when the scheduler is
-  // stale or the pipeline is running on a fallback provider.
+  const modelUsage = await modelUsageSummary(db, settings?.modelProviders ?? []);
+  const schedulerProblem = scheduler.status !== "ok" || scheduler.issues.length > 0;
+  const pendingWork = queue.pending + queue.running > 0;
+  // At a glance: failed when no model provider can write stories or queued work cannot advance;
+  // warning when the scheduler is stale or erroring, a fallback provider is in use, or usage is
+  // near configured limits.
   const modelReady = modelHealth?.status === "ok" || modelHealth?.status === "degraded";
+  const warning = schedulerProblem || modelHealth?.status === "degraded" || modelUsage.providers.some((item) => item.warnings.length > 0);
   return {
     generated_at: Date.now() / 1000,
-    status: !modelReady ? "failed" : schedulerStatus !== "ok" || modelHealth?.status === "degraded" ? "warning" : "ok",
-    scheduler: { last_tick_at: lastTick, seconds_since_tick: age, status: schedulerStatus },
+    status: !modelReady || (pendingWork && schedulerProblem) ? "failed" : warning ? "warning" : "ok",
+    scheduler,
+    run_timeout_seconds: timeout,
     queue,
     model: modelHealth ? { provider: model?.provider ?? null, name: model?.model ?? null, ...modelHealth } : null,
+    model_usage: modelUsage,
     totals: {
       locations: rows.length,
       ok: rows.filter((row) => row.level === "ok").length,

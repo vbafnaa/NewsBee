@@ -40,6 +40,11 @@ export type Job = {
   result: Record<string, unknown> | null;
   log_file: string | null;
   log_error: string | null;
+  /** Cloud mode: last successful hand-off to a source worker function. */
+  dispatched_at?: number | null;
+  /** Cloud mode: why the latest hand-off to a source worker function failed. */
+  dispatch_error?: string | null;
+  dispatch_error_at?: number | null;
 };
 
 const log = logger("jobs");

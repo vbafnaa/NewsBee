@@ -81,6 +81,10 @@ p, small, .muted { color: var(--muted); }
 .pipeline-run > button { justify-self: start; }
 .stage-summary, .stage-error { display: block; }
 .stage-error { color: #8a1d15 !important; }
+.run-issues { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .35rem; }
+.run-issue { font-size: .9rem; line-height: 1.4; }
+.run-issue.severity-failed { color: #8a1d15; }
+.alert ul { margin: .35rem 0 0; padding-left: 1.2rem; }
 .danger { border-color: #9c2f24; background: transparent; color: #8a1d15; }
 .source-edit-form { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .admin-list { margin-top: 1.2rem; border-top: 1px solid var(--line); }

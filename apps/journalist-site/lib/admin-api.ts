@@ -4,6 +4,7 @@ import { LocationBusy } from "@/pipeline/communities/locations";
 import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { RunConflict } from "@/pipeline/orchestration/runs";
+import { describeInternalFailure, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { adminGuard } from "./admin-session";
 import { pipelineDeps } from "./pipeline";
 
@@ -45,12 +46,15 @@ export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
           headers: { Authorization: `Bearer ${secret}` },
           cache: "no-store",
         });
-        if (!response.ok) throw new Error(`Scheduler returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+        if (!response.ok) throw new Error(describeInternalFailure("Scheduler", response.status, await response.text()));
       } else {
         await tick(deps, { budgetMs: 20_000 });
       }
+      await recordSchedulerSafely(deps.db, "kick", null);
     } catch (error) {
-      log.error("kick_failed", { error: error instanceof Error ? error.message : String(error) });
+      const detail = error instanceof Error ? error.message : String(error);
+      log.error("kick_failed", { error: detail });
+      await recordSchedulerSafely(deps.db, "kick", detail);
     }
   });
 }

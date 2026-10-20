@@ -2,8 +2,9 @@ import { after } from "next/server";
 import { authorizedPipelineRequest } from "@/lib/pipeline-auth";
 import { pipelineDeps } from "@/lib/pipeline";
 import { logger } from "@/pipeline/core/log";
-import { tick } from "@/pipeline/orchestration/orchestrator";
+import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { nextPendingJob, pendingJobs } from "@/pipeline/orchestration/jobs";
+import { describeInternalFailure, markDispatch, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { oldestActiveRun } from "@/pipeline/orchestration/runs";
 
 export const maxDuration = 300;
@@ -14,8 +15,10 @@ const log = logger("scheduler");
 /** Vercel Cron (GET) and the local poller (POST): run jobs and dispatch cloud source jobs. */
 async function handle(request: Request) {
   if (!authorizedPipelineRequest(request)) return Response.json({ detail: "Unauthorized" }, { status: 401 });
+  let deps: OrchestratorDeps | null = null;
   try {
-    const deps = await pipelineDeps();
+    deps = await pipelineDeps();
+    const ctx = deps;
     const cloud = deps.settings.mode === "cloud";
     const result = await tick(deps, cloud
       ? { budgetMs: 30_000, kinds: ["author_start", "author_story", "author_finish"] }
@@ -26,7 +29,10 @@ async function handle(request: Request) {
     if (sources.length || next) {
       after(async () => {
         const secret = process.env.CRON_SECRET;
-        if (!secret) throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
+        if (!secret) {
+          await recordSchedulerSafely(ctx.db, "dispatch", "CRON_SECRET is not set, so source workers and follow-up ticks cannot be started.");
+          throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
+        }
         const sourceUrl = new URL("/api/pipeline/collect-source", request.url);
         const results = await Promise.all(sources.map(async (job) => {
           try {
@@ -36,17 +42,18 @@ async function handle(request: Request) {
               body: JSON.stringify({ job_id: job._id }),
               cache: "no-store",
             });
-            if (!response.ok) throw new Error(`Worker returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+            if (response.status === 409) return true; // Already claimed by another worker or tick.
+            if (!response.ok) throw new Error(describeInternalFailure("Source worker", response.status, await response.text()));
+            await markDispatch(ctx.db, job._id, null).catch(() => undefined);
             return true;
           } catch (error) {
-            log.error("source_job_dispatch_failed", {
-              job_id: job._id,
-              run_id: job.run_id,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            const detail = error instanceof Error ? error.message : String(error);
+            log.error("source_job_dispatch_failed", { job_id: job._id, run_id: job.run_id, error: detail });
+            await markDispatch(ctx.db, job._id, detail).catch(() => undefined);
             return false;
           }
         }));
+        await recordSchedulerSafely(ctx.db, "dispatch", results.every(Boolean) ? null : "One or more source workers could not be started; see the run's jobs for details.");
         if (results.every(Boolean) && next) {
           const delay = Math.min(30_000, Math.max(0, next.available_at * 1000 - Date.now()));
           if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
@@ -56,9 +63,12 @@ async function handle(request: Request) {
               headers: { Authorization: `Bearer ${secret}` },
               cache: "no-store",
             });
-            if (!response.ok) throw new Error(`Scheduler returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+            if (!response.ok) throw new Error(describeInternalFailure("Follow-up scheduler tick", response.status, await response.text()));
+            await recordSchedulerSafely(ctx.db, "followup", null);
           } catch (error) {
-            log.error("followup_tick_failed", { error: error instanceof Error ? error.message : String(error) });
+            const detail = error instanceof Error ? error.message : String(error);
+            log.error("followup_tick_failed", { error: detail });
+            await recordSchedulerSafely(ctx.db, "followup", detail);
           }
         }
       });
@@ -67,6 +77,7 @@ async function handle(request: Request) {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     log.error("tick_failed", { error: detail });
+    await recordSchedulerSafely(deps?.db ?? null, "tick", detail);
     return Response.json({ detail }, { status: 500 });
   }
 }

@@ -34,6 +34,8 @@ export type StructuredGeneration = {
   load_duration?: number | null;
   prompt_eval_count?: number | null;
   eval_count?: number | null;
+  /** Billed reasoning tokens reported separately from eval_count (Gemini thoughts). */
+  thinking_eval_count?: number | null;
   eval_duration?: number | null;
 };
 
@@ -152,7 +154,7 @@ export function geminiSchema(schema: JsonSchema, definitions: Record<string, Jso
 
 type GeminiData = {
   candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
 };
 
 export class GeminiRuntime implements ModelRuntime {
@@ -213,6 +215,7 @@ export class GeminiRuntime implements ModelRuntime {
       done_reason: reason === "MAX_TOKENS" ? "length" : reason,
       prompt_eval_count: data.usageMetadata?.promptTokenCount ?? null,
       eval_count: data.usageMetadata?.candidatesTokenCount ?? null,
+      thinking_eval_count: data.usageMetadata?.thoughtsTokenCount ?? null,
     };
   }
 }
@@ -360,8 +363,92 @@ export function providerRuntime(config: ProviderConfig, transport: HttpTransport
   return new OpenAICompatibleRuntime(config, transport);
 }
 
+/** One provider call as recorded for usage reporting; never includes prompts or responses. */
+export type ModelCall = {
+  provider: string;
+  model: string | null;
+  role: string;
+  operation: "generate" | "generate_structured";
+  ok: boolean;
+  status_code: number | null;
+  rate_limited: boolean;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  duration_ms: number;
+  error: string | null;
+};
+export type ModelCallSink = (call: ModelCall) => Promise<void> | void;
+export type UsageRecording = { role: string; sink: ModelCallSink };
+
+function statusCode(message: string) {
+  const match = /\((\d{3})\)/.exec(message);
+  return match ? Number(match[1]) : null;
+}
+
+/** Records every provider attempt, including fallback attempts, without changing results or errors. */
+export class UsageRecordingRuntime implements ModelRuntime {
+  constructor(
+    private readonly inner: ModelRuntime,
+    private readonly usage: UsageRecording,
+    private readonly log: Logger = logger("model.usage"),
+    private readonly clock: () => number = Date.now,
+  ) {}
+
+  get provider() { return this.inner.provider; }
+  get model() { return this.inner.model; }
+
+  health() { return this.inner.health(); }
+
+  private async record(call: Omit<ModelCall, "provider" | "model" | "role">) {
+    try {
+      await this.usage.sink({ provider: this.provider, model: this.model, role: this.usage.role, ...call });
+    } catch (error) {
+      this.log.warn("model_usage_record_failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private async measure<T>(operation: ModelCall["operation"], run: () => Promise<T>, tokens: (result: T) => [number | null, number | null]) {
+    const started = this.clock();
+    try {
+      const result = await run();
+      const [input, output] = tokens(result);
+      await this.record({ operation, ok: true, status_code: null, rate_limited: false, input_tokens: input, output_tokens: output, duration_ms: this.clock() - started, error: null });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code = statusCode(message);
+      await this.record({
+        operation,
+        ok: false,
+        status_code: code,
+        rate_limited: code === 429 || /RESOURCE_EXHAUSTED|rate.?limit|quota/i.test(message),
+        input_tokens: null,
+        output_tokens: null,
+        duration_ms: this.clock() - started,
+        error: message.slice(0, 300),
+      });
+      throw error;
+    }
+  }
+
+  generate(prompt: string) {
+    return this.measure("generate", () => this.inner.generate(prompt), () => [null, null]);
+  }
+
+  generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions) {
+    return this.measure("generate_structured", () => this.inner.generateStructured(prompt, schema, options), (result) => {
+      const output = result.eval_count ?? null;
+      const thinking = result.thinking_eval_count ?? null;
+      return [result.prompt_eval_count ?? null, output === null && thinking === null ? null : (output ?? 0) + (thinking ?? 0)];
+    });
+  }
+}
+
 /** The pipeline's model: one provider directly, or an ordered fallback chain. */
-export function createRuntime(settings: Settings, transport: HttpTransport = fetchTransport, log?: Logger): ModelRuntime {
-  const runtimes = settings.modelProviders.map((config) => providerRuntime(config, transport));
+export function createRuntime(settings: Settings, transport: HttpTransport = fetchTransport, log?: Logger, usage?: UsageRecording): ModelRuntime {
+  const runtimes = settings.modelProviders.map((config) => {
+    const runtime = providerRuntime(config, transport);
+    return usage ? new UsageRecordingRuntime(runtime, usage) : runtime;
+  });
   return runtimes.length === 1 ? runtimes[0] : new FallbackRuntime(runtimes, log);
 }
