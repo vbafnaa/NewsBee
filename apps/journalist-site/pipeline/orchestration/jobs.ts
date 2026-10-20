@@ -143,7 +143,7 @@ export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string, 
   return jobs(db).findOneAndUpdate(
     filter,
     {
-      $set: { status: "running", started_at: current, lease_until: current + LEASE_SECONDS, claim_token: randomUUID() },
+      $set: { status: "running", started_at: current, lease_until: current + LEASE_SECONDS, claim_token: randomUUID(), dispatched_at: current, dispatch_error: null },
       $inc: { attempts: 1 },
     },
     { sort: { created_at: 1, _id: 1 }, returnDocument: "after" },

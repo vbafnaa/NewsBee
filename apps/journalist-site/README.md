@@ -80,15 +80,18 @@ npm run lint        # tsc --noEmit
 ## How a run works
 
 One run per location; each step is a job in MongoDB `pipeline_jobs`, sized for one Vercel
-function call. The deployed Vercel cron is currently disabled; `npm run local` runs the tick
-every 5 seconds during local development.
+function call. Portal actions call `/api/pipeline/advance` to execute the first job; each
+cloud job starts the next invocation when it finishes. The calls use short-lived tokens
+signed with `AUTH_SECRET`, so `CRON_SECRET` is not required for portal-started runs. A
+deferred retry wakes through the same endpoint. The deployed Vercel cron is currently
+disabled; `npm run local` runs the tick every 5 seconds during local development.
 
-Locations execute **sequentially**, including across overlapping local ticks, cron calls
+Locations execute **sequentially**, including across overlapping local ticks, job calls
 and manual triggers. A renewable MongoDB worker lease prevents parallel model requests
 from different scheduler calls. The oldest active run finishes (or fails) before the next
 location starts; a run waiting for backoff keeps later locations queued.
-Cloud ticks dispatch one source invocation at a time for that oldest run, preserving
-the separate Vercel function boundary without bypassing serialization or backoff.
+Each cloud job executes in its own invocation, preserving the Vercel function boundary
+without bypassing serialization or backoff. Optional ticks can recover interrupted work.
 
 1. **Collect**: one job per source (library, meetings, hazards, state news, trending).
    Rule-based preselection keeps up to **5 candidates per source** in hosted and local
@@ -127,8 +130,8 @@ are available from each job in **Inspect run**. **Health** shows current provide
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
-Runs that aren't progressing are marked **stalled** with the cause (scheduler not
-ticking, rejected scheduler call, worker dispatch failure, retries, expired leases).
+Runs that aren't progressing are marked **stalled** with the cause (no recent worker
+call, rejected job call, worker dispatch failure, retries, expired leases).
 Runs still active after `NEWSBEE_RUN_TIMEOUT_MINUTES` (default 60, `0` disables) are
 failed on the next tick or portal load, so they time out even when the cron is down.
 
@@ -194,7 +197,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_EMAIL` and `_PRIVATE_KEY`) | Drive writer (Editor on the folders below) |
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
-| `CRON_SECRET` | Authorizes the Vercel Cron call to `/api/pipeline/tick` |
+| `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; portal runs use `AUTH_SECRET` instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail runs active longer than this (default 60, `0` disables) |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
 | `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |

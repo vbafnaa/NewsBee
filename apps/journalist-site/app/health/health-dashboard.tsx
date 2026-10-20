@@ -141,11 +141,11 @@ export default function HealthDashboard() {
         <section className="metric-card"><span className="eyebrow">Job queue</span><strong>{snapshot.queue.running} running</strong><p>{snapshot.queue.pending} waiting / {snapshot.queue.failed} failed</p></section>
         <section className="metric-card"><span className="eyebrow">Locations</span><strong>{rows.length}</strong><p>{rows.filter((row) => row.level === "ok").length} healthy / {rows.filter((row) => row.level === "warning" || row.level === "failed").length} need attention</p></section>
       </div>
-      {(snapshot.scheduler.status !== "ok" && snapshot.queue.pending > 0 || snapshot.scheduler.issues.length > 0) && <section className="alert" role="alert">
+      {(snapshot.scheduler.status !== "ok" && snapshot.queue.pending > 0 && snapshot.queue.running === 0 || snapshot.scheduler.issues.length > 0) && <section className="alert" role="alert">
         <strong>Queued pipeline work is not advancing</strong>
         <ul>
-          {snapshot.scheduler.status !== "ok" && snapshot.queue.pending > 0 && <li>
-            Scheduler is not running ({snapshot.scheduler.last_tick_at === null ? "no tick recorded" : `last tick ${time(snapshot.scheduler.last_tick_at)}`}) with {snapshot.queue.pending} job(s) waiting. Configure Vercel Cron (see vercel.mjs) or another scheduler to call /api/pipeline/tick every minute with CRON_SECRET.
+          {snapshot.scheduler.status !== "ok" && snapshot.queue.pending > 0 && snapshot.queue.running === 0 && <li>
+            No pipeline worker has run recently ({snapshot.scheduler.last_tick_at === null ? "no call recorded" : `last call ${time(snapshot.scheduler.last_tick_at)}`}) with {snapshot.queue.pending} job(s) waiting. Start a run from the portal or check pipeline dispatch problems.
           </li>}
           {snapshot.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} ({time(issue.at)})</li>)}
         </ul>

@@ -240,9 +240,9 @@ export default function Dashboard() {
     <>
       {error && <p className="alert" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
-      {health && health.scheduler.status !== "ok" && (health.queue.pending ?? 0) > 0 && <p className="alert" role="alert">
-        Scheduler is not running ({health.scheduler.seconds_since_tick === null ? "no tick recorded" : `last tick ${Math.round(health.scheduler.seconds_since_tick / 60)} min ago`}) and {health.queue.pending} job(s) are waiting.
-        Queued work only advances when /api/pipeline/tick is called; configure Vercel Cron or another scheduler.
+      {health && health.scheduler.status !== "ok" && (health.queue.pending ?? 0) > 0 && (health.queue.running ?? 0) === 0 && <p className="alert" role="alert">
+        No pipeline worker has run recently ({health.scheduler.seconds_since_tick === null ? "no call recorded" : `last call ${Math.round(health.scheduler.seconds_since_tick / 60)} min ago`}) and {health.queue.pending} job(s) are waiting.
+        Start a run from the portal or check pipeline dispatch problems to see why work stopped.
         {health.run_timeout_seconds ? ` Stalled runs fail automatically after ${Math.round(health.run_timeout_seconds / 60)} min.` : ""}
       </p>}
       {health && health.scheduler.issues.length > 0 && <div className="alert" role="alert">

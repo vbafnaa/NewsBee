@@ -49,13 +49,13 @@ export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerS
   const ready = pending.filter((job) => job.available_at <= current);
   const running = jobs.filter((job) => job.status === "running");
 
-  if (ready.length && scheduler.status === "stale") {
+  if (ready.length && !running.length && scheduler.status === "stale") {
     const since = scheduler.seconds_since_tick === null ? "has never run" : `last ran ${duration(scheduler.seconds_since_tick)} ago`;
     const waiting = Math.max(...ready.map((job) => current - job.available_at));
     issues.push({
       code: "scheduler_not_running",
       severity: waiting > 120 ? "failed" : "warning",
-      message: `Scheduler is not running (${since}); ${ready.length} queued job(s) are waiting. Configure Vercel Cron or another scheduler to POST /api/pipeline/tick every minute with Authorization: Bearer CRON_SECRET.`,
+      message: `No pipeline worker has run recently (${since}); ${ready.length} queued job(s) are waiting. Start a run from the portal or check the job dispatch problems. An optional scheduler can recover interrupted work.`,
     });
   }
   for (const issue of scheduler.issues) {

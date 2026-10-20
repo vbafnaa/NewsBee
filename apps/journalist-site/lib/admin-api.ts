@@ -1,10 +1,11 @@
 import { after } from "next/server";
 import { logger } from "@/pipeline/core/log";
+import { callNextJob } from "./job-chain";
 import { LocationBusy } from "@/pipeline/communities/locations";
 import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { RunConflict } from "@/pipeline/orchestration/runs";
-import { describeInternalFailure, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
+import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { adminGuard } from "./admin-session";
 import { pipelineDeps } from "./pipeline";
 
@@ -34,19 +35,12 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
   }
 }
 
-/** Start running queued jobs right after responding instead of waiting for the next cron tick. */
+/** Start the first job directly after responding; each cloud job triggers the next call. */
 export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
       if (deps.settings.mode === "cloud") {
-        const secret = deps.settings.cronSecret;
-        if (!secret) throw new Error("CRON_SECRET is required to dispatch cloud pipeline jobs");
-        const response = await fetch(new URL("/api/pipeline/tick", requestUrl), {
-          method: "POST",
-          headers: { Authorization: `Bearer ${secret}` },
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error(describeInternalFailure("Scheduler", response.status, await response.text()));
+        await callNextJob(requestUrl);
       } else {
         await tick(deps, { budgetMs: 20_000 });
       }

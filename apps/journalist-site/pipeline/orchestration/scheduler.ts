@@ -15,9 +15,9 @@ export type SchedulerChannel = (typeof SCHEDULER_CHANNELS)[number];
 
 const LABELS: Record<SchedulerChannel, string> = {
   tick: "Scheduler tick failed",
-  kick: "Starting the scheduler after a portal action failed",
+  kick: "Starting the first job after a portal action failed",
   dispatch: "Source worker dispatch failed",
-  followup: "Follow-up scheduler tick failed",
+  followup: "Following up with the next pipeline job failed",
 };
 
 export type SchedulerIssue = { channel: SchedulerChannel; at: number; message: string };
@@ -62,7 +62,7 @@ export async function markDispatch(db: Db, jobId: string, error: string | null, 
 export function describeInternalFailure(target: string, status: number, body: string) {
   const excerpt = body.replace(/\s+/g, " ").trim().slice(0, 200);
   if (status === 401 && /"detail"\s*:\s*"Unauthorized"/.test(body)) {
-    return `${target} rejected the request (401): CRON_SECRET does not match this deployment's CRON_SECRET.`;
+    return `${target} rejected the request (401): ${target === "Pipeline job" ? "AUTH_SECRET" : "CRON_SECRET"} does not match this deployment.`;
   }
   if (status === 401 || status === 403) {
     return `${target} was blocked before reaching the app (${status}); Vercel Deployment Protection may require a Protection Bypass for Automation. ${excerpt}`;

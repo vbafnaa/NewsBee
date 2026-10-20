@@ -67,7 +67,7 @@ describe("run diagnostics", () => {
     await mongo.db.collection(COLLECTIONS.jobs).updateMany({}, { $set: { available_at: now() - 300 } });
     const diagnostics = (await diagnoseRuns(mongo.db, [active], 3600)).get(active._id)!;
     expect(diagnostics.issues[0]).toMatchObject({ code: "scheduler_not_running", severity: "failed" });
-    expect(diagnostics.issues[0].message).toMatch(/has never run.*\/api\/pipeline\/tick/);
+    expect(diagnostics.issues[0].message).toMatch(/has never run.*Start a run from the portal/);
     expect(diagnostics.deadline_at).toBeCloseTo(active.created_at + 3600);
     expect(diagnostics.issues.some((issue) => issue.code === "deadline")).toBe(true);
   });
@@ -121,7 +121,7 @@ describe("run timeout expiry", () => {
     expect(expired.map((item) => item._id)).toEqual([stale._id]);
     const failed = await getRun(mongo.db, stale._id);
     expect(failed?.status).toBe("failed");
-    expect(failed?.error).toMatch(/^Timed out after 60 min while collecting\. Scheduler is not running/);
+    expect(failed?.error).toMatch(/^Timed out after 60 min while collecting\. No pipeline worker has run recently/);
     expect((await runJobs(mongo.db, stale._id)).map((job) => job.status)).toEqual(["cancelled"]);
     await runs(mongo.db).insertOne(run({ _id: "fresh" }));
   });
