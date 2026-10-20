@@ -1,0 +1,275 @@
+/**
+ * Orchestrator: the Stage 1 pipeline flow on a serverless job queue.
+ *
+ *   trigger -> one collect_source job per selected source (connector + per-source top 5)
+ *           -> author_start once every source finished (completed or failed)
+ *           -> author_story, one story per job (write, validate, retry once, or hold)
+ *           -> author_finish (front page, email preview) -> publish to output channels
+ *
+ * Every step is one bounded job, so it fits one function call and survives restarts.
+ */
+import type { Db } from "mongodb";
+import type { Settings } from "../core/config";
+import { fetchTransport, type HttpTransport } from "../core/http";
+import { logger, type Logger } from "../core/log";
+import { ingestWindow, localToday } from "../core/time";
+import { Fetcher } from "../connectors/fetcher";
+import { CONNECTORS, selectSources } from "../connectors/registry";
+import type { CollectedSource, Connector, ConnectorContext, SourceTask, SourceType } from "../connectors/types";
+import { getLocation, listLocations } from "../communities/locations";
+import { finishAuthoring, authorNextStory, shortlistSource, startAuthoring } from "../editions/authoring";
+import type { SourceEvent } from "../editions/stories";
+import type { ModelRuntime } from "../model/runtime";
+import { runFolder, type ArtifactStore } from "../storage/artifacts";
+import { MongoLinkCache } from "../storage/link-cache";
+import { COLLECTIONS } from "../storage/mongo";
+import { claim, complete, enqueue, fail, LostLeaseError, recoverExpired, type Job } from "./jobs";
+import { publishToChannels } from "./publish";
+import { failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
+
+export type OrchestratorDeps = {
+  db: Db;
+  store: ArtifactStore;
+  settings: Settings;
+  model: ModelRuntime;
+  transport?: HttpTransport;
+  connectors?: Record<SourceType, Connector>;
+  log?: Logger;
+};
+
+/** A job error that retrying cannot fix. */
+export class PermanentJobError extends Error {}
+
+const log = logger("orchestrator");
+const now = () => Date.now() / 1000;
+
+function connectorsOf(deps: OrchestratorDeps) {
+  return deps.connectors ?? CONNECTORS;
+}
+
+/** Start a run for one location: today and the window come from the location's own timezone. */
+export async function startRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"]) {
+  const location = await getLocation(deps.db, locationId);
+  const existing = await runs(deps.db).findOne({ location_id: location.id, status: "collecting" });
+  if (existing) return { run: existing, started: false };
+  const today = localToday(location.state);
+  const window = ingestWindow(today);
+  const tasks = selectSources(location, deps.settings, connectorsOf(deps));
+  const run = newRun(location, trigger, today, window, tasks);
+  try {
+    await runs(deps.db).insertOne(run);
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      const raced = await runs(deps.db).findOne({ location_id: location.id, status: "collecting" });
+      if (raced) return { run: raced, started: false };
+    }
+    throw error;
+  }
+  for (const task of tasks) {
+    const jobId = await enqueue(deps.db, {
+      kind: "collect_source",
+      run_id: run._id,
+      location_id: location.id,
+      payload: { task },
+      dedupe_key: `collect:${run._id}:${task.source_id}`,
+    });
+    await updateSource(deps.db, run._id, task.source_id, { job_id: jobId });
+  }
+  log.info("run_started", { run_id: run._id, location_id: location.id, sources: tasks.length, trigger: trigger.kind, today });
+  if (tasks.length === 0) await advanceToAuthoring(deps, run._id, location.id);
+  return { run: (await getRun(deps.db, run._id)) ?? run, started: true };
+}
+
+export async function startAll(deps: OrchestratorDeps, by: string) {
+  const started = [];
+  for (const location of await listLocations(deps.db)) {
+    started.push(await startRun(deps, location.id, { by, kind: "all" }));
+  }
+  return started;
+}
+
+async function advanceToAuthoring(deps: OrchestratorDeps, runId: string, locationId: string) {
+  if (await startAuthoringWhenReady(deps.db, runId)) {
+    await enqueue(deps.db, { kind: "author_start", run_id: runId, location_id: locationId });
+    log.info("collection_finished", { run_id: runId, location_id: locationId });
+  }
+}
+
+/** A source that will not be collected (final failure) still releases the authoring barrier. */
+async function sourceFailed(deps: OrchestratorDeps, job: Job, error: string) {
+  const task = job.payload.task as SourceTask;
+  await updateSource(deps.db, job.run_id, task.source_id, { status: "failed", result_status: "failed", detail: error, error });
+  await advanceToAuthoring(deps, job.run_id, job.location_id);
+}
+
+async function collectSource(deps: OrchestratorDeps, job: Job) {
+  const task = job.payload.task as SourceTask;
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "collecting") return { skipped: true };
+  const connector = connectorsOf(deps)[task.type];
+  if (!connector) throw new PermanentJobError(`No connector for source type ${task.type}`);
+  const location = await getLocation(deps.db, run.location_id);
+  const transport = deps.transport ?? fetchTransport;
+  const sourceLog = logger(`connector.${task.type}`, { source_id: task.source_id, run_id: run._id, location_id: run.location_id });
+  const context: ConnectorContext = {
+    location,
+    today: run.today,
+    window: run.window,
+    transport,
+    fetcher: new Fetcher(transport),
+    settings: deps.settings,
+    db: deps.db,
+    linkCache: new MongoLinkCache(deps.db),
+    model: deps.settings.aiLinkDiscovery ? deps.model : undefined,
+    log: sourceLog,
+  };
+  const collected: CollectedSource = await connector.collect(task, context);
+  const events: SourceEvent[] = collected.events.map((facts) => ({ source_id: task.source_id, facts }));
+  const { stories, summary } = shortlistSource(events, task.type);
+  const chosen = new Set(stories.flatMap((story) => story.occurrences.map((item) => `${item.source_id}\u0000${item.source_event_id}`)));
+  const kept = events.filter((event) => chosen.has(`${event.source_id}\u0000${event.facts.source_event_id}`));
+  const id = `${run._id}:${task.source_id}`;
+  const saved = { run_id: run._id, location_id: run.location_id, source_id: task.source_id, type: task.type, created_at: now() };
+  await deps.db.collection(COLLECTIONS.sourceResults).replaceOne({ _id: id as never }, { ...saved, result: collected.result, event_count: events.length }, { upsert: true });
+  await deps.db.collection(COLLECTIONS.shortlists).replaceOne({ _id: id as never }, { ...saved, events: kept, summary }, { upsert: true });
+  await updateSource(deps.db, run._id, task.source_id, {
+    status: "completed",
+    result_status: collected.result.status,
+    detail: collected.result.detail ?? null,
+    event_count: events.length,
+    shortlisted: stories.length,
+    link_discovery: collected.result.link_discovery ?? null,
+    error: null,
+  });
+  await advanceToAuthoring(deps, run._id, run.location_id);
+  return { status: collected.result.status, events: events.length, shortlisted: stories.length };
+}
+
+function authoringDeps(deps: OrchestratorDeps) {
+  return { db: deps.db, model: deps.model, settings: deps.settings, log: deps.log ?? logger("authoring") };
+}
+
+async function authorStart(deps: OrchestratorDeps, job: Job) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "authoring") return { skipped: true };
+  let draftId = run.draft_id;
+  if (!draftId) {
+    const shortlists = await deps.db.collection(COLLECTIONS.shortlists).find({ run_id: run._id }).sort({ _id: 1 }).toArray();
+    const results = await deps.db.collection(COLLECTIONS.sourceResults).find({ run_id: run._id }).sort({ _id: 1 }).toArray();
+    const resultsById = new Map(results.map((doc) => [doc.source_id, doc.result]));
+    const sourceResults = run.sources.map((source) => resultsById.get(source.source_id) ?? {
+      source_id: source.source_id, name: source.name, status: "failed", detail: source.error ?? "Source was not collected", events: 0,
+    });
+    draftId = await startAuthoring(authoringDeps(deps), {
+      location: { id: run.location_id, name: run.location_name },
+      runId: run._id,
+      today: run.today,
+      window: run.window,
+      events: shortlists.flatMap((doc) => doc.events as SourceEvent[]),
+      sourceResults,
+    });
+    await setRun(deps.db, run._id, { draft_id: draftId });
+  }
+  await enqueue(deps.db, { kind: "author_story", run_id: run._id, location_id: run.location_id, payload: { draft_id: draftId, step: 0 }, dedupe_key: `author_story:${run._id}:0` });
+  return { draft_id: draftId };
+}
+
+async function authorStory(deps: OrchestratorDeps, job: Job) {
+  const draftId = String(job.payload.draft_id);
+  const step = Number(job.payload.step ?? 0);
+  const result = await authorNextStory(authoringDeps(deps), draftId);
+  if (result.more) {
+    await enqueue(deps.db, { kind: "author_story", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId, step: step + 1 }, dedupe_key: `author_story:${job.run_id}:${step + 1}` });
+  } else {
+    await enqueue(deps.db, { kind: "author_finish", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId } });
+  }
+  return { step, ...("candidate" in result ? { candidate: result.candidate } : {}), more: result.more };
+}
+
+async function authorFinish(deps: OrchestratorDeps, job: Job) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "authoring") return { skipped: true };
+  const draftId = String(job.payload.draft_id);
+  const finished = await finishAuthoring(authoringDeps(deps), draftId);
+  if (!("edition" in finished) || !finished.edition) throw new Error("Authoring has unwritten stories");
+  const { edition, emailPreview, summary } = finished as { edition: { id: string; location_id: string; items: unknown[] }; emailPreview: { subject: string; text: string; html: string }; summary: Record<string, unknown> };
+  const channels = await publishToChannels(deps.db, deps.store, edition);
+  const previews = await runFolder(deps.store, "email-previews", run.location_id);
+  const editions = await runFolder(deps.store, "editions", run.location_id);
+  const sources = await runFolder(deps.store, "sources", run.location_id);
+  const artifacts = {
+    email_html: await deps.store.saveText(previews, `${edition.id}.html`, emailPreview.html, "text/html"),
+    email_text: await deps.store.saveText(previews, `${edition.id}.txt`, `Subject: ${emailPreview.subject}\n\n${emailPreview.text}`, "text/plain"),
+    edition: await deps.store.saveJson(editions, `${edition.id}.json`, { edition, summary }),
+    sources: await deps.store.saveJson(sources, `${run._id}.json`, { run_id: run._id, sources: run.sources }),
+  };
+  const held = Number(summary.held ?? 0);
+  await setRun(deps.db, run._id, {
+    status: "published",
+    edition_id: edition.id,
+    completed_at: now(),
+    published: {
+      items: edition.items.length,
+      held,
+      held_reasons: (summary.held_reasons as Record<string, number>) ?? {},
+      channels,
+      artifacts,
+    },
+  });
+  log.info("run_published", { run_id: run._id, location_id: run.location_id, edition_id: edition.id, items: edition.items.length, held, channels: channels.length });
+  return { edition_id: edition.id, items: edition.items.length, held, channels };
+}
+
+export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
+  switch (job.kind) {
+    case "collect_source": return collectSource(deps, job);
+    case "author_start": return authorStart(deps, job);
+    case "author_story": return authorStory(deps, job);
+    case "author_finish": return authorFinish(deps, job);
+  }
+}
+
+async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
+  if (job.kind === "collect_source") await sourceFailed(deps, job, error);
+  else await failRun(deps.db, job.run_id, `${job.kind} failed: ${error}`);
+}
+
+/** Claim and run one job; returns false when the queue is empty. */
+export async function runOne(deps: OrchestratorDeps): Promise<boolean> {
+  const job = await claim(deps.db);
+  if (!job) return false;
+  const started = Date.now();
+  try {
+    const result = await executeJob(deps, job);
+    await complete(deps.db, job, result);
+    log.info("job_completed", { kind: job.kind, job_id: job._id, run_id: job.run_id, duration_ms: Date.now() - started });
+  } catch (error) {
+    if (error instanceof LostLeaseError) {
+      log.warn("job_lease_lost", { kind: job.kind, job_id: job._id });
+      return true;
+    }
+    const outcome = await fail(deps.db, job, error, !(error instanceof PermanentJobError));
+    if (outcome === "failed") await finalFailure(deps, job, error instanceof Error ? error.message : String(error));
+  }
+  return true;
+}
+
+/**
+ * One scheduler tick (Vercel Cron, or the local poller): record a heartbeat, recover
+ * interrupted jobs, then run jobs in parallel until the queue is empty or the start
+ * budget is spent. Jobs already started run to completion.
+ */
+export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number; concurrency?: number } = {}) {
+  const budgetMs = options.budgetMs ?? 30_000;
+  const concurrency = Math.max(1, options.concurrency ?? 4);
+  const deadline = Date.now() + budgetMs;
+  await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_at: now() } }, { upsert: true });
+  for (const job of await recoverExpired(deps.db)) await finalFailure(deps, job, job.error ?? "Worker lease expired");
+  let executed = 0;
+  const worker = async () => {
+    while (Date.now() < deadline && (await runOne(deps))) executed += 1;
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_finished_at: now(), last_tick_executed: executed } });
+  return { executed };
+}

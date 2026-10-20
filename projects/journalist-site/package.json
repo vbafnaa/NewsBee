@@ -2,24 +2,36 @@
   "name": "newsbee-journalist-site",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=20.9" },
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
+    "local": "node scripts/local-stack.mjs",
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3000",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "csv-parse": "^6.2.1",
+    "entities": "^6.0.1",
+    "fast-xml-parser": "^5.11.2",
+    "fflate": "^0.8.3",
+    "htmlparser2": "^10.1.0",
     "mongodb": "^6.18.0",
     "next": "^15.5.0",
     "next-auth": "^5.0.0-beta.29",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "robots-parser": "^3.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "typescript": "^5.9.0"
+    "mongodb-memory-server": "^10.4.3",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.7"
   }
 }

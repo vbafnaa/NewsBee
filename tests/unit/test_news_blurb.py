@@ -177,3 +177,10 @@ def test_shape_validation_rejects_extra_missing_wrong_types_and_long_text():
 def test_added_claims_ignores_punctuation_inside_allowed_text():
     allowed = ['"Open" Studio; bring your own materials. Really!']
     assert added_claims(f"{allowed[0]} is here.", allowed, 1) == []
+
+
+def test_abbreviations_do_not_add_sentence_count():
+    from projects.backend.shared.model_inference.news_blurb import sentence_count
+
+    assert sentence_count("The U.S. Geological Survey reported this.") == 1
+    assert sentence_count("Dr. Lee spoke at 9 a.m. It was useful.") == 2

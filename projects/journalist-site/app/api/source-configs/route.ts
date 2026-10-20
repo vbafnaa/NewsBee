@@ -1,8 +1,7 @@
+import { currentAdmin, sameOrigin } from "@/lib/admin-session";
 import {
-  auth,
   createConfiguredSource,
   deleteConfiguredSource,
-  isAdminEmail,
   listConfiguredSources,
   SourceConfigError,
   updateConfiguredSource,
@@ -11,8 +10,7 @@ import type { SourceConfigInput } from "@/auth";
 import type { NextRequest } from "next/server";
 
 async function authorized() {
-  const session = await auth();
-  return isAdminEmail(session?.user?.email);
+  return Boolean(await currentAdmin());
 }
 
 function validUrl(value: unknown): value is string {
@@ -64,7 +62,7 @@ async function mutationAllowed(request: NextRequest) {
   if (!(await authorized())) {
     return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
   }
-  if (request.headers.get("origin") !== new URL(request.url).origin) {
+  if (!sameOrigin(request)) {
     return Response.json({ detail: "Cross-origin admin requests are not allowed" }, { status: 403 });
   }
   return null;

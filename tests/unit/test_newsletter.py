@@ -340,3 +340,12 @@ def test_front_falls_back_to_week_title():
     front = story_writer.fallback_front("Auburn", "Oct 19\u201325", True)
     assert front.headline == "Auburn this week: Oct 19\u201325"
     assert story_writer.fallback_front("Auburn", "x", False).intro == story_writer.NO_EVENTS_INTRO
+
+
+def test_number_at_end_of_sentence_is_not_a_list_marker():
+    text = "This activity is for ages 19. It welcomes the whole community."
+    assert "list_formatting" not in story_writer.style_errors(text)
+
+
+def test_numbered_list_still_fails():
+    assert "list_formatting" in story_writer.style_errors("1. Build robots. 2. Program them.")

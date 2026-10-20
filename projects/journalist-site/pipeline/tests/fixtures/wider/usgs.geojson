@@ -1,0 +1,5 @@
+{"type":"FeatureCollection","features":[
+ {"id":"a","geometry":{"coordinates":[-122.23,47.31,19]},"properties":{"mag":2.6,"place":"5 km WSW of Wilderness Rim, Washington","felt":78,"time":1760400000000,"status":"reviewed","url":"https://earthquake.usgs.gov/a"}},
+ {"id":"b","geometry":{"coordinates":[-122.23,47.31,19]},"properties":{"mag":3.1,"place":"5 km SW of Wilderness Rim, Washington","felt":46,"time":1760500000000,"status":"reviewed","url":"https://earthquake.usgs.gov/b"}},
+ {"id":"c","geometry":{"coordinates":[-122.23,47.31,19]},"properties":{"mag":3.2,"place":"2 km N of Auburn, Washington","felt":0,"time":1760450000000,"status":"automatic","url":"https://earthquake.usgs.gov/c"}}
+]}

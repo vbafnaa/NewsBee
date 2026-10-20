@@ -1,9 +1,9 @@
-import { auth, enableAdminAccount, isAdminEmail, listAdminAccounts } from "@/auth";
+import { currentAdmin, sameOrigin } from "@/lib/admin-session";
+import { enableAdminAccount, listAdminAccounts } from "@/auth";
 import type { NextRequest } from "next/server";
 
 async function authorized() {
-  const session = await auth();
-  return isAdminEmail(session?.user?.email);
+  return Boolean(await currentAdmin());
 }
 
 export async function GET() {
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!(await authorized())) {
     return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
   }
-  if (request.headers.get("origin") !== new URL(request.url).origin) {
+  if (!sameOrigin(request)) {
     return Response.json({ detail: "Cross-origin admin requests are not allowed" }, { status: 403 });
   }
 

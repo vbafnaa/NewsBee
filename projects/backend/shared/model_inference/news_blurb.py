@@ -26,6 +26,27 @@ INTRO_MAX = 400
 WORD = re.compile(r"[A-Za-z]+(?:['\u2019][A-Za-z]+)?")
 LINK = re.compile(r"https?://|www\.|@|#|\.(?:com|org|net)\b", re.IGNORECASE)
 SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
+ABBREVIATION_END = re.compile(
+    r"(?:\b(?:u\.s|e\.g|i\.e|a\.m|p\.m|dr|mr|mrs|ms|st|jr|sr|vs|prof|etc|inc|ltd|dept|approx|no|fig)\.|(?:\b[A-Za-z]\.){1,4})$",
+    re.IGNORECASE,
+)
+
+def sentence_count(text: str) -> int:
+    count = 0
+    for match in SENTENCE_END.finditer(text):
+        abbreviation = (
+            ABBREVIATION_END.search(text[:match.start() + 1])
+            if "." in match.group()
+            else None
+        )
+        if abbreviation:
+            is_clock_sentence_end = abbreviation.group().lower() in {"a.m.", "p.m."} and bool(
+                re.match(r"\s+[A-Z]", text[match.end():])
+            )
+            if not is_clock_sentence_end:
+                continue
+        count += 1
+    return count
 
 # Words that state facts a reader acts on (cost, sign-up, format, cancellation, timing,
 # prizes, accessibility). Audience, role and tone words are allowed for now;
@@ -99,7 +120,7 @@ def added_claims(text: str, allowed: list[str], max_sentences: int) -> list[str]
     stripped = text
     for value in sorted(filter(None, allowed), key=len, reverse=True):
         stripped = stripped.replace(value, " ")
-    if len(SENTENCE_END.findall(stripped.strip() + " ")) > max_sentences:
+    if sentence_count(stripped.strip() + " ") > max_sentences:
         errors.append("too_many_sentences")
     for token in WORD.findall(text):
         lower = token.lower()

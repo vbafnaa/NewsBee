@@ -48,17 +48,14 @@ uv run --locked python scripts/dev.py ingest-events
 | Page | URL |
 | --- | --- |
 | Reader website | http://127.0.0.1:4321 |
-| Journalist admin | http://127.0.0.1:3000 (start separately; Google OAuth and MongoDB must be configured) |
+| Stage 2 journalist admin | http://127.0.0.1:3000 (`npm run local` in `projects/journalist-site`) |
 | Health dashboard and review | http://127.0.0.1:8000/review |
 | API docs | http://127.0.0.1:8000/docs |
 | Email previews (Mailpit) | http://127.0.0.1:8025 |
 
-The local API and reader are localhost-only. Journalist access requires an enabled account
-in MongoDB; see `projects/journalist-site/README.md`. Logs go to `.local/logs/`.
+The local API and reader are localhost-only. Logs go to `.local/logs/`.
 
-To run the journalist admin separately, configure the Google OAuth and backend variables
-listed in `projects/journalist-site/README.md`, then run `npm install` and `npm run dev`
-from `projects/journalist-site`.
+**Stage 2** (TypeScript pipeline for Vercel, MongoDB, Google Drive and Gemini) runs locally with `npm run local` in `projects/journalist-site`; see its README.
 
 The backend defaults to local Ollama. Set `NEWSBEE_MODEL_PROVIDER=gemini` and
 `NEWSBEE_GEMINI_API_KEY` to use Gemini; see
