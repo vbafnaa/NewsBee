@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { logger } from "@/pipeline/core/log";
 import { LocationBusy } from "@/pipeline/communities/locations";
+import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { adminGuard } from "./admin-session";
 import { pipelineDeps } from "./pipeline";
@@ -9,6 +10,7 @@ const log = logger("admin-api");
 
 function statusFor(error: unknown) {
   if (error instanceof LocationBusy) return 409;
+  if (error instanceof InvalidSourceLink) return 422;
   const message = error instanceof Error ? error.message : "";
   if (/^(Location is not onboarded|Census place is not available|No published|No active withdrawal|Unknown run)/.test(message)) return 404;
   if (/^(A public correction reason|Withdrawal already exists|Invalid )/.test(message)) return 400;

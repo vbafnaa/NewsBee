@@ -8,6 +8,7 @@ import { sourceResult, type CollectedEvent, type CollectedSource, type Connector
 import { chooseLinks, moreEvents, pageLinks } from "../ai-discovery";
 import { blueskySearchUrl, blueskyTrendsUrl, countBlueskyMentions, parseBlueskyTrends, parseNewsFeed, parseUsgs, parseWikiDaily, parseWikiTop, publishedText, sensitive, sha256, spike, usgsQueryUrl, wikiArticleUrl, wikiDailyUrl, wikiLabel, wikiRecentDays, wikiTopUrl, wikiTopic, type NewsFacts } from "./adapters";
 import { itemTier, mentions, NEARBY_KM, resolveRegion, section, validateStateSources, type Region } from "./regions";
+import { trendContext, reportedDescription, type TrendContext } from "./trend-context";
 
 const ACCEPT_JSON = "application/json";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
@@ -115,6 +116,8 @@ export const stateNewsConnector: Connector = {
 async function collectStateNews(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
   const states = validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources"));
   const place = resolveRegion(context.location, states);
+  const manualFeed = task.params?.manual_feed;
+  if (typeof manualFeed === "string") place.newsrooms = [{ name: task.name, feed: manualFeed }];
   const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "rss" });
   if (!place.configured || place.newsrooms.length === 0) { record.status = "no_feed"; record.detail = `No reviewed newsrooms for ${place.state_code}`; return { result: record, events: [] }; }
   const run = async (newsrooms: Array<{ name: string; feed: string }>) => {
@@ -155,7 +158,7 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
     return { result: { ...record, pages_checked: [...record.pages_checked] }, events: facts } as CollectedSource;
   };
   const rules = await run(place.newsrooms);
-  if (!context.model || !context.settings.aiLinkDiscovery) return rules;
+  if (typeof manualFeed === "string" || !context.model || !context.settings.aiLinkDiscovery) return rules;
   const cached = await context.linkCache.get(context.location.id, task.source_id);
   if (cached) {
     record.pages_checked = [];
@@ -233,16 +236,24 @@ function topicTier(topic: WikiTopic, place: Region): "local" | "region" | "nearb
   if (tier === null && place.nearby_topics.some((entry) => entry.article === topic.article)) return "nearby";
   return tier;
 }
-function topicFacts(topic: WikiTopic, place: Region): CollectedEvent {
+async function verifiedTrend(context: ConnectorContext, topic: string, wikipediaUrl?: string) {
+  const cached = await cacheState<{ report: TrendContext | null }>(context, "trend-context-v1", sha256(topic).slice(0, 16), context.today, async () => {
+    const report = await trendContext(context, topic, wikipediaUrl);
+    return { report, failed: report === null };
+  });
+  return cached.report;
+}
+function topicFacts(topic: WikiTopic, place: Region, report: TrendContext): CollectedEvent {
   const name = wikiLabel(topic.article), views = topic.recent_daily_views, ratio = topic.ratio;
   const reading = `Wikipedia readers viewed the ${name} article about ${views.toLocaleString("en-US")} times a day over the latest three days, ${ratio} times its usual daily readership.`;
-  let description = topic.about ? `${topic.about} ${reading}` : `The ${name} article was among the most-read on English Wikipedia. ${reading}`;
+  let description = `${reportedDescription(report)} Attention signal (not evidence of cause): ${reading}`;
   if (topic.social_mentions) description += ` Bluesky users mentioned it in ${topic.social_mentions} or more recent posts.`;
   const tier = topicTier(topic, place)!;
   const sectionName = tier === "local" ? "Trending locally" : tier === "region" ? `Trending around ${place.county}` : `Trending near ${place.town}`;
   const day = topic.latest_day ? `${topic.latest_day.slice(0, 4)}-${topic.latest_day.slice(4, 6)}-${topic.latest_day.slice(6, 8)}` : "";
   return createNewsFacts({ source_event_id: sha256(topic.article).slice(0, 16), title: name, event_date: day, schedule_text: publishedText(day), venue: "Wikipedia page views",
-    source_url: wikiArticleUrl(topic.article), description, kind: "trending_topic", tier, section: sectionName,
+    source_url: report.url, description, kind: "trending_topic", tier, section: sectionName,
+    trend_context: report, attention_source_url: wikiArticleUrl(topic.article),
     signals: { ratio, recent_daily_views: views, baseline_daily_views: topic.baseline_daily_views, origin: topic.origin, ...(topic.best_rank === undefined ? {} : { best_rank: topic.best_rank }) },
     social_mentions: topic.social_mentions });
 }
@@ -291,10 +302,17 @@ async function collectWikipedia(task: SourceTask, context: ConnectorContext): Pr
   if (data.failed) { record.status = "failed"; record.detail = data.errors.slice(0, 5).join("; "); return { result: record, events: [] }; }
   const trending = data.topics.filter(qualifies).sort((a, b) => b.ratio - a.ratio);
   const near = trending.filter((topic) => topicTier(topic, place));
-  const events = near.slice(0, WIKI_MAX_ITEMS).map((topic) => topicFacts(topic, place));
-  record.detail = `${data.topics.length} topics measured, ${trending.length} trending, ${near.length} near ${place.town}; top lists ${data.top_days.join(", ") || "unavailable"}; attention vs usual: town ${attention.town ?? "None"}x, county ${attention.county ?? "None"}x`;
+  const events: CollectedEvent[] = [];
+  let noContext = 0;
+  for (const topic of near.slice(0, WIKI_MAX_ITEMS)) {
+    const report = await verifiedTrend(context, wikiLabel(topic.article), wikiArticleUrl(topic.article));
+    if (report) events.push(topicFacts(topic, place, report));
+    else noContext++;
+  }
+  record.detail = `${data.topics.length} topics measured, ${trending.length} trending, ${near.length} near ${place.town}; ${noContext} omitted without sourced story/attention context; top lists ${data.top_days.join(", ") || "unavailable"}; attention vs usual: town ${attention.town ?? "None"}x, county ${attention.county ?? "None"}x`;
+  if (noContext && !events.length) record.status = "no_context";
   record.event_count = events.length;
-  record.skipped_unusable = Object.fromEntries(Object.entries({ not_trending: data.topics.length - trending.length, not_near_town: trending.length - near.length }).filter(([, count]) => count));
+  record.skipped_unusable = Object.fromEntries(Object.entries({ not_trending: data.topics.length - trending.length, not_near_town: trending.length - near.length, no_story_context: noContext }).filter(([, count]) => count));
   record.pages_checked = data.errors.slice(0, 10);
   context.log.info("wikipedia_trending_result", { source_id: task.source_id, topics: data.topics.length, trending: events.length, attention });
   return { result: record, events };
@@ -330,24 +348,30 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   const townPosts = await socialCount(context, `"${place.town}" "${place.state_name}"`, context.today, 7);
   if (data.failed) { record.status = String(data.status ?? "failed"); record.detail = String(data.error ?? "Error"); return { result: record, events: [] }; }
   const trends = data.trends ?? [];
-  const skipped = { not_near_town: 0, excluded_topic: 0, too_few_posts: 0 };
+  const skipped = { not_near_town: 0, excluded_topic: 0, too_few_posts: 0, no_story_context: 0 };
   const facts: CollectedEvent[] = [];
+  let contextLookups = 0;
   for (const trend of trends) {
     const text = `${trend.name} ${trend.description ?? ""}`;
     if (!trendTier(trend, place)) skipped.not_near_town++;
     else if (EXCLUDED_CATEGORIES.has(trend.category) || sensitive(text)) skipped.excluded_topic++;
     else if (trend.post_count < MIN_POSTS) skipped.too_few_posts++;
     else {
+      if (contextLookups >= TREND_MAX_ITEMS) continue;
+      contextLookups++;
+      const report = await verifiedTrend(context, trend.name);
+      if (!report) { skipped.no_story_context++; continue; }
       const tier = trendTier(trend, place)!;
-      let description = `Bluesky lists ${trend.name} as a trending topic, with about ${trend.post_count.toLocaleString("en-US")} posts.`;
-      if (trend.description) description += ` Bluesky's summary: ${trend.description}`;
+      const description = `${reportedDescription(report)} Attention signal (not evidence of cause): Bluesky lists ${trend.name} as a trending topic, with about ${trend.post_count.toLocaleString("en-US")} posts.`;
       facts.push(createNewsFacts({ source_event_id: sha256(trend.topic).slice(0, 16), title: trend.name, event_date: context.today, schedule_text: publishedText(context.today),
-        venue: "Bluesky trending topics", source_url: trend.url ?? "https://bsky.app/", description, kind: "social_trend", tier, section: "Trending on social media",
+        venue: report.publisher, source_url: report.url, description, kind: "social_trend", tier, section: "Trending on social media",
+        trend_context: report, attention_source_url: trend.url ?? "https://bsky.app/",
         signals: { post_count: trend.post_count, category: trend.category, status: trend.status }, social_mentions: trend.post_count }));
     }
   }
   const events = facts.slice(0, TREND_MAX_ITEMS);
-  record.detail = `${trends.length} national trending topics, ${events.length} about ${place.town} or nearby; ${townPosts ?? "unknown"} posts naming ${place.town} in 7 days (counted, not stored)`;
+  record.detail = `${trends.length} national trending topics, ${events.length} sourced stories about ${place.town} or nearby; ${skipped.no_story_context} omitted without sourced story/attention context; ${townPosts ?? "unknown"} posts naming ${place.town} in 7 days (counted, not stored)`;
+  if (skipped.no_story_context && !events.length) record.status = "no_context";
   record.event_count = events.length;
   record.skipped_unusable = Object.fromEntries(Object.entries(skipped).filter(([, count]) => count));
   context.log.info("bluesky_trending_result", { source_id: task.source_id, trends: trends.length, kept: events.length, town_posts: townPosts });

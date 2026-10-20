@@ -123,6 +123,7 @@ export async function updateSources(db: Db, id: string, websites: Record<string,
 
 export class LocationBusy extends Error {}
 const LOCATION_COLLECTIONS = [
+  ["manual_links", COLLECTIONS.manualLinks],
   ["link_cache", COLLECTIONS.linkCache], ["jobs", COLLECTIONS.jobs], ["runs", COLLECTIONS.runs],
   ["source_results", COLLECTIONS.sourceResults], ["source_shortlists", COLLECTIONS.shortlists],
   ["editions", COLLECTIONS.editions], ["edition_entries", COLLECTIONS.editionEntries],

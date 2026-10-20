@@ -145,6 +145,12 @@ function attachMethod(attempted: Attempt, method: "cache" | "rules" | "ai") {
   return { result: attempted.result, events: attempted.events };
 }
 
+/** Query a supplied, supported platform without rediscovering or changing the location's primary source. */
+export async function collectMeetingLink(context: Parameters<Connector["collect"]>[1], government: GovernmentSource) {
+  const result = await attempt(government, context.location, new Fetcher(context.transport, USER_AGENT), context.today, context.window);
+  return { result: result.result, events: result.events };
+}
+
 export const meetingsConnector: Connector = {
   type: "meetings",
   sources(location: LocationProfile) {

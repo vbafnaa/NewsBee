@@ -19,8 +19,15 @@ http://127.0.0.1:3000, the reader site on http://127.0.0.1:4321, and a pipeline 
 5 s in place of Vercel Cron. Drive is a local folder (`.local/stage2/drive`). Google sign-in
 is skipped on localhost.
 
-On the dashboard: **Import Census places and libraries** (once), search a town, **Onboard**,
-then **Run**. To publish a town on the reader site, tick it on **Output channel** and save.
+On **Runs & locations**, search for a town, select a suggestion and click **Add location**,
+then **Start run**. Census and library directories are prepared automatically on first
+use; that first search can take a minute. To publish a town on the reader site, select it
+on **Output channel** and save. The reader search also finds imported towns without an
+edition and lets readers register interest.
+
+To remove an onboarded town, expand its card's **Location actions**, choose **Remove**
+and confirm. Removal is blocked while a job is running. It clears the town's pipeline
+records and manual links and removes it from output-channel directories.
 
 ## Model providers
 
@@ -36,7 +43,7 @@ provider or network error, the same call is retried on the next provider.
 
 Example: `NEWSBEE_MODEL_PROVIDERS=gemini,openai`, `NEWSBEE_GEMINI_API_KEY=...`,
 `NEWSBEE_LLM_OPENAI_MODEL=gpt-4.1-mini`, `NEWSBEE_LLM_OPENAI_API_KEY=...`. Cloud mode
-defaults to `gemini` and rejects `ollama`. The dashboard shows each provider's status; health
+defaults to `gemini` and rejects `ollama`. **Health** shows each provider's status; health
 is failed when none can serve requests and warning when running on a fallback.
 Hosted structured calls reserve at least 4,096 tokens for reasoning and output; story-length
 limits and publication validation remain unchanged.
@@ -62,9 +69,36 @@ function call, and `/api/pipeline/tick` (cron every minute) runs them.
 3. **Publish**: the edition and email preview (saved, never sent) go to every enabled output
    channel that selects the location.
 
-The dashboard shows per-location health (stage, sources ok/failed, published/held, model
-errors, scheduler and queue). **Details** shows each source, story (with held reasons) and
-job. Every step also writes structured JSON logs.
+**Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
+for each source, story (with held reasons) and job. **Health** shows current providers,
+scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
+published/held stories, source outcomes and average run duration. History uses recorded
+run data, not estimated provider uptime. Every step writes structured JSON logs.
+
+Articles use short reported-style prose (up to 120 words), keep dates/venues separate,
+and receive complete-headline and unsupported-claim checks with one retry before holding.
+Checks are rule-based safeguards, not a guarantee of factual entailment. Trend counts
+measure attention, not its cause: a trend needs recent linked reporting explicitly
+explaining the underlying story and attention; unexplained trends are omitted.
+
+## Connectors & links
+
+**Connectors & links** is the single place to inspect code-defined connectors, active
+source queries, latest outcomes and discovered link caches, filtered by location. New
+connectors and format support require a pipeline code change, not a portal action.
+
+Select a location to add a manual link. Choose an existing connector, enter the link and
+click **Validate & save link**. Library feeds/pages must use supported formats and the
+location's onboarded library system; meetings use Legistar or CivicClerk tenant links;
+state news uses RSS/Atom feeds. Editors are responsible for choosing official sources.
+The existing connector must successfully query and parse a link before it is saved.
+Unsupported links are rejected without saving.
+
+Manual links supplement automatic discovery only for the selected town, retain normal
+venue/geographic/editorial filtering, and persist until removed, including when there
+are no current items or a later query fails. Wider-source settings also apply to manual
+state-news links. **Forget discovered links** clears the automatic cache without
+removing manual links. Legacy global source configuration is read-only through the portal.
 
 ## Cloud configuration (Vercel)
 
@@ -84,4 +118,5 @@ job. Every step also writes structured JSON logs.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
 `journalist_admins` (lowercase); the **Administrators** page adds more. Reviewed source
-overrides (`config/*.json`) are seeded into `source_configs` and edited on **Sources**.
+overrides (`config/*.json`) are seeded into `source_configs`; location-specific additions
+are validated and stored separately in `location_source_links`.

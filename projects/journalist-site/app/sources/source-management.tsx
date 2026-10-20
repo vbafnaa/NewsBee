@@ -1,311 +1,104 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import type { ConnectorInventory } from "@/pipeline/connectors/inventory";
+import { adminApi } from "@/lib/admin-client";
 
-type SourceKind = "library" | "government" | "state-newsroom";
-type ConfiguredSource = {
-  id: string;
-  kind: SourceKind;
-  category: string;
-  name: string;
-  location: string;
-  region?: string;
-  url?: string;
-  platform?: string;
-  tenant?: string;
-};
-
-const folders: { kind: SourceKind; title: string; description: string }[] = [
-  { kind: "library", title: "Library websites", description: "Library source URLs" },
-  { kind: "government", title: "Government platforms", description: "Legistar and CivicClerk sources" },
-  { kind: "state-newsroom", title: "State newsroom feeds", description: "State agency RSS feeds" },
-];
-
-async function send(path: string, init?: RequestInit) {
-  const response = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-  return data;
-}
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export default function SourceManagement() {
-  const [sources, setSources] = useState<ConfiguredSource[] | null>(null);
-  const [kind, setKind] = useState<SourceKind>("library");
-  const [selectedKind, setSelectedKind] = useState<SourceKind | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [data, setData] = useState<ConnectorInventory | null>(null);
+  const [locationId, setLocationId] = useState("");
+  const [connector, setConnector] = useState("library");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await send("/api/source-configs", { cache: "no-store" });
-      setSources(data.sources as ConfiguredSource[]);
-      setError("");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function createSource(event: FormEvent<HTMLFormElement>) {
+  const load = useCallback(async () => setData(await adminApi<ConnectorInventory>("connectors")), []);
+  useEffect(() => { void load().catch((caught) => setError(message(caught))); }, [load]);
+  const location = data?.locations.find(({ id }) => id === locationId);
+  async function act(action: () => Promise<unknown>, success: string) {
+    setBusy(true); setError(""); setNotice("");
+    try { await action(); await load(); setNotice(success); }
+    catch (caught) { setError(message(caught)); }
+    finally { setBusy(false); }
+  }
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const values = new FormData(form);
-    const location = String(values.get("location") ?? "").trim();
-    const source = {
-      kind,
-      name: kind === "government" ? location : String(values.get("name") ?? "").trim(),
-      location,
-      region: String(values.get("region") ?? "").trim(),
-      url: String(values.get("url") ?? "").trim(),
-      platform: String(values.get("platform") ?? ""),
-      tenant: String(values.get("tenant") ?? "").trim(),
-    };
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await send("/api/source-configs", { method: "POST", body: JSON.stringify(source) });
-      setNotice("Source added.");
-      setSelectedKind(kind);
-      form.reset();
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function updateSource(event: FormEvent<HTMLFormElement>, source: ConfiguredSource) {
-    event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const payload = {
-      id: source.id,
-      kind: source.kind,
-      name: String(values.get("name") ?? "").trim(),
-      url: String(values.get("url") ?? "").trim(),
-      platform: String(values.get("platform") ?? ""),
-      tenant: String(values.get("tenant") ?? "").trim(),
-    };
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await send("/api/source-configs", { method: "PATCH", body: JSON.stringify(payload) });
-      setNotice(`Updated ${source.name}.`);
-      setEditing(null);
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeSource(source: ConfiguredSource) {
-    if (!window.confirm(`Remove "${source.name}" from the source configuration?`)) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await send("/api/source-configs", {
-        method: "DELETE",
-        body: JSON.stringify({ id: source.id }),
+    await act(async () => {
+      await adminApi(`locations/${encodeURIComponent(locationId)}/links`, {
+        method: "POST", body: JSON.stringify({ connector, name: values.get("name"), url: values.get("url"), system_id: values.get("system_id") }),
       });
-      setNotice(`Removed ${source.name}.`);
-      if (editing === source.id) setEditing(null);
-      await load();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
+      form.reset();
+    }, "Link validated and saved. It will supplement discovered sources on subsequent runs, even when it has no current items.");
   }
-
-  return (
-    <>
-      {error && <p className="alert" role="alert">{error}</p>}
-      {notice && <p className="notice" role="status">{notice}</p>}
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <h2>Add a source</h2>
-            <p>Changes are saved to MongoDB; ingestion still reads the repository config files.</p>
-          </div>
-        </div>
-        <form className="source-form" onSubmit={(event) => void createSource(event)}>
-          <label className="field">
-            <span>Source type</span>
-            <select value={kind} onChange={(event) => setKind(event.target.value as SourceKind)}>
-              <option value="library">Library website</option>
-              <option value="government">Government meeting platform</option>
-              <option value="state-newsroom">State newsroom feed</option>
-            </select>
-          </label>
-          {kind === "library" && (
-            <label className="field">
-              <span>Library identifier</span>
-              <input name="location" required maxLength={64} pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
-                placeholder="WA0060" />
-            </label>
-          )}
-          {kind === "government" && (
-            <label className="field">
-              <span>Location identifier</span>
-              <input name="location" required maxLength={64} pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
-                placeholder="auburn-wa" />
-            </label>
-          )}
-          {kind === "state-newsroom" && (
-            <label className="field">
-              <span>Existing state code</span>
-              <input name="region" required maxLength={20} pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
-                placeholder="WA" />
-            </label>
-          )}
-          {kind !== "government" && (
-            <label className="field">
-              <span>{kind === "library" ? "Library name" : "Newsroom name"}</span>
-              <input name="name" required maxLength={120} />
-            </label>
-          )}
-          {kind === "government" && (
-            <>
-              <label className="field">
-                <span>Platform</span>
-                <select name="platform" defaultValue="legistar">
-                  <option value="legistar">Legistar</option>
-                  <option value="civicclerk">CivicClerk</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Platform tenant</span>
-                <input name="tenant" required maxLength={63} pattern="[a-z0-9][a-z0-9-]*"
-                  placeholder="cityname" />
-              </label>
-            </>
-          )}
-          {kind !== "government" && (
-            <label className="field source-url">
-              <span>{kind === "library" ? "Website URL" : "RSS/feed URL"}</span>
-              <input name="url" type="url" required pattern="https://.*" placeholder="https://example.org/" />
-            </label>
-          )}
-          <button type="submit" disabled={busy}>Add source</button>
-        </form>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">MongoDB · source_configs</p>
-            <h2>{selectedKind ? folders.find((folder) => folder.kind === selectedKind)?.title : "Source folders"}</h2>
-            <p>{selectedKind ? "Manage sources in this folder." : "Choose a folder to browse and manage its sources."}</p>
-          </div>
-          <div className="source-actions">
-            {selectedKind && (
-              <button className="secondary" type="button" onClick={() => setSelectedKind(null)}>
-                All folders
-              </button>
-            )}
-            <button className="secondary" type="button" onClick={() => void load()} disabled={busy}>Refresh</button>
-          </div>
-        </div>
-        {sources === null ? <p>Loading source configurations...</p> :
-          !selectedKind ? (
-            <div className="folder-grid">
-              {folders.map((folder) => {
-                const count = sources.filter((source) => source.kind === folder.kind).length;
-                return (
-                  <button className="folder-card" type="button" key={folder.kind}
-                    onClick={() => { setSelectedKind(folder.kind); setKind(folder.kind); }}>
-                    <span className="folder-icon" aria-hidden="true">📁</span>
-                    <span className="folder-copy">
-                      <strong>{folder.title}</strong>
-                      <small>{folder.description}</small>
-                    </span>
-                    <span className="folder-count">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="source-list">
-              {sources.filter((source) => source.kind === selectedKind).map((source) => (
-                <article className="source-card" key={source.id}>
-                  <div className="source-summary">
-                    <div>
-                      <span className="source-type">{source.category}</span>
-                      <h3>{source.name}</h3>
-                      <p>{source.location}</p>
-                      {source.url && <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>}
-                      {source.platform && <p>{source.platform} · tenant {source.tenant}</p>}
-                    </div>
-                    <div className="source-actions">
-                      <button className="secondary" type="button" disabled={busy}
-                        onClick={() => setEditing(editing === source.id ? null : source.id)}>
-                        {editing === source.id ? "Cancel" : "Edit"}
-                      </button>
-                      <button className="danger" type="button" disabled={busy}
-                        onClick={() => void removeSource(source)}>Remove</button>
-                    </div>
-                  </div>
-                  {editing === source.id && (
-                    <form className="source-edit-form" onSubmit={(event) => void updateSource(event, source)}>
-                      {source.kind === "government" ? (
-                        <>
-                          <p>Location identifier: <strong>{source.location}</strong></p>
-                          <input type="hidden" name="name" value={source.name} />
-                        </>
-                      ) : (
-                        <label className="field">
-                          <span>Name</span>
-                          <input name="name" required maxLength={120} defaultValue={source.name} />
-                        </label>
-                      )}
-                      {source.kind === "government" ? (
-                        <>
-                          <label className="field">
-                            <span>Platform</span>
-                            <select name="platform" defaultValue={source.platform}>
-                              <option value="legistar">Legistar</option>
-                              <option value="civicclerk">CivicClerk</option>
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Platform tenant</span>
-                            <input name="tenant" required maxLength={63}
-                              pattern="[a-z0-9][a-z0-9-]*" defaultValue={source.tenant} />
-                          </label>
-                        </>
-                      ) : (
-                        <label className="field source-url">
-                          <span>{source.kind === "library" ? "Website URL" : "RSS/feed URL"}</span>
-                          <input name="url" type="url" required pattern="https://.*"
-                            defaultValue={source.url} />
-                        </label>
-                      )}
-                      <button type="submit" disabled={busy}>Save changes</button>
-                    </form>
-                  )}
-                </article>
-              ))}
-              {sources.every((source) => source.kind !== selectedKind) && (
-                <p>This folder is empty. Use “Add a source” above to add an entry.</p>
-              )}
-            </div>
-          )}
-      </section>
-    </>
-  );
+  return <>
+    {error && <p role="alert" className="alert">{error}</p>}
+    {notice && <p role="status" className="notice">{notice}</p>}
+    <section className="panel">
+      <div className="section-heading"><div><h2>Pipeline connectors</h2><p>Connectors are implemented in pipeline code, not added or edited here. Each connector finds and queries supported links.</p></div>
+        <button className="secondary" disabled={busy} onClick={() => void act(load, "Connector inventory refreshed.")}>Refresh inventory</button></div>
+      <label className="field"><span>Location filter</span><select value={locationId} disabled={busy} onChange={(event) => { setLocationId(event.target.value); setNotice(""); }}>
+        <option value="">All onboarded locations</option>
+        {data?.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select></label>
+      {!data && !error && <p role="status">Loading connectors and links...</p>}
+      <div className="connector-grid">{data?.connectors.map((item) => {
+        const tasks = data.sources.filter((source) => source.type === item.id && (!locationId || source.location_id === locationId));
+        const caches = data.cached_links.filter((link) => link.source_id.split(":")[0] === item.id && (!locationId || link.location_id === locationId));
+        const manual = data.manual_links.filter((link) => link.connector === item.id && (!locationId || link.location_id === locationId));
+        return <article key={item.id} className="connector-card">
+          <div className="section-heading"><h3>{item.name}</h3><span className="status-badge">{tasks.filter((task) => task.enabled).length} active sources</span></div>
+          <p>{item.formats}</p><p className="chart-caption">Code-defined &middot; {item.manual ? "Supports validated manual links" : "Links are managed by the pipeline"}</p>
+          <details><summary>Source queries and latest outcomes ({tasks.length})</summary>
+            {tasks.length ? tasks.map((task) => <div className="connector-source" key={`${task.location_id}:${task.source_id}`}>
+              <strong>{task.location_name} / {task.name}</strong>
+              <p>{!task.enabled ? "Disabled in pipeline settings" : task.latest ? `${task.latest.result_status ?? task.latest.status}: ${task.latest.detail ?? "No detail recorded"}` : "Not queried in the latest run"}
+                {task.latest && ` (${task.latest.event_count} items)`}</p><code>{task.source_id}</code>
+            </div>) : <p>No sources selected for these locations.</p>}
+          </details>
+          <details open={caches.length > 0}><summary>Discovered link cache ({caches.length})</summary>
+            {caches.length ? caches.map((link) => <div key={`${link.location_id}:${link.source_id}`} className="connector-source">
+              <strong>{data.locations.find((place) => place.id === link.location_id)?.name} / {link.kind}</strong>
+              <a className="source-url" href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
+              <p className="chart-caption">{link.source_id} &middot; Found by {link.method} &middot; {new Date(link.discovered_at).toLocaleString()}</p>
+              {link.page && link.page !== link.url && <a className="source-url" href={link.page} target="_blank" rel="noreferrer">Discovery page: {link.page}</a>}
+            </div>) : <p>No cached links. A connector may use fixed feeds or discover links on its next run.</p>}
+          </details>
+          <details open={manual.length > 0}><summary>Retained manual links ({manual.length})</summary>
+            {manual.length ? manual.map((link) => <div key={link._id} className="connector-source">
+              <strong>{data.locations.find((place) => place.id === link.location_id)?.name} / {link.name}</strong>
+              <a className="source-url" href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
+              {link.feed_url && link.feed_url !== link.url && <a className="source-url" href={link.feed_url} target="_blank" rel="noreferrer">Validated feed: {link.feed_url}</a>}
+              <p className="chart-caption">Validated {new Date(link.validated_at).toLocaleString()} &middot; {link.validated_events} usable items at validation &middot; Retained until removed</p>
+              <button className="secondary" disabled={busy} onClick={() => {
+                if (window.confirm(`Remove ${link.name} from future runs?`)) void act(() => adminApi(`locations/${encodeURIComponent(link.location_id)}/links?manual=${encodeURIComponent(link._id)}`, { method: "DELETE" }), "Manual link removed from future collection.");
+              }}>Remove manual link</button>
+            </div>) : <p>No manual links.</p>}
+          </details>
+        </article>;
+      })}</div>
+    </section>
+    <section className="panel">
+      <h2>Add a link for a location</h2>
+      <p>Choose a location above, then an existing connector. The connector must successfully query the link before it is saved. New connector formats require a pipeline code change.</p>
+      {location ? <form className="manual-link-form" onSubmit={(event) => void save(event)}>
+        <label className="field"><span>Existing connector</span><select value={connector} disabled={busy} onChange={(event) => setConnector(event.target.value)}>
+          {data?.connectors.filter((item) => item.manual).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select></label>
+        {connector === "library" && <label className="field"><span>Onboarded library system</span><select name="system_id" required disabled={busy || !location.systems.length} key={locationId}>
+          {location.systems.map((system) => <option key={system.fscskey} value={system.fscskey}>{system.name}</option>)}
+        </select></label>}
+        {connector === "library" && !location.systems.length && <p className="alert">This location has no onboarded library system. Library links must match its onboarded branches.</p>}
+        <label className="field"><span>Source name</span><input name="name" required maxLength={120} disabled={busy} /></label>
+        <label className="field"><span>{connector === "meetings" ? "Legistar or CivicClerk tenant URL" : connector === "statenews" ? "Official agency RSS or Atom feed URL" : "Library event page or supported feed URL"}</span>
+          <input name="url" type="url" required pattern="https://.*" maxLength={2000} placeholder="https://..." disabled={busy} /></label>
+        <p className="chart-caption">Manual links supplement automatic discovery, apply only to {location.name}, and remain until removed. Normal date, venue, geographic and editorial checks still apply.</p>
+        <button disabled={busy || (connector === "library" && !location.systems.length)}>{busy ? "Validating link..." : "Validate & save link"}</button>
+      </form> : <p>Select one location to add a link.</p>}
+      {location && <div className="cache-actions"><h3>Rediscover automatic links</h3><p>Forget {location.name}&apos;s discovered cache so the next run finds links again. Retained manual links are not removed.</p>
+        <button className="secondary" disabled={busy} onClick={() => void act(() => adminApi(`locations/${encodeURIComponent(location.id)}/links`, { method: "DELETE" }), "Discovered cache cleared. Manual links retained; automatic links will be rediscovered on the next run.")}>Forget discovered links</button></div>}
+    </section>
+  </>;
 }

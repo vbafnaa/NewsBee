@@ -284,7 +284,7 @@ const apiUrl = "";
           input.setAttribute("aria-expanded", String(candidates.length > 0));
           help.textContent = candidates.length
             ? `${candidates.length} towns found. Use arrow keys and Enter, or select a town.`
-            : "No matching towns in our US library directory. Try a nearby town or add a state.";
+            : "No matching towns in the imported US Census directory. Try a nearby town or add a state.";
         } catch (error) {
           if (version === searchVersion) help.textContent = `Location search unavailable: ${failure(error)}`;
         }

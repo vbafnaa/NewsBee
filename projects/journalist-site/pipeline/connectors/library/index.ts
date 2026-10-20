@@ -158,6 +158,26 @@ async function cachedRun(context: ConnectorContext, cached: CachedLinks, system:
     pages_checked: [feed.page], events: parsed.events, skipped: parsed.skipped, response: parsed.response, method: "cache" };
 }
 
+/** Validate/query an additional location feed using the existing library parsers and venue rules. */
+export async function collectLibraryLink(context: ConnectorContext, url: string, system: LocationProfile["systems"][number]) {
+  let feed: Feed | null = /^https:\/\/gateway\.bibliocommons\.com\/v2\/libraries\/[a-z0-9_-]+\/?$/i.test(url)
+    ? { kind: "bibliocommons", url: url.replace(/\/$/, ""), page: url } : null;
+  if (!feed) {
+    const [final, content] = await context.fetcher.get(url, MAX_FEED_BYTES, ACCEPT_FEED);
+    const html = new TextDecoder().decode(content);
+    if (html.replace(/^\uFEFF/, "").startsWith("BEGIN:VCALENDAR")) {
+      if (!/END:VCALENDAR\s*$/.test(html)) throw new FeedFormatError("The iCalendar response is incomplete");
+      feed = { kind: "ical", url: final, page: url };
+    } else if (new URL(final).hostname === "www.trumba.com" && /\.rss(?:\?|$)/i.test(final)) {
+      feed = { kind: "trumba_rss", url: final, page: url };
+    } else feed = (await rulesDiscovery(context, { url: final, html })).feed;
+  }
+  if (!feed) throw new FeedFormatError("No supported library event feed found at this link");
+  const parsed = await parseFeed(context, feed, system);
+  const outcome: Outcome = { status: "ingested", detail: `Validated ${feed.kind} feed`, feed, pages_checked: [url, feed.url], events: parsed.events, skipped: parsed.skipped, response: parsed.response, method: "rules" };
+  return { collected: toCollected(system, outcome, context), feed };
+}
+
 function keptEvents(outcome: Outcome, system: LocationProfile["systems"][number], window: [string,string]) {
   const events: CollectedEvent[] = [];
   let skippedOutside = 0;

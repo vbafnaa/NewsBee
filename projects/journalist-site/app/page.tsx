@@ -8,8 +8,8 @@ export default async function Home() {
   if (!email) redirect("/login");
 
   return (
-    <AdminShell email={email} page="dashboard" title="Journalist workspace"
-      description="Manage active sources and run ingestion for onboarded communities.">
+    <AdminShell email={email} page="dashboard" title="Runs & locations"
+      description="Choose a town, add its sources, and follow each edition from collection to publication.">
       <Dashboard />
     </AdminShell>
   );

@@ -50,8 +50,10 @@ it("onboards an incorporated town with no library and supports managed source ed
   await expect(removeLocation(mongo.db, profile.id)).rejects.toBeInstanceOf(LocationBusy);
   await mongo.db.collection("pipeline_jobs").deleteMany({});
   await mongo.db.collection("connector_link_cache").insertOne({ location_id: profile.id });
+  await mongo.db.collection("location_source_links").insertOne({ location_id: profile.id, url: "https://agency.example/feed" });
   const removed = await removeLocation(mongo.db, profile.id);
-  expect(removed).toMatchObject({ locations: 1, link_cache: 1 });
+  expect(removed).toMatchObject({ locations: 1, link_cache: 1, manual_links: 1 });
+  expect(await mongo.db.collection("location_source_links").countDocuments({ location_id: profile.id })).toBe(0);
   await expect(getLocation(mongo.db, profile.id)).rejects.toThrow("not onboarded");
 });
 

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSourceConfig } from "../../storage/source-configs";
 import { Fetcher } from "../../connectors/fetcher";
 import { hazardsConnector, stateNewsConnector, trendingConnector } from "../../connectors/wider";
@@ -14,6 +14,8 @@ import { fixture, ReplayTransport } from "../support/replay";
 import { Story } from "../../editions/stories";
 import { hazards, stateNews, trending } from "../../ranking/wider";
 import { FeedFormatError } from "../../connectors/common";
+
+vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34" }]) }));
 
 const TODAY = "2026-10-19";
 const ROOT = path.resolve(__dirname, "../fixtures/wider");
@@ -157,11 +159,20 @@ it("caches successful Wikipedia and Bluesky statewide calls in Mongo by state an
     .on(/user\/Mount_Rainier\/daily\//, fixtureResponse("wiki-rainier.json"))
     .on(/user\/Kent%2C_Washington\/daily\//, fixtureResponse("wiki-kent.json"))
     .on(/app\.bsky\.unspecced\.getTrends/, fixtureResponse("bluesky-trends.json"))
-    .on(/app\.bsky\.feed\.searchPosts/, fixtureResponse("bluesky-posts.json"));
+    .on(/app\.bsky\.feed\.searchPosts/, (request) => {
+      const query = new URL(request.url).searchParams.get("q") ?? "";
+      const topic = query.includes("Kent") ? "Kent, Washington" : "Seattle Seahawks";
+      return { body: { posts: [{ record: { createdAt: "2026-10-18T00:00:00Z" }, embed: { external: { uri: `https://news.example/${encodeURIComponent(topic)}` } } }] } };
+    })
+    .on(/^https:\/\/news\.example\//, (request) => {
+      const topic = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      return { body: `<meta property="og:site_name" content="Regional News"><meta property="article:published_time" content="2026-10-18T12:00:00Z"><article><p>${topic} is drawing public attention after a new community announcement.</p><p>${topic} residents can read the announcement.</p></article>` };
+    });
   const ctx = context(replay);
   const wiki = await trendingConnector.collect(wikiTask, ctx);
   expect(wiki.result.status).toBe("ingested");
   expect(wiki.events.map((event) => [event.title, event.tier])).toEqual([["Seattle Seahawks", "nearby"], ["Kent, Washington", "nearby"]]);
+  expect(wiki.events.every((event) => event.source_url.startsWith("https://news.example/") && event.description?.includes("Source-reported explanation"))).toBe(true);
   expect(wiki.result.skipped_unusable).toMatchObject({ not_near_town: 1 });
   const statewideBefore = replay.requests.filter((request) => /user\/Mount_Rainier/.test(request.url)).length;
   await trendingConnector.collect(wikiTask, ctx);
@@ -172,7 +183,19 @@ it("caches successful Wikipedia and Bluesky statewide calls in Mongo by state an
   await trendingConnector.collect(bskyTask, ctx);
   expect(replay.requests.filter((request) => request.url.includes("getTrends"))).toHaveLength(1);
   const records = await mongo.db.collection(COLLECTIONS.wideCache).countDocuments();
-  expect(records).toBe(2);
+  expect(records).toBe(4);
+});
+
+it("omits popularity-only trends with observable reasons instead of inventing a story", async () => {
+  const replay = new ReplayTransport()
+    .on(/app\.bsky\.unspecced\.getTrends/, fixtureResponse("bluesky-trends.json"))
+    .on(/app\.bsky\.feed\.searchPosts/, fixtureResponse("bluesky-posts.json"));
+  const result = await trendingConnector.collect(bskyTask, context(replay));
+  expect(result.events).toEqual([]);
+  expect(result.result.status).toBe("no_context");
+  expect(result.result.skipped_unusable.no_story_context).toBe(1);
+  expect(result.result.detail).toContain("omitted without sourced story/attention context");
+  expect(await mongo.db.collection(COLLECTIONS.wideCache).countDocuments({ key: /^trend-context/ })).toBe(0);
 });
 
 it("does not persist failed Wikipedia statewide measurements", async () => {

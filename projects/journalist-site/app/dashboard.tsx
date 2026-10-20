@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import Link from "next/link";
+import { adminApi as api } from "@/lib/admin-client";
+import LocationOnboarding from "./location-onboarding";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -29,7 +31,6 @@ type Health = {
   totals: Record<string, number>;
   locations: LocationHealth[];
 };
-type Place = { id: string; name: string; branch_count: number; system_count: number };
 type RunSource = { source_id: string; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
 type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[] };
 type Job = { id: string; kind: string; status: string; attempts: number; error: string | null };
@@ -40,17 +41,6 @@ type RunDetail = {
 };
 type Withdrawal = { story_id: string; reason: string; created_at: number };
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/admin/${path}`, {
-    cache: "no-store",
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-  return data as T;
-}
-
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 const message = (caught: unknown) => caught instanceof Error ? caught.message : String(caught);
 
@@ -59,8 +49,6 @@ export default function Dashboard() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
-  const [query, setQuery] = useState("");
-  const [places, setPlaces] = useState<Place[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +61,7 @@ export default function Dashboard() {
       ]);
       setHealth(healthData);
       setLocations(locationData.locations);
+      setError("");
     } catch (caught) {
       setError(message(caught));
     }
@@ -97,6 +86,18 @@ export default function Dashboard() {
     return () => window.clearInterval(timer);
   }, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const runId = params.get("run"), locationId = params.get("location");
+    if (runId && locationId) void openRun(runId, locationId);
+  }, [openRun]);
+
+  useEffect(() => {
+    if (!detail || !["collecting", "authoring"].includes(detail.run.status)) return;
+    const timer = window.setInterval(() => void openRun(detail.run._id, detail.run.location_id), 10000);
+    return () => window.clearInterval(timer);
+  }, [detail?.run._id, detail?.run.location_id, detail?.run.status, openRun]);
+
   async function act(label: string, action: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -111,37 +112,6 @@ export default function Dashboard() {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function search(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      setPlaces((await api<{ results: Place[] }>(`places?q=${encodeURIComponent(query)}`)).results);
-    } catch (caught) {
-      setError(message(caught));
-    }
-  }
-
-  async function saveSources(event: FormEvent<HTMLFormElement>, location: Location) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const platform = String(form.get("platform") ?? "");
-    const tenant = String(form.get("tenant") ?? "").trim();
-    if (platform && !tenant) {
-      setError("Enter the government platform tenant before saving.");
-      return;
-    }
-    await act(`Saved source settings for ${location.name}.`, () =>
-      api(`locations/${encodeURIComponent(location.id)}/sources`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          systems: location.systems.map((system) => ({
-            fscskey: system.fscskey,
-            website: String(form.get(`website-${system.fscskey}`) ?? "").trim() || null,
-          })),
-          government: platform ? { platform, tenant } : null,
-        }),
-      }));
   }
 
   function withdrawStory(story: Story) {
@@ -161,54 +131,43 @@ export default function Dashboard() {
 
       <section className="panel">
         <div className="section-heading">
-          <h2>Health</h2>
+          <div><p className="eyebrow">Edition pipeline</p><h2>Run orchestration</h2><p>Collect sources, write and validate stories, then publish to selected channels.</p></div>
           <button disabled={busy || !locations.length}
             onClick={() => void act("Started a run for every location.", () => api("ingestion", { method: "POST" }))}>
             Run all locations
           </button>
         </div>
-        {health && (
-          <p>
-            Overall: <strong>{health.status}</strong>
-            {" · "}Scheduler: <strong>{health.scheduler.status}</strong>
-            {health.scheduler.seconds_since_tick !== null && ` (last tick ${health.scheduler.seconds_since_tick}s ago)`}
-            {" · "}Model: <strong>{health.model ? `${health.model.status} (${health.model.provider}/${health.model.name})` : "not configured"}</strong>
-            {health.model?.detail && health.model.status !== "ok" && ` — ${health.model.detail}`}
-            {health.model?.providers && ` [${health.model.providers.map((item) => `${item.name}/${item.model}: ${item.status}`).join(", ")}]`}
-            {" · "}Queue: {health.queue.pending} pending, {health.queue.running} running, {health.queue.failed} failed
-            {" · "}Locations: {health.totals.ok} ok, {health.totals.warning} warning, {health.totals.failed} failed, {health.totals.never_run} never run
-          </p>
-        )}
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Location</th><th>Health</th><th>Stage</th><th>Sources ok/failed/total</th><th>Published / held</th><th>Problems</th><th>Started</th><th /></tr></thead>
-            <tbody>{health?.locations.map((row) => (
-              <tr key={row.location_id}>
-                <td>{row.location_name}</td>
-                <td><span className={`state ${row.level === "ok" ? "active" : ""}`}>{row.level}</span></td>
-                <td>{row.stage}</td>
-                <td>{row.sources.completed}/{row.sources.failed}/{row.sources.total}</td>
-                <td>{row.published_items ?? "—"} / {row.held ?? "—"}</td>
-                <td>
-                  {[row.error, ...row.model_errors, ...row.failed_sources.map((source) => `${source.name}: ${source.error ?? "failed"}`)]
-                    .filter(Boolean).join("; ") || "—"}
-                </td>
-                <td>{time(row.started_at)}</td>
-                <td>
-                  <button className="secondary" disabled={busy}
+        <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/health">View visual health &amp; trends &rarr;</Link></div>
+        <div className="location-grid">
+          {health?.locations.map((row) => {
+            const running = row.stage === "collecting" || row.stage === "authoring";
+            return <article className="run-card" key={row.location_id}>
+              <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${running ? "running" : row.level}`}>{row.stage.replaceAll("_", " ")}</span></div>
+              <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
+                {["Collect", "Author", "Publish"].map((step, index) => {
+                  const stage = row.stage === "published" ? 3 : row.stage === "authoring" ? 1 : row.stage === "collecting" ? 0 : -1;
+                  return <li key={step} className={stage > index ? "complete" : stage === index ? "current" : ""} aria-current={stage === index ? "step" : undefined}>{step}</li>;
+                })}
+              </ol>
+              <div className="run-counts"><span><strong>{row.sources.completed}/{row.sources.total}</strong> sources completed</span><span><strong>{row.published_items ?? "-"}</strong> published</span><span><strong>{row.held ?? "-"}</strong> held</span></div>
+              <p className="chart-caption">Last started: {time(row.started_at)}</p>
+              {(row.error || row.failed_sources.length > 0 || row.model_errors.length > 0) && <p className="stage-error">
+                {[row.error, ...row.model_errors, ...row.failed_sources.map((source) => `${source.name}: ${source.error ?? "failed"}`)].filter(Boolean).join("; ")}
+              </p>}
+              <div className="card-actions">
+                  <button disabled={busy || running}
                     onClick={() => void act(`Started ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST" }))}>Run</button>
-                  {row.run_id && <button className="secondary" onClick={() => void openRun(row.run_id!, row.location_id)}>Details</button>}
-                  <button className="secondary" disabled={busy}
-                    onClick={() => void act(`Links for ${row.location_name} will be rediscovered on the next run.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/links`, { method: "DELETE" }))}>Refresh links</button>
+                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST" }))}>{running ? "Run in progress" : "Start run"}</button>
+                  {row.run_id && <button className="secondary" onClick={() => void openRun(row.run_id!, row.location_id)}>Inspect run</button>}
+              </div>
+              <details className="location-settings"><summary>Location actions</summary><div className="card-actions">
+                  <Link href="/sources">Inspect connectors &amp; links</Link>
                   <button className="secondary" disabled={busy}
                     onClick={() => window.confirm(`Remove ${row.location_name}?`) && void act(`Removed ${row.location_name}.`, () =>
                       api(`locations/${encodeURIComponent(row.location_id)}`, { method: "DELETE" }))}>Remove</button>
-                </td>
-              </tr>
-            ))}</tbody>
-          </table>
+              </div></details>
+            </article>;
+          })}
           {health && !health.locations.length && <p>No locations onboarded yet.</p>}
         </div>
       </section>
@@ -263,70 +222,11 @@ export default function Dashboard() {
         </section>
       )}
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Onboard a location</h2>
-          <button className="secondary" disabled={busy}
-            onClick={() => void act("Imported Census places and the IMLS library directory.", () =>
-              api("directory", { method: "POST" }))}>
-            {busy ? "Working…" : "Import Census places and libraries"}
-          </button>
-        </div>
-        <form className="channel-form" onSubmit={(event) => void search(event)}>
-          <label className="field">
-            <span>Census place</span>
-            <input value={query} minLength={2} required placeholder="Auburn, WA" onChange={(event) => setQuery(event.target.value)} />
-          </label>
-          <div><button type="submit" className="secondary">Search</button></div>
-        </form>
-        {places && !places.length && <p>No matching places. Has the Census place list been imported?</p>}
-        {places?.map((place) => (
-          <p key={place.id}>
-            {place.name} · {place.system_count} library system(s), {place.branch_count} branch(es){" "}
-            <button disabled={busy || locations.some((location) => location.id === place.id)}
-              onClick={() => void act(`Onboarded ${place.name}.`, () => api("locations", {
-                method: "POST",
-                body: JSON.stringify({ place_id: place.id }),
-              }))}>
-              {locations.some((location) => location.id === place.id) ? "Onboarded" : "Onboard"}
-            </button>
-          </p>
-        ))}
-      </section>
+      <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
+        onAdd={(place) => act(`Added ${place.name}. Review its links on Connectors & links.`, () => api("locations", {
+          method: "POST", body: JSON.stringify({ place_id: place.id }),
+        }))} />
 
-      <section className="panel">
-        <h2>Location sources</h2>
-        {locations.map((location) => (
-          <details key={location.id}>
-            <summary>{location.name}</summary>
-            <form className="location" onSubmit={(event) => void saveSources(event, location)}>
-              {location.systems.map((system) => (
-                <label className="field" key={system.fscskey}>
-                  <span>{system.name} <small>({system.fscskey})</small></span>
-                  <input name={`website-${system.fscskey}`} type="url" inputMode="url" pattern="https://.*"
-                    placeholder="https://library.example.org" defaultValue={system.website ?? ""} />
-                </label>
-              ))}
-              <div className="government">
-                <label className="field">
-                  <span>Government platform</span>
-                  <select name="platform" defaultValue={location.government?.platform ?? ""}>
-                    <option value="">Disabled / none</option>
-                    <option value="legistar">Legistar</option>
-                    <option value="civicclerk">CivicClerk</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Platform tenant</span>
-                  <input name="tenant" autoComplete="off" pattern="[a-z0-9][a-z0-9-]{0,62}"
-                    defaultValue={location.government?.tenant ?? ""} placeholder="cityname" />
-                </label>
-              </div>
-              <button className="secondary" type="submit" disabled={busy}>Save source settings</button>
-            </form>
-          </details>
-        ))}
-      </section>
     </>
   );
 }

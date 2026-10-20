@@ -31,6 +31,7 @@ export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
   const rss = root.rss as Record<string, unknown> | undefined;
   const channel = rss?.channel as Record<string, unknown> | undefined;
   const atom = root.feed as Record<string, unknown> | undefined;
+  if ((!rss || typeof rss !== "object" || !("channel" in rss)) && !("feed" in root)) throw new FeedFormatError("Expected an RSS or Atom feed, not an HTML or error response");
   const nodes = itemArray((channel?.item ?? atom?.entry) as Record<string, unknown> | Record<string, unknown>[] | undefined);
   checkCount(nodes.length);
   const seen = new Set<string>();

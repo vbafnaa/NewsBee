@@ -35,9 +35,11 @@ export async function getDatabase(): Promise<Db> {
 /** Every pipeline collection, in one place so storage can be audited and swapped. */
 export const COLLECTIONS = {
   places: "census_places",
+  directorySetup: "directory_setup",
   libraryOutlets: "library_outlets",
   locations: "locations",
   linkCache: "connector_link_cache",
+  manualLinks: "location_source_links",
   jobs: "pipeline_jobs",
   runs: "pipeline_runs",
   sourceResults: "source_results",

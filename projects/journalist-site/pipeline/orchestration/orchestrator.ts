@@ -15,6 +15,7 @@ import { logger, type Logger } from "../core/log";
 import { ingestWindow, localToday } from "../core/time";
 import { Fetcher } from "../connectors/fetcher";
 import { CONNECTORS, selectSources } from "../connectors/registry";
+import { collectManualLink, manualLinks, manualTask } from "../connectors/manual-links";
 import type { CollectedSource, Connector, ConnectorContext, SourceTask, SourceType } from "../connectors/types";
 import { getLocation, listLocations } from "../communities/locations";
 import { finishAuthoring, authorNextStory, shortlistSource, startAuthoring } from "../editions/authoring";
@@ -54,7 +55,8 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
   if (existing) return { run: existing, started: false };
   const today = localToday(location.state);
   const window = ingestWindow(today);
-  const tasks = selectSources(location, deps.settings, connectorsOf(deps));
+  const additional = await manualLinks(deps.db).find({ location_id: location.id }).sort({ created_at: 1, _id: 1 }).toArray();
+  const tasks = [...selectSources(location, deps.settings, connectorsOf(deps)), ...additional.map(manualTask).filter((task) => task.type !== "statenews" || deps.settings.widerSources)];
   const run = newRun(location, trigger, today, window, tasks);
   try {
     await runs(deps.db).insertOne(run);
@@ -123,7 +125,10 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
     model: deps.settings.aiLinkDiscovery ? deps.model : undefined,
     log: sourceLog,
   };
-  const collected: CollectedSource = await connector.collect(task, context);
+  const manualId = task.params?.manual_link_id;
+  const manual = typeof manualId === "string" ? await manualLinks(deps.db).findOne({ _id: manualId, location_id: location.id }) : null;
+  if (typeof manualId === "string" && !manual) throw new PermanentJobError("Manual link was removed before collection");
+  const collected: CollectedSource = manual ? await collectManualLink(manual, context) : await connector.collect(task, context);
   const events: SourceEvent[] = collected.events.map((facts) => ({ source_id: task.source_id, facts }));
   const { stories, summary } = shortlistSource(events, task.type);
   const chosen = new Set(stories.flatMap((story) => story.occurrences.map((item) => `${item.source_id}\u0000${item.source_event_id}`)));

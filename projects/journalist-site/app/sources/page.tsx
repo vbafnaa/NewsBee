@@ -8,8 +8,8 @@ export default async function SourcesPage() {
   if (!email) redirect("/login");
 
   return (
-    <AdminShell email={email} page="sources" title="Source management"
-      description="Add, edit, and remove the sources used by Newsbee.">
+    <AdminShell email={email} page="sources" title="Connectors & links"
+      description="Inspect pipeline connectors and their discovered links. Add validated links for an onboarded location.">
       <SourceManagement />
     </AdminShell>
   );

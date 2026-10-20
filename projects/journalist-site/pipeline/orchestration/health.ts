@@ -4,11 +4,12 @@
  */
 import type { Db } from "mongodb";
 import { listLocations } from "../communities/locations";
-import type { ModelRuntime } from "../model/runtime";
+import type { ComponentHealth, ModelRuntime } from "../model/runtime";
 import { COLLECTIONS } from "../storage/mongo";
 import { runs, type PipelineRun, type RunSource } from "./runs";
 
 export type HealthLevel = "ok" | "warning" | "failed" | "idle";
+type ModelHealth = Omit<ComponentHealth, "status"> & { status: ComponentHealth["status"] | "failed" };
 
 export type LocationHealth = {
   location_id: string;
@@ -89,7 +90,7 @@ export async function healthSummary(db: Db, model: ModelRuntime | null) {
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]).toArray();
   const queue = Object.fromEntries(["pending", "running", "failed"].map((status) => [status, counts.find((item) => item._id === status)?.count ?? 0]));
-  const modelHealth = model ? await model.health().catch((error: unknown) => ({ status: "failed", detail: error instanceof Error ? error.message : String(error) })) : null;
+  const modelHealth: ModelHealth | null = model ? await model.health().catch((error: unknown): ModelHealth => ({ status: "failed", detail: error instanceof Error ? error.message : String(error) })) : null;
   const schedulerStatus = age !== null && age <= STALE_TICK_SECONDS ? "ok" : "stale";
   // At a glance: failed when no model provider can write stories; warning when the scheduler is
   // stale or the pipeline is running on a fallback provider.

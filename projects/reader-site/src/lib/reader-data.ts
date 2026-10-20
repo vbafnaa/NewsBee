@@ -1,6 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { MongoClient } from "mongodb";
+import { MongoClient, type Db } from "mongodb";
 
 export type EditionItem = {
   story_id?: string | null;
@@ -341,6 +341,36 @@ export function searchLocations(locations: Location[], query: string) {
         left.name.localeCompare(right.name);
     })
     .slice(0, 10);
+}
+
+async function readerDatabase() {
+  const { client, databaseName } = await readerMongoClient();
+  return client.db(databaseName);
+}
+
+type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };
+
+/** The Census directory includes towns that have not been onboarded or published yet. */
+export async function searchTownDirectory(query: string, db?: Db): Promise<Location[]> {
+  const [cityPart, statePart = ""] = query.split(",", 2);
+  const city = cityPart.trim().toLowerCase();
+  const state = statePart.trim().toUpperCase();
+  if (city.length < 2) return [];
+  const database = db ?? await readerDatabase();
+  const places = await database.collection<DirectoryPlace>("census_places").aggregate<DirectoryPlace>([
+    { $match: { name_lower: { $regex: `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` }, ...(state ? { state } : {}) } },
+    { $addFields: { exact: { $cond: [{ $eq: ["$name_lower", city] }, 0, 1] } } },
+    { $sort: { exact: 1, name_lower: 1, state: 1, _id: 1 } },
+    { $limit: 10 },
+    { $project: { _id: 1, name: 1, state: 1 } },
+  ]).toArray();
+  return places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }));
+}
+
+export async function directoryTown(id: string, db?: Db): Promise<Location | null> {
+  const database = db ?? await readerDatabase();
+  const place = await database.collection<DirectoryPlace>("census_places").findOne({ _id: id });
+  return place ? { id: place._id, name: `${place.name}, ${place.state}` } : null;
 }
 
 export async function saveInterestSignup(location: Location, email: string) {
