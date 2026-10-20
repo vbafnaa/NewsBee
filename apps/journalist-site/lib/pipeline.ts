@@ -1,5 +1,6 @@
 import { loadSettings, rankingSettings } from "@/pipeline/core/config";
 import { createRuntime } from "@/pipeline/model/runtime";
+import { ensureUsageIndexes, mongoUsageSink } from "@/pipeline/model/usage";
 import { ensureJobIndexes } from "@/pipeline/orchestration/jobs";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { ensureRunIndexes } from "@/pipeline/orchestration/runs";
@@ -12,12 +13,19 @@ let indexes: Promise<void> | null = null;
 export async function pipelineDeps(): Promise<OrchestratorDeps> {
   const settings = loadSettings();
   const db = await getDatabase();
-  indexes ??= Promise.all([ensureJobIndexes(db), ensureRunIndexes(db)]).then(() => undefined).catch((error) => {
+  indexes ??= Promise.all([ensureJobIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db)]).then(() => undefined).catch((error) => {
     indexes = null;
     throw error;
   });
   await indexes;
-  return { db, settings, store: getArtifacts(), model: createRuntime(settings), rankingModel: createRuntime(rankingSettings(settings)) };
+  const sink = mongoUsageSink(db);
+  return {
+    db,
+    settings,
+    store: getArtifacts(),
+    model: createRuntime(settings, undefined, undefined, { role: "writing", sink }),
+    rankingModel: createRuntime(rankingSettings(settings), undefined, undefined, { role: "ranking", sink }),
+  };
 }
 
 export function errorResponse(error: unknown, status = 500) {

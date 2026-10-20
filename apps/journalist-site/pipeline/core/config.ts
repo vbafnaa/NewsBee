@@ -2,6 +2,14 @@ import path from "node:path";
 
 export type ProviderKind = "ollama" | "gemini" | "openai";
 
+/** Optional operator-supplied quota and pricing, used only to annotate recorded usage on Health. */
+export type ProviderUsageConfig = {
+  inputCostPerMTok: number | null;
+  outputCostPerMTok: number | null;
+  requestsPerMinute: number | null;
+  requestsPerDay: number | null;
+};
+
 /** One onboarded LLM provider. Secrets come only from environment variables. */
 export type ProviderConfig = {
   /** Provider name from NEWSBEE_MODEL_PROVIDERS, e.g. "gemini", "openai", "groq". */
@@ -14,6 +22,7 @@ export type ProviderConfig = {
   authHeader: string | null;
   maxTokensParam: "max_tokens" | "max_completion_tokens";
   jsonMode: "json_schema" | "json_object";
+  usage: ProviderUsageConfig;
 };
 export type PipelineMode = "local" | "cloud";
 
@@ -30,7 +39,11 @@ export type Settings = {
   widerSources: boolean;
   pipelineDriveFolderId: string | null;
   cronSecret: string | null;
+  /** Active runs older than this are failed with a diagnosis; null disables the deadline. */
+  runTimeoutSeconds: number | null;
 };
+
+export const DEFAULT_RUN_TIMEOUT_MINUTES = 60;
 
 function flag(value: string | undefined, fallback: boolean) {
   if (value === undefined || value.trim() === "") return fallback;
@@ -39,6 +52,35 @@ function flag(value: string | undefined, fallback: boolean) {
 
 function blank(value: string | undefined) {
   return value?.trim() ? value.trim() : null;
+}
+
+function nonNegative(value: string | undefined, variable: string): number | null {
+  const raw = blank(value);
+  if (raw === null) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${variable} must be a non-negative number`);
+  return parsed;
+}
+
+/** NEWSBEE_RUN_TIMEOUT_MINUTES: default 60; 0 disables the run deadline. */
+export function runTimeoutSeconds(env: NodeJS.ProcessEnv): number | null {
+  const minutes = nonNegative(env.NEWSBEE_RUN_TIMEOUT_MINUTES, "NEWSBEE_RUN_TIMEOUT_MINUTES") ?? DEFAULT_RUN_TIMEOUT_MINUTES;
+  return minutes === 0 ? null : Math.round(minutes * 60);
+}
+
+/** NEWSBEE_MODEL_<NAME>_{INPUT,OUTPUT}_COST_PER_MTOK (USD per million tokens) and _{RPM,RPD}_LIMIT. */
+function usageConfig(env: NodeJS.ProcessEnv, name: string): ProviderUsageConfig {
+  const prefix = `NEWSBEE_MODEL_${name.toUpperCase()}_`;
+  const limit = (suffix: string) => {
+    const value = nonNegative(env[`${prefix}${suffix}`], `${prefix}${suffix}`);
+    return value ? value : null;
+  };
+  return {
+    inputCostPerMTok: nonNegative(env[`${prefix}INPUT_COST_PER_MTOK`], `${prefix}INPUT_COST_PER_MTOK`),
+    outputCostPerMTok: nonNegative(env[`${prefix}OUTPUT_COST_PER_MTOK`], `${prefix}OUTPUT_COST_PER_MTOK`),
+    requestsPerMinute: limit("RPM_LIMIT"),
+    requestsPerDay: limit("RPD_LIMIT"),
+  };
 }
 
 export function repositoryRoot() {
@@ -58,6 +100,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     widerSources: flag(env.NEWSBEE_WIDER_SOURCES, true),
     pipelineDriveFolderId: blank(env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID),
     cronSecret: blank(env.CRON_SECRET),
+    runTimeoutSeconds: runTimeoutSeconds(env),
   };
 }
 
@@ -79,7 +122,7 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
   if (!names.length) throw new Error("NEWSBEE_MODEL_PROVIDERS must name at least one provider");
   return names.map((name): ProviderConfig => {
     if (!PROVIDER_NAME.test(name)) throw new Error(`Invalid model provider name: ${name}`);
-    const base = { name, apiKey: null, authHeader: null, maxTokensParam: "max_tokens", jsonMode: "json_schema" } as const;
+    const base = { name, apiKey: null, authHeader: null, maxTokensParam: "max_tokens", jsonMode: "json_schema", usage: usageConfig(env, name) } as const;
     if (name === "ollama") {
       if (mode === "cloud") throw new Error("Ollama is local-only; list hosted providers in NEWSBEE_MODEL_PROVIDERS for cloud mode");
       return {
@@ -114,6 +157,7 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
       authHeader: blank(env[`${prefix}AUTH_HEADER`]),
       maxTokensParam: enumValue(blank(env[`${prefix}MAX_TOKENS_PARAM`]), ["max_tokens", "max_completion_tokens"] as const, "max_tokens", `${prefix}MAX_TOKENS_PARAM`),
       jsonMode: enumValue(blank(env[`${prefix}JSON_MODE`]), ["json_schema", "json_object"] as const, "json_schema", `${prefix}JSON_MODE`),
+      usage: base.usage,
     };
   });
 }

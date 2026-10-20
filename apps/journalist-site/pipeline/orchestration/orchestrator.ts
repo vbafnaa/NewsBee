@@ -26,6 +26,7 @@ import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
 import { cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
 import { publishToChannels } from "./publish";
+import { expireOverdueRuns } from "./diagnostics";
 import { ACTIVE_RUN_STATUSES, failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
 
 export type OrchestratorDeps = {
@@ -52,6 +53,7 @@ function connectorsOf(deps: OrchestratorDeps) {
 /** Start a run for one location: today and the window come from the location's own timezone. */
 export async function startRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"]) {
   const location = await getLocation(deps.db, locationId);
+  await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   const existing = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (existing) return { run: existing, started: false };
   const today = localToday(location.state);
@@ -335,6 +337,7 @@ export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number;
   const deadline = Date.now() + budgetMs;
   await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_at: now() } }, { upsert: true });
   for (const job of await recoverExpired(deps.db)) await finalFailure(deps, job, job.error ?? "Worker lease expired");
+  await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   let executed = 0;
   const worker = async () => {
     while (Date.now() < deadline && (await runOne(deps, { kinds: options.kinds }))) executed += 1;

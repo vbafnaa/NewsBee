@@ -1,4 +1,5 @@
 import { adminRoute } from "@/lib/admin-api";
+import { expireOverdueRuns } from "@/pipeline/orchestration/diagnostics";
 import { locationHealth } from "@/pipeline/orchestration/health";
 import { runJobs } from "@/pipeline/orchestration/jobs";
 import { getRun } from "@/pipeline/orchestration/runs";
@@ -9,7 +10,8 @@ type Context = { params: Promise<{ runId: string }> };
 /** One run in detail: every source, every job, and every story (held ones with their reasons). */
 export async function GET(request: Request, context: Context) {
   const { runId } = await context.params;
-  return adminRoute(request, async ({ db }) => {
+  return adminRoute(request, async ({ db, settings }) => {
+    await expireOverdueRuns(db, settings.runTimeoutSeconds);
     const run = await getRun(db, runId);
     if (!run) throw new Error(`Unknown run: ${runId}`);
     const entries = run.draft_id
@@ -30,7 +32,7 @@ export async function GET(request: Request, context: Context) {
     }));
     return {
       run,
-      health: await locationHealth(db, run, { id: run.location_id, name: run.location_name }),
+      health: await locationHealth(db, run, { id: run.location_id, name: run.location_name }, { runTimeoutSeconds: settings.runTimeoutSeconds }),
       jobs: (await runJobs(db, runId)).map(({ _id, payload: _payload, ...job }) => ({ id: _id, ...job })),
       stories,
     };

@@ -56,6 +56,10 @@ Example: `NEWSBEE_MODEL_PROVIDERS=gemini,openai`, `NEWSBEE_GEMINI_API_KEY=...`,
 `NEWSBEE_LLM_OPENAI_MODEL=gpt-4.1-mini`, `NEWSBEE_LLM_OPENAI_API_KEY=...`. Cloud mode
 defaults to `gemini` and rejects `ollama`. **Health** shows each provider's status; health
 is failed when none can serve requests and warning when running on a fallback.
+Every provider call is recorded (35-day retention); **Health** shows calls, tokens, 429s
+and estimated cost. Optionally set `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK`,
+`_OUTPUT_COST_PER_MTOK` (USD per million tokens), `_RPM_LIMIT` and `_RPD_LIMIT` to see
+cost and limit warnings (e.g. `NEWSBEE_MODEL_GEMINI_RPM_LIMIT=15`).
 Hosted structured calls reserve at least 4,096 tokens for reasoning and output; story-length
 limits and publication validation remain unchanged.
 
@@ -105,6 +109,10 @@ are available from each job in **Inspect run**. **Health** shows current provide
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
+Runs that aren't progressing are marked **stalled** with the cause (scheduler not
+ticking, rejected scheduler call, worker dispatch failure, retries, expired leases).
+Runs still active after `NEWSBEE_RUN_TIMEOUT_MINUTES` (default 60, `0` disables) are
+failed on the next tick or portal load, so they time out even when the cron is down.
 
 Articles use short reported-style prose (up to 120 words), prefer dates/venues separately,
 and receive complete-headline and unsupported-claim checks with one retry before holding.
@@ -169,6 +177,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` | Authorizes the Vercel Cron call to `/api/pipeline/tick` |
+| `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail runs active longer than this (default 60, `0` disables) |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
 | `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |
 

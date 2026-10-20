@@ -51,4 +51,5 @@ export const COLLECTIONS = {
   wideCache: "wider_source_cache",
   outputChannels: "output_channels",
   heartbeat: "pipeline_heartbeat",
+  modelUsage: "model_usage",
 } as const;

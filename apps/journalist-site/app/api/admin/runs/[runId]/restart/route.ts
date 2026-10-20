@@ -1,5 +1,6 @@
 import { adminRoute, kickPipeline } from "@/lib/admin-api";
 import { currentAdmin } from "@/lib/admin-session";
+import { expireOverdueRuns } from "@/pipeline/orchestration/diagnostics";
 import { startRun } from "@/pipeline/orchestration/orchestrator";
 import { getRun, RunConflict } from "@/pipeline/orchestration/runs";
 
@@ -9,6 +10,7 @@ type Context = { params: Promise<{ runId: string }> };
 export async function POST(request: Request, context: Context) {
   const { runId } = await context.params;
   return adminRoute(request, async (deps) => {
+    await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
     const previous = await getRun(deps.db, runId);
     if (!previous) throw new Error(`Unknown run: ${runId}`);
     if (!["published", "failed", "cancelled"].includes(previous.status)) {

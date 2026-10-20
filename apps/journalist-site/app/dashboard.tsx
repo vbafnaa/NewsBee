@@ -8,6 +8,8 @@ import LocationOnboarding from "./location-onboarding";
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
 type Location = { id: string; name: string; systems: System[]; government: Government | null };
+type RunIssue = { code: string; severity: "info" | "warning" | "failed"; message: string };
+type Diagnostics = { deadline_at: number | null; overdue: boolean; issues: RunIssue[] };
 type LocationHealth = {
   location_id: string;
   location_name: string;
@@ -22,9 +24,11 @@ type LocationHealth = {
   held_reasons: Record<string, number>;
   model_errors: string[];
   error: string | null;
+  diagnostics: Diagnostics | null;
 };
 type Health = {
-  scheduler: { seconds_since_tick: number | null; status: string };
+  scheduler: { seconds_since_tick: number | null; status: string; issues: { channel: string; at: number; message: string }[] };
+  run_timeout_seconds: number | null;
   queue: Record<string, number>;
   model: { provider: string | null; name: string | null; status: string; detail?: string; providers?: Array<{ name: string; model: string | null; status: string }> } | null;
   status: string;
@@ -33,10 +37,11 @@ type Health = {
 };
 type RunSource = { source_id: string; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
 type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[] };
-type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null };
-type Run = { _id: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null };
+type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
+type Run = { _id: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null };
 type RunDetail = {
   run: Run & { draft_id: string | null; window: [string, string]; sources: RunSource[]; error: string | null };
+  health: LocationHealth;
   stories: Story[];
   jobs: Job[];
 };
@@ -44,6 +49,28 @@ type Withdrawal = { story_id: string; reason: string; created_at: number };
 
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 const message = (caught: unknown) => caught instanceof Error ? caught.message : String(caught);
+const ACTIVE = ["collecting", "authoring", "publishing"];
+const stalled = (diagnostics: Diagnostics | null | undefined) => Boolean(diagnostics?.issues.some((issue) => issue.severity === "failed"));
+/** Badge for a run: active runs that cannot advance show as stalled instead of a running stage. */
+function runBadge(status: string, diagnostics: Diagnostics | null | undefined, fallback: string) {
+  if (!ACTIVE.includes(status)) return { tone: fallback, label: status.replaceAll("_", " ") };
+  if (stalled(diagnostics)) return { tone: "failed", label: `stalled · ${status}` };
+  if (diagnostics?.issues.some((issue) => issue.severity === "warning")) return { tone: "warning", label: `${status} · attention` };
+  return { tone: "running", label: status };
+}
+
+function RunIssues({ diagnostics, compact = false }: { diagnostics: Diagnostics | null | undefined; compact?: boolean }) {
+  const issues = (diagnostics?.issues ?? []).filter((issue) => !compact || issue.severity !== "info");
+  if (!issues.length) return null;
+  const shown = compact ? issues.slice(0, 2) : issues;
+  return <ul className="run-issues" aria-label="Run status details">
+    {shown.map((issue, index) => <li key={`${issue.code}-${index}`} className={`run-issue severity-${issue.severity}`}>
+      <span className={`status-badge tone-${issue.severity === "failed" ? "failed" : issue.severity === "warning" ? "warning" : "running"}`}>{issue.severity === "info" ? "info" : issue.severity === "failed" ? "blocked" : "warning"}</span> {issue.message}
+    </li>)}
+    {compact && issues.length > shown.length && <li className="chart-caption">+{issues.length - shown.length} more — inspect the run for details.</li>}
+    {!compact && diagnostics?.deadline_at && !diagnostics.overdue && <li className="chart-caption">Automatic timeout at {time(diagnostics.deadline_at)}.</li>}
+  </ul>;
+}
 
 export default function Dashboard() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -154,6 +181,15 @@ export default function Dashboard() {
     <>
       {error && <p className="alert" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
+      {health && health.scheduler.status !== "ok" && (health.queue.pending ?? 0) > 0 && <p className="alert" role="alert">
+        Scheduler is not running ({health.scheduler.seconds_since_tick === null ? "no tick recorded" : `last tick ${Math.round(health.scheduler.seconds_since_tick / 60)} min ago`}) and {health.queue.pending} job(s) are waiting.
+        Queued work only advances when /api/pipeline/tick is called; configure Vercel Cron or another scheduler.
+        {health.run_timeout_seconds ? ` Stalled runs fail automatically after ${Math.round(health.run_timeout_seconds / 60)} min.` : ""}
+      </p>}
+      {health && health.scheduler.issues.length > 0 && <div className="alert" role="alert">
+        <strong>Pipeline dispatch problems</strong>
+        <ul>{health.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} <span className="chart-caption">({time(issue.at)})</span></li>)}</ul>
+      </div>}
 
       <section className="panel">
         <div className="section-heading">
@@ -166,9 +202,10 @@ export default function Dashboard() {
         <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/health">View visual health &amp; trends &rarr;</Link></div>
         <div className="location-grid">
           {health?.locations.map((row) => {
-            const running = ["collecting", "authoring", "publishing"].includes(row.stage);
+            const running = ACTIVE.includes(row.stage);
+            const badge = runBadge(row.stage, row.diagnostics, row.level);
             return <article className="run-card" key={row.location_id}>
-              <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${running ? "running" : row.level}`}>{row.stage.replaceAll("_", " ")}</span></div>
+              <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
               <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
                 {["Collect", "Author", "Publish"].map((step, index) => {
                   const stage = row.stage === "published" ? 3 : row.stage === "publishing" ? 2 : row.stage === "authoring" ? 1 : row.stage === "collecting" ? 0 : -1;
@@ -177,6 +214,7 @@ export default function Dashboard() {
               </ol>
               <div className="run-counts"><span><strong>{row.sources.completed}/{row.sources.total}</strong> sources completed</span><span><strong>{row.published_items ?? "-"}</strong> published</span><span><strong>{row.held ?? "-"}</strong> held</span></div>
               <p className="chart-caption">Last started: {time(row.started_at)}</p>
+              {running && <RunIssues diagnostics={row.diagnostics} compact />}
               {(row.error || row.failed_sources.length > 0 || row.model_errors.length > 0) && <p className="stage-error">
                 {[row.error, ...row.model_errors, ...row.failed_sources.map((source) => `${source.name}: ${source.error ?? "failed"}`)].filter(Boolean).join("; ")}
               </p>}
@@ -204,15 +242,17 @@ export default function Dashboard() {
         <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages, jobs and results.</p></div></div>
         <div className="table-wrap"><table>
           <thead><tr><th>Location</th><th>Started</th><th>Trigger</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
-          <tbody>{recent.map((run) => <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
+          <tbody>{recent.map((run) => { const badge = runBadge(run.status, run.diagnostics, run.status); return <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
             <td>{run.location_name}</td><td>{time(run.created_at)}</td><td>{run.trigger.kind} · {run.trigger.by}</td>
-            <td><span className={`status-badge tone-${["collecting", "authoring", "publishing"].includes(run.status) ? "running" : run.status}`}>{run.status}</span></td>
-            <td>{run.published ? `${run.published.items} published · ${run.published.held} held` : "—"}</td>
+            <td><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></td>
+            <td>{run.published ? `${run.published.items} published · ${run.published.held} held`
+              : ACTIVE.includes(run.status) ? run.diagnostics?.issues.find((issue) => issue.severity !== "info")?.message ?? "—"
+                : run.status === "failed" && run.error ? run.error : "—"}</td>
             <td><div className="card-actions"><button className="secondary" onClick={() => void openRun(run._id, run.location_id)}>Inspect</button>
               {["collecting", "authoring"].includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
               {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ["collecting", "authoring", "publishing"].includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
             </div></td>
-          </tr>)}</tbody>
+          </tr>; })}</tbody>
         </table></div>
         {!recent.length && <p>No pipeline runs yet.</p>}
       </section>
@@ -236,6 +276,10 @@ export default function Dashboard() {
           </ol>
           <p className="chart-caption">Started {time(detail.run.created_at)} · {detail.run.trigger.kind} by {detail.run.trigger.by} · Finished {time(detail.run.completed_at)} · Run ID {detail.run._id}</p>
           {detail.run.error && <p className="alert">{detail.run.error}</p>}
+          {ACTIVE.includes(detail.run.status) && detail.health?.diagnostics && detail.health.diagnostics.issues.length > 0 && <>
+            <h3>Why this run is {stalled(detail.health.diagnostics) ? "stalled" : "still running"}</h3>
+            <RunIssues diagnostics={detail.health.diagnostics} />
+          </>}
           <h3>Sources</h3>
           <div className="table-wrap"><table>
             <thead><tr><th>Source</th><th>Status</th><th>Result</th><th>Events</th><th>Shortlisted</th><th>Detail</th></tr></thead>
@@ -275,7 +319,7 @@ export default function Dashboard() {
             <tbody>{detail.jobs.map((job) => (
               <tr key={job.id}>
                 <td>{job.kind}</td><td>{job.status}</td><td>{job.attempts}</td>
-                <td>{[job.error, job.log_error && `Log save failed: ${job.log_error}`].filter(Boolean).join("; ") || "—"}</td>
+                <td>{[job.error, job.status === "pending" && job.dispatch_error && (job.dispatch_error_at ?? 0) > (job.dispatched_at ?? 0) && `Dispatch failed: ${job.dispatch_error}`, job.log_error && `Log save failed: ${job.log_error}`].filter(Boolean).join("; ") || "—"}</td>
                 <td>{job.log_file
                   ? <a href={`/api/admin/jobs/${encodeURIComponent(job.id)}/log`} target="_blank" rel="noreferrer">View log</a>
                   : "—"}</td>
