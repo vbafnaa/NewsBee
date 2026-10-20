@@ -248,8 +248,8 @@ A daily quota cannot be solved by backoff; capacity must recover or be increased
 **Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
 for each source, story (with held reasons) and job. Each cloud source collection runs in
 its own authenticated Vercel function invocation; structured per-attempt JSON-line logs
-are stored under `newsbee/.newsbee-pipeline/logs/<run-id>` beneath the configured Drive
-folder and are available from each job in **Inspect run**. **Health** shows current providers,
+are stored under `.newsbee-pipeline/logs/<run-id>` beneath the configured Drive folder
+and are available from each job in **Inspect run**. **Health** shows current providers,
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
@@ -321,7 +321,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Journalist Drive service-account email (`client_email`) |
 | `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Journalist Drive service-account private key (`private_key`) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` (optional alternative) | Full service-account JSON key; takes precedence over the separate variables |
-| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
+| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
@@ -336,10 +336,12 @@ files outside the root directory for the shared code and bundled root `config/` 
 1. In Google Cloud Console, create or select a project, enable the **Google Drive API**,
    and create a service account with a JSON key. The journalist site is configured with
    the key's `client_email` and `private_key` values.
-2. Create a Drive folder for Newsbee's pipeline files. Copy its ID from the URL
-   (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
-   service account's `client_email`, granting **Editor** access. The same account needs
-   access to the output-channel folders where published editions are stored.
+2. Create a **Shared Drive** for Newsbee's pipeline files, then create the pipeline folder
+   inside it. Add the service account as a Shared Drive member with at least **Contributor**
+   access, and copy the pipeline folder ID from its URL
+   (`https://drive.google.com/drive/folders/<folder-id>`). A regular My Drive folder shared
+   with the service account does not give it storage quota; use a Shared Drive or OAuth
+   delegation to a Workspace user for uploads.
 3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
    `GOOGLE_SERVICE_ACCOUNT_EMAIL` with the key's `client_email`,
    `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` with its `private_key`, and
@@ -364,13 +366,17 @@ or the relevant Preview), then **redeploy**; changing a variable does not update
 existing deployment. In **Inspect run**, resume the failed run after redeployment.
 Do not paste credentials into logs, issues, or chat.
 
-The journalist site creates and uses a `newsbee` folder beneath the configured pipeline
-root. Run artifacts are stored in `newsbee/.newsbee-pipeline/`; channel folders created in
-**Output channel** are stored in `newsbee/output-channels/`. Each output channel stores its
+The journalist site uses the configured pipeline folder directly: run artifacts are stored
+in `.newsbee-pipeline/` and new channel folders are created in `output-channels/` beneath
+that folder. It does not create an extra app-level folder. Each output channel stores its
 own Drive folder ID in MongoDB; the reader site reads published editions from that channel
-folder, not directly from the pipeline root. If a channel folder is changed or created
-manually, share it with the service account as well. Existing channel folder IDs are kept;
-the app does not move existing channel data.
+folder, not directly from the pipeline root. Existing channel folder IDs are kept; the app
+does not move existing channel data. Drive API calls support Shared Drives, but the pipeline
+folder must actually be on a Shared Drive for service-account uploads; sharing a My Drive
+folder with the service account alone does not resolve its storage-quota error. If the
+log reports `Service Accounts do not have storage quota`, move or recreate the configured
+pipeline folder inside a Shared Drive and set the service account's membership to at least
+Contributor; then update this folder ID in Vercel and redeploy.
 
 `vercel.mjs` configures the private queue consumer and keeps the optional
 `/api/pipeline/tick` Cron schedule commented out. To enable minute-by-minute recovery,

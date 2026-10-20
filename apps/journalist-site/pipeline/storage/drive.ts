@@ -104,7 +104,13 @@ function checkId(id: string) {
 async function findFile(parentId: string, name: string, mimeType?: string) {
   const query = [`'${quoted(checkId(parentId))}' in parents`, `name = '${quoted(name)}'`, "trashed = false"];
   if (mimeType) query.push(`mimeType = '${mimeType}'`);
-  const params = new URLSearchParams({ q: query.join(" and "), fields: "files(id,name,mimeType)", pageSize: "10" });
+  const params = new URLSearchParams({
+    q: query.join(" and "),
+    fields: "files(id,name,mimeType)",
+    pageSize: "10",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+  });
   const result = await driveRequest<{ files: DriveFile[] }>(`https://www.googleapis.com/drive/v3/files?${params}`);
   return result.files[0];
 }
@@ -115,7 +121,7 @@ export class DriveArtifacts implements ArtifactStore {
   async ensureFolder(parentId: string, name: string) {
     const found = await findFile(parentId, name, FOLDER_MIME);
     if (found) return found.id;
-    const created = await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id", {
+    const created = await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
@@ -125,13 +131,13 @@ export class DriveArtifacts implements ArtifactStore {
 
   async saveText(parentId: string, name: string, value: string, mimeType: string) {
     let file = await findFile(parentId, name);
-    file ??= await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+    file ??= await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, mimeType, parents: [parentId] }),
     });
     const response = await fetch(
-      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media`,
+      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media&supportsAllDrives=true`,
       {
         method: "PATCH",
         headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": `${mimeType}; charset=UTF-8` },
@@ -141,7 +147,10 @@ export class DriveArtifacts implements ArtifactStore {
     );
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 500);
-      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}`);
+      const quotaGuidance = detail.includes("Service Accounts do not have storage quota")
+        ? " The parent folder must be on a Shared Drive where the service account has at least Contributor access; a My Drive folder shared with the account is not sufficient."
+        : "";
+      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}${quotaGuidance}`);
     }
     return file.id;
   }
@@ -152,7 +161,7 @@ export class DriveArtifacts implements ArtifactStore {
 
   async readJson<T>(fileId: string) {
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media`,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media&supportsAllDrives=true`,
       { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
     );
     if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
@@ -161,7 +170,7 @@ export class DriveArtifacts implements ArtifactStore {
 
   async readText(fileId: string) {
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media`,
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media&supportsAllDrives=true`,
       { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
     );
     if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
@@ -176,6 +185,8 @@ export class DriveArtifacts implements ArtifactStore {
         q: `'${quoted(checkId(parentId))}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`,
         fields: "nextPageToken,files(id,name)",
         pageSize: "1000",
+        supportsAllDrives: "true",
+        includeItemsFromAllDrives: "true",
       });
       if (pageToken) params.set("pageToken", pageToken);
       const page = await driveRequest<{ files?: DriveFile[]; nextPageToken?: string }>(`https://www.googleapis.com/drive/v3/files?${params}`);
