@@ -156,6 +156,14 @@ th { font-size: .82rem; }
 .run-counts span { display: grid; gap: .2rem; font-size: .75rem; color: var(--muted); }
 .run-counts strong { color: var(--ink); font-size: 1.2rem; }
 .card-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.job-log-list { display: grid; gap: .7rem; margin-bottom: 1.5rem; }
+.job-log-entry { border: 1px solid var(--line); border-radius: .5rem; padding: .8rem 1rem; min-width: 0; }
+.job-log-entry > summary { display: list-item; }
+.job-log-entry > summary::marker { color: var(--muted); }
+.job-log-entry > summary > span:first-child { display: inline-block; vertical-align: middle; max-width: calc(100% - 8rem); }
+.job-log-entry > summary .status-badge { float: right; }
+.job-log-entry > summary small { display: block; margin-top: .25rem; color: var(--muted); overflow-wrap: anywhere; }
+.job-log-content { overflow: auto; max-height: 26rem; padding: 1rem; border-radius: .4rem; background: #262b2d; color: #f4f0e7; font-size: .78rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .location-settings { margin-top: 1rem; font-size: .85rem; }
 summary { cursor: pointer; }
 .onboarding-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: end; margin-top: 1.2rem; }

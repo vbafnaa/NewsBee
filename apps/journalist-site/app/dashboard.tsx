@@ -35,7 +35,7 @@ type Health = {
   totals: Record<string, number>;
   locations: LocationHealth[];
 };
-type RunSource = { source_id: string; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
+type RunSource = { source_id: string; job_id: string | null; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
 type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[] };
 type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
 type Run = { _id: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null };
@@ -70,6 +70,63 @@ function RunIssues({ diagnostics, compact = false }: { diagnostics: Diagnostics 
     {compact && issues.length > shown.length && <li className="chart-caption">+{issues.length - shown.length} more — inspect the run for details.</li>}
     {!compact && diagnostics?.deadline_at && !diagnostics.overdue && <li className="chart-caption">Automatic timeout at {time(diagnostics.deadline_at)}.</li>}
   </ul>;
+}
+
+function formatJobLog(content: string) {
+  return content.trimEnd().split("\n").map((line) => {
+    try {
+      const record = JSON.parse(line) as Record<string, unknown>;
+      if (!record || typeof record !== "object" || Array.isArray(record)) return line;
+      const { time, level, component, event, ...details } = record;
+      return [time, level, component, event, Object.keys(details).length ? JSON.stringify(details) : null]
+        .filter((part) => part !== null && part !== undefined && part !== "").join("  ");
+    } catch {
+      return line;
+    }
+  }).join("\n");
+}
+
+function JobLog({ job, source, initiallyOpen }: { job: Job; source?: RunSource; initiallyOpen: boolean }) {
+  const [expanded, setExpanded] = useState(initiallyOpen);
+  const [content, setContent] = useState<string | null>(null);
+  const [logError, setLogError] = useState("");
+
+  useEffect(() => {
+    if (!expanded || !job.log_file) return;
+    const controller = new AbortController();
+    setContent(null);
+    setLogError("");
+    void fetch(`/api/admin/jobs/${encodeURIComponent(job.id)}/log`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => null) as { detail?: string } | null;
+          throw new Error(data?.detail ?? `Log unavailable (${response.status})`);
+        }
+        return response.text();
+      })
+      .then(setContent)
+      .catch((caught: unknown) => { if (!controller.signal.aborted) setLogError(message(caught)); });
+    return () => controller.abort();
+  }, [expanded, job.id, job.log_file, job.status, job.attempts]);
+
+  const dispatchError = job.status === "pending" && job.dispatch_error && (job.dispatch_error_at ?? 0) > (job.dispatched_at ?? 0)
+    ? `Dispatch failed: ${job.dispatch_error}` : null;
+  const errors = [...new Set([job.error, source?.error ?? source?.detail, dispatchError].filter(Boolean))];
+
+  return <details className="job-log-entry" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary>
+      <span><strong>{source?.name ?? job.kind.replaceAll("_", " ")}</strong> <small>{job.kind.replaceAll("_", " ")} · {job.id}</small></span>
+      <span className={`status-badge tone-${job.status === "running" || job.status === "pending" ? "running" : job.status}`}>{job.status}</span>
+    </summary>
+    <p className="chart-caption">{job.attempts} {job.attempts === 1 ? "attempt" : "attempts"}
+      {source && ` · ${source.result_status ?? source.status} · ${source.event_count} events · ${source.shortlisted} shortlisted`}
+    </p>
+    {errors.length > 0 && <p className="stage-error">{errors.join("; ")}</p>}
+    {job.log_error && <p className="alert">Log save failed: {job.log_error}</p>}
+    {logError && <p className="alert" role="alert">{logError}</p>}
+    {job.log_file ? content === null && !logError ? <p>Loading log…</p> : content ? <pre className="job-log-content">{formatJobLog(content)}</pre> : !logError && <p className="chart-caption">No log entries recorded.</p>
+      : <p className="chart-caption">{job.status === "pending" ? "Waiting to start." : job.status === "running" ? "Log will be available after this attempt finishes." : "No log recorded for this job."}</p>}
+  </details>;
 }
 
 export default function Dashboard() {
@@ -177,6 +234,8 @@ export default function Dashboard() {
     }));
   }
 
+  const defaultLogId = detail?.jobs.findLast((job) => !!job.log_file)?.id ?? detail?.jobs[0]?.id;
+
   return (
     <>
       {error && <p className="alert" role="alert">{error}</p>}
@@ -239,7 +298,7 @@ export default function Dashboard() {
       </section>
 
       <section className="panel">
-        <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages, jobs and results.</p></div></div>
+        <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages and per-job logs.</p></div></div>
         <div className="table-wrap"><table>
           <thead><tr><th>Location</th><th>Started</th><th>Trigger</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
           <tbody>{recent.map((run) => { const badge = runBadge(run.status, run.diagnostics, run.status); return <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
@@ -280,16 +339,12 @@ export default function Dashboard() {
             <h3>Why this run is {stalled(detail.health.diagnostics) ? "stalled" : "still running"}</h3>
             <RunIssues diagnostics={detail.health.diagnostics} />
           </>}
-          <h3>Sources</h3>
-          <div className="table-wrap"><table>
-            <thead><tr><th>Source</th><th>Status</th><th>Result</th><th>Events</th><th>Shortlisted</th><th>Detail</th></tr></thead>
-            <tbody>{detail.run.sources.map((source) => (
-              <tr key={source.source_id}>
-                <td>{source.name}</td><td>{source.status}</td><td>{source.result_status ?? "—"}</td>
-                <td>{source.event_count}</td><td>{source.shortlisted}</td><td>{source.error ?? source.detail ?? "—"}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
+          <h3>Run log</h3>
+          <div className="job-log-list">{detail.jobs.map((job) =>
+            <JobLog key={job.id} job={job} source={detail.run.sources.find((source) => source.job_id === job.id)}
+              initiallyOpen={job.id === defaultLogId} />
+          )}</div>
+          {!detail.jobs.length && <p>No work has been queued for this run.</p>}
           <h3>Stories</h3>
           <div className="table-wrap"><table>
             <thead><tr><th>Title</th><th>Source</th><th>Tier</th><th>Outcome</th><th>Held because</th><th /></tr></thead>
@@ -313,19 +368,6 @@ export default function Dashboard() {
                 }))}>Restore</button>
             </li>
           ))}</ul>}
-          <h3>Jobs</h3>
-          <div className="table-wrap"><table>
-            <thead><tr><th>Job</th><th>Status</th><th>Attempts</th><th>Error</th><th>Log</th></tr></thead>
-            <tbody>{detail.jobs.map((job) => (
-              <tr key={job.id}>
-                <td>{job.kind}</td><td>{job.status}</td><td>{job.attempts}</td>
-                <td>{[job.error, job.status === "pending" && job.dispatch_error && (job.dispatch_error_at ?? 0) > (job.dispatched_at ?? 0) && `Dispatch failed: ${job.dispatch_error}`, job.log_error && `Log save failed: ${job.log_error}`].filter(Boolean).join("; ") || "—"}</td>
-                <td>{job.log_file
-                  ? <a href={`/api/admin/jobs/${encodeURIComponent(job.id)}/log`} target="_blank" rel="noreferrer">View log</a>
-                  : "—"}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
         </section>
       )}
 

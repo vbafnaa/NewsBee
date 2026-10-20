@@ -25,11 +25,12 @@ use; that first search can take a minute. To publish a town on the reader site, 
 on **Output channel** and save. The reader search also finds imported towns without an
 edition and lets readers register interest.
 
-**Run orchestration** shows recent attempts with their stages, source outcomes, stories,
-jobs and errors. **Cancel run** stops queued jobs and marks a collecting/authoring attempt
-cancelled; a job already executing may finish before its cancellation is reflected in the
-job list. Once publication begins, cancellation is unavailable to avoid partially published
-editions. **Restart run** creates a fresh attempt for a published, failed or cancelled run;
+**Run orchestration** shows recent attempts with their stages, stories and expandable per-job
+logs (including source outcomes and errors). **Cancel run** stops queued jobs and marks a
+collecting/authoring attempt cancelled; a job already executing may finish before its
+cancellation is reflected in the log. Once publication begins, cancellation is unavailable
+to avoid partially published editions. **Restart run** creates a fresh attempt for a
+published, failed or cancelled run;
 the earlier attempt remains in history. Only one run per location can be active at a time.
 When upgrading from the collecting-only index, startup reconciles legacy overlapping
 attempts before installing the active-run index. The furthest-progressed attempt is kept;
