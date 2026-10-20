@@ -313,26 +313,6 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages and per-job logs.</p></div></div>
-        <div className="table-wrap"><table>
-          <thead><tr><th>Location</th><th>Started</th><th>Trigger</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
-          <tbody>{recent.map((run) => { const badge = runBadge(run.status, run.diagnostics, run.status); return <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
-            <td>{run.location_name}</td><td>{time(run.created_at)}</td><td>{run.trigger.kind} · {run.trigger.by}</td>
-            <td><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></td>
-            <td>{run.published ? `${run.published.items} published · ${run.published.held} held`
-              : ACTIVE.includes(run.status) ? run.diagnostics?.issues.find((issue) => issue.severity !== "info")?.message ?? "—"
-                : run.status === "failed" && run.error ? run.error : "—"}</td>
-            <td><div className="card-actions"><button className="secondary" onClick={() => void openRun(run._id, run.location_id)}>Inspect</button>
-              {stageAction(run._id, run.status)}
-              {CANCELLABLE.includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
-              {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
-            </div></td>
-          </tr>; })}</tbody>
-        </table></div>
-        {!recent.length && <p>No pipeline runs yet.</p>}
-      </section>
-
       {detail && (
         <section className="panel">
           <div className="section-heading">
@@ -388,6 +368,26 @@ export default function Dashboard() {
           ))}</ul>}
         </section>
       )}
+
+      <section className="panel">
+        <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages and per-job logs.</p></div></div>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Location</th><th>Started</th><th>Trigger</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
+          <tbody>{recent.map((run) => { const badge = runBadge(run.status, run.diagnostics, run.status); return <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
+            <td>{run.location_name}</td><td>{time(run.created_at)}</td><td>{run.trigger.kind} · {run.trigger.by}</td>
+            <td><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></td>
+            <td>{run.published ? `${run.published.items} published · ${run.published.held} held`
+              : ACTIVE.includes(run.status) ? run.diagnostics?.issues.find((issue) => issue.severity !== "info")?.message ?? "—"
+                : run.status === "failed" && run.error ? run.error : "—"}</td>
+            <td><div className="card-actions"><button className="secondary" onClick={() => void openRun(run._id, run.location_id)}>Inspect</button>
+              {stageAction(run._id, run.status)}
+              {CANCELLABLE.includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
+              {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
+            </div></td>
+          </tr>; })}</tbody>
+        </table></div>
+        {!recent.length && <p>No pipeline runs yet.</p>}
+      </section>
 
       <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
         onAdd={(place) => act(`Added ${place.name}. Review its links on Connectors & links.`, () => api("locations", {
