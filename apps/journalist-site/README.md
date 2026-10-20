@@ -248,8 +248,8 @@ A daily quota cannot be solved by backoff; capacity must recover or be increased
 **Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
 for each source, story (with held reasons) and job. Each cloud source collection runs in
 its own authenticated Vercel function invocation; structured per-attempt JSON-line logs
-are stored under `.newsbee-pipeline/logs/<run-id>` in the configured Drive folder and
-are available from each job in **Inspect run**. **Health** shows current providers,
+are stored under `newsbee/.newsbee-pipeline/logs/<run-id>` beneath the configured Drive
+folder and are available from each job in **Inspect run**. **Health** shows current providers,
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
@@ -364,11 +364,13 @@ or the relevant Preview), then **redeploy**; changing a variable does not update
 existing deployment. In **Inspect run**, resume the failed run after redeployment.
 Do not paste credentials into logs, issues, or chat.
 
-The configured pipeline root holds run artifacts and is the parent folder for channel
-folders created in **Output channel**. Each output channel stores its own Drive folder ID in
-MongoDB; the reader site reads published editions from that channel folder, not directly
-from the pipeline root. If a channel folder is changed or created manually, share it with
-the service account as well.
+The journalist site creates and uses a `newsbee` folder beneath the configured pipeline
+root. Run artifacts are stored in `newsbee/.newsbee-pipeline/`; channel folders created in
+**Output channel** are stored in `newsbee/output-channels/`. Each output channel stores its
+own Drive folder ID in MongoDB; the reader site reads published editions from that channel
+folder, not directly from the pipeline root. If a channel folder is changed or created
+manually, share it with the service account as well. Existing channel folder IDs are kept;
+the app does not move existing channel data.
 
 `vercel.mjs` configures the private queue consumer and keeps the optional
 `/api/pipeline/tick` Cron schedule commented out. To enable minute-by-minute recovery,
