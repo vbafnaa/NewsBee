@@ -1,0 +1,7 @@
+[
+  {"EventId":1,"EventBodyName":"City Council","EventDate":"2026-11-03T00:00:00","EventTime":"7:00 PM","EventLocation":"City Hall, 1 Main St","EventAgendaStatusName":"Final","EventMinutesStatusName":"Draft","EventInSiteURL":"https://exampletown.legistar.com/MeetingDetail.aspx?ID=1","EventComment":"Watch live at www.exampletown.gov/tv. Comments are taken in person."},
+  {"EventId":2,"EventBodyName":"Planning Commission","EventDate":"2026-11-04T00:00:00","EventTime":"7:00 PM","EventLocation":"City Hall","EventAgendaStatusName":"Meeting Cancelled"},
+  {"EventId":3,"EventBodyName":"City Council","EventDate":"2026-10-28T00:00:00","EventTime":"7:00 PM","EventLocation":"City Hall","EventAgendaStatusName":"Final","EventMinutesStatusName":"Draft","EventInSiteURL":"https://exampletown.legistar.com/MeetingDetail.aspx?ID=3"},
+  {"EventId":4,"EventBodyName":"City Council","EventDate":"2026-10-30T00:00:00","EventTime":"7:00 PM"},
+  {"EventId":5,"EventBodyName":"Parks Advisory Board","EventDate":"2026-10-27T00:00:00","EventTime":"7:00 PM","EventAgendaStatusName":"Final"}
+]

@@ -1,16 +1,15 @@
-import { auth, isAdminEmail } from "@/auth";
+import { currentAdmin } from "@/lib/admin-session";
 import { redirect } from "next/navigation";
 import Dashboard from "./dashboard";
 import AdminShell from "./admin-shell";
 
 export default async function Home() {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email || !(await isAdminEmail(email))) redirect("/login");
+  const email = await currentAdmin();
+  if (!email) redirect("/login");
 
   return (
-    <AdminShell email={email} page="dashboard" title="Journalist workspace"
-      description="Manage active sources and run ingestion for onboarded communities.">
+    <AdminShell email={email} page="dashboard" title="Runs & locations"
+      description="Choose a town, add its sources, and follow each edition from collection to publication.">
       <Dashboard />
     </AdminShell>
   );

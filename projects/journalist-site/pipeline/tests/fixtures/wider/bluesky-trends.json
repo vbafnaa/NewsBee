@@ -1,0 +1,10 @@
+{"trends":[
+ {"topic":"seahawks","displayName":"Seattle Seahawks","description":"Game recap","category":"sports","status":"hot","postCount":4200,"startedAt":"2026-10-18T20:00:00Z","link":"/profile/trending/seahawks","actors":[{"handle":"private.bsky.social"}]},
+ {"topic":"politics","displayName":"Seattle city budget","category":"politics","postCount":9000},
+ {"topic":"sensitive","displayName":"Seattle","description":"Hiker found dead","category":"other","postCount":800},
+ {"topic":"small","displayName":"Seattle sunrise","postCount":20},
+ {"topic":"ambiguous","displayName":"Auburn","category":"sports","postCount":4000},
+ {"topic":"statewide","displayName":"Washington state budget","postCount":9000},
+ {"topic":"indirect","displayName":"NFL picks","description":"Seattle Seahawks lead","postCount":9000},
+ {"topic":"unrelated","displayName":"Taylor Swift","postCount":99999}
+]}

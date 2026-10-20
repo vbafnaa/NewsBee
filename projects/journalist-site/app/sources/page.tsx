@@ -1,16 +1,15 @@
-import { auth, isAdminEmail } from "@/auth";
+import { currentAdmin } from "@/lib/admin-session";
 import { redirect } from "next/navigation";
 import AdminShell from "../admin-shell";
 import SourceManagement from "./source-management";
 
 export default async function SourcesPage() {
-  const session = await auth();
-  const email = session?.user?.email;
-  if (!email || !(await isAdminEmail(email))) redirect("/login");
+  const email = await currentAdmin();
+  if (!email) redirect("/login");
 
   return (
-    <AdminShell email={email} page="sources" title="Source management"
-      description="Add, edit, and remove the sources used by Newsbee.">
+    <AdminShell email={email} page="sources" title="Connectors & links"
+      description="Inspect pipeline connectors and their discovered links. Add validated links for an onboarded location.">
       <SourceManagement />
     </AdminShell>
   );

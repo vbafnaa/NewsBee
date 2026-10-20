@@ -1,0 +1,6 @@
+[
+  {"EventItemTitle":"ROLL CALL","EventItemMatterType":null,"EventItemAgendaSequence":1},
+  {"EventItemTitle":"Ordinance on short-term rentals","EventItemMatterType":"Ordinance","EventItemActionName":"Adopted on Second Reading","EventItemPassedFlagName":"Pass","EventItemAgendaSequence":2},
+  {"EventItemTitle":"Resolution to rename Elm Park","EventItemMatterType":"Resolution","EventItemPassedFlagName":"Fail","EventItemAgendaSequence":3},
+  {"EventItemTitle":"Report on snow plowing","EventItemMatterType":"Report or Communication ","EventItemAgendaSequence":4}
+]

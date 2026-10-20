@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { readerData, saveInterestSignup } from "../../../../lib/reader-data";
+import { directoryTown, saveInterestSignup } from "../../../../lib/reader-data";
 
 export const prerender = false;
 
@@ -26,8 +26,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   }
 
   try {
-    const { locations } = await readerData();
-    const location = locations.find((item) => item.id === params.location_id);
+    const location = await directoryTown(params.location_id ?? "");
     if (!location) return Response.json({ detail: "Unknown location" }, { status: 404 });
     await saveInterestSignup(location, email.trim().toLowerCase());
     return Response.json({ status: "saved" });

@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:ics-fixture-1
+SUMMARY:Library class
+DTSTART;TZID=America/Los_Angeles:20261103T150000
+DTEND;TZID=America/Los_Angeles:20261103T160000
+LOCATION:Capitol Hill Branch
+URL:https://library.example/events/ics-fixture-1
+END:VEVENT
+END:VCALENDAR

@@ -1,4 +1,6 @@
-import { MongoClient } from "mongodb";
+import { readFile, readdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { MongoClient, type Db } from "mongodb";
 
 export type EditionItem = {
   story_id?: string | null;
@@ -215,29 +217,69 @@ function parseEdition(value: unknown): Edition | null {
   return value as Edition;
 }
 
+type FolderReader = { list(): Promise<DriveFile[]>; read(file: DriveFile): Promise<unknown> };
+
+function driveFolder(folderId: string): FolderReader {
+  return {
+    async list() {
+      const files: DriveFile[] = [];
+      let pageToken: string | undefined;
+      do {
+        const url = new URL("https://www.googleapis.com/drive/v3/files");
+        url.searchParams.set("q", `'${folderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' in parents and trashed = false`);
+        url.searchParams.set("pageSize", "1000");
+        url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime)");
+        if (pageToken) url.searchParams.set("pageToken", pageToken);
+        const page = await driveGet<{ files?: DriveFile[]; nextPageToken?: string }>(url);
+        files.push(...(page.files ?? []));
+        pageToken = page.nextPageToken;
+      } while (pageToken);
+      return files;
+    },
+    async read(file) {
+      const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`);
+      url.searchParams.set("alt", "media");
+      return driveGet<unknown>(url);
+    },
+  };
+}
+
+/** Local mode: the pipeline's local Drive stand-in, one sub-folder per output channel. */
+export function localDriveRoot() {
+  return process.env.NEWSBEE_LOCAL_DRIVE_DIR ?? resolve(process.cwd(), "..", "..", ".local", "stage2", "drive");
+}
+
+function localFolder(folderId: string): FolderReader {
+  const folder = join(localDriveRoot(), folderId);
+  return {
+    async list() {
+      try {
+        const entries = await readdir(folder, { withFileTypes: true });
+        return entries.filter((entry) => entry.isFile()).map((entry) => ({ id: entry.name, name: entry.name }));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      }
+    },
+    async read(file) {
+      return JSON.parse(await readFile(join(folder, file.id), "utf8"));
+    },
+  };
+}
+
+export function isLocalMode() {
+  return (process.env.NEWSBEE_MODE ?? "local") !== "cloud";
+}
+
 async function loadDriveData(folderId: string) {
-  const files: DriveFile[] = [];
-  let pageToken: string | undefined;
-  do {
-    const url = new URL("https://www.googleapis.com/drive/v3/files");
-    url.searchParams.set("q", `'${folderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' in parents and trashed = false`);
-    url.searchParams.set("pageSize", "1000");
-    url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime)");
-    if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const page = await driveGet<{ files?: DriveFile[]; nextPageToken?: string }>(url);
-    files.push(...(page.files ?? []));
-    pageToken = page.nextPageToken;
-  } while (pageToken);
+  const folder = isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
+  const files = await folder.list();
 
   const jsonFiles = files.filter((file) => file.name.endsWith(".json"));
   const directoryFile = jsonFiles.find((file) => file.name === "locations.json");
-  if (!directoryFile) throw new Error("Drive folder must contain locations.json");
+  if (!directoryFile) throw new Error("Channel folder must contain locations.json");
 
-  const loadFile = async (file: DriveFile) => {
-    const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`);
-    url.searchParams.set("alt", "media");
-    return driveGet<unknown>(url);
-  };
+  const loadFile = (file: DriveFile) => folder.read(file);
   const directoryData = await loadFile(directoryFile);
   if (!isRecord(directoryData) || !Array.isArray(directoryData.locations)) {
     throw new Error("locations.json must contain a locations array");
@@ -255,10 +297,8 @@ async function loadDriveData(folderId: string) {
   }));
 
   const ids = new Set((locations as Location[]).map((location) => location.id));
-  if (editions.some((edition) => !ids.has(edition.location_id))) {
-    throw new Error("An edition references a location missing from locations.json");
-  }
-  return { locations: locations as Location[], editions };
+  // Old artifacts remain archived after a location is deselected from this channel.
+  return { locations: locations as Location[], editions: editions.filter((edition) => ids.has(edition.location_id)) };
 }
 
 export async function readerData(folderId?: string) {
@@ -301,6 +341,36 @@ export function searchLocations(locations: Location[], query: string) {
         left.name.localeCompare(right.name);
     })
     .slice(0, 10);
+}
+
+async function readerDatabase() {
+  const { client, databaseName } = await readerMongoClient();
+  return client.db(databaseName);
+}
+
+type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };
+
+/** The Census directory includes towns that have not been onboarded or published yet. */
+export async function searchTownDirectory(query: string, db?: Db): Promise<Location[]> {
+  const [cityPart, statePart = ""] = query.split(",", 2);
+  const city = cityPart.trim().toLowerCase();
+  const state = statePart.trim().toUpperCase();
+  if (city.length < 2) return [];
+  const database = db ?? await readerDatabase();
+  const places = await database.collection<DirectoryPlace>("census_places").aggregate<DirectoryPlace>([
+    { $match: { name_lower: { $regex: `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` }, ...(state ? { state } : {}) } },
+    { $addFields: { exact: { $cond: [{ $eq: ["$name_lower", city] }, 0, 1] } } },
+    { $sort: { exact: 1, name_lower: 1, state: 1, _id: 1 } },
+    { $limit: 10 },
+    { $project: { _id: 1, name: 1, state: 1 } },
+  ]).toArray();
+  return places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }));
+}
+
+export async function directoryTown(id: string, db?: Db): Promise<Location | null> {
+  const database = db ?? await readerDatabase();
+  const place = await database.collection<DirectoryPlace>("census_places").findOne({ _id: id });
+  return place ? { id: place._id, name: `${place.name}, ${place.state}` } : null;
 }
 
 export async function saveInterestSignup(location: Location, email: string) {

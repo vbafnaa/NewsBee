@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { MongoClient } from "mongodb";
+import { repositoryRoot } from "./pipeline/core/config";
+import { loadSourceConfig, SOURCE_CONFIGS } from "./pipeline/storage/source-configs";
 
 type MongoCache = typeof globalThis & {
   newsbeeMongo?: {
@@ -16,7 +18,8 @@ export type OutputChannel = {
   name: string;
   url: string;
   driveFolderId: string;
-  selectedSourceIds: string[];
+  /** Locations whose editions this channel publishes. */
+  selectedLocationIds: string[];
   enabled: boolean;
 };
 export type ConfiguredSource = {
@@ -37,7 +40,8 @@ type OutputChannelDocument = {
   name: string;
   url: string;
   drive_folder_id: string;
-  selected_source_ids?: string[];
+  selected_location_ids?: string[];
+  published_location_ids?: string[];
   enabled: boolean;
 };
 export type SourceConfigKind = "library" | "government" | "state-newsroom";
@@ -143,16 +147,16 @@ function outputChannelFromDocument(channel: OutputChannelDocument | null): Outpu
     !/^[A-Za-z0-9_-]+$/.test(channel.drive_folder_id) || typeof channel.enabled !== "boolean") {
     throw new Error("The output channel configuration is malformed");
   }
-  const selectedSourceIds = channel.selected_source_ids ?? [];
-  if (!Array.isArray(selectedSourceIds) || selectedSourceIds.some((id) => typeof id !== "string")) {
-    throw new Error("The output channel source selection is malformed");
+  const selectedLocationIds = channel.selected_location_ids ?? [];
+  if (!Array.isArray(selectedLocationIds) || selectedLocationIds.some((id) => typeof id !== "string")) {
+    throw new Error("The output channel location selection is malformed");
   }
   return {
     id: channel._id,
     name: channel.name,
     url: channel.url,
     driveFolderId: channel.drive_folder_id,
-    selectedSourceIds,
+    selectedLocationIds,
     enabled: channel.enabled,
   };
 }
@@ -198,7 +202,7 @@ export async function createOutputChannel(channel: OutputChannel) {
     name: channel.name,
     url: channel.url,
     drive_folder_id: channel.driveFolderId,
-    selected_source_ids: channel.selectedSourceIds,
+    selected_location_ids: channel.selectedLocationIds,
     enabled: channel.enabled,
   });
   return channel;
@@ -216,7 +220,7 @@ export async function updateOutputChannel(
       $set: {
         name: channel.name,
         url: channel.url,
-        selected_source_ids: channel.selectedSourceIds,
+        selected_location_ids: channel.selectedLocationIds,
         enabled: channel.enabled,
       },
     },
@@ -224,9 +228,15 @@ export async function updateOutputChannel(
   return getOutputChannel(channelId);
 }
 
+async function seedSourceConfigs() {
+  const database = await getMongoDatabase();
+  for (const name of SOURCE_CONFIGS) await loadSourceConfig(database, repositoryRoot(), name);
+}
+
 export async function listConfiguredSources(): Promise<ConfiguredSource[]> {
   const databaseName = process.env.MONGODB_DATABASE;
   if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
+  await seedSourceConfigs();
 
   const client = await getMongoClient();
   const configs = await client
@@ -306,6 +316,7 @@ async function mutateSourceConfig(
   const client = await getMongoClient();
   const collection = client.db(databaseName).collection<SourceConfigDocument>("source_configs");
   const configId = sourceConfigId(kind);
+  await seedSourceConfigs();
 
   if (kind !== "state-newsroom") {
     await collection.updateOne(
@@ -442,21 +453,6 @@ export async function deleteConfiguredSource(id: string) {
       newsrooms.splice(index, 1);
       return { ...data, [region]: { ...state, newsrooms } };
     });
-  }
-
-  const database = await getMongoDatabase();
-  const channels = database.collection<OutputChannelDocument>("output_channels");
-  const channel = await channels.findOne({ _id: "reader-site" });
-  if (channel?.selected_source_ids) {
-    await channels.updateOne(
-      { _id: "reader-site" },
-      {
-        $set: {
-          selected_source_ids: channel.selected_source_ids.filter((selectedId) =>
-            selectedId !== id && (!retiredPrefix || !selectedId.startsWith(retiredPrefix))),
-        },
-      },
-    );
   }
 }
 

@@ -1,0 +1,18 @@
+{
+  "WA": {
+    "name": "Washington",
+    "place_suffix": ", Washington",
+    "aliases": ["Washington state", "Seattle Seahawks"],
+    "ambiguous_places": ["Auburn", "Kent"],
+    "locations": {"auburn-wa": {"county": "King County", "point": [47.3073, -122.2285]}},
+    "places": {"Seattle": [47.6062, -122.3321], "Kent": [47.3809, -122.2348], "Mount Rainier": [46.8523, -121.7603]},
+    "newsrooms": [
+      {"name": "Governor", "feed": "https://gov.example/rss.xml"},
+      {"name": "WSDOT", "feed": "https://dot.example/rss.xml"}
+    ],
+    "watchlist": [
+      {"article": "Mount_Rainier", "about": "Mount Rainier is the state's tallest peak.", "place": "Mount Rainier"},
+      {"article": "Seattle_Seahawks", "about": "The Seahawks are Washington's NFL team.", "place": "Seattle"}
+    ]
+  }
+}

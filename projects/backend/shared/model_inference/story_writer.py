@@ -31,7 +31,8 @@ NO_EVENTS_INTRO = (
     "This does not mean nothing is happening locally."
 )
 
-LIST_MARK = re.compile(r"(^|\s)([-*\u2022\u25cf]|\d+[.)])\s")
+LIST_MARK = re.compile(r"(^|\s)([-*\u2022\u25cf])\s")
+NUMBERED_LIST = re.compile(r"(?:^|\n|[:;])\s*\d+[.)]\s")
 WHEN_WORDS = re.compile(
     r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|"
     r"April|May|June|July|August|September|October|November|December)s?\b",
@@ -104,7 +105,7 @@ def style_errors(
         errors.append("foreign_characters")
     if prose and not FINISHED.search(text.strip()):
         errors.append("unfinished_sentence")
-    if LIST_MARK.search(text):
+    if LIST_MARK.search(text) or NUMBERED_LIST.search(text):
         errors.append("list_formatting")
     if dates and WHEN_WORDS.search(text):
         errors.append("repeats_when_where")
