@@ -8,7 +8,6 @@ const RUNS = "data_gathering_runs";
 const INGESTION_STATE = "source_ingestion_state";
 
 export async function createSourceRun(
-  channelId: string,
   driveFolderId: string,
   source: ConfiguredSource,
   locationId: string,
@@ -16,7 +15,6 @@ export async function createSourceRun(
 ) {
   const collection = (await getMongoDatabase()).collection<PipelineRun>(RUNS);
   const existing = await collection.findOne({
-    channel_id: channelId,
     kind: "source",
     source_id: source.id,
     location_id: locationId,
@@ -40,7 +38,6 @@ export async function createSourceRun(
   }
   const run: PipelineRun = {
     _id: randomUUID(),
-    channel_id: channelId,
     drive_folder_id: driveFolderId,
     kind: "source",
     source_id: source.id,
@@ -96,39 +93,36 @@ export async function createEditionRun(
   return run;
 }
 
-export async function getRun(runId: string, channelId: string) {
-  return (await getMongoDatabase())
-    .collection<PipelineRun>(RUNS)
-    .findOne({ _id: runId, channel_id: channelId });
+export async function getRun(runId: string, channelId?: string) {
+  const filter = channelId ? { _id: runId, channel_id: channelId } : { _id: runId };
+  return (await getMongoDatabase()).collection<PipelineRun>(RUNS).findOne(filter);
 }
 
 export async function listRuns(channelId: string, limit = 50) {
   return (await getMongoDatabase())
     .collection<PipelineRun>(RUNS)
-    .find({ channel_id: channelId })
+    .find({ channel_id: channelId, kind: "edition" })
     .sort({ created_at: -1 })
     .limit(limit)
     .toArray();
 }
 
-export async function listSourceRuns(channelId: string, sourceId: string, limit = 30) {
+export async function listSourceRuns(sourceId: string, limit = 30) {
   return (await getMongoDatabase())
     .collection<PipelineRun>(RUNS)
-    .find({ channel_id: channelId, kind: "source", source_id: sourceId })
+    .find({ kind: "source", source_id: sourceId })
     .sort({ created_at: -1 })
     .limit(limit)
     .toArray();
 }
 
 export async function getCompletedSourceRunsBySource(
-  channelId: string,
   locationId: string,
   sourceIds: string[],
 ) {
   return (await getMongoDatabase())
     .collection<PipelineRun>(RUNS)
     .find({
-      channel_id: channelId,
       kind: "source",
       location_id: locationId,
       source_id: { $in: sourceIds },
@@ -139,14 +133,12 @@ export async function getCompletedSourceRunsBySource(
 }
 
 export async function getCompletedSourceRunsById(
-  channelId: string,
   locationId: string,
   runIds: string[],
 ) {
   return (await getMongoDatabase())
     .collection<PipelineRun>(RUNS)
     .find({
-      channel_id: channelId,
       kind: "source",
       location_id: locationId,
       _id: { $in: runIds },
@@ -156,7 +148,7 @@ export async function getCompletedSourceRunsById(
     .toArray();
 }
 
-export async function claimStage(runId: string, channelId: string, stage: PipelineStage) {
+export async function claimStage(run: PipelineRun, stage: PipelineStage) {
   const collection = (await getMongoDatabase()).collection<PipelineRun>(RUNS);
   const staleBefore = new Date(Date.now() - 10 * 60 * 1000);
   const claimable: Filter<PipelineRun> = {
@@ -165,17 +157,19 @@ export async function claimStage(runId: string, channelId: string, stage: Pipeli
       { status: "running", stage_started_at: { $lt: staleBefore } },
     ],
   };
-  const run = await collection.findOne({
-    _id: runId,
-    channel_id: channelId,
-    current_stage: stage,
-    ...claimable,
-    [`stages.${stage}.status`]: { $ne: "completed" },
+  const scope = run.channel_id
+    ? { _id: run._id, channel_id: run.channel_id }
+    : { _id: run._id, channel_id: { $exists: false } };
+  const current = await collection.findOne({
+    $and: [
+      { ...scope, current_stage: stage, [`stages.${stage}.status`]: { $ne: "completed" } },
+      claimable,
+    ],
   });
-  if (!run) return null;
+  if (!current) return null;
   const now = new Date();
   const result = await collection.updateOne(
-    { _id: runId, channel_id: channelId, current_stage: stage, ...claimable },
+    { $and: [{ ...scope, current_stage: stage }, claimable] },
     {
       $set: {
         status: "running",
@@ -187,7 +181,7 @@ export async function claimStage(runId: string, channelId: string, stage: Pipeli
       $unset: { [`stages.${stage}.error`]: "", [`stages.${stage}.completed_at`]: "" },
     },
   );
-  return result.modifiedCount === 1 ? run : null;
+  return result.modifiedCount === 1 ? current : null;
 }
 
 export async function finishStage(
@@ -205,7 +199,9 @@ export async function finishStage(
   };
   const stages = { ...run.stages, [stage]: stageRecord };
   await (await getMongoDatabase()).collection<PipelineRun>(RUNS).updateOne(
-    { _id: run._id, channel_id: run.channel_id },
+    run.channel_id
+      ? { _id: run._id, channel_id: run.channel_id }
+      : { _id: run._id, channel_id: { $exists: false } },
     {
       $set: {
         stages,
@@ -219,10 +215,9 @@ export async function finishStage(
 
   if (run.kind === "source" && (stage === "gather" || stage === "normalize") && run.source_id) {
     const collection = (await getMongoDatabase()).collection<{ _id: string }>(INGESTION_STATE);
-    const sourceKey = `${run.channel_id}:${run.source_id}:${run.location_id}`;
+    const sourceKey = `${run.source_id}:${run.location_id}`;
     const updates = stage === "gather"
       ? {
-          channel_id: run.channel_id,
           source_id: run.source_id,
           location_id: run.location_id,
           last_ingested_at: now,
@@ -244,7 +239,9 @@ export async function failStage(run: PipelineRun, stage: PipelineStage, error: u
   const now = new Date();
   const detail = error instanceof Error ? error.message : String(error);
   await (await getMongoDatabase()).collection<PipelineRun>(RUNS).updateOne(
-    { _id: run._id, channel_id: run.channel_id },
+    run.channel_id
+      ? { _id: run._id, channel_id: run.channel_id }
+      : { _id: run._id, channel_id: { $exists: false } },
     {
       $set: {
         status: "failed",

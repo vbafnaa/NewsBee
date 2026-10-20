@@ -64,6 +64,7 @@ p, small, .muted { color: var(--muted); }
 .source-summary p { margin: .3rem 0; }
 .source-type { color: var(--accent); font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .source-actions { display: flex; gap: .5rem; }
+.channel-picker { min-width: 16rem; }
 .button { display: inline-flex; min-height: 2.6rem; align-items: center; padding: .55rem .9rem; border: 1px solid var(--accent); border-radius: .35rem; background: var(--accent); color: #fff; font-weight: 650; text-decoration: none; }
 .button.secondary { border-color: #a69d8e; background: transparent; color: var(--ink); }
 .artifact-preview { max-height: 32rem; overflow: auto; padding: 1rem; border: 1px solid var(--line); border-radius: .35rem; background: #f3efe7; white-space: pre-wrap; overflow-wrap: anywhere; }

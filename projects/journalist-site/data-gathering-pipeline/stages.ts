@@ -59,7 +59,6 @@ export async function executeStage(run: PipelineRun, stage: PipelineStage) {
   const folder = await editionRunFolder(run);
   if (stage === "rank") {
     const sourceRuns = await getCompletedSourceRunsById(
-      run.channel_id,
       run.location_id,
       [...new Set(run.source_run_ids ?? [])],
     );

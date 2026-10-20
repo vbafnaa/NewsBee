@@ -23,12 +23,17 @@ Set these environment variables before running or deploying:
   `GOOGLE_SERVICE_ACCOUNT_JSON`: server-only service-account credentials used by the
   journalist site to read and write pipeline artifacts in Google Drive. Use a dedicated
   account separate from the reader's service account, and grant this account Editor access
-  to the output channel's Drive folder. Keep the reader site's service account read-only.
+  to the shared pipeline Drive folder and each output channel's Drive folder. Keep the
+  reader site's service account read-only.
+- `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID`: Google Drive folder ID shared across source ingestion
+  and output-channel aggregation. Place a `locations.json` file containing the configured
+  location IDs/names in this folder, and grant the journalist service account Editor access.
 - `NEWSBEE_GEMINI_API_KEY` (or `GOOGLE_AI_STUDIO_API_KEY`): Google AI Studio API key for
   Gemini-powered story ranking and edition writing. This must stay server-side and should
   never use a `NEXT_PUBLIC_` variable.
 - `NEWSBEE_GEMINI_MODEL` (optional): Gemini model name; defaults to `gemini-2.5-flash`.
-- `NEWSBEE_READER_SITE_URL` (optional): initial reader URL inserted into `output_channels` the first time an administrator opens Output channel. Defaults to `https://newsbee-reader-site.vercel.app`.
+- `NEWSBEE_READER_SITE_URL` (optional): initial reader URL inserted into the default
+  `reader-site` output channel. Defaults to `https://newsbee-reader-site.vercel.app`.
 - `BACKEND_API_URL`: backend origin, for example `https://api.example.com`.
 - `ADMIN_API_TOKEN`: private server-to-server token; must match the backend's
   `NEWSBEE_ADMIN_API_TOKEN` and be at least 32 ASCII characters.
@@ -55,27 +60,33 @@ platforms, and state newsroom feeds from the MongoDB `source_configs` collection
 changes update those MongoDB documents. The existing Python worker continues to use the
 checked-in configuration files; the new TypeScript staged pipeline reads MongoDB source
 configs. The dashboard's separate onboarded-location settings use the backend
-API. It also triggers ingestion, shows job status, and links to the `/output-channel` page.
-That page manages the `reader-site` document in `output_channels`; disabling the channel
-makes the reader's edition API routes return HTTP 503 until it is re-enabled. The page also
-stores the Google Drive folder ID in `drive_folder_id`, which the reader site uses to locate
-its `locations.json` and edition JSON files. Share that folder with the reader site's Google
-service account as a Viewer. There are no other output destinations or separate editorial
-approval workflow.
+API. It also triggers legacy backend ingestion, shows job status, and links to the
+`/output-channel` page. That page manages documents in `output_channels`; disabling a
+channel makes the corresponding reader's edition API routes return HTTP 503 until it is
+re-enabled. A new channel gets a Drive folder created automatically under the shared
+pipeline folder's `output-channels` subfolder. Its folder ID is assigned by Drive and is
+read-only in the admin UI. Share each new channel folder with that reader site's Google
+service account as a Viewer. Configure each reader deployment with its channel ID using
+`NEWSBEE_OUTPUT_CHANNEL_ID`.
 
-The output-channel page also stores `selected_source_ids` in `output_channels` and provides
-manual, one-request-at-a-time source and edition stages. Source artifacts live under the
-configured channel folder at
+The output-channel page also stores `selected_source_ids` in `output_channels`; these IDs
+control which independently ingested sources are included when creating a channel edition.
+This is a two-phase flow: first, source runs are not associated with an output channel and
+are queued/advanced from their per-source management pages, with each API request running
+one stage; second, each output channel selects completed source runs and queues an
+aggregation/edition run for its own location and destination. Source artifacts
+live under the shared `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` folder at
 `.newsbee-pipeline/sources/<source-id>/<run-id>/`; edition intermediate artifacts live under
-`.newsbee-pipeline/editions/<location-id>/<run-id>/`. Each run folder contains the JSON
-artifact produced by each completed stage. Run status, stage history, and artifact file IDs
-are stored in MongoDB's `data_gathering_runs` collection; Drive is used only for pipeline
-data artifacts. Only published edition JSON files are
-written to the Drive folder root for the reader site. Source-run stages are `gather` and
-`normalize`; channel edition stages are `rank`, `write`, and `publish`. A successful gather
-records the period and timestamp in `source_ingestion_state`; every stage's status and Drive
-artifact ID is recorded in `data_gathering_runs`. Each run snapshots its channel's Drive
-folder ID so all of its later stages continue using the same folder.
+each output channel's Drive folder at `.newsbee-pipeline/editions/<location-id>/<run-id>/`.
+Each run folder contains the JSON artifact produced by each completed stage. Run status,
+stage history, and artifact file IDs are stored in MongoDB's `data_gathering_runs` collection;
+Drive is used for pipeline data artifacts. Only published edition JSON files are written to
+the output channel's Drive folder root for the reader site. Source-run stages are `gather`
+and `normalize`; channel edition stages are `rank`, `write`, and `publish`. A successful
+gather records the period and timestamp in `source_ingestion_state`. Source-run documents
+store the shared pipeline folder ID; edition runs snapshot their output channel's folder ID.
+Keep `locations.json` in the reader channel folder for the reader site, and place a copy in
+the shared pipeline folder for source-ingestion and aggregation location selection.
 
 The TypeScript pipeline currently supports the configured RSS/Atom, iCalendar, JSON-LD,
 Legistar, and CivicClerk inputs. Washington state-specific filtering lives under
@@ -88,7 +99,7 @@ worker remains unchanged.
 
 Each configured source also has a management page at `/sources/<source-id>`, linked from
 the source list. It shows the source's ingestion history and recent pipeline runs, allows an
-admin to queue a source run when it is selected for the reader channel, and exposes the
+admin to queue a source run independently of any output channel, and exposes the
 current gather/normalize stage as a separate action. Completed Drive artifacts can be
 previewed per run; previews are fetched only when opened.
 
