@@ -1,5 +1,6 @@
 import { createSign } from "node:crypto";
 import { getOutputChannel } from "@/auth";
+import type { PipelineRun } from "./types";
 
 type DriveFile = { id: string; name?: string; mimeType?: string };
 type ServiceAccount = { client_email?: string; private_key?: string };
@@ -98,6 +99,20 @@ async function ensureFolder(parentId: string, name: string) {
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
   });
   return created.id;
+}
+
+function sourceFolderName(sourceId: string) {
+  const safe = sourceId.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 90);
+  if (!safe) throw new Error("Source identifier cannot be used as a Drive folder name");
+  return safe;
+}
+
+export async function pipelineRunFolder(run: PipelineRun) {
+  const kind = run.kind === "source" ? "sources" : "editions";
+  const name = run.kind === "source"
+    ? sourceFolderName(run.source_id ?? "")
+    : run.location_id;
+  return pipelineFolder(run.drive_folder_id, kind, name, run._id);
 }
 
 export async function pipelineFolder(driveFolderId: string, kind: "sources" | "editions", name: string, runId?: string) {
