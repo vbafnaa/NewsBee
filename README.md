@@ -87,7 +87,9 @@ The reader uses MongoDB and a Drive service account with Viewer access to its co
 output-channel folder; keep all credentials server-side.
 
 Full environment and setup details: [journalist/pipeline](apps/journalist-site/README.md),
-[reader](apps/reader-site/README.md), [runtime boundaries](Docs/production-architecture-decisions.md).
+[reader](apps/reader-site/README.md), [runtime boundaries](Docs/production-architecture-decisions.md),
+and the [operations inventory](Docs/operations-inventory.md) (project IDs, service accounts,
+Drive folders and deployment verification gaps).
 
 ## Develop
 
