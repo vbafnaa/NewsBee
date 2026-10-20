@@ -318,7 +318,9 @@ removing manual links. Legacy global source configuration is read-only through t
 | `NEWSBEE_MODE=cloud` | Use Drive and require Google sign-in |
 | `MONGODB_URI`, `MONGODB_DATABASE` | MongoDB Atlas |
 | `NEWSBEE_MODEL_PROVIDERS` plus each provider's variables (see Model providers) | LLM APIs, in fallback order |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_EMAIL` and `_PRIVATE_KEY`) | Drive writer (Editor on the folders below) |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Journalist Drive service-account email (`client_email`) |
+| `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | Journalist Drive service-account private key (`private_key`) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` (optional alternative) | Full service-account JSON key; takes precedence over the separate variables |
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
@@ -332,36 +334,32 @@ files outside the root directory for the shared code and bundled root `config/` 
 ### Configure Google Drive
 
 1. In Google Cloud Console, create or select a project, enable the **Google Drive API**,
-   and create a service account with a JSON key.
+   and create a service account with a JSON key. The journalist site is configured with
+   the key's `client_email` and `private_key` values.
 2. Create a Drive folder for Newsbee's pipeline files. Copy its ID from the URL
    (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
    service account's `client_email`, granting **Editor** access. The same account needs
    access to the output-channel folders where published editions are stored.
 3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
-   `GOOGLE_SERVICE_ACCOUNT_JSON` containing the JSON key, and
-   `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` containing the root folder ID. Alternatively, set
-   `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` instead of the
-   JSON variable. Keep credentials in Vercel's encrypted environment variables; never commit
-   the key.
+   `GOOGLE_SERVICE_ACCOUNT_EMAIL` with the key's `client_email`,
+   `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` with its `private_key`, and
+   `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` with the root folder ID. If
+   `GOOGLE_SERVICE_ACCOUNT_JSON` is already set, remove it: that variable takes precedence
+   over the separate email and private-key values. Keep credentials in Vercel's encrypted
+   environment variables; never commit the key.
 4. Redeploy the journalist site so the variables take effect.
 
-If publishing fails with `author_finish failed: GOOGLE_SERVICE_ACCOUNT_JSON must
-contain valid service-account JSON`, the configured value could not be parsed;
-this happens before Google authentication or Drive folder permission checks.
-In Vercel **Settings > Environment Variables**, set the journalist project's
-`GOOGLE_SERVICE_ACCOUNT_JSON` to the **entire contents** of the downloaded
-service-account key file, including `{` and `}`. Use raw JSON (one line or
-pretty-printed), not the filename, an API key, an OAuth client secret, or a
-`GOOGLE_SERVICE_ACCOUNT_JSON=...` assignment. Preserve the private key's `\n`
-escapes inside JSON strings. Single-quoted JSON and a JSON-encoded string are
-also accepted, but raw JSON is preferred.
+Set `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` to the `private_key` value (actual newlines or
+literal `\n` are accepted) and `GOOGLE_SERVICE_ACCOUNT_EMAIL` to the matching
+`client_email`. If publishing reports a `GOOGLE_SERVICE_ACCOUNT_JSON` parsing error,
+remove that variable so the journalist site uses the separate email and private key.
+For deployments that intentionally use JSON instead, set `GOOGLE_SERVICE_ACCOUNT_JSON`
+to the **entire contents** of the downloaded key file, including `{` and `}`. Use raw
+JSON (one line or pretty-printed), not the filename, an API key, an OAuth client secret,
+or a `GOOGLE_SERVICE_ACCOUNT_JSON=...` assignment. Preserve the private key's `\n`
+escapes inside JSON strings.
 
-Alternatively, **remove** `GOOGLE_SERVICE_ACCOUNT_JSON` and configure
-`GOOGLE_SERVICE_ACCOUNT_EMAIL` with the key's `client_email` and
-`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` with its `private_key` (actual newlines or
-literal `\n` are accepted). A non-empty JSON variable takes precedence over the
-separate variables; invalid JSON never silently falls back to a different identity.
-Apply the change to the environment serving the failing deployment (Production
+Apply credential changes to the environment serving the failing deployment (Production
 or the relevant Preview), then **redeploy**; changing a variable does not update an
 existing deployment. In **Inspect run**, resume the failed run after redeployment.
 Do not paste credentials into logs, issues, or chat.
