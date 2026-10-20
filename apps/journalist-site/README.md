@@ -345,6 +345,27 @@ files outside the root directory for the shared code and bundled root `config/` 
    the key.
 4. Redeploy the journalist site so the variables take effect.
 
+If publishing fails with `author_finish failed: GOOGLE_SERVICE_ACCOUNT_JSON must
+contain valid service-account JSON`, the configured value could not be parsed;
+this happens before Google authentication or Drive folder permission checks.
+In Vercel **Settings > Environment Variables**, set the journalist project's
+`GOOGLE_SERVICE_ACCOUNT_JSON` to the **entire contents** of the downloaded
+service-account key file, including `{` and `}`. Use raw JSON (one line or
+pretty-printed), not the filename, an API key, an OAuth client secret, or a
+`GOOGLE_SERVICE_ACCOUNT_JSON=...` assignment. Preserve the private key's `\n`
+escapes inside JSON strings. Single-quoted JSON and a JSON-encoded string are
+also accepted, but raw JSON is preferred.
+
+Alternatively, **remove** `GOOGLE_SERVICE_ACCOUNT_JSON` and configure
+`GOOGLE_SERVICE_ACCOUNT_EMAIL` with the key's `client_email` and
+`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` with its `private_key` (actual newlines or
+literal `\n` are accepted). A non-empty JSON variable takes precedence over the
+separate variables; invalid JSON never silently falls back to a different identity.
+Apply the change to the environment serving the failing deployment (Production
+or the relevant Preview), then **redeploy**; changing a variable does not update an
+existing deployment. In **Inspect run**, resume the failed run after redeployment.
+Do not paste credentials into logs, issues, or chat.
+
 The configured pipeline root holds run artifacts and is the parent folder for channel
 folders created in **Output channel**. Each output channel stores its own Drive folder ID in
 MongoDB; the reader site reads published editions from that channel folder, not directly
