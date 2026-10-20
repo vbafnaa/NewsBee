@@ -9,7 +9,6 @@ import { discoverGovernmentWithMethod, overrides, sourceId, USER_AGENT, PAST_DAY
 import * as civicclerk from "./civicclerk";
 import * as legistar from "./legistar";
 import { outcome, preview, type Meeting, type MeetingFacts } from "./meetings";
-import { mentions } from "../wider/regions";
 import { communityEvidence } from "../community";
 
 const NO_PLATFORM = new Set(["unresolved_website", "no_platform", "blocked", "failed"]);
@@ -22,10 +21,8 @@ function jurisdiction(location: LocationProfile) { return location.community?.pa
 function sourceName(location: LocationProfile) { return `${jurisdiction(location)} public meetings${location.community ? ` affecting ${location.community.name}` : ""}`; }
 export function scopeMeeting(meeting: Meeting, location: LocationProfile): Meeting {
   if (!location.community) return meeting;
-  const terms = [location.community.name, ...location.community.coverage_terms];
   // The meeting's venue (often City Hall) is not evidence of neighborhood impact.
-  const bodyMatches = terms.some((term) => mentions(meeting.body, term));
-  const items = meeting.items.filter((item) => bodyMatches || communityEvidence(location, [item.title]));
+  const items = meeting.items.filter((item) => communityEvidence(location, [meeting.body, item.title]));
   return { ...meeting, items, community_relevance: items.flatMap((item) => {
     const evidence = communityEvidence(location, [meeting.body, item.title]);
     return evidence ? [evidence] : [];

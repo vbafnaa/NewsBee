@@ -6,13 +6,13 @@ import { USER_AGENT } from "../connectors/fetcher";
 import { logger } from "../core/log";
 
 export type GeographicDocument = GeographicPlace & { _id: string; name_lower: string; fetched_at: number };
-type SearchCache = { _id: string; results: string[]; expires_at: number };
+type SearchCache = { _id: string; results: string[]; expires_at: Date };
 type Lease = { _id: string; owner?: string; expires_at: number };
 const CACHE = "geographic_search_cache", LEASES = "geographic_search_leases";
 const log = logger("communities.geocoder");
 
 async function cachedPlaces(db: Db, key: string) {
-  const cached = await db.collection<SearchCache>(CACHE).findOne({ _id: key, expires_at: { $gt: Date.now() } });
+  const cached = await db.collection<SearchCache>(CACHE).findOne({ _id: key, expires_at: { $gt: new Date() } });
   if (!cached) return null;
   const docs = await db.collection<GeographicDocument>(GEOGRAPHIC_PLACES).find({ _id: { $in: cached.results } }).toArray();
   if (docs.length !== cached.results.length) {
@@ -37,6 +37,7 @@ export async function searchGeography(db: Db, query: string, transport: HttpTran
   url.searchParams.append("layer", "locality");
   url.searchParams.append("layer", "city");
   const key = createHash("sha256").update(url.toString().toLowerCase()).digest("hex");
+  await db.collection<SearchCache>(CACHE).createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 });
   const places = db.collection<GeographicDocument>(GEOGRAPHIC_PLACES);
   const cached = await cachedPlaces(db, key);
   if (cached) return cached;
@@ -67,7 +68,7 @@ export async function searchGeography(db: Db, query: string, transport: HttpTran
       await places.replaceOne({ _id: place.id }, { ...place, name_lower: place.name.toLowerCase(), fetched_at: Date.now() }, { upsert: true });
     }
     await db.collection<SearchCache>(CACHE).replaceOne({ _id: key }, {
-      results: results.map((place) => place.id), expires_at: Date.now() + (results.length ? 7 * 86400_000 : 3600_000),
+      results: results.map((place) => place.id), expires_at: new Date(Date.now() + (results.length ? 7 * 86400_000 : 3600_000)),
     }, { upsert: true });
     log.info("geographic_search_completed", { results: results.length, provider: url.hostname });
     return results;

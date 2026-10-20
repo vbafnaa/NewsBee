@@ -85,7 +85,10 @@ area uncertainty and discovery gaps. Additional validated
 publisher RSS/Atom feeds can be added with the **Community and state newsrooms** connector.
 All normal date, safety and editorial checks still apply. Broad citywide policy changes
 without community/venue/geographic evidence are intentionally omitted. Retained candidate
-facts record the evidence method and matches; editors should select coverage terms
+facts record the evidence method and matches. RSS/Atom items can supply validated
+GeoRSS/WGS84 point coordinates; an item's coordinates are not inferred from a publisher
+office or a council meeting venue. Generic names such as "Downtown" need a parent
+jurisdiction mention or stronger venue/geographic evidence. Editors should select coverage terms
 carefully to balance missed stories against false positives.
 
 Optional reviewed overrides live in `config/communities.json` and are seeded once into the
@@ -115,6 +118,10 @@ instances with at least a 1.1-second cooldown. Provider errors are surfaced, not
 as successful empty searches. Results are US-only settlement/district features;
 businesses, parks and other POIs are excluded. Responses are size/time bounded.
 The UI attributes OpenStreetMap contributors; stored records retain attribution.
+
+Cache entries expire automatically; resolved place identities remain available for saved
+locations and reader interest. Provider-backed onboarding does not require a Census
+import; a failed library reference download is reported as a source gap.
 
 The public Photon demo has fair-use limits and no availability guarantee. For production
 traffic, configure a hosted or self-managed Photon endpoint and follow its usage policy.

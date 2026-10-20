@@ -10,14 +10,14 @@ const log = logger("communities.setup");
 type SetupLease = { _id: string; owner: string; expires_at: number };
 
 /** Load missing reference data once, with a cross-instance lease and explicit failure. */
-export async function ensureDirectories(db: Db, transport: HttpTransport = fetchTransport, libraryCoordinates = false) {
+export async function ensureDirectories(db: Db, transport: HttpTransport = fetchTransport, options: { libraryCoordinates?: boolean; skipCensus?: boolean } = {}) {
   const ready = async () => {
     const [place, system, outlet] = await Promise.all([
       db.collection(COLLECTIONS.places).findOne({}, { projection: { _id: 1 } }),
-      db.collection(COLLECTIONS.libraryOutlets).findOne({ type: "system", ...(libraryCoordinates ? { coordinate_schema: 1 } : {}) }, { projection: { _id: 1 } }),
+      db.collection(COLLECTIONS.libraryOutlets).findOne({ type: "system", ...(options.libraryCoordinates ? { coordinate_schema: 1 } : {}) }, { projection: { _id: 1 } }),
       db.collection(COLLECTIONS.libraryOutlets).findOne({ type: "outlet" }, { projection: { _id: 1 } }),
     ]);
-    return { places: !!place, libraries: !!system && !!outlet };
+    return { places: options.skipCensus || !!place, libraries: !!system && !!outlet };
   };
   const current = await ready();
   if (current.places && current.libraries) return;

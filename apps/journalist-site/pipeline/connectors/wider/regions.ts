@@ -1,6 +1,7 @@
 import { httpsLink } from "../common";
 import type { LocationProfile } from "../types";
 import { communityEvidence, mentions } from "../community";
+import type { Point as GeographicPoint } from "../../../../../shared/geography";
 export { mentions } from "../community";
 
 export const LOCAL_KM = 15;
@@ -64,8 +65,8 @@ function named(place: Region, texts: Array<string | null | undefined>, name: str
   return texts.some((text) => [place.state_name, place.state_code, place.county].some((anchor) => mentions(text, anchor)));
 }
 
-export function tierFor(place: Region, texts: Array<string | null | undefined>, qualified = false): "local" | "region" | "nearby" | null {
-  if (place.community_location) return communityEvidence(place.community_location, texts) ? "local" : null;
+export function tierFor(place: Region, texts: Array<string | null | undefined>, qualified = false, coordinates?: GeographicPoint): "local" | "region" | "nearby" | null {
+  if (place.community_location) return communityEvidence(place.community_location, texts, coordinates) ? "local" : null;
   if (place.community_terms) return [place.town, ...place.community_terms].some((name) => texts.some((text) => mentions(text, name))) ? "local" : null;
   if (named(place, texts, place.town, qualified)) return "local";
   if (place.county && texts.some((text) => mentions(text, place.county))) return "region";
@@ -73,8 +74,8 @@ export function tierFor(place: Region, texts: Array<string | null | undefined>, 
   return null;
 }
 
-export function itemTier(place: Region, title: string | null | undefined, body: string | null | undefined, qualified = false) {
-  const tier = tierFor(place, [title, body], qualified);
+export function itemTier(place: Region, title: string | null | undefined, body: string | null | undefined, qualified = false, coordinates?: GeographicPoint) {
+  const tier = tierFor(place, [title, body], qualified, coordinates);
   if (tier === "nearby" && tierFor(place, [title], qualified) !== "nearby") return null;
   return tier;
 }

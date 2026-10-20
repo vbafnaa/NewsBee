@@ -143,13 +143,13 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
           skipped.outside_news_window = (skipped.outside_news_window ?? 0) + 1; continue;
         }
         if (sensitive(item.title, item.summary)) { skipped.sensitive_topic = (skipped.sensitive_topic ?? 0) + 1; continue; }
-        const tier = itemTier(place, item.title, item.summary, true);
+        const tier = itemTier(place, item.title, item.summary, true, item.coordinates);
         if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }
         if (kept >= MAX_PER_NEWSROOM) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
         kept++;
         facts.push(createNewsFacts({ source_event_id: sha256(item.id).slice(0, 16), title: item.title, event_date: day, schedule_text: publishedText(day), venue: newsroom.name,
           source_url: item.link, description: item.summary, kind: "state_news", tier, section: section(place, tier), signals: { publisher: newsroom.name },
-          ...(context.location.community ? { community_relevance: communityEvidence(context.location, [item.title, item.summary]) } : {}) }));
+          ...(context.location.community ? { community_relevance: communityEvidence(context.location, [item.title, item.summary], item.coordinates) } : {}) }));
       }
     }
     const ok = newsrooms.length - Object.values(failures).reduce((a, b) => a + b, 0);
@@ -158,7 +158,7 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
     for (const fact of facts) tiers[fact.tier as keyof typeof tiers]++;
     record.status = status;
     record.detail = place.community_terms
-      ? `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items explicitly name ${place.town} or a reviewed community coverage term`
+      ? `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items have ${place.town} community, selected-venue or geographic evidence`
       : `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items near ${place.town} (${tiers.local} name the town, ${tiers.region} the county, ${tiers.nearby} a nearby place)`;
     record.response_sha256 = ok ? digest.digest("hex") : null; record.event_count = facts.length;
     record.skipped_unusable = skipped;

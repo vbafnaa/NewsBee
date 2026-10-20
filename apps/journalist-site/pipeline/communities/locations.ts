@@ -23,6 +23,7 @@ export const MANAGED_SOURCE_DETAIL = "Managed in Journalist site";
 export const DISABLED_GOVERNMENT_DETAIL = "Disabled in Journalist site";
 export type WebsiteOverride = { name: string; website: string };
 export type OnboardOptions = {
+  discoveryGaps?: string[];
   settings?: Pick<Settings, "root">;
   overrides?: Record<string, WebsiteOverride>;
   discoverGovernment?: (profile: LocationProfile) => Promise<GovernmentSource>;
@@ -82,7 +83,7 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
   }
   const { systems, edition } = geographic && !reviewed ? await systemsInArea(db, geographic)
     : await systemsForPlace(db, place?._id ?? community!.parent_id, community?.library_branches);
-  const gaps: string[] = [];
+  const gaps = [...(options.discoveryGaps ?? [])];
   if (community && reviewed) {
     const missing = community.library_branches.filter((name) => !systems.some((system) => system.branches.some((branch) => nameKey(branch.name) === nameKey(name))));
     if (missing.length) gaps.push(`Configured library branches missing from the directory: ${missing.join(", ")}. No citywide fallback was applied.`);

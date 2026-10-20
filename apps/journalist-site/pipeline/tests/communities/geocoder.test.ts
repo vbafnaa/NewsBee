@@ -6,15 +6,23 @@ import { importLibraryDirectory, systemsInArea } from "../../communities/directo
 import { onboardLocation, getLocation } from "../../communities/locations";
 import { discoverCommunityNews, feedLinks } from "../../communities/news-discovery";
 import { communityEvidence } from "../../connectors/community";
+import { parseNewsFeed } from "../../connectors/wider/adapters";
+import { itemTier, resolveRegion } from "../../connectors/wider/regions";
+import { stateNewsConnector } from "../../connectors/wider";
+import { Fetcher } from "../../connectors/fetcher";
+import { logger } from "../../core/log";
+import { loadSettings } from "../../core/config";
 import { searchTownDirectory, directoryTown } from "../../../../reader-site/src/lib/reader-data";
 import { GET as searchRoute } from "@/app/api/admin/places/route";
+import { POST as onboardRoute } from "@/app/api/admin/locations/route";
 import { withMongo } from "../support/mongo";
 import { ReplayTransport } from "../support/replay";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34" }]) }));
 const state = vi.hoisted(() => ({ db: undefined as unknown, transport: undefined as unknown }));
 vi.mock("@/lib/admin-api", () => ({ adminRoute: async (_request: Request, work: (context: unknown) => Promise<unknown>) =>
-  Response.json(await work({ db: state.db, transport: state.transport })) }));
+  Response.json(await work({ db: state.db, transport: state.transport, settings: loadSettings() })),
+jsonBody: (request: Request) => request.json() }));
 vi.mock("../../communities/bootstrap", () => ({ ensureDirectories: vi.fn() }));
 
 const mongo = withMongo();
@@ -63,6 +71,7 @@ it("uses provider extents only as approximate boxes and respects polygons, holes
   const multi = boundary({ type: "MultiPolygon", coordinates: [polygon.coordinates] })!;
   expect(withinArea({ method: "boundary", boundary: multi }, [0, 0], [4, 4])).toBe(true);
   expect(boundary({ type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1]]] })).toBeNull();
+  expect(parsePhoton(payload([{ ...feature(), geometry: polygon }]))[0].area.method).toBe("boundary");
 });
 
 it("caches explicit provider searches and persists results without trusting client-supplied metadata", async () => {
@@ -80,6 +89,10 @@ it("caches explicit provider searches and persists results without trusting clie
   await expect(onboardLocation(mongo.db, noNetwork, "osm-n999999-wa", { overrides: {} })).rejects.toThrow("not available");
   expect(await directoryTown(first[0].id, mongo.db)).toEqual({ id: first[0].id, name: first[0].label });
   expect(await searchTownDirectory("Wallingford, WA", mongo.db)).toEqual([{ id: first[0].id, name: first[0].label }]);
+  expect(await searchTownDirectory("Wallingford, seattle, Washington", mongo.db)).toHaveLength(1);
+  expect(await searchTownDirectory("Wallingford, Boston, Washington", mongo.db)).toEqual([]);
+  const indexes = await mongo.db.collection("geographic_search_cache").indexes();
+  expect(indexes.find((index) => index.name === "expires_at_1")?.expireAfterSeconds).toBe(0);
 });
 
 it("surfaces provider outages and malformed responses without caching a successful empty result", async () => {
@@ -88,6 +101,16 @@ it("surfaces provider outages and malformed responses without caching a successf
   await mongo.db.collection("geographic_search_leases").deleteMany({});
   await expect(searchGeography(mongo.db, "Wallingford", new ReplayTransport().on(/photon/, { body: { error: "bad" } }).transport)).rejects.toThrow("FeatureCollection");
   expect(await mongo.db.collection(GEOGRAPHIC_PLACES).countDocuments()).toBe(0);
+});
+
+it("shares its provider lease across simultaneous identical searches", async () => {
+  const replay = new ReplayTransport().on(/photon/, { body: payload() });
+  const results = await Promise.all([
+    searchGeography(mongo.db, "Wallingford", replay.transport),
+    searchGeography(mongo.db, "Wallingford", replay.transport),
+  ]);
+  expect(results.map((places) => places[0].id)).toEqual(["osm-n150973716-wa", "osm-n150973716-wa"]);
+  expect(replay.requests).toHaveLength(1);
 });
 
 it("keeps provider calls out of suggestion requests and requires an explicit geographic search", async () => {
@@ -144,4 +167,50 @@ it("reflects retained manual feeds in source readiness without changing the reso
   const profile = await getLocation(mongo.db, place.id);
   expect(profile.source_coverage?.status).toBe("partial");
   expect(profile.source_coverage?.gaps.join(" ")).not.toContain("No community RSS/Atom feed was found");
+});
+
+it("uses article GeoRSS coordinates as evidence without confusing the publisher or council meeting venue", async () => {
+  const place = await store();
+  const profile = await onboardLocation(mongo.db, noNetwork, place.id, { overrides: {}, discoverNews: noNews });
+  const xml = `<rss xmlns:georss="http://www.georss.org/georss"><channel>${[
+    ["in", "47.66 -122.335"], ["out", "47.60 -122.3"], ["invalid", "999 999"],
+  ].map(([id, point]) => `<item><title>Bridge repairs ${id}</title><link>https://news.example/${id}</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><georss:point>${point}</georss:point></item>`).join("")}</channel></rss>`;
+  const items = parseNewsFeed(new TextEncoder().encode(xml));
+  const inside = items.find((item) => item.id.endsWith("/in"))!;
+  expect(inside.coordinates).toEqual([-122.335, 47.66]);
+  expect(items.find((item) => item.id.endsWith("/invalid"))?.coordinates).toBeUndefined();
+  expect(itemTier(resolveRegion(profile, {}), inside.title, inside.summary, false, inside.coordinates)).toBe("local");
+  await mongo.db.collection<{ _id: string; data: object }>("source_configs").insertOne({ _id: "state-sources", data: {} });
+  const replay = new ReplayTransport().on("https://news.example/rss", { body: xml });
+  const collected = await stateNewsConnector.collect({ type: "statenews", source_id: "statenews:manual", name: "Feed", params: { manual_feed: "https://news.example/rss" } }, {
+    db: mongo.db, location: profile, settings: loadSettings(), transport: replay.transport, fetcher: new Fetcher(replay.transport),
+    today: "2026-10-20", window: ["2026-10-21", "2026-10-27"], log: logger("test"),
+    linkCache: { async get() { return null; }, async put() {}, async invalidate() {} },
+  });
+  expect(collected.events).toHaveLength(1);
+  expect(collected.events[0].community_relevance).toMatchObject({ method: "approximate_area" });
+});
+
+it("requires a jurisdiction anchor for generic community names and records government discovery failures as gaps", async () => {
+  const place = await store({ ...resolved(), name: "Downtown", label: "Downtown, Seattle, WA" });
+  const profile = await onboardLocation(mongo.db, noNetwork, place.id, {
+    overrides: {}, discoverNews: noNews, discoverGovernment: async () => { throw new Error("Jurisdiction lookup unavailable"); },
+  });
+  expect(profile.source_coverage?.gaps.join(" ")).toContain("Government discovery unavailable");
+  expect(communityEvidence(profile, ["Downtown Los Angeles improvements"])).toBeNull();
+  expect(communityEvidence(profile, ["Downtown Seattle improvements"])).toMatchObject({ method: "community_mention" });
+  expect(communityEvidence(profile, ["Downtown improvements"], [-122.335, 47.66])).toMatchObject({ method: "approximate_area" });
+});
+
+it("does not let unavailable reference directories block onboarding a resolved provider place", async () => {
+  const place = await store();
+  await mongo.db.collection<{ _id: string; data: object }>("source_configs").insertOne({ _id: "government-sources", data: {} });
+  const { ensureDirectories } = await import("../../communities/bootstrap");
+  vi.mocked(ensureDirectories).mockRejectedValueOnce(new Error("IMLS download unavailable"));
+  const spy = vi.spyOn(await import("../../core/http"), "fetchTransport").mockImplementation(noNetwork);
+  try {
+    const response = await onboardRoute(new Request("http://localhost/api/admin/locations", { method: "POST", body: JSON.stringify({ place_id: place.id }) }));
+    expect((await response.json()).location.source_coverage.gaps.join(" ")).toContain("Reference library directory unavailable");
+    expect(ensureDirectories).toHaveBeenLastCalledWith(mongo.db, expect.any(Function), { libraryCoordinates: true, skipCensus: true });
+  } finally { spy.mockRestore(); }
 });

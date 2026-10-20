@@ -7,7 +7,7 @@ import LocationOnboarding from "./location-onboarding";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
-type Location = { id: string; name: string; systems: System[]; government: Government | null; source_coverage?: { status: string; area: string; gaps: string[] } };
+type Location = { id: string; name: string; systems: System[]; government: Government | null; source_coverage?: { status: "ready" | "partial" | "no_local_sources"; area: string; gaps: string[] } };
 type RunIssue = { code: string; severity: "info" | "warning" | "failed"; message: string };
 type Diagnostics = { deadline_at: number | null; overdue: boolean; issues: RunIssue[] };
 type LocationHealth = {

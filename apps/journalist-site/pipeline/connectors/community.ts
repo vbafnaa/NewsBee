@@ -8,10 +8,12 @@ export function mentions(text: string | null | undefined, name: string | null | 
   return new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`, "i").test(text);
 }
 export type CommunityEvidence = { method: "community_mention" | "selected_venue" | "boundary" | "approximate_area"; matches: string[] };
+const GENERIC_NAMES = /^(downtown|uptown|midtown|old town|city cent(?:er|re)|central|university|industrial|historic)(?: district)?$|^(north|south|east|west)(?:ern)? (?:end|side|district)$/i;
 export function communityEvidence(location: LocationProfile, texts: Array<string | null | undefined>, coordinates?: Point): CommunityEvidence | null {
   const community = location.community;
   if (!community) return null;
-  const matches = [...new Set([community.name, ...community.coverage_terms])].filter((term) => texts.some((text) => mentions(text, term)));
+  const matches = [...new Set([community.name, ...community.coverage_terms])].filter((term) => texts.some((text) => mentions(text, term))
+    && (!GENERIC_NAMES.test(term) || (community.parent_name !== community.name && texts.some((text) => mentions(text, community.parent_name)))));
   if (matches.length) return { method: "community_mention", matches };
   const area = community.geography?.area;
   if (area && coordinates && withinArea(area, [community.longitude, community.latitude], coordinates)) {

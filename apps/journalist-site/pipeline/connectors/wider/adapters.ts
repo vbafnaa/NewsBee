@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { FeedFormatError, checkCount, checkSize, plainText, rejectUnsafeXml, httpsLink, scheduleText, type EventFacts } from "../common";
+import { point, type Point } from "../../../../../shared/geography";
 
 export type Tier = "local" | "region" | "nearby";
 export type NewsKind = "earthquake" | "state_news" | "trending_topic" | "social_trend";
@@ -19,7 +20,7 @@ function textOf(value: unknown): string | null {
 }
 function itemArray<T>(value: T | T[] | undefined): T[] { return value === undefined ? [] : Array.isArray(value) ? value : [value]; }
 
-export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null };
+export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null; coordinates?: Point };
 export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
   checkSize(bytes); rejectUnsafeXml(bytes);
   const xml = new TextDecoder().decode(bytes);
@@ -59,7 +60,12 @@ export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
     const summaries = [node.description, node.summary, node.content, node["content:encoded"]]
       .map((value) => plainText(textOf(value))).filter((value): value is string => Boolean(value));
     const summary = summaries.sort((a, b) => b.length - a.length)[0] ?? null;
-    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary });
+    const geoRss = textOf(node["georss:point"])?.split(/\s+/).map(Number);
+    const latitude = geoRss?.[0] ?? Number(textOf(node["geo:lat"]) ?? NaN);
+    const longitude = geoRss?.[1] ?? Number(textOf(node["geo:long"]) ?? NaN);
+    const coordinates = [longitude, latitude];
+    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary,
+      ...(point(coordinates) ? { coordinates } : {}) });
   }
   return items.sort((a, b) => b.published.getTime() - a.published.getTime());
 }

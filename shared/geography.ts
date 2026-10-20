@@ -92,10 +92,10 @@ export function areaLabel(area: Area) {
 
 const SETTLEMENTS = new Set(["neighbourhood", "neighborhood", "suburb", "quarter", "city_district", "borough", "locality", "hamlet", "village", "town", "city", "isolated_dwelling"]);
 export function parsePhoton(value: unknown): GeographicPlace[] {
-  if (!record(value) || !Array.isArray(value.features)) throw new Error("Geocoder response is not a FeatureCollection");
+  if (!record(value) || value.type !== "FeatureCollection" || !Array.isArray(value.features)) throw new Error("Geocoder response is not a FeatureCollection");
   const results: GeographicPlace[] = [];
   for (const feature of value.features) {
-    if (!record(feature) || !record(feature.properties) || !record(feature.geometry)) continue;
+    if (!record(feature) || feature.type !== "Feature" || !record(feature.properties) || !record(feature.geometry)) continue;
     const p = feature.properties;
     const settlement = p.osm_key === "place" && SETTLEMENTS.has(String(p.osm_value));
     const districtBoundary = p.osm_key === "boundary" && p.osm_value === "administrative" && ["district", "locality", "city"].includes(String(p.type));
