@@ -4,7 +4,7 @@ import { startAll } from "@/pipeline/orchestration/orchestrator";
 
 export const maxDuration = 300;
 
-/** Run the whole pipeline for every onboarded location. */
+/** Start collection for every onboarded location; later stages require editor actions. */
 export async function POST(request: Request) {
   return adminRoute(request, async (deps) => {
     const started = await startAll(deps, (await currentAdmin()) ?? "admin");

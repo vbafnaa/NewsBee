@@ -5,7 +5,7 @@ vi.mock("next/server", () => ({ after: (callback: () => Promise<void>) => { call
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: vi.fn() }));
 vi.mock("@/pipeline/orchestration/orchestrator", () => ({ runOne: vi.fn() }));
 vi.mock("@/pipeline/orchestration/runs", () => ({ oldestActiveRun: vi.fn() }));
-vi.mock("@/pipeline/orchestration/jobs", () => ({ nextPendingJob: vi.fn() }));
+vi.mock("@/pipeline/orchestration/jobs", () => ({ nextJobWake: vi.fn() }));
 vi.mock("@/pipeline/orchestration/diagnostics", () => ({ expireOverdueRuns: vi.fn().mockResolvedValue([]) }));
 
 import { POST } from "../../../app/api/pipeline/advance/route";
@@ -13,7 +13,7 @@ import { callNextJob } from "../../../lib/job-chain";
 import { authorizedJobChain, jobChainToken } from "../../../lib/pipeline-auth";
 import { pipelineDeps } from "../../../lib/pipeline";
 import { runOne } from "../../orchestration/orchestrator";
-import { nextPendingJob } from "../../orchestration/jobs";
+import { nextJobWake } from "../../orchestration/jobs";
 import { oldestActiveRun } from "../../orchestration/runs";
 
 const url = "https://journalist.example/api/pipeline/advance";
@@ -29,7 +29,7 @@ describe("portal job chain", () => {
     delete process.env.CRON_SECRET;
     vi.mocked(pipelineDeps).mockResolvedValue({ db: { collection: () => ({ updateOne: vi.fn().mockResolvedValue({}) }) }, settings: { runTimeoutSeconds: 3600 } } as never);
     vi.mocked(oldestActiveRun).mockResolvedValue({ _id: "run-1" } as never);
-    vi.mocked(nextPendingJob).mockResolvedValue({ available_at: Date.now() / 1000 - 1 } as never);
+    vi.mocked(nextJobWake).mockResolvedValue({ available_at: Date.now() / 1000 - 1 } as never);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -66,7 +66,7 @@ describe("portal job chain", () => {
   it("waits for a deferred job without running it early", async () => {
     vi.useFakeTimers();
     const readyAt = Date.now() / 1000 + 10;
-    vi.mocked(nextPendingJob).mockResolvedValue({ available_at: readyAt } as never);
+    vi.mocked(nextJobWake).mockResolvedValue({ available_at: readyAt } as never);
     vi.mocked(runOne).mockResolvedValue(true);
     vi.stubGlobal("fetch", vi.fn((target: URL, init: RequestInit) => POST(request(new Headers(init.headers).get("x-newsbee-job-token") ?? undefined))));
     const result = await POST(request(jobChainToken(process.env.AUTH_SECRET!)));

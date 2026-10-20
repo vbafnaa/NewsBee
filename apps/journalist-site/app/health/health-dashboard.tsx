@@ -122,6 +122,7 @@ export default function HealthDashboard() {
 
   const rows = snapshot?.locations.filter((row) => !location || row.location_id === location) ?? [];
   const providers = snapshot?.model?.providers;
+  const schedulerIdle = snapshot ? snapshot.queue.pending + snapshot.queue.running === 0 : true;
   return <>
     <div className="section-heading health-toolbar">
       <div className="period-switch" aria-label="History window">
@@ -137,7 +138,7 @@ export default function HealthDashboard() {
     {snapshot && <>
       <div className="metric-grid">
         <section className={`metric-card tone-${snapshot.status}`}><span className="eyebrow">Services now</span><strong>{snapshot.status}</strong><p>Model and scheduler readiness</p></section>
-        <section className={`metric-card tone-${snapshot.scheduler.status === "ok" && !snapshot.scheduler.issues.length ? "ok" : "warning"}`}><span className="eyebrow">Scheduler</span><strong>{snapshot.scheduler.issues.length ? "errors" : snapshot.scheduler.status}</strong><p>{snapshot.scheduler.seconds_since_tick === null ? "No tick recorded" : `Last tick ${snapshot.scheduler.seconds_since_tick}s ago`}{snapshot.run_timeout_seconds ? ` · runs time out after ${Math.round(snapshot.run_timeout_seconds / 60)} min` : " · run timeout disabled"}</p></section>
+        <section className={`metric-card tone-${schedulerIdle || snapshot.scheduler.status === "ok" && !snapshot.scheduler.issues.length ? "ok" : "warning"}`}><span className="eyebrow">Scheduler</span><strong>{schedulerIdle ? "idle" : snapshot.scheduler.issues.length ? "errors" : snapshot.scheduler.status}</strong><p>{snapshot.scheduler.seconds_since_tick === null ? "No tick recorded" : `Last tick ${snapshot.scheduler.seconds_since_tick}s ago`}{snapshot.run_timeout_seconds ? ` · in-progress stages time out after ${Math.round(snapshot.run_timeout_seconds / 60)} min (editor waits excluded)` : " · stage timeout disabled"}</p></section>
         <section className="metric-card"><span className="eyebrow">Job queue</span><strong>{snapshot.queue.running} running</strong><p>{snapshot.queue.pending} waiting / {snapshot.queue.failed} failed</p></section>
         <section className="metric-card"><span className="eyebrow">Locations</span><strong>{rows.length}</strong><p>{rows.filter((row) => row.level === "ok").length} healthy / {rows.filter((row) => row.level === "warning" || row.level === "failed").length} need attention</p></section>
       </div>
@@ -145,7 +146,7 @@ export default function HealthDashboard() {
         <strong>Queued pipeline work is not advancing</strong>
         <ul>
           {snapshot.scheduler.status !== "ok" && snapshot.queue.pending > 0 && snapshot.queue.running === 0 && <li>
-            No pipeline worker has run recently ({snapshot.scheduler.last_tick_at === null ? "no call recorded" : `last call ${time(snapshot.scheduler.last_tick_at)}`}) with {snapshot.queue.pending} job(s) waiting. Start a run from the portal or check pipeline dispatch problems.
+            No pipeline worker has run recently ({snapshot.scheduler.last_tick_at === null ? "no call recorded" : `last call ${time(snapshot.scheduler.last_tick_at)}`}) with {snapshot.queue.pending} job(s) waiting. Use Resume on the run's current stage in Runs &amp; locations to restart processing. Cron remains disabled.
           </li>}
           {snapshot.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} ({time(issue.at)})</li>)}
         </ul>
@@ -176,7 +177,9 @@ export default function HealthDashboard() {
       <div className="section-heading"><h2>Location health</h2><Link className="nav-button" href="/">Manage runs &amp; locations</Link></div>
       <div className="location-grid">{rows.map((row) => <details className={`location-card tone-${row.level}`} key={row.location_id}>
         <summary><span>{row.location_name}</span><span className={`status-badge tone-${row.level}`}>{row.level}</span></summary>
-        <p>Latest stage: {row.stage} / {row.published_items ?? "-"} published / {row.held ?? "-"} held</p>
+        <p>Latest stage: {row.stage.replaceAll("_", " ")} / {row.published_items ?? "-"} published / {row.held ?? "-"} held</p>
+        {row.stage === "awaiting_authoring" && <p>Waiting for an editor to start authoring in Runs &amp; locations.</p>}
+        {row.stage === "awaiting_finish" && <p>Waiting for an editor to write the front page and email preview, then publish.</p>}
         <p>Sources: {row.sources.completed} completed, {row.sources.failed} failed, {row.sources.pending} pending</p>
         <p>Started {time(row.started_at)}</p>
         {row.diagnostics?.issues.map((issue, index) => <p className={issue.severity === "info" ? "chart-caption" : "stage-error"} key={`${issue.code}-${index}`}>{issue.message}</p>)}

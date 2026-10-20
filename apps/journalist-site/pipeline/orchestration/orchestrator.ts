@@ -2,9 +2,9 @@
  * Orchestrator: the Stage 1 pipeline flow on a serverless job queue.
  *
  *   trigger -> one collect_source job per selected source (connector + per-source top 5)
- *           -> author_start once every source finished (completed or failed)
+ *           -> awaiting_authoring -> editor starts author_start
  *           -> author_story, one story per job (write, validate, retry once, or hold)
- *           -> author_finish (front page, email preview) -> publish to output channels
+ *           -> awaiting_finish -> editor starts author_finish -> publish to output channels
  *
  * Every step is one bounded job, so it fits one function call and survives restarts.
  */
@@ -25,10 +25,10 @@ import { ModelRateLimitError } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
-import { acquireWorker, releaseWorker, renewWorker, cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, setJobLog, type Job, type JobKind } from "./jobs";
+import { acquireWorker, releaseWorker, renewWorker, cancelClaimedJob, cancelRunJobs, claim, complete, enqueue, fail, LostLeaseError, recoverExpired, runJobs, setJobLog, type Job, type JobKind } from "./jobs";
 import { publishToChannels } from "./publish";
 import { expireOverdueRuns } from "./diagnostics";
-import { ACTIVE_RUN_STATUSES, oldestActiveRun, failRun, getRun, newRun, runs, setRun, startAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
+import { ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, RunConflict, oldestActiveRun, failRun, getRun, newRun, runs, setRun, awaitAuthoringWhenReady, updateSource, type PipelineRun } from "./runs";
 
 export type OrchestratorDeps = {
   db: Db;
@@ -56,7 +56,10 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
   const location = await getLocation(deps.db, locationId);
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   const existing = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
-  if (existing) return { run: existing, started: false };
+  if (existing) {
+    if (existing.status === "collecting") await resumeRun(deps, existing._id, trigger.by);
+    return { run: existing, started: false };
+  }
   const today = localToday(location.state);
   const window = ingestWindow(today);
   const additional = await manualLinks(deps.db).find({ location_id: location.id }).sort({ created_at: 1, _id: 1 }).toArray();
@@ -85,7 +88,7 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
       break;
     }
   }
-  log.info("run_started", { run_id: run._id, location_id: location.id, sources: tasks.length, trigger: trigger.kind, today });
+  log.info("run_started", { run_id: run._id, location_id: location.id, sources: tasks.length, trigger: trigger.kind, by: trigger.by, status: "collecting", today });
   if (tasks.length === 0) await advanceToAuthoring(deps, run._id, location.id);
   return { run: (await getRun(deps.db, run._id)) ?? run, started: true };
 }
@@ -99,10 +102,76 @@ export async function startAll(deps: OrchestratorDeps, by: string) {
 }
 
 async function advanceToAuthoring(deps: OrchestratorDeps, runId: string, locationId: string) {
-  if (await startAuthoringWhenReady(deps.db, runId)) {
-    await enqueue(deps.db, { kind: "author_start", run_id: runId, location_id: locationId });
-    log.info("collection_finished", { run_id: runId, location_id: locationId });
+  if (await awaitAuthoringWhenReady(deps.db, runId)) {
+    log.info("stage_transition", { run_id: runId, location_id: locationId, status: "awaiting_authoring", by: "worker" });
   }
+}
+
+export type ManualStage = "authoring" | "finish";
+
+/** A compare-and-set gate; repeated stage clicks resume without recreating completed work. */
+export async function triggerStage(deps: OrchestratorDeps, runId: string, stage: ManualStage, by: string) {
+  const waiting = stage === "authoring" ? "awaiting_authoring" : "awaiting_finish";
+  const status = stage === "authoring" ? "authoring" : "finishing";
+  const at = now();
+  const changed = await runs(deps.db).findOneAndUpdate(
+    { _id: runId, status: waiting },
+    { $set: { status, updated_at: at, stage_started_at: at, ...(stage === "authoring" ? { authoring_started_at: at } : {}) },
+      $push: { stage_transitions: { status, by, at } } },
+    { returnDocument: "after" },
+  );
+  const run = changed ?? await getRun(deps.db, runId);
+  if (!run) throw new Error(`Unknown run: ${runId}`);
+  if (run.status !== status && !(stage === "finish" && run.status === "publishing")) {
+    throw new RunConflict(`Cannot start ${stage} while run is ${run.status}; expected ${waiting} or an in-progress ${stage} stage`);
+  }
+  if (changed) log.info("stage_transition", { run_id: runId, location_id: run.location_id, status, by });
+  return resumeRun(deps, runId, by);
+}
+
+/** Repair interrupted enqueue boundaries using persisted tasks and completed step results. */
+export async function resumeRun(deps: OrchestratorDeps, runId: string, by: string) {
+  const run = await getRun(deps.db, runId);
+  if (!run) throw new Error(`Unknown run: ${runId}`);
+  if (!PROCESSING_RUN_STATUSES.includes(run.status)) throw new RunConflict(`Cannot resume run while ${run.status}; start its next stage instead`);
+  const jobs = await runJobs(deps.db, runId);
+  const queue = (kind: JobKind, payload: Record<string, unknown> = {}, dedupe_key?: string) =>
+    enqueue(deps.db, { kind, run_id: runId, location_id: run.location_id, payload, dedupe_key });
+  if (run.status === "collecting") {
+    for (const task of run.collection_tasks ?? []) {
+      const jobId = await queue("collect_source", { task }, `collect:${runId}:${task.source_id}`);
+      await updateSource(deps.db, runId, task.source_id, { job_id: jobId });
+    }
+    await advanceToAuthoring(deps, runId, run.location_id);
+  } else if (run.status === "authoring") {
+    await queue("author_start");
+    const start = jobs.find((job) => job.kind === "author_start" && job.status === "completed");
+    if (start && run.draft_id) {
+      const stories = jobs.filter((job) => job.kind === "author_story").sort((a, b) => Number(b.payload.step) - Number(a.payload.step));
+      const last = stories[0];
+      if (last?.status === "completed" && last.result?.more === false) {
+        await awaitFinish(deps, runId);
+      } else if (!last || last.status === "completed") {
+        const step = last ? Number(last.payload.step) + 1 : 0;
+        await queue("author_story", { draft_id: run.draft_id, step }, `author_story:${runId}:${step}`);
+      }
+    }
+  } else {
+    if (!run.draft_id) throw new RunConflict("Cannot finish a run without an authoring draft");
+    await queue("author_finish", { draft_id: run.draft_id });
+  }
+  if ((await getRun(deps.db, runId))?.status === "cancelled") await cancelRunJobs(deps.db, runId);
+  log.info("stage_resumed", { run_id: runId, status: run.status, by });
+  return getRun(deps.db, runId);
+}
+
+async function awaitFinish(deps: OrchestratorDeps, runId: string) {
+  const at = now();
+  const changed = await runs(deps.db).updateOne(
+    { _id: runId, status: "authoring" },
+    { $set: { status: "awaiting_finish", updated_at: at }, $push: { stage_transitions: { status: "awaiting_finish", by: "worker", at } } },
+  );
+  if (changed.modifiedCount) log.info("stage_transition", { run_id: runId, status: "awaiting_finish", by: "worker" });
 }
 
 /** A source that will not be collected (final failure) still releases the authoring barrier. */
@@ -196,7 +265,7 @@ async function authorStory(deps: OrchestratorDeps, job: Job) {
   if (result.more) {
     await enqueue(deps.db, { kind: "author_story", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId, step: step + 1 }, dedupe_key: `author_story:${job.run_id}:${step + 1}` });
   } else {
-    await enqueue(deps.db, { kind: "author_finish", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId } });
+    await awaitFinish(deps, job.run_id);
   }
   return { step, ...("candidate" in result ? { candidate: result.candidate } : {}), more: result.more };
 }
@@ -205,18 +274,19 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   // Publication is the commit boundary: cancellation wins before this transition;
   // once publishing begins, cancellation is rejected to avoid a half-published edition.
   const run = await runs(deps.db).findOneAndUpdate(
-    { _id: job.run_id, status: { $in: ["authoring", "publishing"] } },
+    { _id: job.run_id, status: { $in: ["finishing", "publishing"] } },
     { $set: { status: "publishing", updated_at: now() } },
     { returnDocument: "after" },
   );
   if (!run) return { skipped: true };
+  log.info("stage_transition", { run_id: job.run_id, status: "publishing", by: "worker" });
   const draftId = String(job.payload.draft_id);
   const finished = await finishAuthoring(authoringDeps(deps), draftId).catch(async (error: unknown) => {
     // No edition is published on a quota failure; allow durable retries and cancellation.
     if (error instanceof ModelRateLimitError) {
       await runs(deps.db).updateOne(
         { _id: job.run_id, status: "publishing" },
-        { $set: { status: "authoring", updated_at: now() } },
+        { $set: { status: "finishing", updated_at: now() } },
       );
     }
     throw error;
@@ -246,11 +316,13 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
       artifacts,
     },
   });
-  log.info("run_published", { run_id: run._id, location_id: run.location_id, edition_id: edition.id, items: edition.items.length, held, channels: channels.length });
+  log.info("run_published", { run_id: run._id, location_id: run.location_id, status: "published", by: "worker", edition_id: edition.id, items: edition.items.length, held, channels: channels.length });
   return { edition_id: edition.id, items: edition.items.length, held, channels };
 }
 
 export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || !stageKinds(run).includes(job.kind)) return { skipped: true };
   switch (job.kind) {
     case "collect_source": return collectSource(deps, job);
     case "author_start": return authorStart(deps, job);
@@ -260,8 +332,17 @@ export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Reco
 }
 
 async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || !stageKinds(run).includes(job.kind)) return;
   if (job.kind === "collect_source") await sourceFailed(deps, job, error);
   else await failRun(deps.db, job.run_id, `${job.kind} failed: ${error}`);
+}
+
+function stageKinds(run: PipelineRun): JobKind[] {
+  if (run.status === "collecting") return ["collect_source"];
+  if (run.status === "authoring") return ["author_start", "author_story"];
+  if (run.status === "finishing" || run.status === "publishing") return ["author_finish"];
+  return [];
 }
 
 /** Claim and run one job; returns false when the queue is empty. */
@@ -272,7 +353,8 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
     for (const expired of await recoverExpired(deps.db)) await finalFailure(deps, expired, expired.error ?? "Worker lease expired");
     const active = await oldestActiveRun(deps.db);
     if (!active) return false;
-    const job = await claim(deps.db, options.kinds, options.jobId, active._id);
+    const kinds = stageKinds(active).filter((kind) => !options.kinds || options.kinds.includes(kind));
+    const job = await claim(deps.db, kinds, options.jobId, active._id);
     if (!job) return false;
     let renewal: Promise<void> = Promise.resolve();
     let leaseError: unknown;

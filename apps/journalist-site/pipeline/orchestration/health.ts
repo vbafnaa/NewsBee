@@ -114,8 +114,8 @@ export async function healthSummary(db: Db, model: ModelRuntime | null, settings
   const queue = Object.fromEntries(["pending", "running", "failed"].map((status) => [status, counts.find((item) => item._id === status)?.count ?? 0]));
   const modelHealth: ModelHealth | null = model ? await model.health().catch((error: unknown): ModelHealth => ({ status: "failed", detail: error instanceof Error ? error.message : String(error) })) : null;
   const modelUsage = await modelUsageSummary(db, settings?.modelProviders ?? []);
-  const schedulerProblem = scheduler.status !== "ok" || scheduler.issues.length > 0;
   const pendingWork = queue.pending + queue.running > 0;
+  const schedulerProblem = pendingWork && (scheduler.status !== "ok" || scheduler.issues.length > 0);
   // At a glance: failed when no model provider can write stories or queued work cannot advance;
   // warning when the scheduler is stale or erroring, a fallback provider is in use, or usage is
   // near configured limits.

@@ -67,7 +67,7 @@ describe("run diagnostics", () => {
     await mongo.db.collection(COLLECTIONS.jobs).updateMany({}, { $set: { available_at: now() - 300 } });
     const diagnostics = (await diagnoseRuns(mongo.db, [active], 3600)).get(active._id)!;
     expect(diagnostics.issues[0]).toMatchObject({ code: "scheduler_not_running", severity: "failed" });
-    expect(diagnostics.issues[0].message).toMatch(/has never run.*Start a run from the portal/);
+    expect(diagnostics.issues[0].message).toMatch(/has never run.*Resume.*\/api\/pipeline\/advance/);
     expect(diagnostics.deadline_at).toBeCloseTo(active.created_at + 3600);
     expect(diagnostics.issues.some((issue) => issue.code === "deadline")).toBe(true);
   });

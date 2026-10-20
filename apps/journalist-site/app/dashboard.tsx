@@ -49,11 +49,18 @@ type Withdrawal = { story_id: string; reason: string; created_at: number };
 
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 const message = (caught: unknown) => caught instanceof Error ? caught.message : String(caught);
-const ACTIVE = ["collecting", "authoring", "publishing"];
+const PROCESSING = ["collecting", "authoring", "finishing", "publishing"];
+const ACTIVE = [...PROCESSING, "awaiting_authoring", "awaiting_finish"];
+const CANCELLABLE = ACTIVE.filter((status) => status !== "publishing");
+const stageLabel = (status: string) => status === "awaiting_authoring" ? "Awaiting editor: start authoring"
+  : status === "awaiting_finish" ? "Awaiting editor: write front page and email" : status.replaceAll("_", " ");
+const stageIndex = (status: string) => status === "published" ? 3
+  : ["awaiting_finish", "finishing", "publishing"].includes(status) ? 2
+    : ["awaiting_authoring", "authoring"].includes(status) ? 1 : status === "collecting" ? 0 : -1;
 const stalled = (diagnostics: Diagnostics | null | undefined) => Boolean(diagnostics?.issues.some((issue) => issue.severity === "failed"));
 /** Badge for a run: active runs that cannot advance show as stalled instead of a running stage. */
 function runBadge(status: string, diagnostics: Diagnostics | null | undefined, fallback: string) {
-  if (!ACTIVE.includes(status)) return { tone: fallback, label: status.replaceAll("_", " ") };
+  if (!PROCESSING.includes(status)) return { tone: ACTIVE.includes(status) ? "idle" : fallback, label: stageLabel(status) };
   if (stalled(diagnostics)) return { tone: "failed", label: `stalled · ${status}` };
   if (diagnostics?.issues.some((issue) => issue.severity === "warning")) return { tone: "warning", label: `${status} · attention` };
   return { tone: "running", label: status };
@@ -182,7 +189,7 @@ export default function Dashboard() {
   }, [openRun]);
 
   useEffect(() => {
-    if (!detail || !["collecting", "authoring", "publishing"].includes(detail.run.status)) return;
+    if (!detail || !ACTIVE.includes(detail.run.status)) return;
     const timer = window.setInterval(() => void openRun(detail.run._id, detail.run.location_id), 10000);
     return () => window.clearInterval(timer);
   }, [detail?.run._id, detail?.run.location_id, detail?.run.status, openRun]);
@@ -201,6 +208,14 @@ export default function Dashboard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function stageAction(runId: string, status: string) {
+    const action = status === "awaiting_authoring" ? "authoring" : status === "awaiting_finish" ? "finish" : PROCESSING.includes(status) ? "resume" : null;
+    if (!action) return null;
+    const label = action === "authoring" ? "Start authoring" : action === "finish" ? "Write front page and email, then publish" : "Resume";
+    return <button className="secondary" disabled={busy}
+      onClick={() => void act(`${label}: processing kicked off.`, () => api(`runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" }))}>{label}</button>;
   }
 
   function cancelSelected(run: { _id: string; location_name: string }) {
@@ -242,8 +257,8 @@ export default function Dashboard() {
       {notice && <p className="notice" role="status">{notice}</p>}
       {health && health.scheduler.status !== "ok" && (health.queue.pending ?? 0) > 0 && (health.queue.running ?? 0) === 0 && <p className="alert" role="alert">
         No pipeline worker has run recently ({health.scheduler.seconds_since_tick === null ? "no call recorded" : `last call ${Math.round(health.scheduler.seconds_since_tick / 60)} min ago`}) and {health.queue.pending} job(s) are waiting.
-        Start a run from the portal or check pipeline dispatch problems to see why work stopped.
-        {health.run_timeout_seconds ? ` Stalled runs fail automatically after ${Math.round(health.run_timeout_seconds / 60)} min.` : ""}
+        Use Resume on the current stage to restart processing.
+        {health.run_timeout_seconds ? ` In-progress stages time out after ${Math.round(health.run_timeout_seconds / 60)} min; editor waiting time is excluded.` : ""}
       </p>}
       {health && health.scheduler.issues.length > 0 && <div className="alert" role="alert">
         <strong>Pipeline dispatch problems</strong>
@@ -252,10 +267,10 @@ export default function Dashboard() {
 
       <section className="panel">
         <div className="section-heading">
-          <div><p className="eyebrow">Edition pipeline</p><h2>Run orchestration</h2><p>Collect sources, write and validate stories, then publish to selected channels.</p></div>
+          <div><p className="eyebrow">Edition pipeline</p><h2>Run orchestration</h2><p>Manually start collection, authoring, then front page and email preview publication. Email is not sent.</p></div>
           <button disabled={busy || !locations.length}
             onClick={() => void act("Started a run for every location.", () => api("ingestion", { method: "POST" }))}>
-            Run all locations
+            Start collection for all locations
           </button>
         </div>
         <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/health">View visual health &amp; trends &rarr;</Link></div>
@@ -266,8 +281,8 @@ export default function Dashboard() {
             return <article className="run-card" key={row.location_id}>
               <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
               <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
-                {["Collect", "Author", "Publish"].map((step, index) => {
-                  const stage = row.stage === "published" ? 3 : row.stage === "publishing" ? 2 : row.stage === "authoring" ? 1 : row.stage === "collecting" ? 0 : -1;
+                {["Collect", "Author", "Front page & email"].map((step, index) => {
+                  const stage = stageIndex(row.stage);
                   return <li key={step} className={stage > index ? "complete" : stage === index ? "current" : ""} aria-current={stage === index ? "step" : undefined}>{step}</li>;
                 })}
               </ol>
@@ -280,9 +295,10 @@ export default function Dashboard() {
               <div className="card-actions">
                   <button disabled={busy || running}
                     onClick={() => void act(`Started ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST" }))}>{running ? "Run in progress" : "Start run"}</button>
+                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST" }))}>{running ? "Run open" : "Start pipeline (collection)"}</button>
+                  {row.run_id && stageAction(row.run_id, row.stage)}
                   {row.run_id && <button className="secondary" onClick={() => void openRun(row.run_id!, row.location_id)}>Inspect run</button>}
-                  {row.run_id && ["collecting", "authoring"].includes(row.stage) && <button className="secondary" disabled={busy} onClick={() => cancelSelected({ _id: row.run_id!, location_name: row.location_name })}>Cancel run</button>}
+                  {row.run_id && CANCELLABLE.includes(row.stage) && <button className="secondary" disabled={busy} onClick={() => cancelSelected({ _id: row.run_id!, location_name: row.location_name })}>Cancel run</button>}
                   {row.run_id && !running && <button className="secondary" disabled={busy} onClick={() => void restartSelected({ _id: row.run_id!, location_id: row.location_id, location_name: row.location_name })}>Restart run</button>}
               </div>
               <details className="location-settings"><summary>Location actions</summary><div className="card-actions">
@@ -308,8 +324,9 @@ export default function Dashboard() {
               : ACTIVE.includes(run.status) ? run.diagnostics?.issues.find((issue) => issue.severity !== "info")?.message ?? "—"
                 : run.status === "failed" && run.error ? run.error : "—"}</td>
             <td><div className="card-actions"><button className="secondary" onClick={() => void openRun(run._id, run.location_id)}>Inspect</button>
-              {["collecting", "authoring"].includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
-              {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ["collecting", "authoring", "publishing"].includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
+              {stageAction(run._id, run.status)}
+              {CANCELLABLE.includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
+              {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
             </div></td>
           </tr>; })}</tbody>
         </table></div>
@@ -319,17 +336,18 @@ export default function Dashboard() {
       {detail && (
         <section className="panel">
           <div className="section-heading">
-            <h2>{detail.run.location_name} · {detail.run.status} · {detail.run.window.join(" to ")}</h2>
+            <h2>{detail.run.location_name} · {stageLabel(detail.run.status)} · {detail.run.window.join(" to ")}</h2>
             <div className="card-actions">
-              {["collecting", "authoring"].includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
-              {["published", "failed", "cancelled"].includes(detail.run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === detail.run.location_id && ["collecting", "authoring", "publishing"].includes(item.status))} onClick={() => void restartSelected(detail.run)}>Restart run</button>}
+              {stageAction(detail.run._id, detail.run.status)}
+              {CANCELLABLE.includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
+              {["published", "failed", "cancelled"].includes(detail.run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === detail.run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(detail.run)}>Restart run</button>}
               <button className="secondary" onClick={() => { setDetail(null); window.history.replaceState(null, "", "/"); }}>Close</button>
             </div>
           </div>
           <ol className="pipeline-steps" aria-label="Run stages">
-            {["Collect", "Author", "Publish"].map((step, index) => {
-              const stage = detail.run.status === "published" ? 3 : detail.run.status === "publishing" ? 2 : detail.run.status === "authoring" || detail.run.draft_id ? 1 : 0;
-              const active = ["collecting", "authoring", "publishing"].includes(detail.run.status);
+            {["Collect", "Author", "Front page & email"].map((step, index) => {
+              const stage = stageIndex(detail.run.status);
+              const active = ACTIVE.includes(detail.run.status);
               return <li key={step} className={stage > index ? "complete" : stage === index ? active ? "current" : detail.run.status === "published" ? "complete" : "stopped" : ""}>{step}</li>;
             })}
           </ol>

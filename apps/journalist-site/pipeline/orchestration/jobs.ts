@@ -24,8 +24,9 @@ export type Job = {
   kind: JobKind;
   run_id: string;
   location_id: string;
-  /** Jobs with the same dedupe key are never pending or running at the same time. */
+  /** A run/step identity is retained across retries and editor resumes. */
   dedupe_key: string;
+  durable_step?: boolean;
   payload: Record<string, unknown>;
   status: JobStatus;
   attempts: number;
@@ -65,16 +66,22 @@ export async function ensureJobIndexes(db: Db) {
       name: "one_active_job_per_key",
       partialFilterExpression: { status: { $in: ["pending", "running"] } },
     },
+    {
+      key: { dedupe_key: 1 },
+      unique: true,
+      name: "one_durable_step_per_key",
+      partialFilterExpression: { durable_step: true },
+    },
   ]);
 }
 
-/** Queue a job unless one with the same dedupe key is pending or running; returns its id. */
+/** Queue a durable step once, including after completion; retries reuse the same job. */
 export async function enqueue(
   db: Db,
   job: { kind: JobKind; run_id: string; location_id: string; payload?: Record<string, unknown>; dedupe_key?: string },
 ): Promise<string> {
   const dedupeKey = job.dedupe_key ?? `${job.kind}:${job.run_id}`;
-  const existing = await jobs(db).findOne({ dedupe_key: dedupeKey, status: { $in: ["pending", "running"] } });
+  const existing = await jobs(db).findOne({ dedupe_key: dedupeKey });
   if (existing) return existing._id;
   const identity = randomUUID();
   const created = now();
@@ -85,6 +92,7 @@ export async function enqueue(
       run_id: job.run_id,
       location_id: job.location_id,
       dedupe_key: dedupeKey,
+      durable_step: true,
       payload: job.payload ?? {},
       status: "pending",
       attempts: 0,
@@ -101,7 +109,7 @@ export async function enqueue(
     });
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      const raced = await jobs(db).findOne({ dedupe_key: dedupeKey, status: { $in: ["pending", "running"] } });
+      const raced = await jobs(db).findOne({ dedupe_key: dedupeKey });
       if (raced) return raced._id;
     }
     throw error;
@@ -162,6 +170,18 @@ export async function nextPendingJob(db: Db, runId?: string) {
   return jobs(db)
     .findOne({ status: "pending", ...(runId ? { run_id: runId } : {}) }, { projection: { available_at: 1 }, sort: { available_at: 1 } })
     .then((job) => job ? { available_at: job.available_at } : null);
+}
+
+/** Keep a manually kicked chain alive through backoff and interrupted worker leases. */
+export async function nextJobWake(db: Db, runId: string) {
+  const [pending, running, worker] = await Promise.all([
+    nextPendingJob(db, runId),
+    jobs(db).findOne({ run_id: runId, status: "running" }, { sort: { lease_until: 1 } }),
+    db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOne({ _id: "pipeline-worker" }),
+  ]);
+  const times = [pending?.available_at, running?.lease_until].filter((value): value is number => typeof value === "number");
+  if (!times.length) return null;
+  return { available_at: Math.max(Math.min(...times), worker?.lease_until ?? 0) };
 }
 
 export async function setJobLog(db: Db, jobId: string, file: string | null, error: string | null) {

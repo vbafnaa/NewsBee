@@ -6,7 +6,7 @@ export const maxDuration = 300;
 
 type Context = { params: Promise<{ locationId: string }> };
 
-/** Run the whole pipeline for one location: collect every source, author, publish. */
+/** Start collection for one location, stopping at the authoring gate. */
 export async function POST(request: Request, context: Context) {
   const { locationId } = await context.params;
   return adminRoute(request, async (deps) => {
