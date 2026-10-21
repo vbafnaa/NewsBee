@@ -4,6 +4,8 @@ Newsbee turns community events, public meetings, and nearby news into local news
 
 ## Architecture
 
+### Components
+
 ```mermaid
 flowchart LR
   Editors[Journalist console] --> Pipeline[Collection, writing, and publishing]
@@ -15,12 +17,27 @@ flowchart LR
   Pipeline <--> Models[Model provider]
 ```
 
+### Logical pipeline flow
+
 ```mermaid
-flowchart LR
-  Onboard[Choose locations and configure sources] --> Collect[Collect and rank candidates]
-  Collect --> Write[Write and check stories]
-  Write --> Publish[Publish editions]
-  Publish --> Read[Readers browse editions or join an interest list]
+flowchart TD
+  Editors[Journalist operations] --> Directory[Location profiles and source configuration]
+  Editors -->|Start run| Queue[Job queue and scheduler]
+  Directory --> Queue
+  Sources[Library events, meetings, and nearby news] --> Collect[Discover and collect candidates]
+  Queue --> Collect
+  Collect --> Rank[Rank and select candidates]
+  Rank --> Write[Write stories from source facts]
+  Write --> Checks{Editorial checks}
+  Checks -->|Rejected after retry| Held[Hold stories with reasons]
+  Checks -->|Accepted| Assemble[Assemble edition]
+  Channels[Output-channel location selections] --> Publish[Publish edition and save email preview]
+  Assemble --> Publish
+  Publish --> Reader[Reader API and website]
+  Collect --> Review[Run inspection and health history]
+  Held --> Review
+  Publish --> Review
+  Review --> Editors
 ```
 
 ## Run locally
