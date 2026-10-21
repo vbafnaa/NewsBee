@@ -402,7 +402,7 @@ export async function directoryTown(id: string, db?: Db): Promise<Location | nul
   return place ? { id: place._id, name: `${place.name}, ${place.state}` } : null;
 }
 
-export async function saveInterestSignup(location: Location, email: string) {
+export async function saveInterestSignup(location: Location, email: string, launchNotification = false) {
   const { client, databaseName, mongo } = await readerMongoClient();
   const collection = client.db(databaseName).collection("reader_interest_signups");
   if (!mongo.indexPromise) {
@@ -421,10 +421,10 @@ export async function saveInterestSignup(location: Location, email: string) {
       $setOnInsert: { location_id: location.id, email, created_at: new Date() },
       $set: {
         location_name: location.name,
-        consent_version: "weekly-editions-v1",
+        consent_version: launchNotification ? "weekly-editions-v1" : "weekly-editions-v2",
         consented_at: new Date(),
         weekly_editions: true,
-        launch_notification: true,
+        launch_notification: launchNotification,
       },
     },
     { upsert: true },

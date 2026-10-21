@@ -1,0 +1,75 @@
+---
+interface Props {
+  locationId?: string;
+  locationName?: string;
+  launchNotification?: boolean;
+}
+const { locationId, locationName, launchNotification = false } = Astro.props;
+const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<form id="subscription-form" data-api-url={apiUrl} data-location-id={locationId}
+  data-location-name={locationName} data-launch-notification={String(launchNotification)}>
+  <label for="signup-email">Your email</label>
+  <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" aria-describedby="signup-note" required />
+  <label class="signup-consent">
+    <input id="signup-consent" name="consent" type="checkbox" required />
+    <span>I agree to receive weekly Newsbee editions by email for <strong id="signup-location">{locationName}</strong>{launchNotification
+      ? ", including a launch notification when coverage becomes available."
+      : "."}</span>
+  </label>
+  <button type="submit">Sign up for weekly editions</button>
+  <p id="signup-note" class="signup-note">We save your email, selected community, and consent.
+    Email delivery is not active yet; this signup is for future editions.</p>
+</form>
+<p id="signup-status" role="status"></p>
+<script>
+  const form = document.querySelector<HTMLFormElement>("#subscription-form")!;
+  const email = document.querySelector<HTMLInputElement>("#signup-email")!;
+  const consent = document.querySelector<HTMLInputElement>("#signup-consent")!;
+  const button = form.querySelector<HTMLButtonElement>("button")!;
+  const status = document.querySelector<HTMLParagraphElement>("#signup-status")!;
+  let submission = 0;
+
+  form.addEventListener("reset", () => { submission++; });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const { locationId, locationName, apiUrl } = form.dataset;
+    if (!locationId || !form.reportValidity()) return;
+    const current = ++submission;
+    const launchNotification = form.dataset.launchNotification === "true";
+    button.disabled = true;
+    status.textContent = "Saving your signup...";
+    try {
+      const response = await fetch(`${apiUrl}/api/locations/${encodeURIComponent(locationId)}/interest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.value.trim(), consent: consent.checked, launch_notification: launchNotification,
+        }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+      if (current !== submission) return;
+      form.reset();
+      status.textContent = `You're signed up for future weekly editions for ${locationName}.${launchNotification
+        ? " We'll also notify you when coverage launches." : ""} Email delivery is not active yet.`;
+      button.disabled = false;
+    } catch (error) {
+      if (current === submission) {
+        status.textContent = `Signup unavailable: ${error instanceof Error ? error.message : String(error)}. Please try again.`;
+      }
+    } finally {
+      if (current === submission) button.disabled = false;
+    }
+  });
+</script>
+<style>
+  form { display: grid; gap: 0.65rem; max-width: 28rem; margin: 1.5rem auto; }
+  #signup-email, button { padding: 0.7rem; font: inherit; border: 1px solid var(--rule); }
+  #signup-email { min-width: 0; width: 100%; background: #fffaf0; color: var(--ink); }
+  button { background: var(--accent); color: var(--paper); cursor: pointer; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .signup-consent { display: flex; align-items: flex-start; gap: 0.6rem; text-align: left; font-size: 0.85rem; }
+  #signup-consent { flex-shrink: 0; margin-top: 0.35rem; }
+  .signup-note { font-size: 0.8rem; color: var(--muted); }
+</style>

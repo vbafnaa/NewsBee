@@ -1,4 +1,5 @@
 ---
+import SignupForm from "../components/SignupForm.astro";
 const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 <!doctype html>
@@ -98,7 +99,6 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       </section>
       <article id="edition" aria-label="Edition" tabindex="-1" hidden>
         <p id="edition-freshness" role="status"></p>
-        <p class="subscription-invitation">Interested in weekly editions? <a id="subscription-link" href="#subscription-title">Sign up here</a>.</p>
         <aside id="corrections" aria-label="Corrections" hidden></aside>
         <h2 id="edition-headline" tabindex="-1"></h2>
         <p id="edition-intro" class="deck"></p>
@@ -119,25 +119,14 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           </div>
         </details>
         <footer>
+          <p class="subscription-invitation">Interested in weekly updates? <a id="subscription-link">Sign up here</a>.</p>
           <p id="edition-window"></p>
           <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official county, nearby-town and trend sources. Not independent reporting. Check the original source before you go.</p>
         </footer>
       </article>
       <section id="subscription" aria-labelledby="subscription-title" hidden>
         <h2 id="subscription-title" tabindex="-1"></h2>
-        <form id="subscription-form">
-          <label for="signup-email">Your email</label>
-          <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" aria-describedby="signup-note" required />
-          <label class="signup-consent">
-            <input id="signup-consent" name="consent" type="checkbox" required />
-            <span>I agree to receive future weekly Newsbee editions by email for <strong id="signup-location"></strong>,
-              including a launch notification when coverage becomes available.</span>
-          </label>
-          <button type="submit">Sign up for weekly editions</button>
-          <p id="signup-note" class="signup-note">We save your email, selected community, and consent.
-            Email delivery is not active yet; this signup is for future editions.</p>
-        </form>
-        <p id="signup-status" role="status"></p>
+        <SignupForm launchNotification={true} />
       </section>
     </main>
     <script>
@@ -189,8 +178,6 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       const expansion = document.querySelector<HTMLElement>("#expansion")!;
       const subscription = document.querySelector<HTMLElement>("#subscription")!;
       const signupForm = document.querySelector<HTMLFormElement>("#subscription-form")!;
-      const signupEmail = document.querySelector<HTMLInputElement>("#signup-email")!;
-      const signupConsent = document.querySelector<HTMLInputElement>("#signup-consent")!;
       const signupButton = signupForm.querySelector<HTMLButtonElement>("button")!;
       const signupStatus = document.querySelector<HTMLParagraphElement>("#signup-status")!;
       const listings = new Map<string, Listing>();
@@ -335,8 +322,12 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       document.addEventListener("click", (event) => {
         if (event.target instanceof Node && !picker.contains(event.target)) closePicker();
       });
+      document.addEventListener("pointerdown", (event) => {
+        if (event.target instanceof Node && !picker.contains(event.target)) closePicker();
+      });
       picker.addEventListener("focusout", (event) => {
-        if (!(event.relatedTarget instanceof Node) || !picker.contains(event.relatedTarget)) closePicker();
+        // Touch browsers can blur the input without focusing the tapped option.
+        if (event.relatedTarget instanceof Node && !picker.contains(event.relatedTarget)) closePicker();
       });
       picker.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
@@ -498,33 +489,6 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         }
       });
 
-      signupForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const town = selected;
-        if (!town || subscription.hidden || !signupForm.reportValidity()) return;
-        const version = navigationVersion;
-        signupButton.disabled = true;
-        signupStatus.textContent = "Saving your signup...";
-        try {
-          await getJson(`/api/locations/${encodeURIComponent(town.id)}/interest`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: signupEmail.value.trim(), consent: signupConsent.checked }),
-          });
-          if (version !== navigationVersion) return;
-          signupStatus.textContent = `You're signed up for future weekly editions for ${town.name}, including a launch notification if coverage isn't available yet. Email delivery is not active yet.`;
-          signupForm.reset();
-        } catch (error) {
-          if (version === navigationVersion) signupStatus.textContent = `Signup unavailable: ${failure(error)}. Please try again.`;
-        } finally {
-          if (version === navigationVersion) signupButton.disabled = false;
-        }
-      });
-
-      document.querySelector("#subscription-link")!.addEventListener("click", () => {
-        document.querySelector<HTMLElement>("#subscription-title")!.focus();
-      });
-
       async function show(town: Town) {
         article.hidden = true;
         retry.hidden = true;
@@ -533,6 +497,10 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         signupStatus.textContent = "";
         signupForm.reset();
         signupButton.disabled = false;
+        signupForm.dataset.locationId = town.id;
+        signupForm.dataset.locationName = town.name;
+        const subscriptionLink = document.querySelector<HTMLAnchorElement>("#subscription-link")!;
+        subscriptionLink.href = `${api}/subscribe?location=${encodeURIComponent(town.id)}`;
         document.querySelector("#subscription-title")!.textContent = `Weekly editions for ${town.name}`;
         document.querySelector("#signup-location")!.textContent = town.name;
         const locationId = town.id;
@@ -603,7 +571,6 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           document.querySelector<HTMLElement>("#upcoming-events")!.hidden = upcoming.length === 0;
           document.querySelector("#upcoming-items")!.replaceChildren(...upcoming.map((item) => story(item, false, references.get(item)!)));
           article.hidden = false;
-          subscription.hidden = false;
           status.textContent = "";
           if (!generic) headline.focus({ preventScroll: true });
         } catch (error) {
@@ -886,19 +853,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       .eyebrow { color: var(--accent); font-style: italic; }
       #subscription { max-width: 38rem; margin: 2rem auto; padding-top: 1rem; border-top: 3px double var(--rule); text-align: center; }
       #subscription h2 { font: 700 1.5rem/1.3 var(--display); }
-      .subscription-invitation { text-align: center; }
+      footer .subscription-invitation { margin: 0.6rem 0 1rem; text-align: center; font-size: 1rem; line-height: 1.5; font-style: normal; }
       .subscription-invitation a { color: var(--accent); }
-      #subscription-form { display: grid; gap: 0.65rem; max-width: 28rem; margin: 1.5rem auto; }
-      #signup-email, #subscription-form button {
-        padding: 0.7rem;
-        font: inherit;
-        border: 1px solid var(--rule);
-      }
-      #subscription-form button { background: var(--accent); color: var(--paper); cursor: pointer; }
-      #subscription-form button:disabled { opacity: 0.6; cursor: wait; }
-      .signup-consent { display: flex; align-items: flex-start; gap: 0.6rem; text-align: left; font-size: 0.85rem; }
-      #signup-consent { flex-shrink: 0; margin-top: 0.35rem; }
-      .signup-note { font-size: 0.8rem; color: var(--muted); }
       #edition-status { text-align: center; font-style: italic; color: var(--muted); }
       #edition-status:empty { display: none; }
       #edition-freshness, #corrections { color: var(--accent); }

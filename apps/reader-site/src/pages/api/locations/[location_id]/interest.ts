@@ -27,11 +27,15 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if ((body as Record<string, unknown>).consent !== true) {
     return Response.json({ detail: "Consent to future weekly editions is required" }, { status: 422 });
   }
+  const launchNotification = (body as Record<string, unknown>).launch_notification;
+  if (launchNotification !== undefined && typeof launchNotification !== "boolean") {
+    return Response.json({ detail: "Launch notification preference must be a boolean" }, { status: 422 });
+  }
 
   try {
     const location = await directoryTown(params.location_id ?? "");
     if (!location) return Response.json({ detail: "Unknown location" }, { status: 404 });
-    await saveInterestSignup(location, email.trim().toLowerCase());
+    await saveInterestSignup(location, email.trim().toLowerCase(), launchNotification === true);
     return Response.json({ status: "saved" });
   } catch (error) {
     console.error("Reader interest signup could not be saved", error);
