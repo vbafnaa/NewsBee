@@ -2,12 +2,12 @@
  * Housing market from the Census Building Permits Survey place files: new residential units
  * authorized in the location's own Census place (matched on state FIPS and place code, so
  * Redmond, OR is never read as Redmond, WA). Market data only: no listings, sales or owners.
- * A month's figures run once: only when Census released the file (Last-Modified) during the
- * edition's reporting period, and never again after a published edition carried them.
+ * A month's figures run only when Census released the file (Last-Modified) during the
+ * edition's week.
  */
 import { monthName } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
-import { decode, fetchResponse, publishedKeys, reportingSince, runCollector, skip, SourceUnavailable } from "../parents/shared";
+import { decode, fetchResponse, reportingSince, runCollector, skip, SourceUnavailable } from "../parents/shared";
 
 export const BPS_BASE = "https://www2.census.gov/econ/bps/Place";
 export const MONTHS_BACK = 4;
@@ -97,15 +97,10 @@ async function collectHousing(task: SourceTask, context: ConnectorContext, recor
   if (!release || !period) throw new SourceUnavailable("no_feed", `No Building Permits Survey place file in the last ${MONTHS_BACK} months`);
   record.feed_url = fileUrl(geoid.state, period, "c");
   const label = `${monthName(period.month)} ${period.year}`;
-  const since = await reportingSince(context);
+  const since = reportingSince(context);
   if (release.released && release.released < since) {
     skip(record, "released_before_window");
     record.detail = `Latest place file (${label}) was released ${release.released}, before this edition's period began ${since}`;
-    return [];
-  }
-  if ((await publishedKeys(context, task.source_id)).has(eventId(geoid.state, geoid.place, period))) {
-    skip(record, "already_published");
-    record.detail = `${label} figures already ran in a published edition`;
     return [];
   }
   const monthly = release.text;

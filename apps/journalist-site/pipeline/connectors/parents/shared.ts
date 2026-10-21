@@ -4,7 +4,6 @@
  */
 import { HttpStatusError } from "../../core/http";
 import { WINDOW_DAYS } from "../../core/time";
-import { COLLECTIONS } from "../../storage/mongo";
 import { loadSourceConfig } from "../../storage/source-configs";
 import { addDays, FeedFormatError, MAX_FEED_BYTES, plainText } from "../common";
 import { DiscoveryBlockedError } from "../fetcher";
@@ -92,38 +91,10 @@ export function isoDay(value: unknown): string | null {
 /** Plain text for a name or address: plainText without the sentence period it adds. */
 export function label(value: unknown, limit = 120): string | null { return plainText(value, limit)?.replace(/(?<!\.)\.$/, "") || null; }
 
-/** How many recent published editions are checked for items that already ran. */
-export const PUBLISHED_EDITIONS_CHECKED = 52;
-type PublishedEdition = { id: string; today?: string; published_at?: number };
-type PublishedEntry = { result?: { story?: { occurrences?: Array<{ source_id?: string; source_event_id?: string }> } } };
-
-async function publishedEditions(context: ConnectorContext): Promise<PublishedEdition[]> {
-  return context.db.collection<PublishedEdition>(COLLECTIONS.editions)
-    .find({ location_id: context.location.id, status: "published" }, { projection: { id: 1, today: 1, published_at: 1 } })
-    .sort({ published_at: -1 }).limit(PUBLISHED_EDITIONS_CHECKED).toArray();
-}
-
 /**
- * First day of the period this edition reports on: the previous published edition's day, or one
- * edition window (WINDOW_DAYS) back if that's later or there is none. The boundary day overlaps
- * the previous edition on purpose, so nothing published after its run is missed; items it
- * already ran are removed by publishedKeys.
+ * First day of the week this edition reports on: always one edition window (WINDOW_DAYS) back,
+ * so a rerun in the same week sees the same items as the run it replaces.
  */
-export async function reportingSince(context: ConnectorContext): Promise<string> {
-  const floor = addDays(context.today, -WINDOW_DAYS);
-  const last = (await publishedEditions(context)).map((edition) => edition.today).filter((day): day is string => typeof day === "string" && day <= context.today).sort().at(-1);
-  return last && last > floor ? last : floor;
-}
-
-/** source_event_ids from this source that already ran in a published edition for the location. */
-export async function publishedKeys(context: ConnectorContext, sourceId: string): Promise<Set<string>> {
-  const ids = (await publishedEditions(context)).map((edition) => edition.id);
-  const keys = new Set<string>();
-  if (!ids.length) return keys;
-  const entries = context.db.collection<PublishedEntry & { edition_id: string; disposition: string }>(COLLECTIONS.editionEntries)
-    .find({ edition_id: { $in: ids }, disposition: { $ne: "held" } }, { projection: { "result.story.occurrences": 1 } });
-  for await (const entry of entries) {
-    for (const item of entry.result?.story?.occurrences ?? []) if (item.source_id === sourceId && item.source_event_id) keys.add(item.source_event_id);
-  }
-  return keys;
+export function reportingSince(context: ConnectorContext): string {
+  return addDays(context.today, -WINDOW_DAYS);
 }
