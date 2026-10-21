@@ -209,6 +209,32 @@ time in the order below, and each follows the existing `Connector` contract
 | 4 | `housing`: real estate market | Home values, new housing supply | ✅ CSV and fixed-width text | ✅ Census place GEOID; city and state name | ✅ Public domain (Census, FHFA); Zillow needs attribution | 🟢 High |
 | 5 | `athletics`: high school team results | Community pride in local teams | ⚠️ WordPress RSS for news only; brackets are HTML | ⚠️ State association per state; school by name | ⚠️ Varies by state | 🟡 Medium-low |
 
+### Location relevance (all five connectors)
+
+Every link and fact must be about the location or within a reasonable distance of it. These
+connectors use the same tiers as the wider-area connectors (`connectors/wider/regions.ts`):
+**local** is within `LOCAL_KM` (15 km) and **nearby** is within `NEARBY_KM` (50 km).
+Anything else is dropped before ranking, never written.
+
+| Connector | Kept | Dropped |
+| --- | --- | --- |
+| `civiccalendar` | Calendars from the location's own city website, or the parks district that serves it. Events with a venue address are geocoded and kept within 15 km. | Other cities' calendars; virtual-only and out-of-area events. |
+| `development` | Permits from the location's own city portal, with coordinates or a geocoded address within 15 km. For neighbourhoods, within the neighbourhood area plus 2 km. | Permits elsewhere in a large city's dataset; county or state datasets without coordinates. |
+| `homesafety` | FEMA declarations that name the location's county. EPA violations for water systems that serve the city (or county as a fallback). | Statewide declarations without the county; water systems serving other places. |
+| `housing` | Rows matched on the location's Census place (state and place code), plus its county and 3-digit ZIP for context. | Same-name places in other states (such as Redmond, Oregon for Redmond, Washington); metro or national figures stated as local ones. |
+| `athletics` | Results naming a public school whose NCES address is within 15 km (local) or 50 km (nearby). | Results with no local school named; statewide news that only mentions the state. |
+
+Rules:
+- **Match on the record's place or coordinates, not the text.** A mention of the town in a
+  description is not enough (the same lesson as the governor release in the nearby-tier test).
+- **Each fact carries `tier` and, when known, `distance_km`.** Rankers prefer local over
+  nearby, as `ranking/wider.ts` does.
+- **Same-name places are matched with the state** (and the county or FIPS code when available).
+- **Each `SourceResult` reports what was dropped** with `skipped_outside_area` counts, so the
+  Health page shows when a connector is collecting the wrong place.
+- **Links must be official pages for the place.** Links to another city's pages, aggregators
+  or listing sites are rejected during link discovery and the link cache.
+
 ### 1. City and parks calendars (`civiccalendar`)
 
 - **Discovery:** reuse `LocationProfile.government.website`. On CivicPlus sites, read the
