@@ -193,3 +193,120 @@ Open risks:
 - Each nearby place needs reviewed coordinates; towns with few reviewed neighbours (such as
   Vancouver) get little wider coverage.
 - Wikipedia pageviews lag 1 to 3 days.
+
+## Next connectors: civically minded parents who own or plan to own a home (design)
+
+Probed 2026-10-21. Five connectors are planned for this reader profile. They're built one at a
+time in the order below, and each follows the existing `Connector` contract
+(`pipeline/connectors/types.ts`): `sources(location)` discovers from the location alone, and
+`collect(task)` returns a `SourceResult` plus facts.
+
+| # | Source type | Reader value | Machine-readable | Location discovery | Permitted | Feasibility |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `civiccalendar`: city and parks calendars | Family events, parks and rec, town halls | ✅ CivicPlus iCalendar feed | ✅ City website from the meetings connector | ✅ Redmond `robots.txt` doesn't block `/common/modules/iCalendar/` | 🟢 High |
+| 2 | `development`: permits and land use | New construction near home | ✅ Socrata SODA JSON | ⚠️ Catalog search per city domain | ✅ Open data licences | 🟡 Medium |
+| 3 | `homesafety`: disasters and drinking water | Water safety, disaster aid | ✅ OpenFEMA and EPA Envirofacts JSON | ⚠️ County FIPS (FEMA); water system by city (EPA) | ✅ Public domain | 🟢 High |
+| 4 | `housing`: real estate market | Home values, new housing supply | ✅ CSV and fixed-width text | ✅ Census place GEOID; city and state name | ✅ Public domain (Census, FHFA); Zillow needs attribution | 🟢 High |
+| 5 | `athletics`: high school team results | Community pride in local teams | ⚠️ WordPress RSS for news only; brackets are HTML | ⚠️ State association per state; school by name | ⚠️ Varies by state | 🟡 Medium-low |
+
+### 1. City and parks calendars (`civiccalendar`)
+
+- **Discovery:** reuse `LocationProfile.government.website`. On CivicPlus sites, read the
+  calendar page's category list (`/Calendar.aspx`), then build
+  `/common/modules/iCalendar/iCalendar.aspx?catID={id}&feed=calendar` for each category.
+  Cache the result in the link cache.
+- **Probe:** Redmond's feed answered with a valid `VCALENDAR`, but the guessed `catID=14` had 0
+  events, so category discovery must be real, not guessed.
+- **Facts:** parse with the library connector's ICS parser into `EventFacts`. Tag
+  `kind: "parks" | "community" | "civic"` from the category name, and skip categories that are
+  meetings, because the meetings connector already covers them.
+- **Ranking:** family-friendly and free events rank highest. Cancelled events are skipped.
+
+### 2. Development and permits (`development`)
+
+- **Discovery:** call `api.us.socrata.com/api/catalog/v1?q=permits&search_context={domain}`.
+  Try the domain from the city website (`data.{city}.gov`), then let a reviewed override file
+  map a location to its dataset ID. Probe: Seattle had 19 permit datasets, Austin 149 and
+  Norfolk 10; Bellevue had no portal.
+- **Facts:** these are filings, not events. Add a `FilingFacts` type: kind (new construction,
+  demolition, rezone), address, valuation, units, filed or issued date, and a source URL.
+  Only new construction, demolition, multi-unit and rezoning permits are kept; small repair
+  permits are dropped.
+- **Ranking:** larger projects (units or value) and filings close to the location's centre rank
+  higher. Owners' names are never written; addresses are only used for commercial and
+  multi-unit projects.
+- **Risk:** mostly larger cities publish permit data. Towns without a portal fall back to the
+  Census permit counts in the `housing` connector.
+
+### 3. Home and family safety (`homesafety`)
+
+Extends the existing `hazards` connector rather than adding a new one.
+
+- **FEMA:** `fema.gov/api/open/v2/DisasterDeclarationsSummaries`, filtered by state and the
+  location's county FIPS. New declarations name the aid programmes (individual or public
+  assistance) that are open to homeowners.
+- **EPA drinking water:** `data.epa.gov/efservice/...` for Safe Drinking Water violations by
+  water system. Discovery maps the location to its water systems through
+  `GEOGRAPHIC_AREA` (city served). The probe's lookup returned 0 systems for Redmond, so the
+  fallback is county served, followed by a reviewed override.
+- **Guardrails:** only health-based violations (not paperwork-only "monitoring and reporting")
+  are written, and only when they're new or still open in the window. Each story links the
+  official notice.
+
+### 4. Real estate market (`housing`)
+
+Market data only. Listing sites aren't used: Redfin's `robots.txt` blocks `/stingray/`
+except listing RSS, and individual listings and sale prices would name homeowners.
+
+| Source | Endpoint | Grain | Licence |
+| --- | --- | --- | --- |
+| Census Building Permits Survey | `www2.census.gov/econ/bps/Place/{Region}/{rr}{yymm}c.txt` | Place, monthly | Public domain |
+| Zillow Research home values (ZHVI) | `files.zillowstatic.com/research/public_csvs/zhvi/City_zhvi_...csv` (94 MB) | City, monthly | Free with attribution to Zillow |
+| FHFA house price index | `fhfa.gov/hpi/download/quarterly_datasets/hpi_at_3zip.csv` (3 MB) | 3-digit ZIP, quarterly | Public domain |
+
+- **Discovery:** match the Census place (state FIPS and place name or code) from
+  `LocationProfile.census_geoid`. The probe found an Edmonds row in the August 2025 West
+  file; the Redmond row was Redmond, Oregon, so matching must use the state, not just the
+  name.
+- **Collection:** these are large monthly files. Download and parse each file once per release
+  into MongoDB, shared by all locations, instead of once per location. Redfin's city tracker
+  (1 GB) is skipped.
+- **Facts:** add a `MetricFacts` type: metric, period, value, change since last month and last
+  year, and the source. Only notable changes are written (for example, value up or down
+  5%+ year on year, or permits at a 12-month high). Edition copy states the period, because
+  the data is 1 to 2 months old.
+
+### 5. High school athletics: team results only (`athletics`)
+
+Collect only where the state association's `robots.txt` and terms allow automated access.
+Team-level results only: **no student names, photos or individual stats**, because they're
+minors. School district sites and MaxPreps aren't used.
+
+| State association | Probe | Status |
+| --- | --- | --- |
+| WIAA (WA) | `/feed/` RSS works (news); brackets are on `wpanetwork.com`; no `robots.txt` (404) | ⚠️ News feed usable; brackets need terms review |
+| OSAA (OR) | `robots.txt` blocks `/brackets/`, `/teams/` and `/contests/`; homepage returns 403 | ❌ Blocked |
+| IHSA (IL) | `robots.txt` allows `*` except `/schools/trends/`, but declares content-use signals | ⚠️ Terms review needed |
+| CHSAA (CO) | No `robots.txt` (404) | ⚠️ Terms review needed |
+| MaxPreps | `robots.txt` blocks `/school/` and `/team/`; terms prohibit scraping | ❌ Blocked |
+
+- **Discovery:** a reviewed per-state config (as `config/state-sources.json` does for state
+  newsrooms) gives the association feed. Schools are matched to the location from NCES
+  public school names, without their websites.
+- **Facts:** state tournament advancement and results for schools in the location ("Edmonds-
+  Woodway girls soccer advances to state quarterfinals"). Items without a local school are
+  dropped.
+- **Risk:** coverage is per state and needs a terms review before each state is enabled.
+  Expect only some states to qualify, and mostly tournament-season results.
+
+### Build order
+
+1. `civiccalendar`: the smallest change; it reuses city website discovery and the ICS parser.
+2. `homesafety`: extends `hazards` with two keyless JSON APIs.
+3. `housing`: needs the new `MetricFacts` type and shared monthly ingest.
+4. `development`: needs the new `FilingFacts` type and per-city dataset discovery.
+5. `athletics`: needs a terms review for each state before enabling it.
+
+Each connector ships with recorded fixtures under `pipeline/tests/fixtures/{type}/`, a
+connector test, a ranker in `pipeline/ranking/` and an entry in `SOURCE_TYPES` and
+`CONNECTORS`.
