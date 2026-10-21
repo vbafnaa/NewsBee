@@ -46,9 +46,9 @@ it("persists normalized email, location and consent idempotently before and afte
     email: "reader@example.com",
     created_at: expect.any(Date),
     consented_at: expect.any(Date),
-    consent_version: "weekly-editions-v1",
+    consent_version: "weekly-editions-v2",
     weekly_editions: true,
-    launch_notification: true,
+    launch_notification: false,
   });
   await mongo.db.collection("editions").insertOne({ location_id: "ballard-seattle-wa" });
   expect((await signup(body)).status).toBe(200);
@@ -69,8 +69,28 @@ it("only adds weekly consent to legacy interest records when the reader explicit
   expect((await signup({ email: "reader@example.com", consent: true })).status).toBe(200);
   expect(await collection.countDocuments()).toBe(1);
   expect(await collection.findOne({ email: "reader@example.com" })).toMatchObject({
-    created_at: createdAt, weekly_editions: true, consent_version: "weekly-editions-v1",
+    created_at: createdAt, weekly_editions: true, consent_version: "weekly-editions-v2",
   });
+
+});
+
+it("only records launch notifications when explicitly requested", async () => {
+  const body = { email: "reader@example.com", consent: true, launch_notification: true };
+  expect((await signup(body)).status).toBe(200);
+  const collection = mongo.db.collection("reader_interest_signups");
+  expect(await collection.findOne({ email: body.email })).toMatchObject({
+    weekly_editions: true, launch_notification: true, consent_version: "weekly-editions-v1",
+  });
+  expect((await signup({ ...body, launch_notification: false })).status).toBe(200);
+  expect(await collection.findOne({ email: body.email })).toMatchObject({
+    weekly_editions: true, launch_notification: false, consent_version: "weekly-editions-v2",
+  });
+  expect(await collection.countDocuments()).toBe(1);
+});
+
+it.each(["true", 1, null])("rejects invalid launch preferences (%s)", async (launch_notification) => {
+  expect((await signup({ email: "reader@example.com", consent: true, launch_notification })).status).toBe(422);
+  expect(await mongo.db.collection("reader_interest_signups").countDocuments()).toBe(0);
 });
 
 it("rejects unknown locations, invalid emails and cross-origin requests", async () => {
