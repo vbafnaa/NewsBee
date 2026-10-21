@@ -28,6 +28,26 @@ export function channels(db: Db) {
   return db.collection<ChannelDocument>(COLLECTIONS.outputChannels);
 }
 
+export async function ensureReaderChannel(db: Db) {
+  const collection = channels(db);
+  await collection.updateOne(
+    { _id: "reader-site" },
+    {
+      $setOnInsert: {
+        name: "Newsbee reader site",
+        url: process.env.NEWSBEE_READER_SITE_URL ?? "https://newsbee-reader-site.vercel.app",
+        drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw",
+        enabled: true,
+      },
+    },
+    { upsert: true },
+  );
+  await collection.updateOne(
+    { _id: "reader-site", drive_folder_id: { $exists: false } },
+    { $set: { drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw" } },
+  );
+}
+
 /** Enabled channels that publish this location. */
 export async function channelsFor(db: Db, locationId: string) {
   return channels(db).find({ enabled: true, selected_location_ids: locationId }).sort({ _id: 1 }).toArray();

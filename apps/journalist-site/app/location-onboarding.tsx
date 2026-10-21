@@ -61,7 +61,7 @@ export default function LocationOnboarding({ busy, enrolled, onAdd }: {
   const added = selected ? enrolled.includes(selected.id) : false;
   return <section className="panel onboarding-panel" aria-labelledby="onboarding-title">
     <div className="section-heading"><div><p className="eyebrow">Add a community</p><h2 id="onboarding-title">Find your community</h2></div><span className="muted">Search &rarr; select &rarr; add</span></div>
-    <p>Search any US neighborhood or community, then select and add it. A resolved location can be added even when some news sources are unavailable; source coverage is reported separately.</p>
+    <p>Search any US neighborhood or community, then select and add it. New locations are enabled for reader-site publishing automatically; use Publishing settings to turn one off. A resolved location can be added even when some news sources are unavailable; source coverage is reported separately.</p>
     <form className="onboarding-form" onSubmit={(event) => { event.preventDefault(); if (selected && !added && !busy) void onAdd(selected); }}>
       <div className="town-combobox">
         <label className="field"><span>Neighborhood, town or city</span><input role="combobox" aria-autocomplete="list"

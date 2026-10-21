@@ -133,6 +133,22 @@ To remove an onboarded community or town, expand its card's **Location actions**
 and confirm. Removal is blocked while a job is running. It clears the town's pipeline
 records and manual links and removes it from output-channel directories.
 
+### Publishing settings
+
+Expand **Publishing settings** in **Runs & locations** to manage the main reader site:
+edit its URL, enable or disable publishing, and turn individual locations off.
+Newly onboarded locations are enabled for the default reader site automatically.
+Re-onboarding an existing location preserves any publishing disablement. Existing
+location selections are not changed automatically. Saving settings
+copies the latest published edition for re-enabled towns (if available) and refreshes
+the reader's location directory. Unselected towns leave the directory; their stored
+edition files are not deleted. Towns without a published edition do not appear yet.
+
+The console no longer has a separate output-channel page, channel picker, or
+channel-creation form. Old `/output-channel` bookmarks redirect to these settings.
+The underlying output-channel API, storage folders, and multi-channel pipeline remain
+unchanged; the simplified UI manages the default `reader-site` channel.
+
 ## Model providers
 
 Local runs use Ollama by default. To call hosted LLM APIs instead (locally or in the cloud),

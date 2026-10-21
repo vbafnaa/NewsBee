@@ -3,6 +3,7 @@ import Google from "next-auth/providers/google";
 import { MongoClient } from "mongodb";
 import { repositoryRoot } from "./pipeline/core/config";
 import { loadSourceConfig, SOURCE_CONFIGS } from "./pipeline/storage/source-configs";
+import { ensureReaderChannel } from "./pipeline/orchestration/publish";
 
 type MongoCache = typeof globalThis & {
   newsbeeMongo?: {
@@ -165,22 +166,7 @@ export async function getOutputChannel(channelId = "reader-site"): Promise<Outpu
   const database = await getMongoDatabase();
   const collection = database.collection<OutputChannelDocument>("output_channels");
   if (channelId === "reader-site") {
-    await collection.updateOne(
-      { _id: "reader-site" },
-      {
-        $setOnInsert: {
-          name: "Newsbee reader site",
-          url: process.env.NEWSBEE_READER_SITE_URL ?? "https://newsbee-reader-site.vercel.app",
-          drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw",
-          enabled: true,
-        },
-      },
-      { upsert: true },
-    );
-    await collection.updateOne(
-      { _id: "reader-site", drive_folder_id: { $exists: false } },
-      { $set: { drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw" } },
-    );
+    await ensureReaderChannel(database);
   }
   return outputChannelFromDocument(await collection.findOne({ _id: channelId }));
 }
