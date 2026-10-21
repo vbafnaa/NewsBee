@@ -417,7 +417,16 @@ export async function saveInterestSignup(location: Location, email: string) {
   await mongo.indexPromise;
   await collection.updateOne(
     { location_id: location.id, email },
-    { $setOnInsert: { location_id: location.id, location_name: location.name, email, created_at: new Date() } },
+    {
+      $setOnInsert: { location_id: location.id, email, created_at: new Date() },
+      $set: {
+        location_name: location.name,
+        consent_version: "weekly-editions-v1",
+        consented_at: new Date(),
+        weekly_editions: true,
+        launch_notification: true,
+      },
+    },
     { upsert: true },
   );
 }
