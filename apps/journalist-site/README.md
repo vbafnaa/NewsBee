@@ -263,14 +263,16 @@ also recover interrupted work, but never cross a gate.
 2. **Start authoring**: score candidates in batches of at most 12 with up to 600 characters of
    source context for hosted ranking (280 for Ollama). Retry missing/invalid ratings once,
    then report deterministic fallback scores explicitly. Ranking reports retain provider,
-   model, pool size, attempts, errors and fallback counts. News candidates are authored
-   before upcoming listings, preferring town news to wider news. Write one story per job,
-   with validation and one retry; failures are held with reasons. The edition remains
-   bounded at 9 items and at most 4 county/nearby items, not 25 authored stories.
+   model, pool size, attempts, errors and fallback counts. Author candidates in ranked
+   order, one story per job, with validation and one retry; failures are held with reasons
+   and do not consume publication slots. Continue until **12 stories pass checks** or the
+   ranked pool is exhausted, without separate town/county/nearby quotas or attempt caps.
    The run stops at `awaiting_finish`; front-page/email writing and publication wait.
 3. **Write front page and email, then publish**: write the edition front page and email
    preview, save the artifacts, and publish the edition to every enabled output channel
-   that selects the location. Email is preview-only: **no email is sent**.
+   that selects the location. Published items and front-page/email context use ranked
+   order; the reader still groups stories into news and upcoming-event sections.
+   Email is preview-only: **no email is sent**.
 
 The run list/detail and Health show both waiting states. Authenticated same-origin admin
 POSTs to `/api/admin/runs/<run-id>/authoring`, `/finish` and `/resume` back the controls.

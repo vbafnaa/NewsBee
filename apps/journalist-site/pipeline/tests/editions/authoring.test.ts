@@ -73,7 +73,7 @@ describe("resumable edition authoring", () => {
     expect(await finishAuthoring(deps, id)).toMatchObject({ edition: result.edition });
   });
 
-  it("prioritizes uncovered source types and respects wider inclusion and attempt caps", async () => {
+  it("authors and publishes in rank order without source, tier or news priorities", async () => {
     const events: SourceEvent[] = [
       ["library:main", "Library one", "2026-11-01", "event"],
       ["library:main", "Library two", "2026-11-02", "event"],
@@ -113,14 +113,15 @@ describe("resumable edition authoring", () => {
     while (step.more && safety++ < 20) step = await authorNextStory(deps, id);
     const output = await finishAuthoring(deps, id);
     if (!("edition" in output) || !output.edition || !("summary" in output) || !output.summary) throw new Error("Edition was not published");
-    expect(writingOrder.slice(0, 4)).toEqual(["Regional roads", "Regional update", "County ferry", "County alert"]);
-    expect(writingOrder.slice(4)).toEqual(["Library one", "Board meeting", "Library two"]);
-    expect(output.summary).toMatchObject({ local_included: 3, wider_included: 4, wider_attempted: 4, attempted: 7 });
-    expect(output.edition.items.slice(0, 4).every((item) => item.kind === "state_news")).toBe(true);
-    expect(output.edition.items.slice(4).every((item) => item.section === "Upcoming events")).toBe(true);
-    expect(output.edition.items[0].section).toBe("Around the county");
+    expect(writingOrder).toEqual(["Library one", "Library two", "Nearby overflow", "Regional roads", "Regional update", "County ferry", "County alert", "Board meeting"]);
+    expect(output.summary).toMatchObject({ local_included: 3, wider_included: 5, wider_attempted: 5, attempted: 8 });
+    expect(output.edition.items.map((item) => item.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(output.edition.items.map((item) => item.headline)).toEqual(writingOrder.map((title) => `${title} brings neighbors together`));
+    expect(output.edition.items[0].section).toBe("Upcoming events");
+    expect(output.edition.items[2].section).toBe("Near town");
+    expect(output.edition.items[3].section).toBe("Around the county");
     expect(frontLeads.length).toBeGreaterThan(0);
-    expect(frontLeads.every((title) => title === "Regional roads")).toBe(true);
+    expect(frontLeads.every((title) => title === "Library one")).toBe(true);
   });
 
   it("reuses checked story prose by evidence, model and validation policy", async () => {
@@ -176,7 +177,66 @@ describe("resumable edition authoring", () => {
   });
 
 
-  it("caps local and wider attempts independently", async () => {
+  it.each([0, 8, 12, 20])("publishes up to 12 checked stories from %i ranked candidates, backfilling holds", async (count) => {
+    const held = count === 20 ? 3 : 0;
+    const attempted = Math.min(count, 12 + held);
+    const events: SourceEvent[] = Array.from({ length: count }, (_, index) => ({
+      source_id: ["library:main", "meetings:board", "statenews:wa", "hazards:usgs"][index % 4],
+      facts: {
+        source_event_id: `item-${index}`, title: `Community item ${index}`,
+        event_date: `2026-11-${String(index + 1).padStart(2, "0")}`, schedule_text: "November 2026",
+        venue: "Town Hall", room: null, source_url: `https://example.org/item/${index}`,
+        description: held && index === 0 ? "An alleged incident needs review." : "Neighbors discuss practical local resources.",
+        kind: "event", tier: ["nearby", "region", "local"][index % 3],
+      },
+    }));
+    const writingOrder: string[] = [];
+    const frontOrders: string[][] = [];
+    const model = new FakeModel(({ prompt }) => {
+      if (prompt.startsWith("Rate each candidate")) {
+        const candidates = JSON.parse(prompt.split("\nCandidates:\n")[1]) as Array<{ id: string }>;
+        return { ratings: candidates.map(({ id }) => ({ id, category: "other", civic: 1, appeal: 0, special: 0 })) };
+      }
+      if (prompt.startsWith("You write for a friendly local community newsletter.")) {
+        const item = JSON.parse(prompt.match(/\nStory:\n(\{[^\n]*\})/)?.[1] ?? "{}") as { title: string };
+        writingOrder.push(item.title);
+        return { headline: `${item.title} brings neighbors together`, summary: held && ["Community item 1", "Community item 2"].includes(item.title) ? "Free raffle." : "Neighbors discuss practical local resources." };
+      }
+      if (prompt.startsWith("You edit a friendly local community newsletter.")) {
+        const context = JSON.parse(prompt.split("\nEdition:\n")[1]) as { stories: Array<{ title: string }> };
+        frontOrders.push(context.stories.map((story) => story.title));
+        return { headline: `${context.stories[0].title} leads the edition`, intro: "Neighbors can explore these community stories." };
+      }
+      if (prompt.startsWith("You write the email")) return { blurb: "Discover the latest local community stories." };
+      throw new Error(`Unexpected prompt: ${prompt.slice(0, 40)}`);
+    });
+    const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
+    const input = { location: { id: "town", name: "Auburn, WA" }, runId: `ranked-${count}`, today: "2026-10-19", window: ["2026-11-01", "2026-11-30"] as [string, string], events, sourceResults: [] };
+    const id = await startAuthoring(deps, input);
+    let step = await authorNextStory(deps, id);
+    let guard = 0;
+    while (step.more && guard++ < count) {
+      expect(await startAuthoring(deps, input)).toBe(id);
+      step = await authorNextStory(deps, id);
+    }
+    expect(step.done).toBe(true);
+    expect(await authorNextStory(deps, id)).toEqual({ more: false, done: true });
+    const output = await finishAuthoring(deps, id);
+    if (!("edition" in output) || !output.edition || !("summary" in output) || !output.summary) throw new Error("Edition was not published");
+    const expectedTitles = events.slice(held, attempted).map((event) => event.facts.title);
+    expect(output.edition.items.map((item) => item.rank)).toEqual(Array.from({ length: attempted - held }, (_, index) => index + held + 1));
+    expect(output.edition.items.map((item) => item.headline)).toEqual(expectedTitles.map((title) => `${title} brings neighbors together`));
+    expect(output.summary).toMatchObject({ attempted, held, included: attempted - held, not_attempted: count - attempted });
+    expect([...new Set(writingOrder)]).toEqual(events.slice(held ? 1 : 0, attempted).map((event) => event.facts.title));
+    if (count) {
+      expect(frontOrders.length).toBeGreaterThan(0);
+      expect(frontOrders.every((order) => JSON.stringify(order) === JSON.stringify(expectedTitles))).toBe(true);
+    }
+    if (held) expect(output.summary.held_reasons).toMatchObject({ sensitive_requires_editor: 1, "summary:unsupported_claim_word:free": 2 });
+    expect(await finishAuthoring(deps, id)).toMatchObject({ edition: output.edition });
+  });
+
+  it("exhausts local and wider candidates when all checks fail", async () => {
     async function run(events: SourceEvent[], runId: string) {
       const model = new FakeModel(({ prompt }) => {
         if (prompt.startsWith("Rate each candidate")) {
@@ -201,7 +261,7 @@ describe("resumable edition authoring", () => {
       facts: { source_event_id: `local-${index}`, title: `Local item ${index}`, event_date: `2026-11-${String(1 + index % 7).padStart(2, "0")}`, schedule_text: "November 1, 2026", venue: "Town Hall", room: null, source_url: `https://example.org/local/${index}`, description: "Neighbors share practical local resources.", kind: "event", tier: "local" },
     }));
     const local = await run(localEvents, "local-cap");
-    expect(local.summary).toMatchObject({ attempted: 12, held: 12, included: 0, not_attempted: 3 });
+    expect(local.summary).toMatchObject({ attempted: 15, held: 15, included: 0, not_attempted: 0 });
     const kinds = ["earthquake", "state_news", "trending_topic"];
     const sourceIds = ["hazards:usgs", "statenews:wa", "trending:google"];
     const wideEvents: SourceEvent[] = Array.from({ length: 7 }, (_, index) => ({
@@ -209,7 +269,7 @@ describe("resumable edition authoring", () => {
       facts: { source_event_id: `wide-${index}`, title: `Wide item ${index}`, event_date: "2026-10-30", schedule_text: "October 30, 2026", venue: "Official source", room: null, source_url: `https://example.org/wide/${index}`, description: "Official sources report practical local resources.", kind: kinds[index % kinds.length], tier: "region", signals: { magnitude: 2, distance_km: 4, ratio: 1 } },
     }));
     const wide = await run(wideEvents, "wide-cap");
-    expect(wide.summary).toMatchObject({ attempted: 6, held: 6, included: 0, not_attempted: 1, wider_attempted: 6 });
+    expect(wide.summary).toMatchObject({ attempted: 7, held: 7, included: 0, not_attempted: 0, wider_attempted: 7 });
   });
 
 });
