@@ -78,7 +78,7 @@ Outlets without coordinates are not silently selected from the whole parent city
 | Library | Reuse system calendars, retaining events only at spatially selected branches (or optional reviewed branch overrides). Missing configured branches produce a gap, never a citywide fallback. Existing IMLS imports are upgraded once to include outlet coordinates. |
 | Government | Discover the governing city/county supplied by the provider, honoring community then parent overrides. Missing jurisdiction stays unresolved. Filter agenda **items before summarization**, not the council meeting venue, by community mention, selected-venue address or available geographic evidence. Manual meeting links use the same filter. |
 | Community/state news (`statenews`) | Reuse the news connector. Validate actual RSS/Atom links from the community website supplied by OSM or exact-name, nearby-US Wikidata discovery, plus reviewed overrides. Retain only items with community relevance evidence; parent-city/county mentions alone are insufficient. This is not general web crawling or arbitrary HTML-news extraction. |
-| Trends | Apply the same community evidence requirement to recent linked reporting. Popularity or nearby city mentions do not qualify. |
+| Trends | Automatically search community names, aliases, coverage terms and selected library branches, qualified by the parent jurisdiction; also read the community's discovered RSS/Atom feeds. Keep only recent articles with community evidence, independently of Wikipedia traffic. Popularity or parent/nearby city mentions alone do not qualify. |
 | Hazards | Keep regional USGS coverage centered on the neighborhood, labeled as nearby earthquakes rather than neighborhood reporting. |
 
 The **Sources** location filter shows coverage terms, selected branches, feed configuration,
@@ -91,6 +91,31 @@ GeoRSS/WGS84 point coordinates; an item's coordinates are not inferred from a pu
 office or a council meeting venue. Generic names such as "Downtown" need a parent
 jurisdiction mention or stronger venue/geographic evidence. Editors should select coverage terms
 carefully to balance missed stories against false positives.
+
+Community reporting requires no per-location topic catalog or model-generated search terms.
+It derives up to six Bluesky searches from each saved onboarding profile (up to four
+distinct community/coverage names and two selected branch names), using the parent
+city/county instead of a state-only qualifier. A place without a distinct parent uses its
+state. It also reads up to three unique community feeds already validated during onboarding.
+Candidate links are interleaved across searches and feeds, deduplicated and limited to
+12 article URLs per collection. Articles still need a publisher, publication date within
+seven days and substantive local text; feed titles, social posts and a publisher's office
+location are not geographic evidence. Each retained community story records the matching
+community/alias/selected-venue evidence. Practical impact and freshness precede attention
+in ranking, with publisher diversity in the five retained community-reporting candidates.
+Repeated articles discovered by newsroom, Bluesky and Wikipedia collection collapse by
+article URL and publication day.
+
+Wikipedia remains a separate, optional attention-discovery path. For communities it resolves
+real article titles through parent-qualified Wikipedia search and checks the result's
+introductory text for community and parent relevance, rather than inventing municipal
+article names or inheriting the parent city's sports/landmark watchlist. Existing pageview
+spike thresholds apply only to that path; no Wikipedia page or traffic spike is needed for
+community-feed or Bluesky-linked reporting. Town discovery retains its 15-mile configured
+nearby-place coverage. Search queries, feed URLs and partial discovery errors are recorded
+on the community-reporting source result; failures of every discovery source are reported
+as failures, not empty successful collections. Changes to profile terms, venues or feeds
+invalidate the daily Wikipedia cache identity.
 
 Optional reviewed overrides live in `config/communities.json` and are seeded once into the
 `communities` document in MongoDB `source_configs`. They enrich matching provider places

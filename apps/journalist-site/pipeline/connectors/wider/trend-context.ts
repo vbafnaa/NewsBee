@@ -3,9 +3,10 @@ import { httpsLink, MAX_FEED_BYTES } from "../common";
 import { Fetcher } from "../fetcher";
 import type { ConnectorContext } from "../types";
 import { pageLinks } from "../ai-discovery";
-import { blueskySearchUrl, sensitive, sponsoredItem } from "./adapters";
+import { blueskySearchUrl, parseNewsFeed, sensitive, sponsoredItem } from "./adapters";
 import { publicSourceTransport } from "../public-http";
 import { trendTier, type Region } from "./regions";
+import { quoteSearch, reportingQualifier, type ReportingSearch } from "./trend-discovery";
 export { assertPublicReportingUrl } from "../public-http";
 
 const MAX_REPORTS = 3;
@@ -102,8 +103,8 @@ export function parseTrendReport(html: string, url: string, topic: string, today
   const age = Date.parse(`${today}T23:59:59Z`) - Date.parse(published);
   if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 || !publisher.trim()) return null;
   if (sponsoredItem({ title, link: url, summary: paragraphs.join(" "), categories: sections })) return null;
-  const relevant = paragraphs.filter((text) => topicMention(`${title} ${text}`, topic)
-    && trendTier(place, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
+  const relevant = paragraphs.filter((text) => (!topic || topicMention(`${title} ${text}`, topic))
+    && trendTier(place, title, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
   // Do not let a sidebar's town name or a popularity-only paragraph establish relevance.
   const evidence = relevant.filter((text) => !ATTENTION.test(text) && !/\b(?:pageviews|daily views|post count)\b/i.test(text));
   if (!title.trim() || ATTENTION.test(title) || !evidence.length) return null;
@@ -112,41 +113,70 @@ export function parseTrendReport(html: string, url: string, topic: string, today
 }
 
 export async function trendReports(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext[]> {
+  return (await discoverReports(context, place, [{ topic, query: `${quoteSearch(topic)} ${quoteSearch(reportingQualifier(place))}` }], [], wikipediaUrl)).reports;
+}
+
+export async function discoverReports(context: ConnectorContext, place: Region, searches: ReportingSearch[], feeds: string[] = [], wikipediaUrl?: string) {
   const since = new Date(Date.parse(`${context.today}T00:00:00Z`) - MAX_AGE_DAYS * 86400000);
-  const urls: string[] = [];
+  const groups: Array<Array<{ url: string; topic: string }>> = [];
+  const errors: string[] = [];
   let discovered = false;
   const eligible = (url: string) => httpsLink(url) !== null && !EXCLUDED_HOST.test(new URL(url).hostname);
   const fetcher = new Fetcher(publicSourceTransport(context.transport));
-  try {
-    const [, bytes] = await context.fetcher.get(blueskySearchUrl(`"${topic}" "${place.state_name ?? place.state_code}"`, since), MAX_FEED_BYTES, "application/json");
-    urls.push(...reportingLinks(bytes, since).filter(eligible).slice(0, MAX_REPORTS));
-    discovered = true;
-  } catch (error) { context.log.warn("trend_reporting_discovery_failed", { topic, error: String(error) }); }
+  const failed = (source: string, error: unknown) => {
+    errors.push(`${source}: ${String(error)}`);
+    context.log.warn("trend_reporting_discovery_failed", { source, error: String(error) });
+  };
+  for (const { topic, query } of searches.slice(0, 6)) {
+    try {
+      const [, bytes] = await context.fetcher.get(blueskySearchUrl(query, since), MAX_FEED_BYTES, "application/json");
+      groups.push(reportingLinks(bytes, since).filter(eligible).slice(0, MAX_REPORTS).map((url) => ({ url, topic })));
+      discovered = true;
+    } catch (error) { failed(query, error); }
+  }
+  for (const feed of [...new Set(feeds)].slice(0, 3)) {
+    try {
+      const [, bytes] = await fetcher.get(feed, MAX_FEED_BYTES, "application/rss+xml, application/atom+xml, application/xml");
+      const items = parseNewsFeed(bytes).filter((item) => item.published >= since
+        && item.published.getTime() <= Date.parse(`${context.today}T23:59:59Z`) && !sponsoredItem(item));
+      groups.push(items.filter((item) => eligible(item.link)).slice(0, MAX_REPORTS).map((item) => ({ url: item.link, topic: "" })));
+      discovered = true;
+    } catch (error) { failed(feed, error); }
+  }
   if (wikipediaUrl) {
     try {
       const [, html] = await context.fetcher.getText(wikipediaUrl, MAX_FEED_BYTES, "text/html");
-      urls.push(...pageLinks(html, wikipediaUrl, 1000).map((link) => link.url).filter(eligible).slice(0, MAX_REPORTS));
+      groups.push(pageLinks(html, wikipediaUrl, 1000).map((link) => link.url).filter(eligible).slice(0, MAX_REPORTS)
+        .map((url) => ({ url, topic: searches[0]?.topic ?? "" })));
       discovered = true;
-    } catch (error) { context.log.warn("trend_reference_discovery_failed", { topic, error: String(error) }); }
+    } catch (error) { failed(wikipediaUrl, error); }
   }
-  if (!discovered) throw new Error(`Local reporting discovery unavailable for ${topic}`);
-  const candidates = [...new Set(urls)];
+  if (!discovered) throw new Error(`Local reporting discovery unavailable: ${errors.join("; ")}`);
+  // Round-robin candidates prevent the first identity or publisher from taking the entire budget.
+  const candidates = Array.from({ length: MAX_REPORTS }, (_, index) => groups.flatMap((group) => group[index] ? [group[index]] : [])).flat();
+  const topicsByUrl = new Map<string, Set<string>>();
+  for (const { url, topic } of candidates) {
+    if (!topicsByUrl.has(url)) topicsByUrl.set(url, new Set());
+    topicsByUrl.get(url)!.add(topic);
+  }
+  const reportsByUrl = new Map<string, TrendContext>();
   const reports: TrendContext[] = [];
   let fetched = 0;
-  for (const url of candidates) {
+  for (const [url, topics] of [...topicsByUrl].slice(0, 12)) {
     try {
       const [finalUrl, html] = await fetcher.getText(url, MAX_FEED_BYTES, "text/html");
       fetched++;
-      const report = parseTrendReport(html, finalUrl, topic, context.today, place);
+      const report = [...topics].map((topic) => parseTrendReport(html, finalUrl, topic, context.today, place)).find((report) => report !== null);
       if (report) {
-        context.log.info("trend_context_verified", { topic, url: finalUrl, publisher: report.publisher });
-        reports.push(report);
+        context.log.info("trend_context_verified", { url: finalUrl, publisher: report.publisher });
+        reportsByUrl.set(finalUrl, report);
       }
-    } catch (error) { context.log.warn("trend_reporting_fetch_failed", { topic, url, error: String(error) }); }
+    } catch (error) { failed(url, error); }
   }
-  if (candidates.length && !fetched) throw new Error(`All linked reporting unavailable for ${topic}`);
-  if (!reports.length) context.log.info("trend_context_missing", { topic, reports_checked: candidates.length, location_id: place.location_id });
-  return reports;
+  if (candidates.length && !fetched) throw new Error("All linked reporting unavailable");
+  reports.push(...reportsByUrl.values());
+  if (!reports.length) context.log.info("trend_context_missing", { reports_checked: Math.min(topicsByUrl.size, 12), location_id: place.location_id });
+  return { reports, errors };
 }
 
 export async function trendContext(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext | null> {
