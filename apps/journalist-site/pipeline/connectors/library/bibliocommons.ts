@@ -1,4 +1,4 @@
-import { checkCount, FeedFormatError, plainText, scheduleText, type EventFacts, type LocalMoment } from "../common";
+import { cancelledTitle, checkCount, FeedFormatError, plainText, scheduleText, type EventFacts, type LocalMoment } from "../common";
 
 export const GATEWAY = "https://gateway.bibliocommons.com/v2/libraries/{slug}";
 export const PAGE_LIMIT = 100;
@@ -59,7 +59,7 @@ export function parse(content: Uint8Array, slug: string, venues: Record<string, 
   for (const rawId of order) {
     const id = String(rawId), entry = entities[id] ?? {}, definition = entry.definition ?? {};
     if (!SAFE_ID.test(id) || !definition.title) throw new FeedFormatError("Event is missing an id or title");
-    if (definition.isCancelled) { skip("cancelled"); continue; }
+    if (definition.isCancelled || cancelledTitle(definition.title)) { skip("cancelled"); continue; }
     const venue = venues[String(definition.branchLocationId)];
     if (venue === undefined) { skip("no_venue"); continue; }
     const start = moment(definition.start);

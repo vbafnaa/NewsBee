@@ -126,6 +126,33 @@ it("keeps only local or nearby state news and filters sensitive and old items", 
   expect(result.result.skipped_unusable).toEqual({ sensitive_topic: 1, not_near_town: 1, outside_news_window: 1 });
   expect(result.result.pages_checked).toEqual(["https://gov.example/rss.xml", "https://dot.example/rss.xml"]);
 });
+it("keeps weather news only when it names the town or county and never rewrites sponsored posts", async () => {
+  const entry = (n: number, title: string, extra = "", link = `https://gov.example/w${n}`) => `<item><title>${title}</title><link>${link}</link><pubDate>Sat, 17 Oct 2026 00:00:00 GMT</pubDate>${extra}</item>`;
+  const feed = `<rss><channel>${[
+    entry(1, "Winter storm warning issued for Auburn"),
+    entry(2, "Windstorm knocks out power across King County"),
+    entry(3, "Flooding closes roads in Seattle"),
+    entry(4, "Ferry schedule changes in Seattle"),
+    entry(5, "Sponsored: Auburn's best roofers"),
+    entry(6, "Auburn home buying tips", "<category>Sponsored Content</category>"),
+    entry(7, "Auburn dealership deals", "", "https://gov.example/partner-content/deals"),
+    entry(8, "New Auburn bakery opens", "<description>This content was paid for by Main Street Bakery.</description>"),
+  ].join("")}</channel></rss>`;
+  const replay = new ReplayTransport().on("https://gov.example/rss.xml", { body: feed }).on("https://dot.example/rss.xml", fixtureResponse("empty-rss.xml"));
+  const result = await stateNewsConnector.collect(newsTask, context(replay));
+  expect(result.events.map(({ title, tier }) => [title, tier])).toEqual([
+    ["Winter storm warning issued for Auburn", "local"], ["Windstorm knocks out power across King County", "region"], ["Ferry schedule changes in Seattle", "nearby"],
+  ]);
+  expect(result.result.skipped_unusable).toEqual({ hazard_not_local: 1, sponsored: 4 });
+});
+it("keeps small earthquakes only when they are close to the town", async () => {
+  const quake = (id: string, mag: number, lat: number, felt = 0) => ({ id, geometry: { coordinates: [-122.2285, lat, 10] }, properties: { mag, place: `${id} place, Washington`, felt, time: 1760400000000, status: "reviewed", url: `https://earthquake.usgs.gov/${id}` } });
+  const body = JSON.stringify({ type: "FeatureCollection", features: [quake("local", 3.0, 47.32), quake("far-small", 3.6, 47.58, 40), quake("far-strong", 4.2, 47.58)] });
+  const replay = new ReplayTransport().on(/earthquake\.usgs\.gov\/fdsnws\/event\/1\/query/, { body });
+  const result = await hazardsConnector.collect(hazardTask, context(replay));
+  expect(result.events.map((event) => [event.source_event_id, event.tier])).toEqual([["far-strong", "nearby"], ["local", "local"]]);
+  expect(result.result.skipped_unusable).toEqual({ below_threshold: 1 });
+});
 
 it("validates AI-discovered state newsroom feeds and caches the better run", async () => {
   const data = JSON.parse(fixture("wider/config/state-sources.json").toString("utf8"));

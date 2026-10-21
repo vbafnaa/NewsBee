@@ -95,6 +95,29 @@ it("parsers enforce malformed-input and unsafe-feed rules", () => {
   expect(parsed.events[0]).toMatchObject({ event_date: "2026-11-03", room: "Room B" });
 });
 
+it("skips cancelled library events in every supported feed format", () => {
+  const encode = (text: string) => new TextEncoder().encode(text);
+  const vevent = (uid: string, summary: string, extra = "") => `BEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${summary}\r\n${extra}DTSTART:20261103T100000\r\nLOCATION:Main Branch\r\nURL:https://library.example/${uid}\r\nEND:VEVENT\r\n`;
+  const ical = parseIcal(encode(`BEGIN:VCALENDAR\r\n${vevent("ok", "Story time")}${vevent("status", "Book club", "STATUS:CANCELLED\r\n")}${vevent("title", "CANCELLED: Lego Club")}${vevent("us", "Canceled - Teen Art")}END:VCALENDAR\r\n`));
+  expect(ical.events.map((event) => event.source_event_id)).toEqual(["ok"]);
+  expect(ical.skipped).toEqual({ cancelled: 3 });
+
+  const ld = (name: string, extra = "") => `{"@type":"Event","name":"${name}","url":"https://library.example/${encodeURIComponent(name)}","startDate":"2026-11-03T10:00","location":"Main Branch"${extra}}`;
+  const jsonLd = parseJsonLd(encode(`<script type="application/ld+json">[${ld("Story time")},${ld("Book club", ',"eventStatus":"https://schema.org/EventCancelled"')},${ld("Cancelled Craft Hour")}]</script>`));
+  expect(jsonLd.events.map((event) => event.title)).toEqual(["Story time"]);
+  expect(jsonLd.skipped).toEqual({ cancelled: 2 });
+
+  const item = (id: string, title: string) => `<item><title>${title}</title><guid>${id}</guid><link>https://library.example/${id}</link><category>2026/11/03 (Tue)</category><description>Tue, Nov 3, 10am&lt;br/&gt;Location Link: Main Branch&lt;br/&gt;</description></item>`;
+  const trumba = parseTrumba(encode(`<rss><channel>${item("ok", "Story time")}${item("gone", "CANCELLED - Book club")}</channel></rss>`));
+  expect(trumba.events.map((event) => event.source_event_id)).toEqual(["ok"]);
+  expect(trumba.skipped).toEqual({ cancelled: 1 });
+  expect(parseTrumba(encode(`<rss><channel>${item("gone", "Cancelled: Book club")}</channel></rss>`)).events).toEqual([]);
+
+  const biblio = parseBiblio(encode(JSON.stringify({ events: { results: ["x"], pagination: { count: 1 } },
+    entities: { events: { x: { definition: { title: "CANCELED: Lego Club", start: "2026-11-03T10:30", branchLocationId: "1" } } } } })), "kcls", { "1": "Main Branch" });
+  expect(biblio).toEqual({ events: [], skipped: { cancelled: 1 } });
+});
+
 
 
 

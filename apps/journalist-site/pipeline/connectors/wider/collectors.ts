@@ -6,14 +6,14 @@ import { FeedFormatError, MAX_FEED_BYTES } from "../common";
 import { DiscoveryBlockedError } from "../fetcher";
 import { sourceResult, type CollectedEvent, type CollectedSource, type Connector, type ConnectorContext, type LocationProfile, type SourceTask } from "../types";
 import { chooseLinks, moreEvents, pageLinks } from "../ai-discovery";
-import { parseNewsFeed, parseUsgs, parseWikiDaily, parseWikiTop, publishedText, sensitive, sha256, spike, usgsQueryUrl, wikiArticleUrl, wikiDailyUrl, wikiLabel, wikiRecentDays, wikiTopUrl, wikiTopic, type NewsFacts } from "./adapters";
-import { itemTier, mentions, NEARBY_KM, resolveRegion, resolveTrendRegion, trendTier, section, validateStateSources, type Region } from "./regions";
+import { hazardTopic, parseNewsFeed, parseUsgs, parseWikiDaily, parseWikiTop, publishedText, sensitive, sha256, spike, sponsoredItem, usgsQueryUrl, wikiArticleUrl, wikiDailyUrl, wikiLabel, wikiRecentDays, wikiTopUrl, wikiTopic, type NewsFacts } from "./adapters";
+import { itemTier, LOCAL_KM, mentions, NEARBY_KM, resolveRegion, resolveTrendRegion, trendTier, section, validateStateSources, type Region } from "./regions";
 import { trendContext, trendReports, reportedDescription, type TrendContext } from "./trend-context";
 import { communityEvidence } from "../community";
 
 const ACCEPT_JSON = "application/json";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
-const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MAX_ITEMS = 5;
+const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MIN_DISTANT_MAGNITUDE = 4, MAX_ITEMS = 5;
 const OFFSET = /^\s*\d+(?:\.\d+)?\s*km\s+[NSEW]{1,3}\s+of\s+/i;
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const dateDelta = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -27,6 +27,12 @@ function emptyFailure(task: SourceTask, context: ConnectorContext, error: unknow
 }
 function makeFacts(values: NewsFacts): CollectedEvent { return values as CollectedEvent; }
 function createNewsFacts(fields: NewsFacts): CollectedEvent { return makeFacts(fields); }
+/** Weather and earthquake news must name the community or its county, not just a nearby place. */
+function distantHazard(tier: string | null, ...texts: Array<string | null | undefined>) { return tier === "nearby" && hazardTopic(...texts); }
+/** Small quakes are only noticeable close to the epicentre; farther away only stronger quakes matter to residents. */
+function quakeRelevant(q: { magnitude: number; felt: number; distance_km: number }) {
+  return q.distance_km <= LOCAL_KM ? q.magnitude >= MIN_MAGNITUDE || q.felt >= MIN_FELT : q.magnitude >= MIN_DISTANT_MAGNITUDE;
+}
 
 export const hazardsConnector: Connector = {
   type: "hazards",
@@ -57,7 +63,7 @@ async function collectHazards(task: SourceTask, context: ConnectorContext): Prom
   try { all = parseUsgs(content, place.latitude, place.longitude); }
   catch (error) { record.status = "failed"; record.detail = `${errName(error)}: ${errMessage(error)}`; return { result: record, events: [] }; }
   const near = all.filter((q) => q.distance_km <= RADIUS_KM);
-  const kept = near.filter((q) => q.magnitude >= MIN_MAGNITUDE || q.felt >= MIN_FELT);
+  const kept = near.filter(quakeRelevant);
   const skipped: Record<string, number> = { too_far: all.length - near.length, below_threshold: near.length - kept.length };
   kept.sort((a, b) => b.magnitude - a.magnitude || a.distance_km - b.distance_km);
   const groups = new Map<string, typeof kept>();
@@ -82,7 +88,7 @@ function reviewNote(quakes: Array<{ reviewed: boolean }>) {
   if (quakes.length === 1) return " The USGS reading is automatic and may be revised.";
   return " Some USGS readings are automatic and may be revised.";
 }
-function quakeTier(distance: number) { return distance <= 15 ? "local" : "nearby"; }
+function quakeTier(distance: number) { return distance <= LOCAL_KM ? "local" : "nearby"; }
 function quakeFacts(q: ReturnType<typeof parseUsgs>[number], town: string): CollectedEvent {
   const place = q.place || "near the town", day = formatDate(q.time);
   let description = `The U.S. Geological Survey recorded a magnitude ${q.magnitude} earthquake ${place}, at a depth of ${q.depth_km} km, about ${q.distance_km} km from ${town}.`;
@@ -143,8 +149,10 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
           skipped.outside_news_window = (skipped.outside_news_window ?? 0) + 1; continue;
         }
         if (sensitive(item.title, item.summary)) { skipped.sensitive_topic = (skipped.sensitive_topic ?? 0) + 1; continue; }
+        if (sponsoredItem(item)) { skipped.sponsored = (skipped.sponsored ?? 0) + 1; continue; }
         const tier = itemTier(place, item.title, item.summary, true, item.coordinates);
         if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }
+        if (distantHazard(tier, item.title, item.summary)) { skipped.hazard_not_local = (skipped.hazard_not_local ?? 0) + 1; continue; }
         if (kept >= MAX_PER_NEWSROOM) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
         kept++;
         facts.push(createNewsFacts({ source_event_id: sha256(item.id).slice(0, 16), title: item.title, event_date: day, schedule_text: publishedText(day), venue: newsroom.name,
@@ -303,16 +311,17 @@ async function collectWikipedia(task: SourceTask, context: ConnectorContext): Pr
   const trending = data.topics.filter(qualifies).sort((a, b) => b.ratio - a.ratio);
   const near = trending.filter((topic) => topicTier(topic, place));
   const events: CollectedEvent[] = [];
-  let noContext = 0;
+  let noContext = 0, distantHazards = 0;
   for (const topic of near.slice(0, WIKI_MAX_ITEMS)) {
     const report = await verifiedTrend(context, wikiLabel(topic.article), place, wikiArticleUrl(topic.article));
-    if (report) events.push(topicFacts(topic, place, report));
-    else noContext++;
+    if (!report) noContext++;
+    else if (distantHazard(trendTier(place, report.headline, report.excerpt), report.headline, report.excerpt)) distantHazards++;
+    else events.push(topicFacts(topic, place, report));
   }
   record.detail = `${data.topics.length} topics measured within ${place.town} or 15 miles, ${events.length} recent locally reported stories; ${noContext} omitted without local story context`;
   if (noContext && !events.length) record.status = "no_context";
   record.event_count = events.length;
-  record.skipped_unusable = Object.fromEntries(Object.entries({ not_trending: data.topics.length - trending.length, not_near_town: trending.length - near.length, no_story_context: noContext }).filter(([, count]) => count));
+  record.skipped_unusable = Object.fromEntries(Object.entries({ not_trending: data.topics.length - trending.length, not_near_town: trending.length - near.length, no_story_context: noContext, hazard_not_local: distantHazards }).filter(([, count]) => count));
   record.pages_checked = data.errors.slice(0, 10);
   context.log.info("wikipedia_local_reporting_result", { source_id: task.source_id, topics: data.topics.length, kept: events.length, radius_miles: 15 });
   return { result: record, events };
@@ -337,11 +346,13 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   if (!place.configured) { record.status = "no_feed"; record.detail = `No reviewed aliases for ${place.state_code}`; return { result: record, events: [] }; }
   const facts: CollectedEvent[] = [];
   const urls = new Set<string>();
+  let distantHazards = 0;
   for (const name of [place.town, ...place.nearby].slice(0, TREND_MAX_ITEMS)) {
     for (const report of await trendReports(context, name, place)) {
       if (urls.has(report.url)) continue;
       urls.add(report.url);
       const tier = trendTier(place, report.headline, report.excerpt)!;
+      if (distantHazard(tier, report.headline, report.excerpt)) { distantHazards++; continue; }
       facts.push(createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline,
         event_date: report.published_at.slice(0, 10), schedule_text: publishedText(report.published_at.slice(0, 10)),
         venue: report.publisher, source_url: report.url, description: reportedDescription(report), kind: "social_trend",
@@ -354,7 +365,7 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   record.detail = `${events.length} recent linked news reports about ${place.town} or places within 15 miles; popularity counts and national trends are not news`;
   if (!events.length) record.status = "no_context";
   record.event_count = events.length;
-  record.skipped_unusable = events.length ? {} : { no_story_context: 1 };
+  record.skipped_unusable = Object.fromEntries(Object.entries({ no_story_context: events.length ? 0 : 1, hazard_not_local: distantHazards }).filter(([, count]) => count));
   context.log.info("bluesky_local_reporting_result", { source_id: task.source_id, kept: events.length, radius_miles: 15 });
   return { result: record, events };
 }
