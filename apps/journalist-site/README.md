@@ -335,7 +335,10 @@ See the [root deployment guide](../../README.md#deploy) for shared environment s
 
 1. In Google Cloud Console, create or select a project, enable the **Google Drive API**,
    and create a service account with a JSON key.
-2. Create a Drive folder for Newsbee's pipeline files. Copy its ID from the URL
+2. Create a folder in a **Google Workspace Shared drive** for Newsbee's pipeline files.
+   Service accounts cannot own new files in personal My Drive; a shared My Drive
+   folder is not a Shared drive. Both Newsbee Drive adapters support Shared drives.
+   Copy the folder's ID from the URL
    (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
    service account's `client_email`, granting **Editor** access. The same account needs
    access to the output-channel folders where published editions are stored.

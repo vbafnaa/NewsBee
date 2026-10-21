@@ -112,9 +112,10 @@ the **writer's complete JSON key** in `GOOGLE_SERVICE_ACCOUNT_JSON` (which only 
 journalist adapter reads). Also set `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` for the writer.
 Grant the writer write access and the reader Viewer access to the channel folder;
 keep all credentials server-side. Shared environment variables are not a security
-boundary between the services. The current Drive adapters still need Shared-drive
-API support for service-account publishing; configuring Vercel does not resolve
-Drive ownership/quota limitations.
+boundary between the services. Both Drive adapters support Workspace Shared drives.
+Use folders in a Shared drive for service-account publishing: service accounts
+cannot own new files in personal My Drive. A folder shared from My Drive is not
+a Workspace Shared drive, and Vercel configuration does not change that limitation.
 
 The journalist service's `functions` configuration in root `vercel.json` preserves
 the Vercel Queues trigger for portal-started runs. Optional Cron recovery is not

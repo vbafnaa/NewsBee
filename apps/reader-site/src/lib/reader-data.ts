@@ -175,6 +175,7 @@ async function serviceAccountToken() {
 }
 
 async function driveGet<T>(url: URL): Promise<T> {
+  url.searchParams.set("supportsAllDrives", "true");
   const token = await serviceAccountToken();
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -232,6 +233,7 @@ function driveFolder(folderId: string): FolderReader {
         url.searchParams.set("q", `'${folderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' in parents and trashed = false`);
         url.searchParams.set("pageSize", "1000");
         url.searchParams.set("fields", "nextPageToken,files(id,name,mimeType,modifiedTime)");
+        url.searchParams.set("includeItemsFromAllDrives", "true");
         if (pageToken) url.searchParams.set("pageToken", pageToken);
         const page = await driveGet<{ files?: DriveFile[]; nextPageToken?: string }>(url);
         files.push(...(page.files ?? []));

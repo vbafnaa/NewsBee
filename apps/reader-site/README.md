@@ -50,6 +50,11 @@ select the latest edition for a town. Drive data is cached in each running site 
 for 60 seconds. Edition documents must use the shared contract, and each edition's town
 must exist in `locations.json`.
 
+Workspace Shared-drive folders are supported for listing and reading, including
+paginated listings. For pipeline publishing with a service account, use a Shared
+drive so the organization owns new files; sharing a personal My Drive folder
+does not give a service account storage quota.
+
 ## Environment
 
 Create a Google Cloud project, enable the Google Drive API, and create a service account

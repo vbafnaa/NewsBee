@@ -108,4 +108,94 @@ describe("Drive service-account configuration", () => {
     await expect(drive.list("pipeline-folder-123")).resolves.toEqual([]);
     expectSignedToken();
   });
+
+  it("includes Shared-drive support and the parent filter on every listing page", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({
+        files: [{ id: "edition-file-123", name: "edition.json" }], nextPageToken: "next-page",
+      }))
+      .mockResolvedValueOnce(Response.json({ files: [{ id: "directory-file-123", name: "locations.json" }] }));
+    await expect(list()).resolves.toEqual([
+      { id: "edition-file-123", name: "edition.json" },
+      { id: "directory-file-123", name: "locations.json" },
+    ]);
+    const pages = fetchMock.mock.calls.slice(1).map(([input]) => new URL(String(input)));
+    for (const url of pages) {
+      expect(url.searchParams.get("supportsAllDrives")).toBe("true");
+      expect(url.searchParams.get("includeItemsFromAllDrives")).toBe("true");
+      expect(url.searchParams.get("q")).toContain("'pipeline-folder-123' in parents");
+    }
+    expect(pages[1].searchParams.get("pageToken")).toBe("next-page");
+  });
+
+  it.each([false, true])("creates or reuses Shared-drive folders (existing: %s)", async (existing) => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ files: existing ? [{ id: "created-folder-123" }] : [] }))
+      .mockResolvedValueOnce(Response.json({ id: "created-folder-123" }));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    await expect(new DriveArtifacts().ensureFolder("pipeline-folder-123", "run")).resolves.toBe("created-folder-123");
+    expect(fetchMock).toHaveBeenCalledTimes(existing ? 2 : 3);
+    for (const [input, init] of fetchMock.mock.calls.slice(1)) {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("supportsAllDrives")).toBe("true");
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({
+          name: "run", mimeType: "application/vnd.google-apps.folder", parents: ["pipeline-folder-123"],
+        });
+      } else {
+        expect(url.searchParams.get("includeItemsFromAllDrives")).toBe("true");
+        expect(url.searchParams.get("q")).toContain("mimeType = 'application/vnd.google-apps.folder'");
+      }
+    }
+  });
+
+  it.each([false, true])("creates or updates Shared-drive JSON files (existing: %s)", async (existing) => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ files: existing ? [{ id: "edition-file-123" }] : [] }));
+    if (!existing) fetchMock.mockResolvedValueOnce(Response.json({ id: "edition-file-123" }));
+    fetchMock.mockResolvedValueOnce(Response.json({}));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    await expect(new DriveArtifacts().saveJson("pipeline-folder-123", "edition.json", { headline: "News" }))
+      .resolves.toBe("edition-file-123");
+    const calls = fetchMock.mock.calls.slice(1);
+    for (const [input] of calls) {
+      expect(new URL(String(input)).searchParams.get("supportsAllDrives")).toBe("true");
+    }
+    expect(new URL(String(calls[0][0])).searchParams.get("includeItemsFromAllDrives")).toBe("true");
+    if (!existing) {
+      expect(JSON.parse(String(calls[1][1]?.body))).toEqual({
+        name: "edition.json", mimeType: "application/json", parents: ["pipeline-folder-123"],
+      });
+    }
+    const upload = calls.at(-1)!;
+    expect(upload[1]?.method).toBe("PATCH");
+    expect(upload[1]?.body).toBe(JSON.stringify({ headline: "News" }));
+    expect(new URL(String(upload[0])).searchParams.get("uploadType")).toBe("media");
+  });
+
+  it("reads Shared-drive JSON and text with media access", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ headline: "News" }))
+      .mockResolvedValueOnce(new Response("Preview"));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const drive = new DriveArtifacts();
+    await expect(drive.readJson("edition-file-123")).resolves.toEqual({ headline: "News" });
+    await expect(drive.readText("preview-file-123")).resolves.toBe("Preview");
+    for (const [input] of fetchMock.mock.calls.slice(1)) {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("supportsAllDrives")).toBe("true");
+      expect(url.searchParams.get("alt")).toBe("media");
+    }
+  });
+
+  it("surfaces Shared-drive permission failures", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(new Response("insufficientFilePermissions", { status: 403 }));
+    await expect(list()).rejects.toThrow("Google Drive request failed (403): insufficientFilePermissions");
+  });
 });
