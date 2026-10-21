@@ -212,7 +212,7 @@ describe("orchestrator", () => {
     await ensureJobIndexes(d.db);
     const { run } = await startRun(d, LOCATION.id, { by: "editor", kind: "manual" });
     await Promise.all(Array.from({ length: 4 }, () => resumeRun(d, run._id, "editor")));
-    expect(await d.db.collection(COLLECTIONS.jobs).countDocuments({ run_id: run._id })).toBe(5);
+    expect(await d.db.collection(COLLECTIONS.jobs).countDocuments({ run_id: run._id })).toBe(10);
     await tick(d, { budgetMs: 10_000 });
     await Promise.all(Array.from({ length: 4 }, () => triggerStage(d, run._id, "authoring", "editor")));
     const future = Date.now() / 1000 + 90;
@@ -275,7 +275,7 @@ describe("orchestrator", () => {
   it("runs every source, authors once all finish, holds failures and publishes to the channel", async () => {
     const d = deps();
     const { run } = await startRun(d, LOCATION.id, { by: "test", kind: "manual" });
-    expect(run.sources).toHaveLength(5);
+    expect(run.sources).toHaveLength(10);
     await drain(d);
 
     const done = await getRun(mongo.db, run._id);
@@ -292,7 +292,7 @@ describe("orchestrator", () => {
     expect(done?.published?.artifacts.email_html).toMatch(/email-previews/);
     const jobs = await recentJobs(mongo.db, 50);
     const sourceJobs = jobs.filter((job) => job.kind === "collect_source");
-    expect(sourceJobs).toHaveLength(5);
+    expect(sourceJobs).toHaveLength(10);
     for (const job of sourceJobs) {
       expect(job.log_file).toBeTruthy();
       expect(job.log_error).toBeNull();
@@ -639,7 +639,7 @@ describe("orchestrator", () => {
     const done = await getRun(mongo.db, run._id);
     const health = await locationHealth(mongo.db, done, LOCATION);
     expect(health.level).toBe("warning");
-    expect(health.sources).toMatchObject({ total: 5, completed: 4, failed: 1 });
+    expect(health.sources).toMatchObject({ total: 10, completed: 9, failed: 1 });
     expect(health.failed_sources).toContainEqual({ source_id: "meetings:main", name: "meetings source", error: "Feed unavailable" });
     expect(health.empty_sources.map((source) => source.source_id)).not.toContain("meetings:main");
   });

@@ -9,7 +9,10 @@ import { housingConnector, parsePlace } from "../../connectors/housing";
 import { CONNECTORS } from "../../connectors/registry";
 import { type Connector, type ConnectorContext, type LocationProfile, type SourceTask } from "../../connectors/types";
 import { resolveRegion, validateStateSources } from "../../connectors/wider/regions";
+import { publishedKeys, reportingSince } from "../../connectors/parents/shared";
+import { publishedViolationKeys, staleReason } from "../../connectors/homesafety";
 import { logger } from "../../core/log";
+import { COLLECTIONS } from "../../storage/mongo";
 import { fixture, ReplayTransport } from "../support/replay";
 import { withMongo } from "../support/mongo";
 
@@ -39,6 +42,30 @@ function only(connector: Connector, location: LocationProfile): SourceTask {
   return { type: connector.type, source_id: source.source_id, name: source.name };
 }
 const allText = (value: unknown) => JSON.stringify(value);
+let editionCount = 0;
+/** Seeds a published edition (and optionally a draft or held entry) that ran these source items. */
+async function publish(locationId: string, today: string, sourceId: string, eventIds: string[], options: { status?: string; disposition?: string } = {}) {
+  const id = `edition-${(editionCount += 1)}`;
+  await mongo.db.collection(COLLECTIONS.editions).insertOne({ id, location_id: locationId, status: options.status ?? "published", today, published_at: Date.parse(`${today}T12:00:00Z`) });
+  await mongo.db.collection(COLLECTIONS.editionEntries).insertOne({ edition_id: id, disposition: options.disposition ?? "included", source_id: sourceId,
+    result: { story: { occurrences: eventIds.map((source_event_id) => ({ source_id: sourceId, source_event_id })) } } });
+}
+
+describe("edition window", () => {
+  it("starts at the last published edition, or one window back, and remembers what ran", async () => {
+    const base = context(new ReplayTransport(), REDMOND);
+    expect(await reportingSince(base)).toBe("2026-10-12");
+    await publish("redmond-wa", "2026-10-01", "x", ["old"]);
+    expect(await reportingSince(base)).toBe("2026-10-12");
+    await publish("redmond-wa", "2026-10-15", "x", ["a", "b"]);
+    await publish("redmond-wa", "2026-10-17", "x", ["held"], { disposition: "held" });
+    await publish("redmond-wa", "2026-10-18", "x", ["draft"], { status: "draft" });
+    await publish("seattle-wa", "2026-10-18", "x", ["elsewhere"]);
+    await publish("redmond-wa", "2026-10-15", "y", ["other-source"]);
+    expect(await reportingSince(base)).toBe("2026-10-17");
+    expect([...await publishedKeys(base, "x")].sort()).toEqual(["a", "b", "old"]);
+  });
+});
 
 it("registers all five parent-and-homeowner connectors", () => {
   expect(Object.keys(CONNECTORS)).toEqual(expect.arrayContaining(["civiccalendar", "homesafety", "housing", "development", "athletics"]));
@@ -79,6 +106,15 @@ describe("civiccalendar", () => {
     expect(events.find((event) => event.title.startsWith("Haunted"))).toMatchObject({ venue: "Redmond Community Center at Marymoor Village", kind: "event", category: "Community Events" });
   });
 
+  it("drops events an earlier published edition already listed", async () => {
+    const task = only(civicCalendarConnector, REDMOND);
+    await publish("redmond-wa", "2026-10-12", task.source_id, ["9001"]);
+    const { result, events } = await civicCalendarConnector.collect(task, context(replay(), REDMOND));
+    expect(result.skipped_unusable).toMatchObject({ already_published: 1 });
+    expect(events.map((event) => event.title)).not.toContain("Kirkland family movie night");
+    expect(events.length).toBeGreaterThan(0);
+  });
+
   it("matches meeting categories and place tiers", () => {
     expect(["City Council", "Boards & Commissions", "Community Meetings"].every((name) => MEETING_CATEGORY.test(name))).toBe(true);
     expect(["Community Events", "Parks & Recreation", "Welcoming Week"].some((name) => MEETING_CATEGORY.test(name))).toBe(false);
@@ -117,6 +153,25 @@ describe("homesafety", () => {
     expect(allText(events)).not.toMatch(/PLACEHOLDER|placeholder@|555-0100/);
   });
 
+  it("reports a water system again only for a new violation or a new return to compliance", async () => {
+    const task = only(homeSafetyConnector, SILVERDALE);
+    const first = await homeSafetyConnector.collect(task, context(replay(), SILVERDALE));
+    await publish("silverdale-wa", "2026-10-12", task.source_id, [first.events[0].source_event_id]);
+    const again = await homeSafetyConnector.collect(task, context(replay(), SILVERDALE));
+    expect(again.result.skipped_unusable).toMatchObject({ already_published: 1 });
+    expect(again.events.map((event) => event.title)).toEqual(["Drinking water: health-based violation recorded for Lakeside Park"]);
+
+    const published = publishedViolationKeys(new Set(["WA5305345:3439032", "WA1:7~2026-10-01"]));
+    expect([...published]).toEqual(["3439032", "7~2026-10-01"]);
+    const row = (violation_id: string, rtc_date: string | null) => ({ pwsid: "WA1", violation_id, rtc_date });
+    expect(staleReason(row("3439032", null), published, "2026-10-12")).toBe("already_published");
+    expect(staleReason(row("3439032", "2026-06-01"), published, "2026-10-12")).toBeNull();
+    expect(staleReason(row("7", "2026-10-01"), published, "2026-10-12")).toBe("already_published");
+    expect(staleReason(row("8", "2026-06-01"), published, "2026-10-12")).toBe("returned_before_window");
+    expect(staleReason(row("9", "2026-10-14"), published, "2026-10-12")).toBeNull();
+    expect(staleReason(row("10", null), published, "2026-10-12")).toBeNull();
+  });
+
   it("finds nothing relevant for a town with no affected systems within 50 km", async () => {
     const spokane: LocationProfile = { id: "spokane-wa", name: "Spokane, WA", state: "WA", latitude: 47.6588, longitude: -117.426, systems: [] };
     const { result, events } = await homeSafetyConnector.collect(only(homeSafetyConnector, spokane), context(replay(), spokane));
@@ -126,9 +181,10 @@ describe("homesafety", () => {
 });
 
 describe("housing", () => {
-  const replay = () => new ReplayTransport()
+  const released = (day: string) => ({ "Last-Modified": new Date(`${day}T15:00:00Z`).toUTCString() });
+  const replay = (release = "2026-10-14") => new ReplayTransport()
     .on(/we2609c\.txt$/, { status: 404, body: "" })
-    .on(/we2608c\.txt$/, { file: "housing/we2608c.txt" })
+    .on(/we2608c\.txt$/, { file: "housing/we2608c.txt", headers: released(release) })
     .on(/we2608y\.txt$/, { file: "housing/we2608y.txt" })
     .on(/we2508y\.txt$/, { file: "housing/we2508y.txt" });
 
@@ -149,6 +205,17 @@ describe("housing", () => {
     expect(String(events[0].description)).toContain("compared with 584 by the same point in 2025");
     expect(housingConnector.sources({ ...REDMOND, census_geoid: null })).toEqual([]);
   });
+
+  it("runs a month's figures once: only when released in this period and not already published", async () => {
+    const task = only(housingConnector, REDMOND);
+    const old = await housingConnector.collect(task, context(replay("2026-09-24"), REDMOND));
+    expect(old.events).toEqual([]);
+    expect(old.result.skipped_unusable).toMatchObject({ released_before_window: 1 });
+    await publish("redmond-wa", "2026-10-15", task.source_id, ["bps:5357535:202608"]);
+    const repeat = await housingConnector.collect(task, context(replay("2026-10-16"), REDMOND));
+    expect(repeat.events).toEqual([]);
+    expect(repeat.result.skipped_unusable).toMatchObject({ already_published: 1 });
+  });
 });
 
 describe("development", () => {
@@ -163,7 +230,7 @@ describe("development", () => {
     const { result, events } = await developmentConnector.collect(only(developmentConnector, SEATTLE), context(transport, SEATTLE, { today: TODAY_DEV }));
     expect(result.status).toBe("ingested");
     const query = decodeURIComponent(transport.requests.find((request) => request.url.includes("/resource/"))!.url).replaceAll("+", " ");
-    expect(query).toContain("within_circle(location1, 47.6062, -122.3321, 15000) AND issueddate > '2026-09-21'");
+    expect(query).toContain("within_circle(location1, 47.6062, -122.3321, 15000) AND issueddate >= '2026-10-14'");
     expect(query).not.toContain("contractor");
     expect(events.map((event) => event.source_event_id)).toEqual(["76t5-zqzr:7046346-CN", "76t5-zqzr:7118487-CN", "76t5-zqzr:7118769-CN", "76t5-zqzr:7149057-DM"]);
     expect(result.skipped_unusable).toMatchObject({ minor_permit: 2, outside_area: 1 });
@@ -175,6 +242,19 @@ describe("development", () => {
     expect(String(house.description)).toContain("exact address is withheld");
     expect(allText(events)).not.toMatch(/3045 4TH AVE W|PLACEHOLDER CONTRACTOR/);
     expect(events.find((event) => event.source_event_id.endsWith("-DM"))!.title).toBe("Permit issued for a demolition at 13225 1ST AVE NW");
+  });
+
+  it("starts at the last published edition and drops permits it already ran", async () => {
+    const task = only(developmentConnector, SEATTLE);
+    await publish("seattle-wa", "2026-10-17", task.source_id, ["76t5-zqzr:7149057-DM"]);
+    await publish("seattle-wa", "2026-10-17", task.source_id, ["76t5-zqzr:7118769-CN"], { disposition: "held" });
+    const transport = replay();
+    const { result, events } = await developmentConnector.collect(task, context(transport, SEATTLE, { today: TODAY_DEV }));
+    const query = decodeURIComponent(transport.requests.find((request) => request.url.includes("/resource/"))!.url).replaceAll("+", " ");
+    expect(query).toContain("issueddate >= '2026-10-17'");
+    expect(events.map((event) => event.source_event_id)).toEqual(["76t5-zqzr:7118769-CN"]);
+    expect(result.skipped_unusable).toMatchObject({ already_published: 1 });
+    expect(result.skipped_outside_window).toBe(3);
   });
 
   it("reports no_feed when the portal has no mappable permits dataset", async () => {
@@ -206,6 +286,15 @@ describe("athletics", () => {
     expect(result.skipped_outside_window).toBe(1);
     expect(events[0]).toMatchObject({ kind: "school_sports", description: "Washington Interscholastic Activities Association (WIAA) published this update on Saturday, October 17, 2026." });
     expect(allText(events)).not.toContain("Placeholder");
+  });
+
+  it("never repeats a headline an earlier published edition ran", async () => {
+    const task = only(athleticsConnector, REDMOND);
+    const first = await athleticsConnector.collect(task, context(new ReplayTransport().on("https://www.wiaa.com/feed/", { body: feed }), REDMOND));
+    await publish("redmond-wa", "2026-10-12", task.source_id, [first.events[0].source_event_id]);
+    const { result, events } = await athleticsConnector.collect(task, context(new ReplayTransport().on("https://www.wiaa.com/feed/", { body: feed }), REDMOND));
+    expect(events.map((event) => event.title)).toEqual(["Bellevue football wins KingCo league title"]);
+    expect(result.skipped_unusable).toMatchObject({ already_published: 1 });
   });
 
   it("drops individual-student and administrative headlines", () => {

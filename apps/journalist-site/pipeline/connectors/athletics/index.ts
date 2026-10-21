@@ -5,15 +5,13 @@
  * place within 50 km (nearby). Headlines about individual students are dropped, and feed
  * summaries are never republished, so no student is named.
  */
-import { addDays } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
 import { parseNewsFeed, publishedText, sensitive, type FeedItem } from "../wider/adapters";
 import { mentions, validateStateSources, type Region } from "../wider/regions";
 import { loadSourceConfig } from "../../storage/source-configs";
-import { fetchBytes, locationRegion, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
+import { fetchBytes, locationRegion, publishedKeys, reportingSince, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
 import { CHAMPIONSHIP } from "../../ranking/parents";
 
-export const LOOKBACK_DAYS = 14;
 export const MAX_ITEMS = 6;
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
 const SPORTS: Array<[string, RegExp]> = [
@@ -61,7 +59,8 @@ async function collectAthletics(task: SourceTask, context: ConnectorContext, rec
   const region = await locationRegion(context);
   const feeds = await stateFeeds(context, region.state_code);
   if (!feeds.length) throw new SourceUnavailable("no_feed", `No reviewed athletics feed for ${region.state_code}; add one to state-sources.json after a robots.txt and terms review`);
-  const since = addDays(context.today, -LOOKBACK_DAYS);
+  const since = await reportingSince(context);
+  const published = await publishedKeys(context, task.source_id);
   const events: CollectedEvent[] = [];
   const checked: string[] = [];
   for (const feed of feeds) {
@@ -75,6 +74,7 @@ async function collectAthletics(task: SourceTask, context: ConnectorContext, rec
     }
     for (const item of items) {
       if (item.published_day < since || item.published_day > context.today) { record.skipped_outside_window += 1; continue; }
+      if (published.has(item.id)) { skip(record, "already_published"); continue; }
       const problem = headlineProblem(item.title);
       if (problem) { skip(record, problem); continue; }
       const tier = headlineTier(region, item.title);

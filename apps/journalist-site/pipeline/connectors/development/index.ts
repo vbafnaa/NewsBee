@@ -1,17 +1,18 @@
 /**
  * Development and construction permits from the city's Socrata open-data portal. Finds a
- * permits dataset through the Socrata catalog, then asks only for permits issued in the last
- * 30 days within a radius of the location. Only permit facts are read: contractor, applicant
- * and owner columns are never requested into facts, and single-family addresses are withheld.
+ * permits dataset through the Socrata catalog, then asks only for permits issued since the
+ * edition's reporting period began (see reportingSince) within a radius of the location, and
+ * drops permits an earlier published edition already ran. Only permit facts are read:
+ * contractor, applicant and owner columns are never requested into facts, and single-family
+ * addresses are withheld.
  */
-import { addDays, httpsLink, plainText } from "../common";
+import { httpsLink, plainText } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, LocationProfile, SourceResult, SourceTask } from "../types";
 import { publishedText } from "../wider/adapters";
-import { fetchJson, hasPoint, label, isoDay, locationRegion, pointTier, runCollector, skip, SourceUnavailable } from "../parents/shared";
+import { fetchJson, hasPoint, label, isoDay, locationRegion, pointTier, publishedKeys, reportingSince, runCollector, skip, SourceUnavailable } from "../parents/shared";
 import { websiteOrigin } from "../civiccalendar";
 
 export const CATALOG = "https://api.us.socrata.com/api/catalog/v1";
-export const LOOKBACK_DAYS = 30;
 export const CITY_RADIUS_M = 15000;
 export const COMMUNITY_RADIUS_M = 3000;
 export const MAX_ROWS = 400;
@@ -76,7 +77,7 @@ export function permitsUrl(domain: string, dataset: Dataset, columns: Columns, l
   const near = columns.point
     ? `within_circle(${columns.point}, ${latitude}, ${longitude}, ${meters})`
     : (() => { const dLat = meters / 111320, dLon = meters / (111320 * Math.cos(latitude * Math.PI / 180)); return `${columns.latitude} between ${(latitude - dLat).toFixed(5)} and ${(latitude + dLat).toFixed(5)} AND ${columns.longitude} between ${(longitude - dLon).toFixed(5)} and ${(longitude + dLon).toFixed(5)}`; })();
-  const query = new URLSearchParams({ $select: [...new Set(fields)].join(","), $where: `${near} AND ${columns.issued} > '${since}'`, $order: `${columns.issued} DESC`, $limit: String(MAX_ROWS) });
+  const query = new URLSearchParams({ $select: [...new Set(fields)].join(","), $where: `${near} AND ${columns.issued} >= '${since}'`, $order: `${columns.issued} DESC`, $limit: String(MAX_ROWS) });
   return `https://${domain}/resource/${dataset.id}.json?${query.toString()}`;
 }
 
@@ -108,7 +109,8 @@ async function collectPermits(task: SourceTask, context: ConnectorContext, recor
   const found = chooseDataset(catalog.results ?? []);
   if (!found) throw new SourceUnavailable("no_feed", `No mappable permits dataset on ${domain}`);
   const { dataset, columns } = found;
-  const since = addDays(context.today, -LOOKBACK_DAYS);
+  const since = await reportingSince(context);
+  const published = await publishedKeys(context, task.source_id);
   const meters = context.location.community ? COMMUNITY_RADIUS_M : CITY_RADIUS_M;
   const url = permitsUrl(domain, dataset, columns, region.latitude, region.longitude, meters, since);
   record.feed_kind = "socrata_permits"; record.feed_url = url;
@@ -130,6 +132,7 @@ async function collectPermits(task: SourceTask, context: ConnectorContext, recor
     const key = text(row, columns.id) || `${issued}:${point?.join(",")}:${description.slice(0, 40)}`;
     if (seen.has(key)) continue;
     seen.add(key);
+    if (published.has(`${dataset.id}:${key}`)) { skip(record, "already_published"); continue; }
     events.push(permitFacts(row, columns, dataset, { issued, units, description, kinds, distance_km: place.distance_km, key }, region.town, domain));
   }
   events.sort((a, b) => Number((b.signals as any).units) - Number((a.signals as any).units) || Number((b.signals as any).cost) - Number((a.signals as any).cost) || String(b.event_date).localeCompare(String(a.event_date)));

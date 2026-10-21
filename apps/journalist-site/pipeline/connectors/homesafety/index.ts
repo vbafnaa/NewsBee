@@ -10,7 +10,7 @@
 import { addDays, plainText } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
 import { publishedText } from "../wider/adapters";
-import { fetchJson, isoDay, label, locationRegion, placeTier, runCollector, sectionFor, skip, SourceUnavailable } from "../parents/shared";
+import { fetchJson, isoDay, label, locationRegion, placeTier, publishedKeys, reportingSince, runCollector, sectionFor, skip, SourceUnavailable } from "../parents/shared";
 
 export const EPA_BASE = "https://data.epa.gov/efservice";
 export const LOOKBACK_DAYS = 180;
@@ -51,8 +51,14 @@ async function collectWater(task: SourceTask, context: ConnectorContext, record:
   if (!Array.isArray(rows)) throw new SourceUnavailable("failed", "Envirofacts did not return a list of violations");
   const community = rows.filter((row) => row.pws_type_code === "CWS" && row.is_health_based_ind === "Y" && typeof row.pwsid === "string");
   skip(record, "not_community_water_system", rows.length - community.length);
+  const reportingFrom = await reportingSince(context);
+  const published = publishedViolationKeys(await publishedKeys(context, task.source_id));
   const bySystem = new Map<string, Violation[]>();
-  for (const row of community) bySystem.set(row.pwsid, [...(bySystem.get(row.pwsid) ?? []), row]);
+  for (const row of community) {
+    const stale = staleReason(row, published, reportingFrom);
+    if (stale) { skip(record, stale); continue; }
+    bySystem.set(row.pwsid, [...(bySystem.get(row.pwsid) ?? []), row]);
+  }
   const systems = [...bySystem.entries()].sort((a, b) => Number(b[1][0].population_served_count ?? 0) - Number(a[1][0].population_served_count ?? 0));
   const checked = systems.slice(0, MAX_SYSTEMS);
   skip(record, "system_limit", systems.length - checked.length);
@@ -72,8 +78,32 @@ async function collectWater(task: SourceTask, context: ConnectorContext, record:
   events.sort((a, b) => Number(a.tier !== "local") - Number(b.tier !== "local") || Number((b.signals as Record<string, number>).population_served) - Number((a.signals as Record<string, number>).population_served));
   const kept = events.slice(0, MAX_ITEMS);
   skip(record, "item_limit", events.length - kept.length);
-  record.detail = `${rows.length} health-based violations in ${state} since ${since}; ${bySystem.size} community water systems, ${checked.length} checked, ${kept.length} serving ${region.town} or within 50 km`;
+  record.detail = `${rows.length} health-based violations in ${state} since ${since}; ${bySystem.size} community water systems with news since ${reportingFrom}, ${checked.length} checked, ${kept.length} serving ${region.town} or within 50 km`;
   return kept;
+}
+
+/** One key per violation state: `id` while open, `id~rtc_date` once returned to compliance. */
+export function violationKey(row: Violation): string {
+  const returned = isoDay(row.rtc_date);
+  return returned ? `${row.violation_id}~${returned}` : String(row.violation_id);
+}
+/** Violation keys from published source_event_ids (`pwsid:key+key…`). */
+export function publishedViolationKeys(eventIds: Set<string>): Set<string> {
+  const keys = new Set<string>();
+  for (const id of eventIds) for (const key of id.slice(id.indexOf(":") + 1).split("+")) if (key) keys.add(key);
+  return keys;
+}
+/**
+ * EPA records arrive months after the compliance period, so the query looks back 180 days and
+ * news is decided per violation instead: an open violation readers haven't seen, or a return
+ * to compliance that is either for a violation already reported or dated in this period.
+ * Returns why a violation isn't news, or null when it is.
+ */
+export function staleReason(row: Violation, published: Set<string>, since: string): "already_published" | "returned_before_window" | null {
+  if (published.has(violationKey(row))) return "already_published";
+  const returned = isoDay(row.rtc_date);
+  if (!returned || published.has(String(row.violation_id)) || returned >= since) return null;
+  return "returned_before_window";
 }
 
 export function systemFacts(system: WaterSystem, violations: Violation[], tier: "local" | "region" | "nearby", town: string, section: string): CollectedEvent {
@@ -90,8 +120,8 @@ export function systemFacts(system: WaterSystem, violations: Violation[], tier: 
   if (categories.length) description += ` The record type is ${categories.join(" and ")}.`;
   description += open.length ? ` The EPA record does not yet show a return to compliance for ${open.length === count ? (count === 1 ? "it" : "them") : `${open.length} of them`}.` : returned ? ` The EPA record shows the system returned to compliance on ${publishedText(returned)}.` : "";
   return {
-    source_event_id: `${system.pwsid}:${violations.map((row) => row.violation_id).sort().join("+")}`,
-    title: `Drinking water: health-based violation${count === 1 ? "" : "s"} recorded for ${name}`,
+    source_event_id: `${system.pwsid}:${violations.map(violationKey).sort().join("+")}`,
+    title: open.length ? `Drinking water: health-based violation${count === 1 ? "" : "s"} recorded for ${name}` : `Drinking water: ${name} returned to compliance`,
     event_date: newest, schedule_text: publishedText(newest), venue: "U.S. EPA Safe Drinking Water records", room: null,
     source_url: reportUrl(system.pwsid), description, kind: "safety_notice", tier, section,
     signals: { health_based: 1, open: open.length ? 1 : 0, population_served: population, violations: count },

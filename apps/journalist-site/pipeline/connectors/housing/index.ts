@@ -2,10 +2,12 @@
  * Housing market from the Census Building Permits Survey place files: new residential units
  * authorized in the location's own Census place (matched on state FIPS and place code, so
  * Redmond, OR is never read as Redmond, WA). Market data only: no listings, sales or owners.
+ * A month's figures run once: only when Census released the file (Last-Modified) during the
+ * edition's reporting period, and never again after a published edition carried them.
  */
 import { monthName } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
-import { decode, fetchBytes, runCollector, skip, SourceUnavailable } from "../parents/shared";
+import { decode, fetchResponse, publishedKeys, reportingSince, runCollector, skip, SourceUnavailable } from "../parents/shared";
 
 export const BPS_BASE = "https://www2.census.gov/econ/bps/Place";
 export const MONTHS_BACK = 4;
@@ -35,6 +37,7 @@ function monthsBefore(today: string, months: number): Period {
   return { year: Math.floor(index / 12), month: (index % 12) + 1 };
 }
 const lastDay = (period: Period) => new Date(Date.UTC(period.year, period.month, 0)).toISOString().slice(0, 10);
+export const eventId = (state: string, place: string, period: Period) => `bps:${state}${place}:${period.year}${String(period.month).padStart(2, "0")}`;
 
 /** Rows for one Census place. Places split across counties appear on several rows and are summed. */
 export function parsePlace(text: string, state: string, place: string): PlaceRow | null {
@@ -66,26 +69,50 @@ export const housingConnector: Connector = {
 };
 
 async function fetchText(context: ConnectorContext, url: string): Promise<string | null> {
-  try { return decode(await fetchBytes(context, url, ACCEPT_TEXT)); }
+  return (await fetchRelease(context, url))?.text ?? null;
+}
+/** File text plus its release day, read from Last-Modified (null when the header is missing). */
+async function fetchRelease(context: ConnectorContext, url: string): Promise<{ text: string; released: string | null } | null> {
+  try {
+    const { body, headers } = await fetchResponse(context, url, ACCEPT_TEXT);
+    return { text: decode(body), released: releaseDay(headers["last-modified"]) };
+  }
   catch (error) { if (error instanceof SourceUnavailable && error.status === "failed") return null; throw error; }
+}
+export function releaseDay(header: string | undefined): string | null {
+  const time = header ? Date.parse(header) : Number.NaN;
+  return Number.isFinite(time) ? new Date(time).toISOString().slice(0, 10) : null;
 }
 
 async function collectHousing(task: SourceTask, context: ConnectorContext, record: SourceResult): Promise<CollectedEvent[]> {
   const geoid = placeGeoid(context.location.census_geoid);
   if (!geoid || !REGIONS[geoid.state]) throw new SourceUnavailable("no_feed", "Location has no Census place GEOID");
   record.feed_kind = "census_bps"; record.website = "https://www.census.gov/construction/bps/";
-  let period: Period | null = null, monthly: string | null = null;
-  for (let back = 1; back <= MONTHS_BACK && !monthly; back += 1) {
+  let period: Period | null = null, release: { text: string; released: string | null } | null = null;
+  for (let back = 1; back <= MONTHS_BACK && !release; back += 1) {
     const candidate = monthsBefore(context.today, back);
-    monthly = await fetchText(context, fileUrl(geoid.state, candidate, "c"));
-    if (monthly) period = candidate;
+    release = await fetchRelease(context, fileUrl(geoid.state, candidate, "c"));
+    if (release) period = candidate;
   }
-  if (!monthly || !period) throw new SourceUnavailable("no_feed", `No Building Permits Survey place file in the last ${MONTHS_BACK} months`);
+  if (!release || !period) throw new SourceUnavailable("no_feed", `No Building Permits Survey place file in the last ${MONTHS_BACK} months`);
   record.feed_url = fileUrl(geoid.state, period, "c");
+  const label = `${monthName(period.month)} ${period.year}`;
+  const since = await reportingSince(context);
+  if (release.released && release.released < since) {
+    skip(record, "released_before_window");
+    record.detail = `Latest place file (${label}) was released ${release.released}, before this edition's period began ${since}`;
+    return [];
+  }
+  if ((await publishedKeys(context, task.source_id)).has(eventId(geoid.state, geoid.place, period))) {
+    skip(record, "already_published");
+    record.detail = `${label} figures already ran in a published edition`;
+    return [];
+  }
+  const monthly = release.text;
   const month = parsePlace(monthly, geoid.state, geoid.place);
   if (!month) {
     skip(record, "place_not_in_survey");
-    record.detail = `${monthName(period.month)} ${period.year} file has no row for Census place ${geoid.state}${geoid.place}`;
+    record.detail = `${label} file has no row for Census place ${geoid.state}${geoid.place}`;
     return [];
   }
   const ytdText = await fetchText(context, fileUrl(geoid.state, period, "y"));
@@ -119,7 +146,7 @@ export function housingFacts(month: PlaceRow, ytd: PlaceRow | null, prior: Place
     ? `New home permits in ${town} are ${change > 0 ? "up" : "down"} ${Math.abs(change)}% this year`
     : `${town} authorized ${units(month.units)} in ${label}`;
   return {
-    source_event_id: `bps:${month.state}${month.place}:${period.year}${String(period.month).padStart(2, "0")}`,
+    source_event_id: eventId(month.state, month.place, period),
     title, event_date: lastDay(period), schedule_text: label, venue: "U.S. Census Bureau Building Permits Survey", room: null,
     source_url: url, description, kind: "housing_market", tier: "local", section: `Housing in ${town}`,
     signals: { units: month.units, ytd_units: ytd?.units ?? 0, change_pct: change ?? 0 },

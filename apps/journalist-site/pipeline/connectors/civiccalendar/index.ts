@@ -1,13 +1,14 @@
 /**
  * City and parks calendars (CivicPlus). Reads the category list on the city's /Calendar.aspx,
  * then each community or parks category's iCalendar feed. Meeting categories are skipped
- * because the meetings connector already covers them.
+ * because the meetings connector already covers them. Only events in the edition's forward
+ * window are kept, minus any an earlier published edition already listed.
  */
 import { cancelledTitle, httpsLink, isoDate, plainText, scheduleText } from "../common";
 import { icalMoment, unescapeIcs, unfold } from "../library/parsers";
 import type { Connector, ConnectorContext, LocationProfile, SourceResult, SourceTask } from "../types";
 import type { Region } from "../wider/regions";
-import { decode, fetchBytes, label, locationRegion, placeTier, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
+import { decode, fetchBytes, label, locationRegion, placeTier, publishedKeys, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
 import { FAMILY } from "../../ranking/parents";
 
 export const MAX_CATEGORIES = 6;
@@ -60,6 +61,7 @@ async function collectCalendar(task: SourceTask, context: ConnectorContext, reco
   skip(record, "category_limit", wanted.length - chosen.length);
   record.feed_url = icsUrl(origin, chosen[0].id);
   const region = await locationRegion(context);
+  const published = await publishedKeys(context, task.source_id);
   const events = new Map<string, ReturnType<typeof eventFacts>>();
   let failures = 0;
   for (const category of chosen) {
@@ -68,7 +70,8 @@ async function collectCalendar(task: SourceTask, context: ConnectorContext, reco
     catch (error) { if (error instanceof SourceUnavailable) { failures += 1; skip(record, "category_failed"); continue; } throw error; }
     for (const item of parseCalendar(decode(body), record)) {
       const facts = eventFacts(item, category, origin, region, context, record);
-      if (facts && !events.has(facts.source_event_id)) events.set(facts.source_event_id, facts);
+      if (facts && published.has(facts.source_event_id)) skip(record, "already_published");
+      else if (facts && !events.has(facts.source_event_id)) events.set(facts.source_event_id, facts);
       else if (facts) skip(record, "duplicate_category");
     }
   }

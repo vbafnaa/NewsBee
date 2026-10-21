@@ -48,6 +48,12 @@ export class Fetcher {
 
   /** Returns the final URL and body after vetting every redirect hop. */
   async get(url: string, limit: number, accept: string): Promise<[string, Uint8Array]> {
+    const response = await this.getResponse(url, limit, accept);
+    return [response.url, response.body];
+  }
+
+  /** Like get, but also returns the final response's (lower-cased) headers. */
+  async getResponse(url: string, limit: number, accept: string): Promise<{ url: string; body: Uint8Array; headers: Record<string, string> }> {
     let current = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
       if (httpsLink(current) === null) throw new FeedFormatError(`Refusing non-HTTPS URL: ${current}`);
@@ -70,7 +76,7 @@ export class Fetcher {
       if (response.body.byteLength > limit) {
         throw new FeedFormatError(`Response exceeds ${Math.floor(limit / (1024 * 1024))} MiB`);
       }
-      return [current, response.body];
+      return { url: current, body: response.body, headers: response.headers ?? {} };
     }
     throw new FeedFormatError(`More than ${MAX_REDIRECTS} redirects`);
   }

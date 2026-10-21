@@ -220,7 +220,7 @@ Anything else is dropped before ranking, never written.
 | Connector | Kept | Dropped |
 | --- | --- | --- |
 | `civiccalendar` | Events from the location's own city calendar. The trailing "City ST ZIP" of the venue address is matched to the town (local) or a configured place within 50 km (nearby); events with no address are the city's own venues (local). | Meeting categories; another state's address; unknown or distant cities; virtual-only, recurring, cancelled and out-of-window events. |
-| `development` | Permits from the city's own Socrata portal, queried server-side with `within_circle` (15 km, or 3 km for neighbourhoods) and checked again client-side. | Permits outside the radius or the 30-day window; small repairs and alterations with fewer than 2 new units. |
+| `development` | Permits from the city's own Socrata portal, queried server-side with `within_circle` (15 km, or 3 km for neighbourhoods) and checked again client-side. | Permits outside the radius or issued before the edition's reporting period; small repairs and alterations with fewer than 2 new units. |
 | `homesafety` | EPA health-based violations for active community water systems whose registered city is the town (local) or a configured place within 50 km (nearby). | Other states; systems registered elsewhere; non-community systems (schools, campgrounds). |
 | `housing` | The Building Permits Survey row matched on the location's state FIPS and Census place code. | Same-name places in other states (Redmond, Oregon for Redmond, Washington); neighbourhood locations, because the Census place is the whole city. |
 | `athletics` | Team headlines naming the town (local) or a configured place within 50 km (nearby). | Headlines with no local place; individual-student, administrative and out-of-window items. |
@@ -236,6 +236,25 @@ Rules:
   wrong place.
 - **Links must be official pages for the place.** Links to another city's pages, aggregators
   or listing sites are rejected during link discovery and the link cache.
+
+### Edition window: no repeats week over week (all five connectors)
+
+Each edition covers only what's new since the last one. Helpers in `connectors/parents/shared.ts`:
+
+- **`reportingSince`**: the period starts at the location's last published edition day, or
+  `WINDOW_DAYS` (7) before today when that's later or there's no published edition. The
+  boundary day overlaps on purpose so nothing published after the last run is missed.
+- **`publishedKeys`**: the `source_event_id`s this source contributed to the location's last
+  52 published editions (entries not `held`). Matching items are skipped as
+  `already_published`; draft editions and held entries don't count.
+
+| Connector | Window | Repeat rule |
+| --- | --- | --- |
+| `civiccalendar` | Upcoming events in the edition's forward window (tomorrow + 6 days) | Event UIDs already listed are dropped. |
+| `development` | Permits issued on or after `reportingSince` (server-side `>=` and client-side) | Permit numbers already run are dropped. |
+| `athletics` | Headlines published on or after `reportingSince` | Feed item IDs already run are dropped. |
+| `homesafety` | EPA data lags about 2 months, so the query still looks back 180 days, and news is decided per violation | Keys are the violation ID while open and `ID~return date` once returned to compliance. A system runs again only for a violation readers haven't seen, or a return to compliance for a violation already reported (or dated in this period, `returned_before_window` otherwise). |
+| `housing` | The monthly file's `Last-Modified` (Census release day) must be on or after `reportingSince`, otherwise `released_before_window` | A month already published is skipped, so each release runs once. Without the header, only the repeat rule applies. |
 
 ### 1. City and parks calendars (`civiccalendar`)
 
@@ -342,7 +361,7 @@ Changes from the design, all forced by probes:
 | --- | --- | --- | --- |
 | `civiccalendar` | Library ICS parser | Own small parser on the library's `unfold` and `icalMoment` | CivicPlus feeds give a relative `URL`, which the library parser rejects. The event page link comes from the `EID=` URL in `DESCRIPTION`. Up to 6 non-meeting categories are read. |
 | `homesafety` | Extend `hazards` with FEMA and EPA | Its own `homesafety` type, EPA only | `fema.gov` answers `robots.txt` with 403 (treated as disallow-all). EPA `GEOGRAPHIC_AREA` had only 6 inactive King County rows, so systems are matched on their registered `city_name` instead. ECHO (`echodata.epa.gov`) disallows all crawlers. |
-| `homesafety` | | Statewide query, 180-day lookback, community systems filtered client-side, up to 25 system lookups | Envirofacts path joins and a `PWS_TYPE_CODE` filter both returned 0 rows, and data lags by about 2 months. Contact names, emails, phones and addresses are never read into facts. Links go to the system's Envirofacts violation page. |
+| `homesafety` | | Statewide query, 180-day lookback, community systems filtered client-side, up to 25 system lookups | Envirofacts path joins and a `PWS_TYPE_CODE` filter both returned 0 rows, and data lags by about 2 months. Repeats are filtered per violation before the lookup cap (see Edition window). Contact names, emails, phones and addresses are never read into facts. Links go to the system's Envirofacts violation page. |
 | `housing` | Census, Zillow and FHFA, shared monthly ingest | Census Building Permits Survey only, fetched per location | Three small files per location (latest month, year to date, same month last year), so a shared ingest isn't needed yet. Rows are summed when a place spans counties. Year-to-date files have 24 count columns, not 12. |
 | `development` | Reviewed override for dataset IDs | Socrata catalog only; columns mapped by name and type | Seattle's `Building Permits` dataset mapped without an override. Only mapped columns are requested (`$select`), so contractor and applicant columns are never downloaded. Single-family addresses are withheld. |
 | `athletics` | Schools matched through NCES | Place names in the headline | The NCES ArcGIS host answers `robots.txt` with 403. Feeds live in `config/state-sources.json` under `athletics` (WA: WIAA), and only the headline is read: summaries can name students and are never republished. |
