@@ -147,6 +147,25 @@ describe("OpenAI-compatible runtime", () => {
     expect(() => modelProviders(env({ NEWSBEE_MODEL_PROVIDERS: "openai", NEWSBEE_LLM_OPENAI_MODEL: "m", NEWSBEE_LLM_OPENAI_TEMPERATURE: "3" }), "cloud")).toThrow(/TEMPERATURE/);
   });
 
+  it("retries without unsupported token and temperature parameters", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const runtime = new OpenAICompatibleRuntime(config, async (request) => {
+      const body = JSON.parse(request.body ?? "{}");
+      bodies.push(body);
+      if ("max_tokens" in body) return respond(400, { error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", param: "max_tokens", code: "unsupported_parameter" } });
+      if ("temperature" in body) return respond(400, { error: { message: "Unsupported value: 'temperature' does not support 0 with this model.", param: "temperature", code: "unsupported_value" } });
+      return respond(200, { choices: [{ finish_reason: "stop", message: { content: "{}" } }] });
+    });
+    expect((await runtime.generateStructured("x", {})).response).toBe("{}");
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2]).toMatchObject({ max_completion_tokens: 4096 });
+    expect(bodies[2]).not.toHaveProperty("temperature");
+    await runtime.generateStructured("y", {});
+    expect(bodies).toHaveLength(4);
+    const failing = new OpenAICompatibleRuntime(config, async () => respond(400, { error: { message: "bad prompt" } }));
+    await expect(failing.generate("x")).rejects.toThrow(/400/);
+  });
+
   it("marks a truncated reply as not done and reports a missing key as unavailable", async () => {
     const runtime = new OpenAICompatibleRuntime(config, async () => respond(200, { choices: [{ finish_reason: "length", message: { content: "{" } }] }));
     expect((await runtime.generateStructured("x", {})).done).toBe(false);

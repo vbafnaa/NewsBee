@@ -254,16 +254,34 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
     return { status: "ok", detail: `${this.config.name} reachable; model ${this.config.model}` };
   }
 
+  private maxTokensParam = this.config.maxTokensParam;
+  private temperature = this.config.temperature;
+
   private async call(prompt: string, schema?: JsonSchema, maxTokens?: number): Promise<ChatData> {
-    const body: Record<string, unknown> = { model: this.config.model,     messages: [{ role: "user", content: prompt }] };
-        if (this.config.temperature !== null) body.temperature = this.config.temperature;
-        if (maxTokens !== undefined) body[this.config.maxTokensParam] = maxTokens;
-    if (schema) {
-      body.response_format = this.config.jsonMode === "json_object"
-        ? { type: "json_object" }
-        : { type: "json_schema", json_schema: { name: "response", schema, strict: false } };
-    }
-    return await post(this.transport, `${this.config.baseUrl}/chat/completions`, this.headers(), body) as ChatData;
+        for (let attempt = 0; ; attempt += 1) {
+          const body: Record<string, unknown> = { model: this.config.model, messages: [{ role: "user", content: prompt }] };
+          if (this.temperature !== null) body.temperature = this.temperature;
+          if (maxTokens !== undefined) body[this.maxTokensParam] = maxTokens;
+          if (schema) {
+            body.response_format = this.config.jsonMode === "json_object"
+              ? { type: "json_object" }
+              : { type: "json_schema", json_schema: { name: "response", schema, strict: false } };
+          }
+          try {
+            return await post(this.transport, `${this.config.baseUrl}/chat/completions`, this.headers(), body) as ChatData;
+          } catch (error) {
+            // Newer models reject legacy request parameters; adapt once per parameter instead of requiring config.
+            const message = error instanceof Error ? error.message : "";
+            if (attempt >= 2 || !message.startsWith("Model request failed (400)")) throw error;
+            if (this.maxTokensParam === "max_tokens" && maxTokens !== undefined && /max_completion_tokens/.test(message)) {
+              this.maxTokensParam = "max_completion_tokens";
+            } else if (this.temperature !== null && /temperature/.test(message) && /unsupported/i.test(message)) {
+              this.temperature = null;
+            } else {
+              throw error;
+            }
+          }
+        }
   }
 
   private static textOf(data: ChatData) {
