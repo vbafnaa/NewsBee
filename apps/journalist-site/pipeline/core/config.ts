@@ -21,6 +21,8 @@ export type ProviderConfig = {
   /** OpenAI-compatible only: header carrying the key ("api-key" for Azure); default Authorization: Bearer. */
   authHeader: string | null;
   maxTokensParam: "max_tokens" | "max_completion_tokens";
+  /** OpenAI-compatible only: null omits temperature for models that only allow their default. */
+  temperature: number | null;
   jsonMode: "json_schema" | "json_object";
   usage: ProviderUsageConfig;
 };
@@ -112,6 +114,14 @@ function enumValue<T extends string>(value: string | null, allowed: readonly T[]
   return value as T;
 }
 
+function temperatureValue(value: string | null, variable: string): number | null {
+  if (value === null) return 0;
+  if (value.toLowerCase() === "default") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) throw new Error(`${variable} must be 'default' or a number from 0 to 2`);
+  return parsed;
+}
+
 /**
  * NEWSBEE_MODEL_PROVIDERS is an ordered, comma-separated list. "ollama" and "gemini" use their
  * own settings; any other name is an OpenAI-compatible API configured by NEWSBEE_LLM_<NAME>_*.
@@ -122,7 +132,7 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
   if (!names.length) throw new Error("NEWSBEE_MODEL_PROVIDERS must name at least one provider");
   return names.map((name): ProviderConfig => {
     if (!PROVIDER_NAME.test(name)) throw new Error(`Invalid model provider name: ${name}`);
-    const base = { name, apiKey: null, authHeader: null, maxTokensParam: "max_tokens", jsonMode: "json_schema", usage: usageConfig(env, name) } as const;
+    const base = { name, apiKey: null, authHeader: null, maxTokensParam: "max_tokens", temperature: 0, jsonMode: "json_schema", usage: usageConfig(env, name) } as const;
     if (name === "ollama") {
       if (mode === "cloud") throw new Error("Ollama is local-only; list hosted providers in NEWSBEE_MODEL_PROVIDERS for cloud mode");
       return {
@@ -156,6 +166,7 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
       apiKey: blank(env[`${prefix}API_KEY`]),
       authHeader: blank(env[`${prefix}AUTH_HEADER`]),
       maxTokensParam: enumValue(blank(env[`${prefix}MAX_TOKENS_PARAM`]), ["max_tokens", "max_completion_tokens"] as const, "max_tokens", `${prefix}MAX_TOKENS_PARAM`),
+      temperature: temperatureValue(blank(env[`${prefix}TEMPERATURE`]), `${prefix}TEMPERATURE`),
       jsonMode: enumValue(blank(env[`${prefix}JSON_MODE`]), ["json_schema", "json_object"] as const, "json_schema", `${prefix}JSON_MODE`),
       usage: base.usage,
     };

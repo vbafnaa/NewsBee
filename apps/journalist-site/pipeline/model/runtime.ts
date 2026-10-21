@@ -255,8 +255,9 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   }
 
   private async call(prompt: string, schema?: JsonSchema, maxTokens?: number): Promise<ChatData> {
-    const body: Record<string, unknown> = { model: this.config.model, messages: [{ role: "user", content: prompt }], temperature: 0 };
-    if (maxTokens !== undefined) body[this.config.maxTokensParam] = maxTokens;
+    const body: Record<string, unknown> = { model: this.config.model,     messages: [{ role: "user", content: prompt }] };
+        if (this.config.temperature !== null) body.temperature = this.config.temperature;
+        if (maxTokens !== undefined) body[this.config.maxTokensParam] = maxTokens;
     if (schema) {
       body.response_format = this.config.jsonMode === "json_object"
         ? { type: "json_object" }

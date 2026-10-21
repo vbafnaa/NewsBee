@@ -126,6 +126,27 @@ describe("OpenAI-compatible runtime", () => {
     expect(requests.map((request) => JSON.parse(request.body ?? "{}").generationConfig.maxOutputTokens)).toEqual([4096, 8192]);
   });
 
+  it("can use newer OpenAI token and default-temperature request parameters", async () => {
+    const [newer] = modelProviders(env({
+      NEWSBEE_MODEL_PROVIDERS: "openai",
+      NEWSBEE_LLM_OPENAI_MODEL: "reasoning-model",
+      NEWSBEE_LLM_OPENAI_API_KEY: "secret",
+      NEWSBEE_LLM_OPENAI_MAX_TOKENS_PARAM: "max_completion_tokens",
+      NEWSBEE_LLM_OPENAI_TEMPERATURE: "default",
+    }), "cloud");
+    const requests: HttpRequest[] = [];
+    const runtime = new OpenAICompatibleRuntime(newer, async (request) => {
+      requests.push(request);
+      return respond(200, { choices: [{ finish_reason: "stop", message: { content: "{}" } }] });
+    });
+    await runtime.generateStructured("x", {});
+    const body = JSON.parse(requests[0].body ?? "{}");
+    expect(body).toMatchObject({ max_completion_tokens: 4096 });
+    expect(body).not.toHaveProperty("max_tokens");
+    expect(body).not.toHaveProperty("temperature");
+    expect(() => modelProviders(env({ NEWSBEE_MODEL_PROVIDERS: "openai", NEWSBEE_LLM_OPENAI_MODEL: "m", NEWSBEE_LLM_OPENAI_TEMPERATURE: "3" }), "cloud")).toThrow(/TEMPERATURE/);
+  });
+
   it("marks a truncated reply as not done and reports a missing key as unavailable", async () => {
     const runtime = new OpenAICompatibleRuntime(config, async () => respond(200, { choices: [{ finish_reason: "length", message: { content: "{" } }] }));
     expect((await runtime.generateStructured("x", {})).done).toBe(false);
