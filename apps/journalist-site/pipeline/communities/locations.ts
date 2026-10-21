@@ -6,6 +6,7 @@ import { COLLECTIONS } from "../storage/mongo";
 import { loadSourceConfig } from "../storage/source-configs";
 import { logger } from "../core/log";
 import { ACTIVE_RUN_STATUSES } from "../orchestration/runs";
+import { channels, ensureReaderChannel } from "../orchestration/publish";
 const log = logger("communities.locations");
 import { loadCommunities, placeId, systemsForPlace, systemsInArea, type Place } from "./directory";
 import { communityName } from "../../../../shared/community-directory";
@@ -154,7 +155,11 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     if (oldGovernment?.detail === MANAGED_SOURCE_DETAIL || oldGovernment?.detail === DISABLED_GOVERNMENT_DETAIL) profile.government = oldGovernment;
   }
   if (profile.community) profile.source_coverage = sourceCoverage(profile, gaps);
-  await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: placeIdentity }, { ...profile, _id: placeIdentity }, { upsert: true });
+  if (!existing) await ensureReaderChannel(db);
+  const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: placeIdentity }, { ...profile, _id: placeIdentity }, { upsert: true });
+  if (saved.upsertedCount) {
+    await channels(db).updateOne({ _id: "reader-site" }, { $addToSet: { selected_location_ids: placeIdentity } });
+  }
   log.info("location_onboarded", { location_id: placeIdentity, systems: profile.systems.length });
   return profile;
 }

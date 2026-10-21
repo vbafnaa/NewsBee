@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/auth";
 
-type AdminPage = "dashboard" | "health" | "sources" | "output-channel" | "administrators";
+type AdminPage = "dashboard" | "health" | "sources" | "administrators";
 
 export default function AdminShell({
   email,
@@ -21,7 +21,6 @@ export default function AdminShell({
     { id: "dashboard", label: "Runs & locations", href: "/" },
     { id: "health", label: "Health", href: "/health" },
     { id: "sources", label: "Connectors & links", href: "/sources" },
-    { id: "output-channel", label: "Output channel", href: "/output-channel" },
     { id: "administrators", label: "Administrators", href: "/administrators" },
   ];
 

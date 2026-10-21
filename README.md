@@ -53,16 +53,15 @@ npm --prefix apps/reader-site ci
 npm --prefix apps/journalist-site run local
 ```
 
-Open the journalist console at [127.0.0.1:3000](http://127.0.0.1:3000) and the reader site at [127.0.0.1:4321](http://127.0.0.1:4321). The local launcher starts MongoDB and scheduler ticks; data is stored under `.local/stage2/`. Sign-in is skipped locally. In **Runs & locations**, search for a community, select and add it, then start a run. In **Output channel**, select and save the town to make it available to readers. Email previews are saved, not sent.
+Open the journalist console at [127.0.0.1:3000](http://127.0.0.1:3000) and the reader site at [127.0.0.1:4321](http://127.0.0.1:4321). The local launcher starts MongoDB and scheduler ticks; data is stored under `.local/stage2/`. Sign-in is skipped locally. In **Runs & locations**, search for a community, select and add it, then start a run. New locations are automatically enabled for reader-site publishing and appear after their first published edition. Expand **Publishing settings** on the same page to disable a location if needed. Email previews are saved, not sent.
 
 ## Pages
 
 **Journalist console**
 
-- **Runs & locations** (`/`) — Search for and add a town or neighborhood, start or inspect its pipeline run, and review results. Search all communities to discover locations beyond saved suggestions.
+- **Runs & locations** (`/`) — Search for and add a town or neighborhood, start or inspect its pipeline run, and review results. Search all communities to discover locations beyond saved suggestions. Expand **Publishing settings** to choose the reader site's towns, update its URL, or enable/disable publishing.
 - **Health** (`/health`) — Check system and location status, model usage, and run trends; use it to spot failures and source issues.
 - **Connectors & links** (`/sources`) — Review available source connectors and coverage; validate and save a source link for a location.
-- **Output channel** (`/output-channel`) — Configure the reader site's published locations and output destination; save changes to expose editions.
 - **Administrators** (`/administrators`) — Add or remove access for journalist-console administrators.
 
 **Reader site**
