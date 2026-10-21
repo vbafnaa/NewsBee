@@ -1,6 +1,6 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Parser } from "htmlparser2";
-import { checkCount, checkSize, FeedFormatError, httpsLink, plainText, rejectUnsafeXml, scheduleText, type EventFacts, type LocalMoment } from "../common";
+import { cancelledTitle, checkCount, checkSize, FeedFormatError, httpsLink, plainText, rejectUnsafeXml, scheduleText, type EventFacts, type LocalMoment } from "../common";
 
 export type Skipped = Record<string, number>;
 export type ParsedEvents = { events: EventFacts[]; skipped: Skipped };
@@ -45,6 +45,7 @@ export function parseIcal(content: Uint8Array): ParsedEvents {
   for (const item of vevents) {
     const field = (name: string) => unescapeIcs(item[name]?.[1] ?? "").trim();
     if ("RRULE" in item || "RECURRENCE-ID" in item) { skip("recurring"); continue; }
+    if (field("STATUS").toUpperCase() === "CANCELLED" || cancelledTitle(field("SUMMARY"))) { skip("cancelled"); continue; }
     if (!field("LOCATION")) { skip("no_venue"); continue; }
     const link = httpsLink(field("URL"));
     if (!link) { skip("no_link"); continue; }
@@ -113,6 +114,7 @@ export function parseJsonLd(content: Uint8Array): ParsedEvents {
     const venue = jsonLdVenue(node.location);
     const link = httpsLink(typeof node.url === "string" ? node.url : null);
     const start = jsonLdMoment(node.startDate);
+    if (/EventCancelled$/i.test(String(node.eventStatus ?? "")) || cancelledTitle(title)) { skip("cancelled"); continue; }
     if (!venue) { skip("no_venue"); continue; }
     if (!link) { skip("no_link"); continue; }
     if (!start) { skip("unsupported_time"); continue; }
@@ -171,6 +173,7 @@ export function parseTrumba(content: Uint8Array): ParsedEvents {
   const skip = (reason: string) => { skipped[reason] = (skipped[reason] ?? 0) + 1; };
   for (const item of items) {
     const details = new DescriptionParser(textValue(item.description)); details.finish();
+    if (cancelledTitle(textValue(item.title))) { skip("cancelled"); continue; }
     if (!details.venue) { skip("no_venue"); continue; }
     const title = textValue(item.title).trim(), id = textValue(item.guid).trim(), link = httpsLink(textValue(item.link));
     const dateString = textValue(item.category).split(" ")[0];
@@ -183,6 +186,6 @@ export function parseTrumba(content: Uint8Array): ParsedEvents {
     events.push({ source_event_id: id, title, event_date: `${match[1]}-${match[2]}-${match[3]}`, schedule_text: details.schedule,
       venue: details.venue, venue_url: httpsLink(details.venueUrl), room: details.room, source_url: link, description: plainText(details.details.join("\n")) });
   }
-  if (items.length && !events.length) throw new FeedFormatError("No event has explicit venue attribution; feed format changed?");
+  if (items.length > (skipped.cancelled ?? 0) && !events.length) throw new FeedFormatError("No event has explicit venue attribution; feed format changed?");
   return { events, skipped };
 }

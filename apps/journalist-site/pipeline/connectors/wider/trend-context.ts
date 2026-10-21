@@ -3,7 +3,7 @@ import { httpsLink, MAX_FEED_BYTES } from "../common";
 import { Fetcher } from "../fetcher";
 import type { ConnectorContext } from "../types";
 import { pageLinks } from "../ai-discovery";
-import { blueskySearchUrl, sensitive } from "./adapters";
+import { blueskySearchUrl, sensitive, sponsoredItem } from "./adapters";
 import { publicSourceTransport } from "../public-http";
 import { trendTier, type Region } from "./regions";
 export { assertPublicReportingUrl } from "../public-http";
@@ -50,6 +50,7 @@ export function reportingLinks(bytes: Uint8Array, since: Date) {
 /** Require an actual recent local development; attention is discovery metadata, not reporting. */
 export function parseTrendReport(html: string, url: string, topic: string, today: string, place: Region): TrendContext | null {
   let title = "", publisher = "", published = "", paragraph = "", script = "", scriptType = "";
+  const sections: string[] = [];
   let hidden = 0, inParagraph = false, inTitle = false;
   const paragraphs: string[] = [];
   const structured: unknown[] = [];
@@ -63,6 +64,7 @@ export function parseTrendReport(html: string, url: string, topic: string, today
         if (key === "og:title") title = attributes.content ?? title;
         if (key === "og:site_name") publisher = attributes.content ?? publisher;
         if (key === "article:published_time") published = attributes.content ?? published;
+        if (key === "article:section" && attributes.content) sections.push(attributes.content);
       }
       if (name === "p" && hidden === 0) { paragraph = ""; inParagraph = true; }
     },
@@ -99,6 +101,7 @@ export function parseTrendReport(html: string, url: string, topic: string, today
   structured.forEach(articleMetadata);
   const age = Date.parse(`${today}T23:59:59Z`) - Date.parse(published);
   if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 || !publisher.trim()) return null;
+  if (sponsoredItem({ title, link: url, summary: paragraphs.join(" "), categories: sections })) return null;
   const relevant = paragraphs.filter((text) => topicMention(`${title} ${text}`, topic)
     && trendTier(place, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
   // Do not let a sidebar's town name or a popularity-only paragraph establish relevance.

@@ -136,6 +136,11 @@ within 50 km; statewide stories are dropped as too far from community news. Four
 are onboarded, configured per state in `config/state-sources.json`. All are free, keyless,
 public and robots.txt-permitted. See the README for the ranking rules and guardrails.
 
+Relevance guardrails: weather and earthquake news must name the town, community or its
+county (a mention of only a nearby place is dropped); USGS quakes beyond 15 km need
+magnitude 4.0+; sponsored, paid or partner content is never rewritten. Library events
+marked cancelled (feed status or title) are skipped.
+
 | Connector | Endpoint | robots.txt | Licence / terms |
 | --- | --- | --- | --- |
 | USGS earthquakes | `earthquake.usgs.gov/fdsnws/event/1/query` | allowed | public domain |

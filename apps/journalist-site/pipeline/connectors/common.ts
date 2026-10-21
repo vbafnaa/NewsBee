@@ -26,6 +26,10 @@ export type EventFacts = {
 
 export class FeedFormatError extends Error {}
 
+const CANCELLED_TITLE = /\bcancel+ed\b/i;
+/** Libraries often keep cancelled events in their feeds, marked only in the title (e.g. "CANCELLED: Storytime"). */
+export function cancelledTitle(title: unknown) { return typeof title === "string" && CANCELLED_TITLE.test(title); }
+
 const BREAKS = new Set(["br", "p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "tr"]);
 
 function htmlParts(value: string) {

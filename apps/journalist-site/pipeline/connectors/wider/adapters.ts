@@ -9,6 +9,22 @@ export type NewsFacts = EventFacts & { kind: NewsKind; tier: Tier; section: stri
 
 const SENSITIVE = /\b(murder\w*|homicide|kill(?:ed|ing|ings|er)|shooting|stabb\w*|massacre|serial|rape\w*|sexual|assault\w*|abus(?:e|ed|ive)|suicide|overdos\w*|fatal\w*|dead|death\w*|died|obituar\w*|funeral|sentenc\w*|convict\w*|guilty|indict\w*|arrest\w*|charged|kidnap\w*|missing person|manhunt|porn\w*|nude|terror\w*|hostage)\b/i;
 export function sensitive(...texts: Array<string | null | undefined>) { return texts.some((text) => Boolean(text && SENSITIVE.test(text))); }
+
+const HAZARD = /\b(earthquakes?|quakes?|seismic|tremors?|aftershocks?|tsunamis?|weather|forecasts?|storms?|snow(?:s|y|fall|storms?|pack)?|blizzards?|hurricanes?|tornado(?:es|s)?|floods?|flooding|flash flood\w*|heat ?waves?|heat advisor\w*|extreme heat|cold snap|freez(?:e|es|ing)|frost|ice storms?|icy|hail(?:storms?)?|rain(?:s|y|fall|storms?)?|downpours?|thunderstorms?|lightning|wind advisor\w*|high winds?|windstorms?|gusts?|atmospheric river|drought|red flag warning)\b/i;
+/** Weather and earthquake news is only useful to readers when it is about their own area. */
+export function hazardTopic(...texts: Array<string | null | undefined>) { return texts.some((text) => Boolean(text && HAZARD.test(text))); }
+
+const SPONSORED_LABEL = /\b(sponsored|sponsor content|advertorial|advertisement|paid (?:content|post|partnership)|partner content|branded content|brand ?voice|brand studio|promoted)\b/i;
+const SPONSORED_TITLE = /^\s*(?:\[|\()?\s*(?:sponsored|advertorial|paid (?:content|post)|partner content|promoted|ad)\b\s*(?:\]|\)|:|-|\|)|(?:\[|\()\s*(?:sponsored|paid|ad|advertisement)\s*(?:\]|\))|\bsponsored (?:content|post|article)\b/i;
+const SPONSORED_PATH = /\/(?:sponsored|sponsor-content|sponsored-content|paid-content|paid-post|partner-content|partners?-?content|brandvoice|brand-studio|advertorial|advertisement)s?(?:\/|$)/i;
+const SPONSORED_DISCLOSURE = /\b(?:this (?:is a |is an |article is |post is |story is |content is )?(?:sponsored|paid|promotional) (?:post|content|article|story)|sponsored content|paid content|paid post|advertorial|this (?:content|article|post|story) (?:was|is) (?:paid for|sponsored|produced|brought to you) by|in partnership with our sponsor)\b/i;
+/** Sponsored posts are someone else's advertising; rewriting them would be free promotion. */
+export function sponsoredItem(item: Pick<FeedItem, "title" | "link" | "summary"> & { categories?: string[] }) {
+  if ((item.categories ?? []).some((category) => SPONSORED_LABEL.test(category))) return true;
+  if (SPONSORED_TITLE.test(item.title)) return true;
+  try { if (SPONSORED_PATH.test(new URL(item.link).pathname)) return true; } catch { /* invalid links are filtered elsewhere */ }
+  return Boolean(item.summary && SPONSORED_DISCLOSURE.test(item.summary));
+}
 export function publishedText(iso: string) {
   const [year, month, day] = iso.split("-").map(Number);
   return scheduleText({ year, month, day });
@@ -20,7 +36,7 @@ function textOf(value: unknown): string | null {
 }
 function itemArray<T>(value: T | T[] | undefined): T[] { return value === undefined ? [] : Array.isArray(value) ? value : [value]; }
 
-export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null; coordinates?: Point };
+export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null; categories: string[]; coordinates?: Point };
 export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
   checkSize(bytes); rejectUnsafeXml(bytes);
   const xml = new TextDecoder().decode(bytes);
@@ -64,7 +80,9 @@ export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
     const latitude = geoRss?.[0] ?? Number(textOf(node["geo:lat"]) ?? NaN);
     const longitude = geoRss?.[1] ?? Number(textOf(node["geo:long"]) ?? NaN);
     const coordinates = [longitude, latitude];
-    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary,
+    const categories = itemArray(node.category as unknown).map((entry) => textOf(entry) ?? (entry && typeof entry === "object" ? textOf((entry as Record<string, unknown>)["@_term"]) ?? textOf((entry as Record<string, unknown>)["@_label"]) : null))
+      .filter((value): value is string => Boolean(value));
+    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary, categories,
       ...(point(coordinates) ? { coordinates } : {}) });
   }
   return items.sort((a, b) => b.published.getTime() - a.published.getTime());
