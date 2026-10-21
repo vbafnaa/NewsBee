@@ -105,8 +105,11 @@ async function findFile(parentId: string, name: string, mimeType?: string) {
   const query = [`'${quoted(checkId(parentId))}' in parents`, `name = '${quoted(name)}'`, "trashed = false"];
   if (mimeType) query.push(`mimeType = '${mimeType}'`);
   const params = new URLSearchParams({
-    q: query.join(" and "), fields: "files(id,name,mimeType)", pageSize: "10",
-    supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+    q: query.join(" and "),
+    fields: "files(id,name,mimeType)",
+    pageSize: "10",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   });
   const result = await driveRequest<{ files: DriveFile[] }>(`https://www.googleapis.com/drive/v3/files?${params}`);
   return result.files[0];
@@ -144,7 +147,10 @@ export class DriveArtifacts implements ArtifactStore {
     );
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 500);
-      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}`);
+      const quotaGuidance = detail.includes("Service Accounts do not have storage quota")
+        ? " The parent folder must be on a Shared Drive where the service account has at least Contributor access; a My Drive folder shared with the account is not sufficient."
+        : "";
+      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}${quotaGuidance}`);
     }
     return file.id;
   }

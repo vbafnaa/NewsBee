@@ -24,8 +24,9 @@ then **Start pipeline (collection)**. When collection finishes, click **Start au
 when stories finish, click **Write front page and email, then publish**. Each click starts
 and chains that stage's jobs immediately, without cron. The local poller never crosses
 these editor gates. Census and library directories are prepared automatically on first
-use; that first search can take a minute. To publish a town on the reader site, select it
-on **Output channel** and save. The reader search also finds imported towns without an
+use; that first search can take a minute. New towns are enabled for reader publishing
+automatically; adjust them in **Publishing settings** on **Runs & locations**.
+The reader search also finds imported towns without an
 edition and lets readers register interest.
 
 **Run orchestration** shows recent attempts with their stages, stories and expandable per-job
@@ -132,6 +133,22 @@ uses the existing public-HTTPS/robots/DNS/redirect protections and validates fee
 To remove an onboarded community or town, expand its card's **Location actions**, choose **Remove**
 and confirm. Removal is blocked while a job is running. It clears the town's pipeline
 records and manual links and removes it from output-channel directories.
+
+### Publishing settings
+
+Expand **Publishing settings** in **Runs & locations** to manage the main reader site:
+edit its URL, enable or disable publishing, and turn individual locations off.
+Newly onboarded locations are enabled for the default reader site automatically.
+Re-onboarding an existing location preserves any publishing disablement. Existing
+location selections are not changed automatically. Saving settings
+copies the latest published edition for re-enabled towns (if available) and refreshes
+the reader's location directory. Unselected towns leave the directory; their stored
+edition files are not deleted. Towns without a published edition do not appear yet.
+
+The console no longer has a separate output-channel page, channel picker, or
+channel-creation form. Old `/output-channel` bookmarks redirect to these settings.
+The underlying output-channel API, storage folders, and multi-channel pipeline remain
+unchanged; the simplified UI manages the default `reader-site` channel.
 
 ## Model providers
 
@@ -248,8 +265,8 @@ A daily quota cannot be solved by backoff; capacity must recover or be increased
 **Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
 for each source, story (with held reasons) and job. Each cloud source collection runs in
 its own authenticated Vercel function invocation; structured per-attempt JSON-line logs
-are stored under `.newsbee-pipeline/logs/<run-id>` in the configured Drive folder and
-are available from each job in **Inspect run**. **Health** shows current providers,
+are stored under `.newsbee-pipeline/logs/<run-id>` beneath the configured Drive folder
+and are available from each job in **Inspect run**. **Health** shows current providers,
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
@@ -319,7 +336,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `MONGODB_URI`, `MONGODB_DATABASE` | MongoDB Atlas |
 | `NEWSBEE_MODEL_PROVIDERS` plus each provider's variables (see Model providers) | LLM APIs, in fallback order |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Drive writer key; use JSON to keep it distinct from the reader's email/private-key variables in the shared project |
-| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
+| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
@@ -340,7 +357,8 @@ See the [root deployment guide](../../README.md#deploy) for shared environment s
    folder is not a Shared drive. Both Newsbee Drive adapters support Shared drives.
    Copy the folder's ID from the URL
    (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
-   service account's `client_email`, granting **Editor** access. The same account needs
+   service account's `client_email`, granting write access (for example, Shared-drive
+   **Content manager** membership). The same account needs
    access to the output-channel folders where published editions are stored.
 3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
    `GOOGLE_SERVICE_ACCOUNT_JSON` containing the JSON key, and
@@ -351,32 +369,32 @@ See the [root deployment guide](../../README.md#deploy) for shared environment s
    the key.
 4. Redeploy the journalist site so the variables take effect.
 
-If publishing fails with `author_finish failed: GOOGLE_SERVICE_ACCOUNT_JSON must
-contain valid service-account JSON`, the configured value could not be parsed;
-this happens before Google authentication or Drive folder permission checks.
-In Vercel **Settings > Environment Variables**, set the journalist project's
-`GOOGLE_SERVICE_ACCOUNT_JSON` to the **entire contents** of the downloaded
-service-account key file, including `{` and `}`. Use raw JSON (one line or
-pretty-printed), not the filename, an API key, an OAuth client secret, or a
-`GOOGLE_SERVICE_ACCOUNT_JSON=...` assignment. Preserve the private key's `\n`
-escapes inside JSON strings. Single-quoted JSON and a JSON-encoded string are
-also accepted, but raw JSON is preferred.
+In a separate-project deployment, the journalist adapter can alternatively use
+`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` and `GOOGLE_SERVICE_ACCOUNT_EMAIL`. In this
+shared-services deployment, keep those variables reserved for the reader identity.
+If publishing reports a `GOOGLE_SERVICE_ACCOUNT_JSON` parsing error, correct that
+writer JSON rather than falling back to the reader's credentials. Set `GOOGLE_SERVICE_ACCOUNT_JSON`
+to the **entire contents** of the downloaded key file, including `{` and `}`. Use raw
+JSON (one line or pretty-printed), not the filename, an API key, an OAuth client secret,
+or a `GOOGLE_SERVICE_ACCOUNT_JSON=...` assignment. Preserve the private key's `\n`
+escapes inside JSON strings.
 
-Alternatively, **remove** `GOOGLE_SERVICE_ACCOUNT_JSON` and configure
-`GOOGLE_SERVICE_ACCOUNT_EMAIL` with the key's `client_email` and
-`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` with its `private_key` (actual newlines or
-literal `\n` are accepted). A non-empty JSON variable takes precedence over the
-separate variables; invalid JSON never silently falls back to a different identity.
-Apply the change to the environment serving the failing deployment (Production
+Apply credential changes to the environment serving the failing deployment (Production
 or the relevant Preview), then **redeploy**; changing a variable does not update an
 existing deployment. In **Inspect run**, resume the failed run after redeployment.
 Do not paste credentials into logs, issues, or chat.
 
-The configured pipeline root holds run artifacts and is the parent folder for channel
-folders created in **Output channel**. Each output channel stores its own Drive folder ID in
-MongoDB; the reader site reads published editions from that channel folder, not directly
-from the pipeline root. If a channel folder is changed or created manually, share it with
-the service account as well.
+The journalist site uses the configured pipeline folder directly: run artifacts are stored
+in `.newsbee-pipeline/` and new channel folders are created in `output-channels/` beneath
+that folder. It does not create an extra app-level folder. Each output channel stores its
+own Drive folder ID in MongoDB; the reader site reads published editions from that channel
+folder, not directly from the pipeline root. Existing channel folder IDs are kept; the app
+does not move existing channel data. Drive API calls support Shared Drives, but the pipeline
+folder must actually be on a Shared Drive for service-account uploads; sharing a My Drive
+folder with the service account alone does not resolve its storage-quota error. If the
+log reports `Service Accounts do not have storage quota`, move or recreate the configured
+pipeline folder inside a Shared Drive and set the service account's membership to at least
+Contributor; then update this folder ID in Vercel and redeploy.
 
 The journalist service's `functions` in root `vercel.json` configures the private
 queue consumer. Optional `/api/pipeline/tick` Cron recovery is not enabled. To enable

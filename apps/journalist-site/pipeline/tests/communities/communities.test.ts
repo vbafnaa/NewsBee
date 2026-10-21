@@ -1,4 +1,7 @@
 import { zipSync, strToU8 } from "fflate";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withMongo } from "../support/mongo";
 import { importCensusPlaces, searchPlaces } from "../../communities/census";
@@ -7,6 +10,8 @@ import { getLocation, listLocations, onboardLocation, removeLocation, updateSour
 import type { GovernmentSource } from "../../connectors/types";
 import { lookupWebsite, distanceKm, httpsOrigin } from "../../communities/wikidata";
 import { matchBranch } from "../../communities/venues";
+import { channels, channelsFor, publishToChannels } from "../../orchestration/publish";
+import { LocalArtifacts } from "../../storage/artifacts";
 
 const mongo = withMongo();
 const csvZip = (files: Record<string,string>) => zipSync(Object.fromEntries(Object.entries(files).map(([name, value]) => [name, strToU8(value)])));
@@ -66,6 +71,60 @@ it("uses the Mongo source-config helper for reviewed library websites", async ()
   const profile = await onboardLocation(mongo.db, async () => { throw new Error("Mongo override should win before Wikidata"); }, "seattle-wa", { settings: { root: process.cwd() } });
   expect(profile.systems[0].website).toBe("https://www.spl.org/about/");
   expect(profile.systems[0].website_lookup?.detail).toBe("Website from config/library-websites.json");
+});
+
+it("automatically enables a new location for the default reader without changing other channels", async () => {
+  await importCensusPlaces(mongo.db, csvZip({ "2023_Gaz_place_national.txt": censusRows }));
+  await channels(mongo.db).insertOne({
+    _id: "partner-site", name: "Partner", url: "https://partner.example",
+    drive_folder_id: "partner-folder", selected_location_ids: [], enabled: true,
+  });
+  const onboard = () => onboardLocation(mongo.db, async () => { throw new Error("No network expected"); }, "smallville-or", { overrides: {} });
+  await onboard();
+  expect((await channelsFor(mongo.db, "smallville-or")).map((channel) => channel._id)).toEqual(["reader-site"]);
+  expect(await channels(mongo.db).findOne({ _id: "partner-site" })).toMatchObject({ selected_location_ids: [] });
+  await onboard();
+  expect(await channels(mongo.db).findOne({ _id: "reader-site" })).toMatchObject({ selected_location_ids: ["smallville-or"] });
+
+  const root = await mkdtemp(path.join(os.tmpdir(), "newsbee-default-publishing-"));
+  try {
+    const store = new LocalArtifacts(root);
+    const [channel] = await channelsFor(mongo.db, "smallville-or");
+    const edition = { id: "first-edition", location_id: "smallville-or" };
+    expect(await publishToChannels(mongo.db, store, edition)).toEqual(["reader-site"]);
+    expect(await store.readJson(`${channel.drive_folder_id}/first-edition.json`)).toEqual(edition);
+    expect(await store.readJson(`${channel.drive_folder_id}/locations.json`)).toMatchObject({
+      locations: [{ id: "smallville-or", name: "Smallville, OR" }],
+    });
+    await channels(mongo.db).updateOne({ _id: "reader-site" }, { $set: { selected_location_ids: [] } });
+    expect(await publishToChannels(mongo.db, store, { ...edition, id: "disabled-edition" })).toEqual([]);
+    expect((await store.list(channel.drive_folder_id)).map((file) => file.name)).not.toContain("disabled-edition.json");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("preserves a location's forced publishing disablement when re-onboarded", async () => {
+  await importCensusPlaces(mongo.db, csvZip({ "2023_Gaz_place_national.txt": censusRows }));
+  const onboard = () => onboardLocation(mongo.db, async () => { throw new Error("No network expected"); }, "smallville-or", { overrides: {} });
+  await onboard();
+  await channels(mongo.db).updateOne({ _id: "reader-site" }, { $set: { selected_location_ids: [] } });
+  await onboard();
+  expect(await channelsFor(mongo.db, "smallville-or")).toEqual([]);
+});
+
+it("does not turn publishing back on when onboarding into a disabled reader site", async () => {
+  await importCensusPlaces(mongo.db, csvZip({ "2023_Gaz_place_national.txt": censusRows }));
+  await channels(mongo.db).insertOne({
+    _id: "reader-site", name: "Custom reader", url: "https://reader.example",
+    drive_folder_id: "custom-reader-folder", selected_location_ids: ["existing-town"], enabled: false,
+  });
+  await onboardLocation(mongo.db, async () => { throw new Error("No network expected"); }, "smallville-or", { overrides: {} });
+  expect(await channels(mongo.db).findOne({ _id: "reader-site" })).toMatchObject({
+    name: "Custom reader", url: "https://reader.example", drive_folder_id: "custom-reader-folder",
+    enabled: false, selected_location_ids: ["existing-town", "smallville-or"],
+  });
+  expect(await channelsFor(mongo.db, "smallville-or")).toEqual([]);
 });
 
 

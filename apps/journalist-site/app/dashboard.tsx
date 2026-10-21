@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { adminApi as api } from "@/lib/admin-client";
 import LocationOnboarding from "./location-onboarding";
+import PublishingSettings from "./publishing-settings";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -265,6 +266,11 @@ export default function Dashboard() {
         <ul>{health.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} <span className="chart-caption">({time(issue.at)})</span></li>)}</ul>
       </div>}
 
+      <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
+        onAdd={(place) => act(`Added ${place.name}. Review its links on Connectors & links.`, () => api("locations", {
+          method: "POST", body: JSON.stringify({ place_id: place.id }),
+        }))} />
+
       <section className="panel">
         <div className="section-heading">
           <div><p className="eyebrow">Edition pipeline</p><h2>Run orchestration</h2><p>Manually start collection, authoring, then front page and email preview publication. Email is not sent.</p></div>
@@ -393,10 +399,7 @@ export default function Dashboard() {
         {!recent.length && <p>No pipeline runs yet.</p>}
       </section>
 
-      <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
-        onAdd={(place) => act(`Added ${place.name}. Review its links on Connectors & links.`, () => api("locations", {
-          method: "POST", body: JSON.stringify({ place_id: place.id }),
-        }))} />
+      <PublishingSettings locationsKey={locations.map((location) => location.id).sort().join(",")} />
 
     </>
   );

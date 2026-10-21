@@ -72,7 +72,9 @@ development when needed):
 - `MONGODB_DATABASE`: database where reader interest signups are stored.
 
 The Drive folder ID is read from `output_channels.drive_folder_id` on the document whose
-`_id` is `reader-site`; configure it in the journalist site's Output channel page. The
+`_id` is `reader-site`; set `drive_folder_id` directly in MongoDB for your own folder.
+The journalist site's **Publishing settings** on **Runs & locations** controls the
+reader URL, enabled status and selected locations, but not the folder ID. The
 reader site does not use a Drive folder ID environment variable. Share the configured Drive
 folder with the service account email as a Viewer. The service account only requests
 Drive's read-only scope. The MongoDB database user needs read/write access to
