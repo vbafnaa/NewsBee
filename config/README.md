@@ -17,5 +17,10 @@ are discovered through Photon in the onboarding UI; no entry here is required.
 The legacy import snapshot in `sources/` contains only the original three source documents;
 `communities` is automatically seeded separately.
 
+Each state in `state-sources.json` may list `athletics` feeds (`name` and an `https` `feed`)
+for the school athletics connector. Add a state association's feed only after checking
+that its `robots.txt` and terms allow automated access. The connector reads team headlines
+only, never summaries, because they can name students.
+
 The Python prototype's preview-subscriber settings and unused configuration placeholders
 are retained under [`archive/python/config`](../archive/python/config/).

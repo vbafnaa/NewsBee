@@ -116,6 +116,11 @@ describe("orchestrator", () => {
         hazards: make("hazards", []),
         statenews: make("statenews", []),
         trending: make("trending", []),
+        civiccalendar: make("civiccalendar", []),
+        homesafety: make("homesafety", []),
+        housing: make("housing", []),
+        development: make("development", []),
+        athletics: make("athletics", []),
       } as Record<SourceType, Connector>,
     };
   }

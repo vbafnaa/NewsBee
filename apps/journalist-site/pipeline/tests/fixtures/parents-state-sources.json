@@ -1,0 +1,20 @@
+{
+  "WA": {
+    "name": "Washington",
+    "places": {
+      "Redmond": [47.674, -122.1215],
+      "Kirkland": [47.6815, -122.2087],
+      "Bellevue": [47.6101, -122.2015],
+      "Seattle": [47.6062, -122.3321],
+      "Silverdale": [47.6448, -122.6946],
+      "Port Orchard": [47.5404, -122.6363],
+      "Bremerton": [47.5673, -122.6326],
+      "Tacoma": [47.2529, -122.4443],
+      "Lynden": [48.9465, -122.4521],
+      "Spokane": [47.6588, -117.426]
+    },
+    "athletics": [
+      {"name": "Washington Interscholastic Activities Association (WIAA)", "feed": "https://www.wiaa.com/feed/", "reviewed": "test fixture"}
+    ]
+  }
+}

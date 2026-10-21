@@ -68,7 +68,7 @@ describe("manual stage HTTP flow", () => {
     await mongo.db.collection(COLLECTIONS.locations).insertOne({ ...location, _id: location.id as never });
     await ensureRunIndexes(mongo.db);
     await ensureJobIndexes(mongo.db);
-    const connectors = Object.fromEntries((["library", "meetings", "hazards", "statenews", "trending"] as SourceType[]).map((type) => [type, {
+    const connectors = Object.fromEntries((["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics"] as SourceType[]).map((type) => [type, {
       type,
       sources: () => [{ type, source_id: `${type}:main`, name: type }],
       collect: async (task) => ({ result: sourceResult(task.source_id, task.name, "ingested", "ok"), events: [] }),
@@ -135,14 +135,14 @@ describe("manual stage HTTP flow", () => {
     expect((await getRun(mongo.db, runId))?.status).toBe("awaiting_authoring");
     expect((await runJobs(mongo.db, runId)).every((job) => job.kind === "collect_source" && job.status === "completed")).toBe(true);
     if (mode === "local") {
-      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(5);
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(10);
       const count = fetchMock.mock.calls.length;
       expect((await advance(new Request(`${origin}/api/pipeline/advance`, {
         method: "POST", headers: { "x-newsbee-job-token": jobChainToken(internalSecret) },
       }))).status).toBe(200);
       expect(fetchMock).toHaveBeenCalledTimes(count);
     } else {
-      expect(send).toHaveBeenCalledTimes(6); // Five sources and one final gate check.
+      expect(send).toHaveBeenCalledTimes(11); // Ten sources and one final gate check.
       expect(fetchMock).not.toHaveBeenCalled();
       await processNextJob(); // A stray delivery cannot cross the editor gate.
       expect(runtime.deliveries).toHaveLength(0);
@@ -196,7 +196,7 @@ describe("manual stage HTTP flow", () => {
     const runId = jobs[0].job_id;
     await mongo.db.collection(COLLECTIONS.jobs).updateMany({ run_id: runId }, { $set: { available_at: Date.now() / 1000 + 0.15 } });
     expect((await resume(request(`runs/${runId}/resume`), context(runId))).status).toBe(200);
-    expect(await mongo.db.collection(COLLECTIONS.jobs).countDocuments({ run_id: runId })).toBe(5);
+    expect(await mongo.db.collection(COLLECTIONS.jobs).countDocuments({ run_id: runId })).toBe(10);
     await drainCallbacks();
     expect((await getRun(mongo.db, runId))?.status).toBe("awaiting_authoring");
     expect((await runJobs(mongo.db, runId)).every((job) => job.attempts === 1)).toBe(true);
@@ -232,7 +232,7 @@ describe("manual stage HTTP flow", () => {
     await drainCallbacks();
     expect((await getRun(mongo.db, runId))?.status).toBe("awaiting_authoring");
     const recovered = await runJobs(mongo.db, runId);
-    expect(recovered).toHaveLength(5);
+    expect(recovered).toHaveLength(10);
     expect(recovered.find((job) => job._id === interrupted!._id)?.attempts).toBe(2);
   });
 

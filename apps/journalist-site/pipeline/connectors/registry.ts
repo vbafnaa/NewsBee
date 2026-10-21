@@ -6,6 +6,11 @@ import type { Settings } from "../core/config";
 import { libraryConnector } from "./library";
 import { meetingsConnector } from "./meetings";
 import { hazardsConnector, stateNewsConnector, trendingConnector } from "./wider";
+import { civicCalendarConnector } from "./civiccalendar";
+import { homeSafetyConnector } from "./homesafety";
+import { housingConnector } from "./housing";
+import { developmentConnector } from "./development";
+import { athleticsConnector } from "./athletics";
 
 export const CONNECTORS: Record<SourceType, Connector> = {
   library: libraryConnector,
@@ -13,6 +18,11 @@ export const CONNECTORS: Record<SourceType, Connector> = {
   hazards: hazardsConnector,
   statenews: stateNewsConnector,
   trending: trendingConnector,
+  civiccalendar: civicCalendarConnector,
+  homesafety: homeSafetyConnector,
+  housing: housingConnector,
+  development: developmentConnector,
+  athletics: athleticsConnector,
 };
 
 /**

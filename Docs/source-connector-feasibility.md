@@ -194,12 +194,13 @@ Open risks:
   Vancouver) get little wider coverage.
 - Wikipedia pageviews lag 1 to 3 days.
 
-## Next connectors: civically minded parents who own or plan to own a home (design)
+## Next connectors: civically minded parents who own or plan to own a home (built)
 
-Probed 2026-10-21. Five connectors are planned for this reader profile. They're built one at a
-time in the order below, and each follows the existing `Connector` contract
-(`pipeline/connectors/types.ts`): `sources(location)` discovers from the location alone, and
-`collect(task)` returns a `SourceResult` plus facts.
+Probed and built 2026-10-21. All five connectors are built and registered. Each follows the
+existing `Connector` contract (`pipeline/connectors/types.ts`): `sources(location)` discovers
+from the location alone, and `collect(task)` returns a `SourceResult` plus facts. The table
+below is the original design; see [Build notes](#build-notes-2026-10-21) for what changed
+after probing.
 
 | # | Source type | Reader value | Machine-readable | Location discovery | Permitted | Feasibility |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -218,11 +219,11 @@ Anything else is dropped before ranking, never written.
 
 | Connector | Kept | Dropped |
 | --- | --- | --- |
-| `civiccalendar` | Calendars from the location's own city website, or the parks district that serves it. Events with a venue address are geocoded and kept within 15 km. | Other cities' calendars; virtual-only and out-of-area events. |
-| `development` | Permits from the location's own city portal, with coordinates or a geocoded address within 15 km. For neighbourhoods, within the neighbourhood area plus 2 km. | Permits elsewhere in a large city's dataset; county or state datasets without coordinates. |
-| `homesafety` | FEMA declarations that name the location's county. EPA violations for water systems that serve the city (or county as a fallback). | Statewide declarations without the county; water systems serving other places. |
-| `housing` | Rows matched on the location's Census place (state and place code), plus its county and 3-digit ZIP for context. | Same-name places in other states (such as Redmond, Oregon for Redmond, Washington); metro or national figures stated as local ones. |
-| `athletics` | Results naming a public school whose NCES address is within 15 km (local) or 50 km (nearby). | Results with no local school named; statewide news that only mentions the state. |
+| `civiccalendar` | Events from the location's own city calendar. The trailing "City ST ZIP" of the venue address is matched to the town (local) or a configured place within 50 km (nearby); events with no address are the city's own venues (local). | Meeting categories; another state's address; unknown or distant cities; virtual-only, recurring, cancelled and out-of-window events. |
+| `development` | Permits from the city's own Socrata portal, queried server-side with `within_circle` (15 km, or 3 km for neighbourhoods) and checked again client-side. | Permits outside the radius or the 30-day window; small repairs and alterations with fewer than 2 new units. |
+| `homesafety` | EPA health-based violations for active community water systems whose registered city is the town (local) or a configured place within 50 km (nearby). | Other states; systems registered elsewhere; non-community systems (schools, campgrounds). |
+| `housing` | The Building Permits Survey row matched on the location's state FIPS and Census place code. | Same-name places in other states (Redmond, Oregon for Redmond, Washington); neighbourhood locations, because the Census place is the whole city. |
+| `athletics` | Team headlines naming the town (local) or a configured place within 50 km (nearby). | Headlines with no local place; individual-student, administrative and out-of-window items. |
 
 Rules:
 - **Match on the record's place or coordinates, not the text.** A mention of the town in a
@@ -230,8 +231,9 @@ Rules:
 - **Each fact carries `tier` and, when known, `distance_km`.** Rankers prefer local over
   nearby, as `ranking/wider.ts` does.
 - **Same-name places are matched with the state** (and the county or FIPS code when available).
-- **Each `SourceResult` reports what was dropped** with `skipped_outside_area` counts, so the
-  Health page shows when a connector is collecting the wrong place.
+- **Each `SourceResult` reports what was dropped** in `skipped_unusable.outside_area` (and
+  `skipped_outside_window`), so the Health page shows when a connector is collecting the
+  wrong place.
 - **Links must be official pages for the place.** Links to another city's pages, aggregators
   or listing sites are rejected during link discovery and the link cache.
 
@@ -325,14 +327,28 @@ minors. School district sites and MaxPreps aren't used.
 - **Risk:** coverage is per state and needs a terms review before each state is enabled.
   Expect only some states to qualify, and mostly tournament-season results.
 
-### Build order
+### Build notes (2026-10-21)
 
-1. `civiccalendar`: the smallest change; it reuses city website discovery and the ICS parser.
-2. `homesafety`: extends `hazards` with two keyless JSON APIs.
-3. `housing`: needs the new `MetricFacts` type and shared monthly ingest.
-4. `development`: needs the new `FilingFacts` type and per-city dataset discovery.
-5. `athletics`: needs a terms review for each state before enabling it.
+All five are in `pipeline/connectors/{civiccalendar,homesafety,housing,development,athletics}`,
+with shared helpers in `connectors/parents/shared.ts`, rankers in `ranking/parents.ts`, and
+tests and recorded fixtures in `pipeline/tests/parents/` and `pipeline/tests/fixtures/`.
+They're enabled for every location (not gated by `NEWSBEE_WIDER_SOURCES`) and report
+`no_feed` when a location has nothing to read. New news kinds: `safety_notice`,
+`housing_market`, `development` and `school_sports`.
 
-Each connector ships with recorded fixtures under `pipeline/tests/fixtures/{type}/`, a
-connector test, a ranker in `pipeline/ranking/` and an entry in `SOURCE_TYPES` and
-`CONNECTORS`.
+Changes from the design, all forced by probes:
+
+| Connector | Design | Built | Why |
+| --- | --- | --- | --- |
+| `civiccalendar` | Library ICS parser | Own small parser on the library's `unfold` and `icalMoment` | CivicPlus feeds give a relative `URL`, which the library parser rejects. The event page link comes from the `EID=` URL in `DESCRIPTION`. Up to 6 non-meeting categories are read. |
+| `homesafety` | Extend `hazards` with FEMA and EPA | Its own `homesafety` type, EPA only | `fema.gov` answers `robots.txt` with 403 (treated as disallow-all). EPA `GEOGRAPHIC_AREA` had only 6 inactive King County rows, so systems are matched on their registered `city_name` instead. ECHO (`echodata.epa.gov`) disallows all crawlers. |
+| `homesafety` | | Statewide query, 180-day lookback, community systems filtered client-side, up to 25 system lookups | Envirofacts path joins and a `PWS_TYPE_CODE` filter both returned 0 rows, and data lags by about 2 months. Contact names, emails, phones and addresses are never read into facts. Links go to the system's Envirofacts violation page. |
+| `housing` | Census, Zillow and FHFA, shared monthly ingest | Census Building Permits Survey only, fetched per location | Three small files per location (latest month, year to date, same month last year), so a shared ingest isn't needed yet. Rows are summed when a place spans counties. Year-to-date files have 24 count columns, not 12. |
+| `development` | Reviewed override for dataset IDs | Socrata catalog only; columns mapped by name and type | Seattle's `Building Permits` dataset mapped without an override. Only mapped columns are requested (`$select`), so contractor and applicant columns are never downloaded. Single-family addresses are withheld. |
+| `athletics` | Schools matched through NCES | Place names in the headline | The NCES ArcGIS host answers `robots.txt` with 403. Feeds live in `config/state-sources.json` under `athletics` (WA: WIAA), and only the headline is read: summaries can name students and are never republished. |
+
+Live checks on 2026-10-21: Redmond's calendar had 12 categories (3 skipped as meetings), the
+Seattle permit query returned 400 permits in 30 days (about 100 kept as new construction,
+demolition or multi-unit), and the August 2026 West file had Redmond, WA (53/57535) and
+Redmond, OR (41/61200) as separate rows. The WIAA feed rarely names towns in headlines, so
+expect few athletics items outside tournament season.

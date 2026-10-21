@@ -61,6 +61,9 @@
       {"name": "Washington State Attorney General", "feed": "https://www.atg.wa.gov/rss.xml"},
       {"name": "Washington State Department of Health", "feed": "https://doh.wa.gov/newsroom/rss"}
     ],
+    "athletics": [
+      {"name": "Washington Interscholastic Activities Association (WIAA)", "feed": "https://www.wiaa.com/feed/", "reviewed": "2026-09: public news feed; robots.txt absent (404); team-level headlines only"}
+    ],
     "watchlist": [
       {"article": "Seattle_Seahawks", "about": "The Seattle Seahawks are the National Football League team based in Seattle.", "place": "Seattle"},
       {"article": "Seattle_Mariners", "about": "The Seattle Mariners are the Major League Baseball team based in Seattle.", "place": "Seattle"},

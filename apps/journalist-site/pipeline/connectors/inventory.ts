@@ -13,7 +13,12 @@ const DETAILS: Record<SourceType, { name: string; formats: string; manual: boole
   hazards: { name: "Weather & earthquakes", formats: "National Weather Service alerts and USGS earthquake feeds", manual: false },
   statenews: { name: "Community and state newsrooms", formats: "Reviewed local publisher and agency RSS/Atom feeds, filtered for community relevance", manual: true },
   trending: { name: "Locally reported stories", formats: "Wikipedia topic discovery and Bluesky reporting links; recent local reporting required, with explicit community evidence for neighborhoods", manual: false },
-};
+    civiccalendar: { name: "City & parks calendars", formats: "CivicPlus calendar iCalendar feeds from the city website, community and parks categories only", manual: true },
+    homesafety: { name: "Home & water safety", formats: "EPA Safe Drinking Water health-based violations for community water systems serving the county", manual: false },
+    housing: { name: "Housing market", formats: "Census Building Permits Survey monthly place file (new residential units and value)", manual: false },
+    development: { name: "Development & permits", formats: "Socrata open-data building permit datasets within 15 km (new construction, demolition, multi-unit)", manual: false },
+    athletics: { name: "School athletics", formats: "Reviewed state athletic association RSS feeds; team-level results only, no student names", manual: false },
+  };
 
 export async function connectorInventory(db: Db, settings: Settings) {
   const [locations, saved, cached] = await Promise.all([

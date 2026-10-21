@@ -1,0 +1,162 @@
+[
+  {
+    "issueddate": "2026-10-08T00:00:00",
+    "location1": {
+      "latitude": "47.57701356",
+      "longitude": "-122.298734"
+    },
+    "latitude": "47.57701356",
+    "longitude": "-122.29873400",
+    "description": "Construct new mixed-use building  occupy per plan. Mechanical Included.",
+    "permittypedesc": "New",
+    "permitclass": "Commercial",
+    "permittypemapped": "Building",
+    "housingunitsadded": "241.0",
+    "estprojectcost": "69876675.0000",
+    "originaladdress1": "2929 27TH AVE S",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7046346-CN"
+    },
+    "permitnum": "7046346-CN"
+  },
+  {
+    "issueddate": "2026-10-07T00:00:00",
+    "location1": {
+      "latitude": "47.61519579",
+      "longitude": "-122.3467522"
+    },
+    "latitude": "47.61519579",
+    "longitude": "-122.34675220",
+    "description": "Establish use as permanent supportive housing for 83 stacked dwelling units and human services facilities  per land use code. Construct new mixed-use building  occupy per plan.",
+    "permittypedesc": "New",
+    "permitclass": "Multifamily",
+    "permittypemapped": "Building",
+    "housingunitsadded": "83.0",
+    "estprojectcost": "16012212.0000",
+    "originaladdress1": "2402 2ND AVE",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7118487-CN"
+    },
+    "permitnum": "7118487-CN"
+  },
+  {
+    "issueddate": "2026-10-19T00:00:00",
+    "location1": {
+      "latitude": "47.64790842",
+      "longitude": "-122.36238314"
+    },
+    "latitude": "47.64790842",
+    "longitude": "-122.36238314",
+    "description": "Construct new one-family dwelling (SFR 3)  per plan. (Establish use as five single family residences  one with a detached accessory dwelling unit  per land use code. Construct six new one-family dwellings  per plan. Review and processing for six records under 7103408)",
+    "permittypedesc": "New",
+    "permitclass": "Single Family/Duplex",
+    "permittypemapped": "Building",
+    "housingunitsadded": "1.0",
+    "estprojectcost": "311112.0000",
+    "originaladdress1": "3045 4TH AVE W",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7118769-CN"
+    },
+    "permitnum": "7118769-CN",
+    "contractorcompanyname": "PLACEHOLDER CONTRACTOR LLC"
+  },
+  {
+    "issueddate": "2026-10-20T00:00:00",
+    "location1": {
+      "latitude": "47.72585359",
+      "longitude": "-122.35852436"
+    },
+    "latitude": "47.72585359",
+    "longitude": "-122.35852436",
+    "description": "Demolish residential building  per plans",
+    "permittypedesc": "Demolition",
+    "permitclass": "Single Family/Duplex",
+    "permittypemapped": "Demolition",
+    "housingunitsadded": "3.0",
+    "estprojectcost": "0.0000",
+    "originaladdress1": "13225 1ST AVE NW",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7149057-DM"
+    },
+    "permitnum": "7149057-DM"
+  },
+  {
+    "issueddate": "2026-10-20T00:00:00",
+    "location1": {
+      "latitude": "47.60668262",
+      "longitude": "-122.30242991"
+    },
+    "latitude": "47.60668262",
+    "longitude": "-122.30242991",
+    "description": "Construct alterations to a public swimming pool facility  per plans. Mechanical included this permit.",
+    "permittypedesc": "Addition/Alteration",
+    "permitclass": "Institutional",
+    "permittypemapped": "Building",
+    "housingunitsadded": "0.0",
+    "estprojectcost": "2000000.0000",
+    "originaladdress1": "500 23RD AVE",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7099220-CN"
+    },
+    "permitnum": "7099220-CN"
+  },
+  {
+    "issueddate": "2026-10-20T00:00:00",
+    "location1": {
+      "latitude": "47.69644644",
+      "longitude": "-122.29030433"
+    },
+    "latitude": "47.69644644",
+    "longitude": "-122.29030433",
+    "description": "Construct alterations to one-family dwelling to install a window well  subject to field inspection (STFI)",
+    "permittypedesc": "Addition/Alteration",
+    "permitclass": "Single Family/Duplex",
+    "permittypemapped": "Building",
+    "estprojectcost": "60000.0000",
+    "originaladdress1": "9336 35TH AVE NE",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7163593-CN"
+    },
+    "permitnum": "7163593-CN"
+  },
+  {
+    "issueddate": "2026-10-19T00:00:00",
+    "location1": {
+      "latitude": "47.2529",
+      "longitude": "-122.4443"
+    },
+    "latitude": "47.2529",
+    "longitude": "-122.4443",
+    "description": "Construct new one-family dwelling (SFR 3)  per plan. (Establish use as five single family residences  one with a detached accessory dwelling unit  per land use code. Construct six new one-family dwellings  per plan. Review and processing for six records under 7103408)",
+    "permittypedesc": "New",
+    "permitclass": "Single Family/Duplex",
+    "permittypemapped": "Building",
+    "housingunitsadded": "1.0",
+    "estprojectcost": "311112.0000",
+    "originaladdress1": "3045 4TH AVE W",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7118769-CN"
+    },
+    "permitnum": "FAR-TEST"
+  },
+  {
+    "issueddate": "2026-07-01T00:00:00",
+    "location1": {
+      "latitude": "47.72585359",
+      "longitude": "-122.35852436"
+    },
+    "latitude": "47.72585359",
+    "longitude": "-122.35852436",
+    "description": "Demolish residential building  per plans",
+    "permittypedesc": "Demolition",
+    "permitclass": "Single Family/Duplex",
+    "permittypemapped": "Demolition",
+    "housingunitsadded": "3.0",
+    "estprojectcost": "0.0000",
+    "originaladdress1": "13225 1ST AVE NW",
+    "link": {
+      "url": "https://services.seattle.gov/portal/customize/LinkToRecord.aspx?altId=7149057-DM"
+    },
+    "permitnum": "OLD-TEST"
+  }
+]

@@ -13,6 +13,10 @@ export const NEWS_LINES: Record<string, string> = {
   earthquake: "Recorded {when}. Where: {source}.",
   trending_topic: "Published {when} by {source}.",
   social_trend: "Published {when} by {source}.",
+  safety_notice: "Reported {when}. Source: {source}.",
+  housing_market: "Data for {when}. Source: {source}.",
+  development: "Filed {when}. Source: {source}.",
+  school_sports: "Published {when} by {source}.",
 };
 
 export type Occurrence = {

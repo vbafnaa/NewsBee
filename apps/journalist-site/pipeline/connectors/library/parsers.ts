@@ -6,8 +6,8 @@ export type Skipped = Record<string, number>;
 export type ParsedEvents = { events: EventFacts[]; skipped: Skipped };
 const count = (items: number) => checkCount(items);
 
-function unescapeIcs(value: string) { return value.replace(/\\([\\;,nN])/g, (_whole, escaped: string) => /n/i.test(escaped) ? "\n" : escaped); }
-function icalMoment(value: string, params: string): LocalMoment | null {
+export function unescapeIcs(value: string) { return value.replace(/\\([\\;,nN])/g, (_whole, escaped: string) => /n/i.test(escaped) ? "\n" : escaped); }
+export function icalMoment(value: string, params: string): LocalMoment | null {
   if (value.length === 8 || (/VALUE=DATE/i.test(params) && !/DATE-TIME/i.test(params))) {
     const m = /^(\d{4})(\d{2})(\d{2})$/.exec(value);
     return m ? { year: +m[1], month: +m[2], day: +m[3] } : null;
@@ -16,7 +16,7 @@ function icalMoment(value: string, params: string): LocalMoment | null {
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(value);
   return m ? { year: +m[1], month: +m[2], day: +m[3], hour: +m[4], minute: +m[5] } : null;
 }
-function unfold(lines: string[]) {
+export function unfold(lines: string[]) {
   const events: Array<Record<string, [string, string]>> = [];
   let current: Record<string, [string, string]> | null = null;
   for (const line of lines) {

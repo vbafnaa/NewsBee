@@ -20,6 +20,8 @@ export type StateConfig = {
   places?: Record<string, Point>;
   newsrooms?: Newsroom[];
   watchlist?: WatchlistEntry[];
+  /** Reviewed state athletic-association feeds (robots and terms checked), read for team-level results only. */
+  athletics?: Array<{ name: string; feed: string; reviewed?: string }>;
 };
 export type Region = {
   location_id: string; town: string; state_code: string; state_name: string | null; county: string | null;
@@ -50,6 +52,7 @@ export function validateStateSources(value: unknown): Record<string, StateConfig
     const where = `state-sources.json entry ${code}`;
     if (!STATE_CODE.test(code) || !state || typeof state !== "object" || !state.name) throw new Error(`${where} needs an uppercase state code and a name`);
     for (const newsroom of state.newsrooms ?? []) if (!newsroom.name || httpsLink(newsroom.feed) === null) throw new Error(`${where}: every newsroom needs a name and an HTTPS feed`);
+    for (const feed of state.athletics ?? []) if (!feed.name || httpsLink(feed.feed) === null) throw new Error(`${where}: every athletics feed needs a name and an HTTPS feed`);
     for (const [name, point] of Object.entries(state.places ?? {})) if (!validPoint(point)) throw new Error(`${where}: place ${name} needs [latitude, longitude]`);
     for (const entry of state.watchlist ?? []) {
       if (!ARTICLE.test(String(entry.article ?? "")) || !entry.about) throw new Error(`${where}: every watchlist entry needs an article and about`);
