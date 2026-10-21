@@ -95,14 +95,21 @@ return HTTP 503 without serving cached edition responses.
   and towns through Photon/OpenStreetMap, using the same MongoDB cache and provider throttle
   as editor onboarding. `NEWSBEE_GEOCODER_URL` can override the HTTPS Photon endpoint.
 - `GET /api/locations/<location_id>`: resolves a town in the directory.
-- `POST /api/locations/<location_id>/interest`: validates and stores an interest email in
-  MongoDB; addresses are never returned by a public endpoint.
+- `POST /api/locations/<location_id>/interest`: accepts `{ "email": "...", "consent": true }`,
+  validates explicit consent to future weekly editions, and saves the signup in MongoDB;
+  addresses are never returned by a public endpoint.
 
 The paths above are service-relative; publicly they are under `/reader/api/`.
 Astro's `/reader` base also prefixes generated assets and browser API calls.
 The reader calls these same-origin routes. Google Drive content is read on the server;
 the browser never receives service-account credentials. Search and edition content are
 public. Interest signups require a same-origin request and are stored durably in MongoDB.
+The `reader_interest_signups` collection maps each normalized email to `location_id` and
+`location_name`, with `created_at`, `consented_at`, `consent_version: "weekly-editions-v1"`,
+`weekly_editions: true`, and `launch_notification: true`. Repeat submissions update consent
+without duplicating the email/location pair. Earlier interest-only records without these
+consent fields must not be treated as weekly subscriptions unless the reader signs up again.
+There is no automatic email delivery or launch-notification sender yet.
 
 The `/reader` landing page introduces Newsbee with a central **Find your neighborhood**
 search bar. Its dropdown shows published editions when empty and community suggestions
@@ -111,6 +118,11 @@ It does not automatically open the first
 edition. Choosing a published community opens the newspaper layout; choosing any community
 without a published edition opens the “we're not here yet” interest page, including saved
 communities that have not published yet. **Find another neighborhood** returns to discovery.
+Both unpublished communities and published editions offer the same location-specific
+weekly-edition signup form, with an unchecked, required consent checkbox covering future
+weekly editions and a launch notification. Published editions include an **Interested in
+weekly editions? Sign up here** link to the form beneath the newspaper. The form and
+confirmation explain that email delivery is not active yet.
 The `?location=<location_id>` URL opens a community directly, and browser Back/Forward
 navigates between discovery and selected communities.
 

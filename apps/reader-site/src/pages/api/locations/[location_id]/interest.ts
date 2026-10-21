@@ -24,6 +24,9 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   ) {
     return Response.json({ detail: "Enter a valid email address" }, { status: 422 });
   }
+  if ((body as Record<string, unknown>).consent !== true) {
+    return Response.json({ detail: "Consent to future weekly editions is required" }, { status: 422 });
+  }
 
   try {
     const location = await directoryTown(params.location_id ?? "");
