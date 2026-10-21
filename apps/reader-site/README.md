@@ -104,7 +104,28 @@ The reader calls these same-origin routes. Google Drive content is read on the s
 the browser never receives service-account credentials. Search and edition content are
 public. Interest signups require a same-origin request and are stored durably in MongoDB.
 
-In **Choose your edition**, type a community name and city/state, then press **Search all
+The `/reader` landing page introduces Newsbee with a central **Find your neighborhood**
+search bar. Its dropdown shows published editions when empty and community suggestions
+as the reader types, with **Search all communities** embedded for broader lookup.
+It does not automatically open the first
+edition. Choosing a published community opens the newspaper layout; choosing any community
+without a published edition opens the “we're not here yet” interest page, including saved
+communities that have not published yet. **Find another neighborhood** returns to discovery.
+The `?location=<location_id>` URL opens a community directly, and browser Back/Forward
+navigates between discovery and selected communities.
+
+Published editions use compact newspaper typography, ruled columns, and a lead story,
+with a separate upcoming-events section. The masthead identifies the community once;
+generic location/week headlines and boilerplate introductions are hidden, while editorial
+headlines and substantive introductions remain. Story location lines that only repeat
+the edition community are omitted; specific venues, times, and other places remain.
+Story attribution and original-source links
+are collected in a concise numbered list in the collapsed **Sources & edition notes**
+pane at the bottom. Superscript references on stories open the pane and focus the matching
+source; return links lead back to the story. Coverage notes live there too; corrections and stale-edition notices remain
+visible above the stories. The pane resets to collapsed when opening another edition.
+
+In **Find your neighborhood**, type a community name and city/state, then press **Search all
 communities** (or Enter without a highlighted suggestion). Typing alone only searches the
 local directory; provider lookup is explicit. A discovered community is saved for later
 lookup and interest signups, not automatically onboarded or published. Selecting it opens
