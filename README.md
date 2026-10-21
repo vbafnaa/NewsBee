@@ -75,7 +75,7 @@ disable a location if needed. Email previews are saved, not sent.
 
 **Reader site**
 
-- **Choose your edition** (`/reader`) — Search saved communities or use **Search all communities** to find another US town or neighborhood. Open an available edition or register interest where no edition exists.
+- **Find your neighborhood** (`/reader`) — Choose a published edition or search for a US town or neighborhood. Published communities open their newspaper; communities without an edition open the “we're not here yet” interest page.
 
 ## Deploy
 

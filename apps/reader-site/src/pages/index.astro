@@ -15,21 +15,30 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
     />
   </head>
   <body>
-    <a class="skip-link" href="#edition">Skip to this week's stories</a>
-    <main data-api-url={apiUrl}>
+    <a class="skip-link" href="#landing-title">Skip to find your neighborhood</a>
+    <main data-api-url={apiUrl} class="is-landing">
       <header class="masthead">
         <div class="ears">
           <span>Your community, this week</span>
-          <div class="picker">
-            <button id="edition-toggle" type="button" aria-expanded="false"
-              aria-controls="edition-picker" disabled>
-              <span id="selected-location">Change edition</span>
-              <span class="chevron" aria-hidden="true"></span>
-            </button>
-            <div id="edition-picker" hidden>
-              <p class="picker-heading">Choose your edition</p>
-              <div id="onboarded-editions" aria-label="Available editions"></div>
-              <label for="location">Find another community</label>
+          <button id="edition-toggle" type="button" hidden>Find another neighborhood</button>
+        </div>
+        <h1 class="title">Newsbee</h1>
+        <p class="subtitle" id="edition-name">Local news. Shared stories.</p>
+        <div class="dateline" hidden>
+          <span id="edition-week">&nbsp;</span>
+          <span id="edition-published">&nbsp;</span>
+        </div>
+      </header>
+      <section id="landing" aria-labelledby="landing-title">
+        <div class="landing-ornament" aria-hidden="true"><span></span><svg viewBox="0 0 40 36" fill="none">
+          <path d="M19 15C3-1 2 20 17 21M22 15C37-1 39 20 24 21" fill="#f0dfba" stroke="currentColor" />
+          <ellipse cx="20.5" cy="23" rx="6" ry="9" fill="#c7a04f" stroke="currentColor" />
+          <path d="M15 21h11M16 26h9M18 14l-3-4M23 14l3-4" stroke="currentColor" stroke-width="2" />
+        </svg><span></span></div>
+        <h2 id="landing-title" tabindex="-1">Good stories start <em>nearby.</em></h2>
+        <p class="landing-intro">Discover what's happening around you, from civic updates to weekend plans.</p>
+        <div class="picker">
+              <label class="visually-hidden" for="location">Find your neighborhood</label>
               <div class="location-field">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                   stroke-width="1.5" aria-hidden="true">
@@ -38,27 +47,52 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
                 </svg>
                 <input id="location" type="text" role="combobox" aria-autocomplete="list"
                   aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
-                  placeholder="Neighborhood, town or city, ST" autocomplete="off" maxlength="80" disabled />
-                <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
+                  placeholder="Find your neighborhood" autocomplete="off" maxlength="80" disabled />
+                <button id="location-toggle" type="button" aria-label="Browse editions and search"
+                  aria-expanded="false" aria-controls="edition-picker" disabled>
+                  <span class="chevron" aria-hidden="true"></span>
+                </button>
               </div>
-              <button id="discover-communities" type="button" disabled>Search all communities</button>
-              <p id="location-help" aria-live="polite">Search saved communities, or press Search all communities to find more US neighborhoods and towns.</p>
-              <p class="geographic-attribution">Geographic search by Photon / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>. Finding a community does not create an edition.</p>
-            </div>
-          </div>
+              <div id="edition-picker" hidden>
+                <div id="published-group">
+                  <p class="picker-heading">Published editions</p>
+                  <div id="onboarded-editions" aria-label="Published editions"></div>
+                  <p id="published-empty" hidden>No editions yet. Search for your neighborhood to help bring Newsbee here.</p>
+                </div>
+                <ul id="location-options" role="listbox" aria-label="Locations" hidden></ul>
+                <p id="location-help" aria-live="polite">Pick an edition, or type a neighborhood, town, or city.</p>
+                <button id="discover-communities" type="button" disabled hidden>Search all communities</button>
+                <p class="geographic-attribution" hidden>Search by Photon / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a></p>
+              </div>
         </div>
-        <p class="title">Newsbee</p>
-        <p class="subtitle" id="edition-name">Community News</p>
-        <div class="dateline">
-          <span id="edition-week">&nbsp;</span>
-          <span id="edition-published">&nbsp;</span>
-        </div>
-      </header>
+        <svg class="neighborhood-art" viewBox="0 0 800 165" fill="none" aria-hidden="true">
+          <circle cx="652" cy="45" r="27" fill="#e8cc8e" stroke="none" />
+          <path d="M20 149h760M40 155h120m465 0h110" stroke="#bdb19a" />
+          <g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M100 147V85l42-35 42 35v62" fill="#e8dbc4" />
+            <path d="m91 87 51-43 51 43M126 147v-37h28v37M112 87h17v15h-17zm43 0h17v15h-17z" />
+            <path d="M208 147V71h103v76" fill="#eee5d2" />
+            <path d="M201 71h117v-9H201zM219 106h81v17h-81z" fill="#cda78c" />
+            <path d="M219 147v-24m27 0v24m27-24v24m27-24v24M224 82h70v15h-70z" />
+            <path d="M340 147V58l36-26 36 26v89" fill="#e6d6b8" />
+            <path d="m333 60 43-34 43 34M365 147v-32h22v32M353 72h15v24h-15zm31 0h15v24h-15z" />
+            <path d="M439 147V92h100v55" fill="#eee5d2" />
+            <path d="M432 92h114l-8-21h-98z" fill="#aeb9a4" />
+            <path d="M451 104h24v27h-24zm38 43v-43h35v43M445 80h88" />
+            <path d="M586 147V90m0 20-16-17m16 10 17-21" />
+            <path d="M568 96c-28-1-28-29-13-36-10-20 12-35 28-26 17-21 44-4 39 16 25 9 17 42-8 42-11 13-31 13-46 4Z" fill="#d3dac6" />
+            <path d="M586 147V65m0 24-15-14m15 3 14-14" />
+            <path d="M678 147v-24m-19 0h38v-9h-38zm4 0v13m30-13v13M58 147v-34m0 12-8-7m8 17 9-8" />
+            <path d="M61 110c-13-19-27 2-10 7m12-4c17-20 25 4 5 7" stroke="#7c8c72" />
+            <path d="m696 59 7-4 7 4m-56-39 7-4 7 4" stroke="#9b8d72" />
+          </g>
+        </svg>
+      </section>
       <p id="edition-status" role="status">Loading locations...</p>
       <button id="retry" type="button" hidden>Try again</button>
       <section id="expansion" aria-labelledby="expansion-title" hidden>
         <p class="eyebrow">Your community deserves its own front page</p>
-        <h2 id="expansion-title"></h2>
+        <h2 id="expansion-title" tabindex="-1"></h2>
         <p>Every community has stories worth telling. Help bring local events, civic updates,
           and a little more connection to yours.</p>
         <form id="expansion-form">
@@ -70,21 +104,27 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         </form>
         <p id="signup-status" role="status"></p>
       </section>
-      <article id="edition" aria-label="Edition" hidden>
+      <article id="edition" aria-label="Edition" tabindex="-1" hidden>
         <p id="edition-freshness" role="status"></p>
         <aside id="corrections" aria-label="Corrections" hidden></aside>
-        <details class="coverage">
-          <summary>About this edition and its sources</summary>
-          <ul id="edition-coverage"></ul>
-        </details>
-        <h2 id="edition-headline"></h2>
+        <h2 id="edition-headline" tabindex="-1"></h2>
         <p id="edition-intro" class="deck"></p>
-        <div id="edition-lead"></div>
-        <div id="edition-items" class="columns"></div>
+        <div id="front-page">
+          <div id="edition-lead"></div>
+          <div id="edition-items" class="columns"></div>
+        </div>
         <section id="upcoming-events" aria-labelledby="upcoming-events-title" hidden>
           <h2 id="upcoming-events-title">Upcoming events</h2>
           <div id="upcoming-items" class="columns"></div>
         </section>
+        <details id="edition-sources" class="coverage">
+          <summary>Sources &amp; edition notes <span id="source-count"></span></summary>
+          <ol id="source-items"></ol>
+          <div id="coverage-notes">
+            <h3>Coverage notes</h3>
+            <ul id="edition-coverage"></ul>
+          </div>
+        </details>
         <footer>
           <p id="edition-window"></p>
           <p>Compiled automatically from library listings, public meeting records and, where local news is thin, official county, nearby-town and trend sources. Not independent reporting. Check the original source before you go.</p>
@@ -125,9 +165,14 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       const options = document.querySelector<HTMLUListElement>("#location-options")!;
       const help = document.querySelector<HTMLParagraphElement>("#location-help")!;
       const picker = document.querySelector<HTMLElement>(".picker")!;
-      const pickerPanel = document.querySelector<HTMLDivElement>("#edition-picker")!;
+      const pickerPanel = document.querySelector<HTMLElement>("#edition-picker")!;
+      const locationToggle = document.querySelector<HTMLButtonElement>("#location-toggle")!;
+      const publishedGroup = document.querySelector<HTMLElement>("#published-group")!;
+      const geographicAttribution = document.querySelector<HTMLElement>(".geographic-attribution")!;
+      const landing = document.querySelector<HTMLElement>("#landing")!;
+      const dateline = document.querySelector<HTMLElement>(".dateline")!;
+      const skipLink = document.querySelector<HTMLAnchorElement>(".skip-link")!;
       const pickerToggle = document.querySelector<HTMLButtonElement>("#edition-toggle")!;
-      const selectedLabel = document.querySelector<HTMLSpanElement>("#selected-location")!;
       const onboarded = document.querySelector<HTMLDivElement>("#onboarded-editions")!;
       const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
       const article = document.querySelector<HTMLElement>("#edition")!;
@@ -144,6 +189,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       let searchVersion = 0;
       let searchTimer: ReturnType<typeof setTimeout>;
       let discovering = false;
+      let navigationVersion = 0;
 
       const text = (tag: string, value: string, className?: string) => {
         const node = document.createElement(tag);
@@ -167,36 +213,68 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       const same = (a: string, b: string) =>
         a.toLowerCase().replace(/[^a-z0-9]/g, "") === b.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      function story(item: Item, lead: boolean, repeatsFront = false) {
+      function genericHeadline(edition: Edition, town: Town) {
+        const sameMonth = edition.window_start.slice(0, 7) === edition.window_end.slice(0, 7);
+        const week = `${day(edition.window_start, { month: "short", day: "numeric" })}\u2013${day(
+          edition.window_end, sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" },
+        )}`;
+        return [town.name, place(town.name)].some((name) =>
+          [name, `${name} this week`, `This week in ${name}`, `The ${name} Edition`]
+            .some((candidate) => same(edition.headline, candidate) || same(edition.headline, `${candidate}: ${week}`)),
+        );
+      }
+
+      function story(item: Item, lead: boolean, reference: number, repeatsFront = false) {
         const section = document.createElement("section");
         section.className = lead ? `story lead${repeatsFront ? " repeats-front" : ""}` : "story";
         if (item.story_id) section.id = `story-${item.story_id}`;
         if (item.section && item.section !== "Upcoming events") section.append(text("p", item.section, "kicker"));
-        section.append(text("h3", item.headline), text("p", item.blurb, "blurb"));
-        section.append(text("p", item.when_where, "when-where"));
-        const labels = {
-          event: "Library event",
-          meeting_preview: "Upcoming public meeting",
-          meeting_outcome: "Recorded meeting outcome",
-          state_news: "State news",
-          earthquake: "Earthquake report",
-          trending_topic: "Trending on Wikipedia",
-          social_trend: "Trending on Bluesky",
-        };
-        section.append(text("p", `${labels[item.kind]} · Source: ${item.source_name}`, "attribution"));
+        if (lead) section.append(text("p", "In focus", "lead-label"));
+        const headline = text("h3", item.headline);
+        const blurb = text("p", item.blurb, "blurb");
+        const citation = document.createElement("sup");
+        const link = text("a", String(reference)) as HTMLAnchorElement;
+        link.id = `citation-${reference}`;
+        link.href = `#source-${reference}`;
+        link.setAttribute("aria-label", `Source ${reference} for ${item.headline}`);
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          document.querySelector<HTMLDetailsElement>("#edition-sources")!.open = true;
+          document.querySelector<HTMLElement>(`#source-${reference}`)!.focus();
+        });
+        citation.append(link);
+        (repeatsFront ? blurb : headline).append(citation);
+        section.append(headline, blurb);
+        const locationOnly = selected && [selected.name, place(selected.name)]
+          .some((name) => same(item.when_where, name));
+        if (item.when_where.trim() && !locationOnly) section.append(text("p", item.when_where, "when-where"));
+        return section;
+      }
+
+      function source(item: Item, index: number) {
+        const entry = document.createElement("li");
+        entry.id = `source-${index + 1}`;
+        entry.tabIndex = -1;
         if (item.source_url?.startsWith("https://")) {
-          const link = text("a", "Original source") as HTMLAnchorElement;
+          const link = text("a", item.source_name) as HTMLAnchorElement;
           link.href = item.source_url;
           link.rel = "noreferrer";
-          section.append(link);
+          entry.append(link);
+        } else {
+          entry.append(text("span", item.source_name));
         }
-        return section;
+        const back = text("a", "\u21a9", "source-back") as HTMLAnchorElement;
+        back.href = `#citation-${index + 1}`;
+        back.setAttribute("aria-label", `Back to story ${index + 1}`);
+        entry.append(" ", back);
+        return entry;
       }
 
       function masthead(listing: Listing | undefined, edition?: Edition) {
         document.querySelector("#edition-name")!.textContent = listing
-          ? `The ${place(listing.location_name)} Edition`
-          : "Community News";
+          ? `${place(listing.location_name)} \u00b7 Community edition`
+          : "Local news. Shared stories.";
+        dateline.hidden = !edition;
         document.querySelector("#edition-week")!.textContent = edition
           ? `Week of ${day(edition.window_start, { month: "short", day: "numeric" })} \u2013 ${day(
               edition.window_end,
@@ -221,40 +299,70 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         active = -1;
       }
 
-      function closePicker(returnFocus = false) {
+      function closePicker() {
         closeOptions();
         pickerPanel.hidden = true;
-        pickerToggle.setAttribute("aria-expanded", "false");
-        if (returnFocus) pickerToggle.focus();
+        locationToggle.setAttribute("aria-expanded", "false");
       }
 
-      pickerToggle.addEventListener("click", () => {
-        if (!pickerPanel.hidden) {
-          closePicker();
-          return;
-        }
-        input.value = "";
-        discoverButton.disabled = true;
-        help.textContent = "Search saved communities, or press Search all communities to find more US neighborhoods and towns.";
+      function openPicker() {
         pickerPanel.hidden = false;
-        pickerToggle.setAttribute("aria-expanded", "true");
-        const current = onboarded.querySelector<HTMLButtonElement>('[aria-current="true"]');
-        (current ?? onboarded.querySelector<HTMLButtonElement>("button") ?? input).focus();
+        locationToggle.setAttribute("aria-expanded", "true");
+        const hasQuery = input.value.trim().length > 0;
+        publishedGroup.hidden = hasQuery;
+        discoverButton.hidden = !hasQuery;
+        geographicAttribution.hidden = !hasQuery;
+        if (!hasQuery) help.textContent = "Pick an edition, or type a neighborhood, town, or city.";
+      }
+
+      locationToggle.addEventListener("click", () => {
+        if (pickerPanel.hidden) {
+          input.focus();
+          openPicker();
+        } else closePicker();
       });
       document.addEventListener("click", (event) => {
         if (event.target instanceof Node && !picker.contains(event.target)) closePicker();
       });
       picker.addEventListener("focusout", (event) => {
-        if (!(event.relatedTarget instanceof Node) || !picker.contains(event.relatedTarget)) {
-          closePicker();
-        }
+        if (!(event.relatedTarget instanceof Node) || !picker.contains(event.relatedTarget)) closePicker();
       });
       picker.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
           event.preventDefault();
-          closePicker(true);
+          input.focus();
+          closePicker();
         }
       });
+
+      function showLanding(updateUrl = true, focus = true) {
+        navigationVersion++;
+        closePicker();
+        main.classList.add("is-landing");
+        selected = undefined;
+        landing.hidden = false;
+        pickerToggle.hidden = true;
+        article.hidden = true;
+        expansion.hidden = true;
+        retry.hidden = true;
+        status.textContent = "";
+        input.value = "";
+        discoverButton.disabled = true;
+        help.textContent = "Pick an edition, or type a neighborhood, town, or city.";
+        masthead(undefined);
+        document.title = "Newsbee";
+        skipLink.href = "#landing-title";
+        skipLink.textContent = "Skip to find your neighborhood";
+        if (updateUrl) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("location");
+          url.hash = "";
+          history.pushState(null, "", url);
+        }
+        if (focus) input.focus();
+      }
+
+      pickerToggle.addEventListener("click", () => showLanding());
 
       function highlight(index: number) {
         active = index;
@@ -270,7 +378,9 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
       async function searchTowns(discover = false) {
         closeOptions();
+        openPicker();
         const query = input.value.trim();
+        if (!query) return;
         if (query.split(",")[0].trim().length < 2) {
           help.textContent = "Type at least two letters. Add a state, like Seattle, WA.";
           return;
@@ -315,25 +425,29 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       }
 
       async function choose(town: Town, updateUrl = true) {
-        const wasOpen = !pickerPanel.hidden;
-        closePicker(wasOpen);
+        navigationVersion++;
+        closePicker();
+        main.classList.remove("is-landing");
         selected = town;
         input.value = "";
-        selectedLabel.textContent = town.name;
-        pickerToggle.setAttribute("aria-label", `Change edition: ${town.name}`);
+        landing.hidden = true;
+        pickerToggle.hidden = false;
+        document.title = `${town.name} | Newsbee`;
         onboarded.querySelectorAll<HTMLButtonElement>("button").forEach((button) =>
           button.setAttribute("aria-current", String(button.dataset.locationId === town.id)),
         );
         if (updateUrl) {
           const url = new URL(window.location.href);
           url.searchParams.set("location", town.id);
-          history.replaceState(null, "", url);
+          url.hash = "";
+          history.pushState(null, "", url);
         }
         await show(town);
       }
 
       input.addEventListener("input", () => {
         closeOptions();
+        openPicker();
         discoverButton.disabled = discovering || input.value.split(",")[0].trim().length < 2;
         searchTimer = setTimeout(searchTowns, 250);
       });
@@ -342,14 +456,22 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       });
       input.addEventListener("focus", () => {
         input.select();
+        openPicker();
         if (!discovering) void searchTowns();
       });
-      input.addEventListener("blur", () => {
-        closeOptions();
+      input.addEventListener("click", () => {
+        if (pickerPanel.hidden) {
+          openPicker();
+          if (!discovering) void searchTowns();
+        }
       });
       input.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
-          closeOptions();
+          closePicker();
+        } else if (event.key === "ArrowDown" && !input.value.trim()) {
+          event.preventDefault();
+          openPicker();
+          onboarded.querySelector<HTMLButtonElement>("button")?.focus();
         } else if (!options.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
           event.preventDefault();
           const next = active < 0
@@ -396,24 +518,34 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         const locationId = town.id;
         const listing = listings.get(town.id);
         masthead(listing);
-        if (!listing) {
+        if (!listing?.edition_id) {
           document.querySelector("#expansion-title")!.textContent =
             `We're not in ${place(town.name)} yet. Let's change that.`;
+          document.querySelector("#edition-name")!.textContent = town.name;
           status.textContent = "";
           expansion.hidden = false;
+          skipLink.href = "#expansion-title";
+          skipLink.textContent = "Skip to your community";
+          document.querySelector<HTMLElement>("#expansion-title")!.focus();
           return;
         }
-        if (!listing.edition_id) {
-          status.textContent = "No edition yet.";
-          return;
-        }
+        skipLink.href = "#edition-headline";
+        skipLink.textContent = "Skip to this week's stories";
         status.textContent = "Loading edition...";
+        pickerToggle.focus({ preventScroll: true });
         try {
           const edition: Edition = await getJson(`/api/editions/${encodeURIComponent(locationId)}`);
           if (selected?.id !== locationId) return;
           masthead(listing, edition);
-          document.querySelector("#edition-headline")!.textContent = edition.headline;
-          document.querySelector("#edition-intro")!.textContent = edition.intro;
+          const headline = document.querySelector<HTMLElement>("#edition-headline")!;
+          const intro = document.querySelector<HTMLElement>("#edition-intro")!;
+          const generic = genericHeadline(edition, town);
+          headline.textContent = edition.headline;
+          headline.hidden = generic;
+          intro.textContent = edition.intro;
+          intro.hidden = !edition.intro.trim() ||
+            same(edition.intro, `This week's highlights from around ${place(town.name)}.`);
+          skipLink.href = generic ? "#edition" : "#edition-headline";
           document.querySelector("#edition-window")!.textContent =
             `Upcoming listings: ${edition.window_start} to ${edition.window_end}. Meeting outcomes may cover the preceding week.`;
           const now = new Date();
@@ -423,6 +555,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           document.querySelector("#edition-coverage")!.replaceChildren(
             ...(edition.coverage ?? []).map((message) => text("li", message)),
           );
+          document.querySelector<HTMLElement>("#coverage-notes")!.hidden = !edition.coverage?.length;
+          document.querySelector<HTMLDetailsElement>("#edition-sources")!.open = false;
           const corrections = document.querySelector<HTMLElement>("#corrections")!;
           const notices = edition.corrections ?? [];
           corrections.hidden = notices.length === 0;
@@ -432,17 +566,24 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             ),
           );
           const { news, upcoming } = newsletterSections(edition.items);
+          const ordered = [...news, ...upcoming];
+          const references = new Map(ordered.map((item, index) => [item, index + 1]));
+          document.querySelector("#source-items")!.replaceChildren(...ordered.map(source));
+          document.querySelector("#source-count")!.textContent = `(${edition.items.length})`;
           const lead = news[0];
           document.querySelector("#edition-lead")!.replaceChildren(
-            ...(lead ? [story(lead, true, same(lead.headline, edition.headline))] : []),
+            ...(lead ? [story(lead, true, references.get(lead)!, !generic && same(lead.headline, edition.headline))] : []),
           );
           document
             .querySelector("#edition-items")!
-            .replaceChildren(...news.filter((item) => item !== lead).map((item) => story(item, false)));
+            .replaceChildren(...news.filter((item) => item !== lead).map((item) => story(item, false, references.get(item)!)));
+          document.querySelector<HTMLElement>("#front-page")!.hidden = news.length === 0;
+          document.querySelector<HTMLElement>("#front-page")!.classList.toggle("lead-only", news.length === 1);
           document.querySelector<HTMLElement>("#upcoming-events")!.hidden = upcoming.length === 0;
-          document.querySelector("#upcoming-items")!.replaceChildren(...upcoming.map((item) => story(item, false)));
+          document.querySelector("#upcoming-items")!.replaceChildren(...upcoming.map((item) => story(item, false, references.get(item)!)));
           article.hidden = false;
           status.textContent = "";
+          if (!generic) headline.focus({ preventScroll: true });
         } catch (error) {
           if (selected?.id !== locationId) return;
           status.textContent = `Edition unavailable: ${failure(error)}`;
@@ -454,11 +595,37 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         else window.location.reload();
       });
 
+      async function openRequestedLocation() {
+        const requested = new URLSearchParams(location.search).get("location");
+        if (!requested) {
+          showLanding(false, false);
+          return;
+        }
+        const listing = listings.get(requested);
+        if (listing) {
+          await choose({ id: listing.location_id, name: listing.location_name }, false);
+          return;
+        }
+        showLanding(false, false);
+        const version = navigationVersion;
+        status.textContent = "Finding your community...";
+        try {
+          const town: Town = await getJson(`/api/locations/${encodeURIComponent(requested)}`);
+          if (version === navigationVersion) await choose(town, false);
+        } catch (error) {
+          if (version === navigationVersion) {
+            status.textContent = `Location unavailable: ${failure(error)}. Use the community search to try again.`;
+          }
+        }
+      }
+      window.addEventListener("popstate", () => void openRequestedLocation());
+
       try {
         const data = await getJson("/api/editions");
         if (!Array.isArray(data.locations)) throw new Error("Unsupported editions contract");
         for (const listing of data.locations as Listing[]) {
           listings.set(listing.location_id, listing);
+          if (!listing.edition_id) continue;
           const button = text("button", listing.location_name) as HTMLButtonElement;
           button.type = "button";
           button.dataset.locationId = listing.location_id;
@@ -467,22 +634,10 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           }));
           onboarded.append(button);
         }
-        const requested = new URLSearchParams(location.search).get("location");
-        const listing = requested ? listings.get(requested) : data.locations[0] as Listing | undefined;
-        if (listing) {
-          await choose({ id: listing.location_id, name: listing.location_name }, false);
-        } else if (requested) {
-          try {
-            const town = await getJson(`/api/locations/${encodeURIComponent(requested)}`);
-            await choose(town, false);
-          } catch (error) {
-            status.textContent = `Location unavailable: ${failure(error)}. Choose a community from Change edition.`;
-          }
-        } else {
-          status.textContent = "Find your community. Open Change edition to search for your neighborhood or town.";
-        }
+        document.querySelector<HTMLElement>("#published-empty")!.hidden = onboarded.childElementCount > 0;
         input.disabled = false;
-        pickerToggle.disabled = false;
+        locationToggle.disabled = false;
+        await openRequestedLocation();
       } catch (error) {
         status.textContent = `Editions unavailable: ${failure(error)}`;
         retry.hidden = false;
@@ -504,6 +659,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         --display: "Playfair Display", Georgia, serif;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       .skip-link { position: absolute; left: -10000px; }
       .skip-link:focus { position: static; padding: 0.5rem; background: white; }
       :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
@@ -554,13 +710,57 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       }
       .dateline > :first-child { text-align: left; }
       .dateline > :last-child { text-align: right; }
-      .picker { position: relative; text-align: left; font-style: normal; }
+      .is-landing {
+        position: relative;
+        min-height: min(48rem, 90vh);
+        border: 1px solid #c9bda5;
+        background: radial-gradient(ellipse at 50% 55%, #fffaf0 0%, transparent 65%), var(--paper);
+      }
+      .is-landing::before {
+        content: "";
+        position: absolute;
+        inset: 0.6rem;
+        border: 1px solid #d9cdb7;
+        pointer-events: none;
+      }
+      .is-landing .ears { display: none; }
+      .is-landing .masthead { border: 0; padding-top: 1.5rem; }
+      .is-landing .title { font-size: 6.5rem; }
+      .is-landing .subtitle { margin-top: 0.8rem; color: var(--muted); font: italic 1rem/1.6 var(--serif); }
+      #landing { padding: 1.4rem 0 0; text-align: center; }
+      .landing-ornament { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.7rem; color: #806332; }
+      .landing-ornament span { width: 4rem; height: 1px; background: #cfbea0; }
+      .landing-ornament svg { width: 2.2rem; height: 2rem; }
+      .landing-intro { max-width: 34rem; margin: 1.2rem auto 2rem; color: var(--muted); font-size: 0.95rem; line-height: 1.8; }
+      #landing-title { margin: 0; font: 700 clamp(2rem, 4.5vw, 3.2rem)/1.2 var(--display); letter-spacing: -0.03em; }
+      #landing-title em { font-weight: 400; color: var(--accent); }
+      .neighborhood-art { display: block; width: min(100%, 46rem); height: auto; margin: 2.5rem auto 0; color: #85765f; }
+      .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      #published-empty { font-size: 0.85rem; color: var(--muted); }
+      .picker { position: relative; max-width: 32rem; margin: auto; text-align: left; font-style: normal; }
+      #edition-picker {
+        position: absolute;
+        z-index: 3;
+        top: calc(100% + 0.5rem);
+        width: 100%;
+        max-height: min(28rem, 55vh);
+        overflow-y: auto;
+        padding: 1rem;
+        border: 1px solid #c9c0ae;
+        border-radius: 6px;
+        background: #fffaf0;
+        box-shadow: 0 12px 28px rgb(28 26 23 / 0.12);
+      }
+      .picker-heading { margin: 0 0 0.5rem; font: 700 0.7rem/1.5 var(--serif); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+      #location-toggle { align-self: stretch; width: 3rem; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+      #location-toggle:disabled { opacity: 0.6; cursor: wait; }
+      .chevron { display: inline-block; width: 0.5rem; height: 0.5rem; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg) translateY(-2px); }
+      #location-toggle[aria-expanded="true"] .chevron { transform: rotate(225deg); }
       #edition-toggle {
         display: flex;
         align-items: center;
         gap: 0.65rem;
         min-height: 2.25rem;
-        max-width: 18rem;
         padding: 0.25rem 0;
         border: 0;
         background: transparent;
@@ -573,35 +773,6 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         outline: 2px solid var(--accent);
         outline-offset: 3px;
       }
-      #edition-toggle:disabled { opacity: 0.6; cursor: wait; }
-      .chevron {
-        width: 0.4rem;
-        height: 0.4rem;
-        flex-shrink: 0;
-        border-right: 1px solid currentColor;
-        border-bottom: 1px solid currentColor;
-        transform: rotate(45deg) translateY(-2px);
-      }
-      #edition-toggle[aria-expanded="true"] .chevron { transform: rotate(225deg); }
-      #edition-picker {
-        position: absolute;
-        z-index: 3;
-        top: calc(100% + 0.5rem);
-        right: 0;
-        width: min(19rem, calc(100vw - 2rem));
-        max-height: min(34rem, 75vh);
-        overflow-y: auto;
-        padding: 1rem;
-        background: var(--paper);
-        border: 1px solid #a69a85;
-        border-top: 2px solid var(--accent);
-        box-shadow: 0 6px 18px rgb(28 26 23 / 0.15);
-      }
-      .picker-heading {
-        margin: 0 0 0.5rem;
-        font: italic 1.1rem/1.4 var(--display);
-        color: var(--ink);
-      }
       #discover-communities {
         margin-top: 0.6rem;
         padding: 0.5rem 0.7rem;
@@ -613,13 +784,13 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       }
       #discover-communities:disabled { opacity: 0.6; cursor: default; }
       .geographic-attribution { font-size: 0.7rem; line-height: 1.5; color: var(--muted); }
-      #onboarded-editions { max-height: 12rem; overflow-y: auto; }
-      #onboarded-editions:not(:empty) { margin-bottom: 1rem; border-bottom: 1px solid #c9c0ae; }
+      #onboarded-editions { max-height: 14rem; overflow-y: auto; }
       #onboarded-editions button {
         display: block;
         width: 100%;
-        padding: 0.6rem 0.4rem;
+        padding: 0.75rem 0.5rem;
         border: 0;
+        border-bottom: 1px solid #e7dfcf;
         background: transparent;
         color: var(--ink);
         font: 0.9rem/1.4 var(--serif);
@@ -627,39 +798,30 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         cursor: pointer;
       }
       #onboarded-editions button:hover { background: #e8dfcd; }
-      #onboarded-editions [aria-current="true"] { color: var(--accent); font-weight: bold; }
-      #onboarded-editions [aria-current="true"]::after { content: " \2713"; }
-      .picker label {
-        display: block;
-        margin-bottom: 0.5rem;
-        font: 700 0.72rem/1.4 var(--serif);
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--accent);
-      }
+      #onboarded-editions button::after { content: " \2192"; color: var(--accent); }
       .location-field {
         position: relative;
         display: flex;
         align-items: center;
         background: #fffaf0;
         border: 1px solid #a69a85;
-        border-bottom: 2px solid var(--rule);
-        border-radius: 2px;
+        border-radius: 6px;
+        box-shadow: 0 4px 14px rgb(28 26 23 / 0.06);
         transition: border-color 150ms, box-shadow 150ms;
       }
       .location-field:focus-within {
         border-color: var(--accent);
         box-shadow: 0 0 0 3px rgb(122 31 31 / 0.12);
       }
-      .search-icon { flex: 0 0 1rem; width: 1rem; height: 1rem; margin-left: 0.6rem; color: var(--accent); }
+      .search-icon { flex: 0 0 1.2rem; width: 1.2rem; height: 1.2rem; margin-left: 1rem; color: var(--accent); }
       .picker input {
         min-width: 0;
         width: 100%;
-        font: 0.9rem/1.5 var(--serif);
+        font: 1rem/1.5 var(--serif);
         background: transparent;
         color: var(--ink);
         border: 0;
-        padding: 0.5rem 0.6rem;
+        padding: 1.1rem 0.8rem;
       }
       .picker input:focus { outline: none; }
       .picker input::placeholder { color: #746b5b; font-style: italic; }
@@ -691,9 +853,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         cursor: pointer;
       }
       #location-options li:last-child { border-bottom: 0; }
-      .location-field { flex-wrap: wrap; }
       #location { flex: 1; width: 0; }
-      #location-options { flex: 0 0 100%; border: 0; border-top: 1px solid #c9c0ae; }
+      #location-options { border: 0; }
       #location-options li:hover, #location-options [aria-selected="true"] {
         background: var(--accent);
         color: var(--paper);
@@ -714,61 +875,87 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       #edition-status:empty { display: none; }
       #edition-freshness, #corrections { color: var(--accent); }
       #edition-freshness:empty { display: none; }
-      .coverage, .attribution { font-size: 0.8rem; color: var(--muted); }
-      .coverage summary { cursor: pointer; }
+      main:not(.is-landing):has(#edition:not([hidden])) {
+        padding: 1rem 1.75rem 1.5rem;
+        border: 1px solid #b5a386;
+        outline: 1px solid #d0c0a4;
+        outline-offset: -7px;
+        background:
+          url("data:image/svg+xml,%3Csvg viewBox='0 0 640 640' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='creases'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.018 .032' numOctaves='3' seed='7' stitchTiles='stitch' result='folds'/%3E%3CfeDiffuseLighting in='folds' surfaceScale='3' diffuseConstant='1' lighting-color='%23fff5df'%3E%3CfeDistantLight azimuth='225' elevation='55'/%3E%3C/feDiffuseLighting%3E%3C/filter%3E%3Cg opacity='.23'%3E%3Cpath fill='%23e4d1ac' filter='url(%23creases)' d='M0 0h640v640H0z'/%3E%3C/g%3E%3C/svg%3E") repeat,
+          url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.76' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%237a5a30' opacity='.16' filter='url(%23grain)' d='M0 0h180v180H0z'/%3E%3C/svg%3E") repeat,
+          linear-gradient(168deg, transparent 44%, rgb(112 78 34 / 0.025) 49.6%, rgb(255 251 231 / 0.18) 50.1%, transparent 54%),
+          linear-gradient(81deg, transparent 58%, rgb(115 80 37 / 0.025) 62%, rgb(255 251 231 / 0.14) 62.4%, transparent 66%),
+          radial-gradient(ellipse at 0% 20%, rgb(170 124 55 / 0.12), transparent 55%),
+          radial-gradient(ellipse at 100% 90%, rgb(150 105 40 / 0.13), transparent 50%),
+          repeating-linear-gradient(0deg, transparent 0 3px, rgb(113 83 37 / 0.035) 3px 4px),
+          #f3ead7;
+        background-size: 640px 640px, 180px 180px, auto, auto, auto, auto, auto, auto;
+      }
+      main:has(#edition:not([hidden])) .title { font-size: 4.6rem; margin-top: 0.35rem; }
+      main:has(#edition:not([hidden])) .subtitle { margin: 0.25rem 0 0.65rem; font: 700 0.75rem/1.5 var(--serif); text-transform: uppercase; letter-spacing: 0.12em; }
+      main:has(#edition:not([hidden])) .dateline { font-size: 0.65rem; padding: 0.3rem 0; }
+      #edition { font-size: 0.8rem; line-height: 1.48; }
+      .coverage { margin-top: 1rem; border-top: 3px double var(--rule); border-bottom: 1px solid #c9c0ae; font-size: 0.78rem; color: var(--muted); }
+      .coverage summary { padding: 0.8rem 0; cursor: pointer; font-weight: bold; letter-spacing: 0.06em; color: var(--ink); }
+      #source-count { font-weight: normal; color: var(--muted); }
+      #source-items { padding-left: 1.5rem; columns: 3; column-gap: 2rem; }
+      #source-items li { break-inside: avoid; padding: 0 0.2rem 0.3rem; overflow-wrap: anywhere; }
+      #source-items li:target, #source-items li:focus { background: #e4d5b8; }
+      .source-back { margin-left: 0.35rem; text-decoration: none; }
+      .story sup { margin-left: 0.2em; font: 700 0.6rem/0 var(--serif); vertical-align: super; }
+      .story sup a { color: var(--accent); text-decoration: none; padding: 0.25rem 0.1rem; }
+      .story sup a:hover { text-decoration: underline; }
+      #source-items a { color: var(--accent); text-underline-offset: 0.15em; }
+      #coverage-notes { border-top: 1px solid #c9c0ae; padding: 0.7rem 0; }
+      #coverage-notes h3 { margin: 0; font: 700 0.9rem var(--display); color: var(--ink); }
+      #edition-coverage { margin: 0.5rem 0; padding-left: 1.2rem; }
       #retry { display: block; margin: 1rem auto; padding: 0.5rem 1rem; }
       #retry[hidden] { display: none; }
       #edition-headline {
-        margin: 1.5rem 0 0.4rem;
+        max-width: 55rem;
+        margin: 0.65rem auto 0.35rem;
         text-align: center;
-        font: 900 3.4rem/1.05 var(--display);
-        letter-spacing: -0.01em;
+        font: 900 3rem/1 var(--display);
+        letter-spacing: -0.035em;
       }
       .deck {
         max-width: 42rem;
-        margin: 0 auto 1.5rem;
+        margin: 0.7rem auto;
         text-align: center;
-        font: italic 1.2rem/1.5 var(--display);
+        font: italic 0.87rem/1.4 var(--display);
         color: var(--muted);
       }
       .story .kicker {
-        margin: 0 0 0.3rem;
-        font-size: 0.75rem;
+        margin: 0 0 0.25rem;
+        font-size: 0.58rem;
         text-transform: uppercase;
         letter-spacing: 0.12em;
         color: var(--accent);
       }
-      .lead .kicker { grid-column: 1 / -1; }
-      .story h3 { font: 700 1.35rem/1.2 var(--display); margin: 0 0 0.5rem; }
-      .story .blurb { margin: 0 0 0.6rem; text-align: justify; hyphens: auto; }
+      .story h3 { font: 900 1.22rem/1.1 var(--display); margin: 0 0 0.35rem; text-wrap: pretty; letter-spacing: -0.025em; }
+      .story .blurb { margin: 0 0 0.35rem; text-align: justify; hyphens: auto; }
       .when-where {
-        margin: 0 0 0.5rem;
-        font-size: 0.85rem;
-        border-top: 1px dotted var(--muted);
-        border-bottom: 1px dotted var(--muted);
-        padding: 0.3rem 0;
+        margin: 0;
+        font-size: 0.65rem;
+        font-style: italic;
+        color: var(--muted);
+        padding: 0.2rem 0 0;
       }
-      .story a {
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--accent);
-        text-decoration: none;
-      }
-      .story a::after { content: " \2192"; }
-      .story a:hover { text-decoration: underline; }
+      #front-page { columns: 3; column-gap: 1rem; column-rule: 1px solid #b5a386; padding-top: 0.65rem; border-top: 4px double var(--rule); }
+      #edition-lead, #edition-items { display: contents; }
+      #front-page .story { break-inside: avoid; margin-bottom: 0.6rem; }
+      #edition-items .story { border-bottom: 1px solid #b5a386; padding-bottom: 0.55rem; }
+      #edition-items .story:nth-child(3n + 2) h3 { font-style: italic; }
       .lead {
-        border-top: 2px solid var(--rule);
-        border-bottom: 2px solid var(--rule);
-        padding: 1.2rem 0;
-        margin-bottom: 1.5rem;
-        display: grid;
-        grid-template-columns: 1fr 1.4fr;
-        column-gap: 2rem;
+        border: 1px solid #b8a17d;
+        border-top: 4px solid var(--accent);
+        padding: 0.85rem;
+        background: rgb(212 191 149 / 0.24);
       }
-      .lead h3 { grid-row: span 4; font-size: 2.3rem; line-height: 1.1; margin: 0; }
-      .lead .blurb { font-size: 1.15rem; }
-      .repeats-front { display: block; column-count: 2; column-gap: 2rem; column-rule: 1px solid #c9c0ae; }
+      .lead-label { margin: 0 0 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid #b8a17d; text-align: center; text-transform: uppercase; letter-spacing: 0.22em; font-size: 0.58rem; color: var(--accent); }
+      .lead h3 { font-size: 1.8rem; line-height: 1.05; margin: 0 0 0.65rem; }
+      .lead .blurb { font-size: 0.82rem; }
+      .repeats-front { display: block; }
       .repeats-front h3 {
         position: absolute;
         width: 1px;
@@ -776,42 +963,65 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         overflow: hidden;
         clip-path: inset(50%);
       }
-      .repeats-front .when-where, .repeats-front a { break-inside: avoid; display: block; }
+      .repeats-front .when-where { break-inside: avoid; display: block; }
+      #front-page.lead-only { columns: 1; }
+      .lead-only .lead { columns: 2; column-gap: 1.5rem; }
       .lead .blurb::first-letter {
         float: left;
-        font: 900 3.6rem/0.8 var(--display);
-        padding: 0.3rem 0.5rem 0 0;
+        font: 900 2.8rem/0.8 var(--display);
+        padding: 0.3rem 0.35rem 0 0;
         color: var(--accent);
       }
       .columns {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-        gap: 0 2rem;
+        columns: 2;
+        column-gap: 1rem;
+        column-rule: 1px solid #b5a386;
       }
-      .columns .blurb { text-align: left; }
-      .columns .story { padding: 0 0 1.5rem; border-bottom: 1px solid #c9c0ae; margin-bottom: 1.2rem; }
+      .columns .story { break-inside: avoid; padding: 0 0 0.55rem; border-bottom: 1px solid #b5a386; margin-bottom: 0.6rem; }
+      .columns .story:nth-child(3n + 2) h3 { font-style: italic; }
+      #upcoming-events { margin-top: 0.7rem; border: 1px solid var(--rule); padding: 0 0.75rem 0.25rem; background: rgb(212 191 149 / 0.16); }
+      #upcoming-events > h2 { margin: 0 -0.75rem 0.7rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid #b5a386; background: rgb(137 112 71 / 0.2); color: #51432f; text-align: center; font: 700 1rem var(--display); letter-spacing: 0.1em; }
+      #upcoming-items { columns: 3; }
       footer {
         border-top: 4px double var(--rule);
         margin-top: 1rem;
         padding-top: 0.6rem;
         text-align: center;
-        font: italic 0.8rem var(--serif);
+        font: italic 0.68rem/1.6 var(--serif);
         color: var(--muted);
       }
       footer p { margin: 0.2rem 0; }
       @media (max-width: 760px) {
         main { margin: 0; padding: 1rem; }
         .title { font-size: 3.4rem; }
-        .picker { margin-left: auto; }
+        .is-landing .title { font-size: 5rem; }
+        .is-landing .masthead { padding-top: 1.5rem; }
+        #landing { padding: 1.2rem 0 0.5rem; }
+        .landing-intro { padding: 0 0.6rem; }
+        .neighborhood-art { margin-top: 3rem; }
+        .is-landing { min-height: 0; }
         .picker input { font-size: 1rem; }
         .ears > span { font-size: 0.7rem; }
         #edition-toggle { max-width: 12rem; font-size: 0.75rem; }
         .dateline { grid-template-columns: 1fr; text-align: center; }
         .dateline > :first-child, .dateline > :last-child { text-align: center; }
-        #edition-headline { font-size: 2.2rem; }
-        .lead { grid-template-columns: 1fr; }
-        .repeats-front { column-count: 1; }
-        .lead h3 { font-size: 1.8rem; margin-bottom: 0.6rem; }
+        #edition-headline { font-size: 2rem; }
+        main:not(.is-landing):has(#edition:not([hidden])) { padding: 1rem; }
+        #front-page { columns: 2; }
+        .columns, #upcoming-items { columns: 2; }
+        .lead, .lead-only .lead { columns: 1; }
+        .lead h3 { font-size: 1.6rem; margin-bottom: 0.6rem; }
+      }
+      @media (max-width: 480px) {
+        #front-page, .columns, #upcoming-items, #source-items { columns: 1; }
+        #edition { font-size: 0.86rem; }
+      }
+      @media print {
+        body { background: white; }
+        main { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+        .skip-link, #edition-toggle { display: none; }
+        #edition-sources::details-content { content-visibility: visible; }
+        #source-items a::after { content: " (" attr(href) ")"; }
       }
     </style>
   </body>
