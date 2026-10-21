@@ -14,14 +14,11 @@ import * as policy from "../editorial/policy";
 import * as withdrawals from "../editorial/withdrawals";
 import { previewContent } from "../email/preview";
 import { sourceType, rank as rankSource } from "../ranking";
-import { isUpcoming, newsletterOrder } from "../../../../shared/newsletter-layout";
+import { isUpcoming } from "../../../../shared/newsletter-layout";
 
 export const DEFAULT_MODEL = "qwen3:4b";
 export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}`;
-export const MAX_ENTRIES = 9;
-export const MAX_ATTEMPTS = 12;
-export const MAX_WIDER = 4;
-export const MAX_WIDER_ATTEMPTS = 6;
+export const MAX_ENTRIES = 12;
 export const WIDER_TIERS = new Set(["region", "nearby"]);
 export const WIDER_SOURCES = ["hazards:", "statenews:", "trending:"] as const;
 export const PARENT_SOURCES: Record<string, string> = { "civiccalendar:": "city calendars", "homesafety:": "water-safety records", "housing:": "housing permit figures", "development:": "development permits", "athletics:": "team-level school sports news" };
@@ -47,7 +44,6 @@ function shortlist(stories: Story[], limit: number) {
   for (const kind of [...grouped.keys()].sort()) { const all = grouped.get(kind)!; const top = rankSource(kind, all).slice(0, limit); selected.push(...top); summary[kind] = { stories: all.length, considered: all.length, shortlisted: top.length }; }
   return { selected, summary };
 }
-function nextCandidate(pending: RankedCandidate[], covered: Set<string>) { return pending.find((item) => !covered.has(item.source_type)) ?? pending[0]; }
 function heldReasons(entries: Array<{ disposition: string; result: Record<string, any> }>) {
   const counts: Record<string, number> = {};
   for (const entry of entries) if (entry.disposition === "held") for (const error of (entry.result.validation_errors?.length ? entry.result.validation_errors : entry.result.error ? [entry.result.error] : [])) counts[error] = (counts[error] ?? 0) + 1;
@@ -105,25 +101,13 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   if (draft.status !== "drafting") return { more: false, done: true };
   const entries = await getEntries(deps.db, draftId);
   const doneIds = new Set(entries.map((entry) => entry.story_id));
-  const covered = new Set(entries.filter((entry) => entry.disposition !== "held").map((entry) => entry.source_type));
-  const pending = draft.candidates.filter((candidate) => !doneIds.has(candidate.id));
-  const local = pending.filter((candidate) => candidate.tier === "local");
-  const wider = pending.filter((candidate) => WIDER_TIERS.has(candidate.tier)).sort((a, b) => (a.tier === "region" ? 0 : 1) - (b.tier === "region" ? 0 : 1) || a.rank - b.rank);
-  const localAttempted = entries.filter((entry) => entry.tier === "local").length;
-  const widerEntries = entries.filter((entry) => WIDER_TIERS.has(entry.tier));
-  const passedCount = entries.filter((entry) => entry.disposition !== "held").length;
-  const widerPassed = widerEntries.filter((entry) => entry.disposition !== "held").length;
-  const canLocal = local.length > 0 && passedCount < MAX_ENTRIES && localAttempted < MAX_ATTEMPTS;
-  const canWider = wider.length > 0 && passedCount < MAX_ENTRIES && widerPassed < MAX_WIDER && widerEntries.length < MAX_WIDER_ATTEMPTS;
-  if (!canLocal && !canWider) {
+  const pending = draft.candidates.filter((candidate) => !doneIds.has(candidate.id)).sort((a, b) => a.rank - b.rank);
+  const passedCount = entries.filter((entry) => entry.disposition === "checks_passed").length;
+  if (!pending.length || passedCount >= MAX_ENTRIES) {
     await collection.updateOne({ id: draftId }, { $set: { status: "ready", attempted: entries.length, held: entries.filter((entry) => entry.disposition === "held").length, held_reasons: heldReasons(entries) } });
     return { more: false, done: true };
   }
-  const localNews = canLocal ? local.filter((item) => !isUpcoming(item.kind)) : [];
-  const widerNews = canWider ? wider.filter((item) => !isUpcoming(item.kind)) : [];
-  const candidate = localNews.length ? nextCandidate(localNews, covered)
-    : widerNews.length ? nextCandidate(widerNews, covered)
-    : canLocal ? nextCandidate(local, covered) : nextCandidate(wider, covered);
+  const candidate = pending[0];
   const story = collapse(draft.events).find((item) => item.id === candidate.id);
   if (!story) throw new Error(`Story no longer exists in draft: ${candidate.id}`);
   const candidateForWrite = { ...candidate, community_id: draft.location_id } as RankedCandidate & { community_id: string };
@@ -139,12 +123,10 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const refreshed = await getEntries(deps.db, draftId);
   const refreshedDone = new Set(refreshed.map((entry) => entry.story_id));
   const remaining = draft.candidates.filter((item) => !refreshedDone.has(item.id));
-  const totalPassed = refreshed.filter((entry) => entry.disposition !== "held").length;
-  const localAttemptsAfter = refreshed.filter((entry) => entry.tier === "local").length;
+  const totalPassed = refreshed.filter((entry) => entry.disposition === "checks_passed").length;
   const wideEntriesAfter = refreshed.filter((entry) => WIDER_TIERS.has(entry.tier));
-  const widePassedAfter = wideEntriesAfter.filter((entry) => entry.disposition !== "held").length;
-  const more = (remaining.some((item) => item.tier === "local") && totalPassed < MAX_ENTRIES && localAttemptsAfter < MAX_ATTEMPTS)
-    || (remaining.some((item) => WIDER_TIERS.has(item.tier)) && totalPassed < MAX_ENTRIES && widePassedAfter < MAX_WIDER && wideEntriesAfter.length < MAX_WIDER_ATTEMPTS);
+  const widePassedAfter = wideEntriesAfter.filter((entry) => entry.disposition === "checks_passed").length;
+  const more = remaining.length > 0 && totalPassed < MAX_ENTRIES;
   const errors = result.error ? [...((draft.model_errors as string[]) ?? []), String(result.error)] : (draft.model_errors as string[] ?? []);
   await collection.updateOne({ id: draftId }, { $set: { status: more ? "drafting" : "ready", attempted: refreshed.length, held: refreshed.filter((entry) => entry.disposition === "held").length, held_reasons: heldReasons(refreshed), model_errors: errors, local_passed: refreshed.filter((entry) => entry.tier === "local" && entry.disposition !== "held").length, wider_passed: widePassedAfter, wider_attempted: wideEntriesAfter.length } });
   deps.log.info("Edition item", { edition_id: draftId, story_id: story.id, rank: candidate.rank, score: candidate.score, category: candidate.rating.category, tier: candidate.tier, occurrences: story.occurrences.length, attempts: result.attempts, disposition: result.disposition, errors: result.validation_errors ?? result.error, wall_seconds: result.wall_seconds });
@@ -175,10 +157,9 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   if (draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary };
   const entries = await getEntries(deps.db, draftId);
   if (entries.length < draft.candidates.length && draft.status !== "ready") return { done: false, more: true };
-  const passed = entries.filter((entry) => entry.disposition !== "held").sort((a, b) => newsletterOrder(
-    { kind: a.result.story.kind ?? "event", local: a.tier === "local", rank: Number(a.result.ranking.rank) },
-    { kind: b.result.story.kind ?? "event", local: b.tier === "local", rank: Number(b.result.ranking.rank) },
-  ));
+  const passed = entries.filter((entry) => entry.disposition === "checks_passed")
+    .sort((a, b) => Number(a.result.ranking.rank) - Number(b.result.ranking.rank))
+    .slice(0, MAX_ENTRIES);
   const itemStories = passed.map((entry) => entry.result.story as writer.StoryInput);
   const itemDrafts = passed.map((entry) => entry.result.draft as writer.ItemDraft);
   const week = weekLabel(draft.window_start, draft.window_end);

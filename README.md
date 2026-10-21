@@ -64,6 +64,32 @@ New locations are automatically enabled for reader-site publishing and appear af
 their first published edition. Expand **Publishing settings** on the same page to
 disable a location if needed. Email previews are saved, not sent.
 
+## Source connectors
+
+The pipeline currently registers ten connector types. Availability depends on each
+location's configured sources, supported platforms and geographic coverage; missing or
+blocked sources are reported in **Connectors & links** and run inspection.
+
+| Connector | Current coverage |
+| --- | --- |
+| Library events (`library`) | Selected library branches, using BiblioCommons, Trumba RSS, iCalendar or JSON-LD event listings. |
+| Public meetings (`meetings`) | Legistar and CivicClerk agendas and meeting details; neighborhood coverage filters agenda items for local relevance. |
+| Earthquakes (`hazards`) | USGS earthquake records around the location, with distance and magnitude context. |
+| Community and state news (`statenews`) | Reviewed or validated RSS/Atom newsroom feeds, retaining geographically relevant reporting and announcements. |
+| Local reporting discovery (`trending`) | Wikipedia and Bluesky discover linked reporting; publication requires verified local context, not popularity alone. |
+| City and parks calendars (`civiccalendar`) | CivicPlus community and parks iCalendar feeds; meeting categories are left to the meetings connector. |
+| Drinking-water safety (`homesafety`) | EPA Envirofacts/SDWIS health-based violations for community water systems serving the town or nearby places. |
+| Housing permits (`housing`) | Census Building Permits Survey estimates matched to the town's Census place; not property listings or neighborhood-level estimates. |
+| Development permits (`development`) | Geographically filtered new-construction and multi-unit permit records from supported city Socrata portals; minor work is excluded and single-family addresses are withheld. |
+| School athletics (`athletics`) | Reviewed state athletic-association feeds, limited to team-level sports headlines naming the town or nearby places; individual-student stories are excluded. |
+
+Collection preselects up to five candidates per connector type (at most 50 per location).
+Authoring walks the combined ranked pool until **12 stories pass editorial checks** or
+the pool is exhausted. Held stories retain their reasons and do not consume publication
+slots. Published items retain ranked order; the reader groups them into news and
+upcoming-event sections. See the [journalist guide](apps/journalist-site/README.md)
+for configuration, geographic limits and the manual authoring/publication gates.
+
 ## Pages
 
 **Journalist console**
