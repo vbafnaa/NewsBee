@@ -7,8 +7,10 @@ import { DiscoveryBlockedError } from "../fetcher";
 import { sourceResult, type CollectedEvent, type CollectedSource, type Connector, type ConnectorContext, type LocationProfile, type SourceTask } from "../types";
 import { chooseLinks, moreEvents, pageLinks } from "../ai-discovery";
 import { hazardTopic, parseNewsFeed, parseUsgs, parseWikiDaily, parseWikiTop, publishedText, sensitive, sha256, spike, sponsoredItem, usgsQueryUrl, wikiArticleUrl, wikiDailyUrl, wikiLabel, wikiRecentDays, wikiTopUrl, wikiTopic, type NewsFacts } from "./adapters";
-import { itemTier, LOCAL_KM, mentions, NEARBY_KM, resolveRegion, resolveTrendRegion, trendTier, section, validateStateSources, type Region } from "./regions";
-import { trendContext, trendReports, reportedDescription, type TrendContext } from "./trend-context";
+import { itemTier, LOCAL_KM, mentions, NEARBY_KM, resolveRegion, resolveTrendRegion, trendTier, trendEvidence, section, validateStateSources, type Region, type WatchlistEntry } from "./regions";
+import { trendContext, discoverReports, reportedDescription, type TrendContext } from "./trend-context";
+import { communityWikiTopics, reportingSearches } from "./trend-discovery";
+import { reportingScore } from "../../ranking/wider";
 import { communityEvidence } from "../community";
 
 const ACCEPT_JSON = "application/json";
@@ -247,7 +249,7 @@ function topicTier(topic: Pick<WikiTopic, "article" | "about">, place: Region): 
   return tier;
 }
 async function verifiedTrend(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string) {
-  const cached = await cacheState<{ report: TrendContext | null }>(context, "trend-context-local-v2", sha256([topic, place.location_id, place.latitude, place.longitude, place.nearby].join("|")).slice(0, 16), context.today, async () => {
+  const cached = await cacheState<{ report: TrendContext | null }>(context, "trend-context-local-v3", sha256(JSON.stringify([topic, place, context.location.systems])).slice(0, 16), context.today, async () => {
     const report = await trendContext(context, topic, place, wikipediaUrl);
     return { report, failed: report === null };
   });
@@ -260,13 +262,17 @@ function topicFacts(topic: WikiTopic, place: Region, report: TrendContext): Coll
   return createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline, event_date: day, schedule_text: publishedText(day), venue: report.publisher,
     source_url: report.url, description: reportedDescription(report), kind: "trending_topic", tier, section: section(place, tier),
     trend_context: report, attention_source_url: wikiArticleUrl(topic.article),
-    ...(place.community_location ? { community_relevance: communityEvidence(place.community_location, [report.headline, report.excerpt]) } : {}),
+    ...(place.community_location ? { community_relevance: trendEvidence(place, [report.headline, report.excerpt]) } : {}),
     signals: { ratio, recent_daily_views: views, baseline_daily_views: topic.baseline_daily_views, origin: topic.origin, ...(topic.best_rank === undefined ? {} : { best_rank: topic.best_rank }) },
     social_mentions: topic.social_mentions });
 }
 async function wikiLocal(context: ConnectorContext, place: Region, today: string): Promise<WikiData> {
   const topics: WikiTopic[] = [], errors: string[] = [], top_days: string[] = [];
-  const entries = [
+  let entries: WatchlistEntry[];
+  if (place.community_location) {
+    try { entries = await communityWikiTopics(context, place); }
+    catch (error) { return { topics, top_days, errors: [`community topics: ${errMessage(error)}`], failed: true }; }
+  } else entries = [
     ...place.watchlist.filter((entry) => entry.place === place.town || place.nearby.includes(entry.place)),
     ...[place.town, ...place.nearby].slice(0, 5).map((name) => ({
       article: `${name}${place.place_suffix ?? ""}`.replaceAll(" ", "_"),
@@ -280,7 +286,7 @@ async function wikiLocal(context: ConnectorContext, place: Region, today: string
   }
   const watched = new Set(watchlist.map((entry) => entry.article));
   const mostRead = new Map<string, number>();
-  for (let offset = 1; offset <= TOP_LOOKBACK && top_days.length < TOP_DAYS; offset++) {
+  for (let offset = 1; !place.community_location && offset <= TOP_LOOKBACK && top_days.length < TOP_DAYS; offset++) {
     const day = dateDelta(today, -offset);
     try {
       for (const item of parseWikiTop(await getJson(context, wikiTopUrl(day)))) {
@@ -306,24 +312,25 @@ async function collectWikipedia(task: SourceTask, context: ConnectorContext): Pr
   const place = resolveTrendRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
   const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "wikimedia_pageviews", website: "https://wikimedia.org/api/rest_v1/" });
   if (!place.configured) { record.status = "no_feed"; record.detail = `No reviewed watchlist for ${place.state_code}`; return { result: record, events: [] }; }
-  const data = await cacheState(context, "wikipedia-local-v2", `${place.location_id}:${place.latitude}:${place.longitude}`, context.today, () => wikiLocal(context, place, context.today));
+  const data = await cacheState(context, "wikipedia-local-v3", sha256(JSON.stringify([place, context.location.systems])).slice(0, 16), context.today, () => wikiLocal(context, place, context.today));
   if (data.failed) { record.status = "failed"; record.detail = data.errors.slice(0, 5).join("; "); return { result: record, events: [] }; }
   const trending = data.topics.filter(qualifies).sort((a, b) => b.ratio - a.ratio);
   const near = trending.filter((topic) => topicTier(topic, place));
   const events: CollectedEvent[] = [];
   let noContext = 0, distantHazards = 0;
   for (const topic of near.slice(0, WIKI_MAX_ITEMS)) {
-    const report = await verifiedTrend(context, wikiLabel(topic.article), place, wikiArticleUrl(topic.article));
+    const phrase = place.community_location ? reportingSearches(place).find((search) => mentions(wikiLabel(topic.article), search.topic))?.topic ?? place.town : wikiLabel(topic.article);
+    const report = await verifiedTrend(context, phrase, place, wikiArticleUrl(topic.article));
     if (!report) noContext++;
     else if (distantHazard(trendTier(place, report.headline, report.excerpt), report.headline, report.excerpt)) distantHazards++;
-    else events.push(topicFacts(topic, place, report));
+    else if (!events.some((event) => event.source_url === report.url)) events.push(topicFacts(topic, place, report));
   }
-  record.detail = `${data.topics.length} topics measured within ${place.town} or 15 miles, ${events.length} recent locally reported stories; ${noContext} omitted without local story context`;
+  record.detail = `${data.topics.length} topics measured ${place.community_location ? `for ${place.town}` : `within ${place.town} or 15 miles`}, ${events.length} recent locally reported stories; ${noContext} omitted without local story context`;
   if (noContext && !events.length) record.status = "no_context";
   record.event_count = events.length;
   record.skipped_unusable = Object.fromEntries(Object.entries({ not_trending: data.topics.length - trending.length, not_near_town: trending.length - near.length, no_story_context: noContext, hazard_not_local: distantHazards }).filter(([, count]) => count));
   record.pages_checked = data.errors.slice(0, 10);
-  context.log.info("wikipedia_local_reporting_result", { source_id: task.source_id, topics: data.topics.length, kept: events.length, radius_miles: 15 });
+  context.log.info("wikipedia_local_reporting_result", { source_id: task.source_id, topics: data.topics.length, kept: events.length, radius_miles: place.community_location ? null : 15 });
   return { result: record, events };
 }
 
@@ -331,7 +338,7 @@ export const trendingConnector: Connector = {
   type: "trending",
   sources(_location, settings) { return settings.widerSources ? [
     { source_id: "trending:wikipedia", name: "Wikipedia-discovered local reporting", type: "trending" },
-    { source_id: "trending:bluesky", name: "Bluesky-linked local reporting", type: "trending" },
+    { source_id: "trending:bluesky", name: "Community reporting links", type: "trending" },
   ] : []; },
   async collect(task, context) {
     try { return task.source_id.endsWith(":bluesky") ? await collectBluesky(task, context) : await collectWikipedia(task, context); }
@@ -342,30 +349,44 @@ export const trendingConnector: Connector = {
 const TREND_MAX_ITEMS = 5;
 async function collectBluesky(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
   const place = resolveTrendRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
-  const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "bluesky_local_reporting", website: "https://bsky.app/" });
+  const record = sourceResult(task.source_id, task.name, "ingested", "", {
+    feed_kind: place.community_location ? "community_reporting" : "bluesky_local_reporting",
+    website: place.community_location ? context.location.community?.geography?.website ?? null : "https://bsky.app/",
+  });
   if (!place.configured) { record.status = "no_feed"; record.detail = `No reviewed aliases for ${place.state_code}`; return { result: record, events: [] }; }
   const facts: CollectedEvent[] = [];
-  const urls = new Set<string>();
+  const searches = reportingSearches(place);
+  const feeds = place.community_location?.community?.newsrooms.map((room) => room.feed) ?? [];
+  const { reports, errors } = await discoverReports(context, place, searches, feeds);
   let distantHazards = 0;
-  for (const name of [place.town, ...place.nearby].slice(0, TREND_MAX_ITEMS)) {
-    for (const report of await trendReports(context, name, place)) {
-      if (urls.has(report.url)) continue;
-      urls.add(report.url);
-      const tier = trendTier(place, report.headline, report.excerpt)!;
-      if (distantHazard(tier, report.headline, report.excerpt)) { distantHazards++; continue; }
-      facts.push(createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline,
-        event_date: report.published_at.slice(0, 10), schedule_text: publishedText(report.published_at.slice(0, 10)),
-        venue: report.publisher, source_url: report.url, description: reportedDescription(report), kind: "social_trend",
-        tier, section: section(place, tier), trend_context: report, signals: { discovery: "local_reporting_link" },
-        ...(place.community_location ? { community_relevance: communityEvidence(place.community_location, [report.headline, report.excerpt]) } : {}) }));
-    }
-    if (facts.length >= TREND_MAX_ITEMS) break;
+  for (const report of reports) {
+    const tier = trendTier(place, report.headline, report.excerpt)!;
+    if (distantHazard(tier, report.headline, report.excerpt)) { distantHazards++; continue; }
+    facts.push(createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline,
+      event_date: report.published_at.slice(0, 10), schedule_text: publishedText(report.published_at.slice(0, 10)),
+      venue: report.publisher, source_url: report.url, description: reportedDescription(report), kind: "social_trend",
+      tier, section: section(place, tier), trend_context: report, signals: { discovery: "community_reporting" },
+      ...(place.community_location ? { community_relevance: trendEvidence(place, [report.headline, report.excerpt]) } : {}) }));
   }
-  const events = facts.slice(0, TREND_MAX_ITEMS);
-  record.detail = `${events.length} recent linked news reports about ${place.town} or places within 15 miles; popularity counts and national trends are not news`;
+  facts.sort((a, b) => {
+    const tier = (value: CollectedEvent) => value.tier === "local" ? 0 : 1;
+    return tier(a) - tier(b) || reportingScore(b.title, b.description ?? "") - reportingScore(a.title, a.description ?? "")
+      || b.event_date.localeCompare(a.event_date);
+  });
+  const counts = new Map<string, number>();
+  const events = facts.map((fact, index) => {
+    const key = `${fact.tier}:${fact.venue}`, count = counts.get(key) ?? 0;
+    counts.set(key, count + 1);
+    return { fact, count, index };
+  }).sort((a, b) => Number(a.fact.tier !== "local") - Number(b.fact.tier !== "local") || a.count - b.count || a.index - b.index)
+    .slice(0, TREND_MAX_ITEMS).map(({ fact }) => fact);
+  record.detail = `${events.length} recent linked news reports ${place.community_location ? `with evidence for ${place.town}` : `about ${place.town} or places within 15 miles`}; popularity counts and national trends are not news`;
+  record.search_queries = searches.map((search) => search.query);
+  record.publisher_feeds = [...new Set(feeds)].slice(0, 3);
+  record.discovery_errors = errors;
   if (!events.length) record.status = "no_context";
   record.event_count = events.length;
   record.skipped_unusable = Object.fromEntries(Object.entries({ no_story_context: events.length ? 0 : 1, hazard_not_local: distantHazards }).filter(([, count]) => count));
-  context.log.info("bluesky_local_reporting_result", { source_id: task.source_id, kept: events.length, radius_miles: 15 });
+  context.log.info("bluesky_local_reporting_result", { source_id: task.source_id, kept: events.length, radius_miles: place.community_location ? null : 15 });
   return { result: record, events };
 }

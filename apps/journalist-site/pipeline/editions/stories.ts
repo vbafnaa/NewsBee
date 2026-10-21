@@ -94,12 +94,18 @@ function sameOccurrence(a: Occurrence, b: Occurrence) {
 /** Stored events -> stories ordered by first date then title. */
 export function collapse(events: SourceEvent[]): Story[] {
   const stories = new Map<string, Story>();
+  const newsroomKeys = new Map(events.filter(({ facts }) => facts.kind === "state_news").map(({ facts }) => [
+    `${facts.event_date}:${facts.source_url}`, `state_news:${facts.event_date}:${storyKey(facts.title)}`,
+  ]));
   for (const event of events) {
     const facts = event.facts;
     const kind = (facts.kind as string | undefined) ?? "event";
     let key = storyKey(facts.title);
     if (kind !== "event") key = `${kind}:${facts.event_date}:${key}`;
-    if (facts.trend_context && ["trending_topic", "social_trend"].includes(kind)) key = `reported:${facts.event_date}:${facts.source_url}`;
+    if (facts.trend_context && ["trending_topic", "social_trend"].includes(kind)) {
+      const reported = `${facts.event_date}:${facts.source_url}`;
+      key = newsroomKeys.get(reported) ?? `reported:${reported}`;
+    }
     let story = stories.get(key);
     if (!story) {
       story = new Story(storyId(key), facts.title, null, kind, facts);

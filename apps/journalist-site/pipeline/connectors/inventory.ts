@@ -12,7 +12,7 @@ const DETAILS: Record<SourceType, { name: string; formats: string; manual: boole
   meetings: { name: "Government meetings", formats: "Legistar and CivicClerk tenant APIs", manual: true },
   hazards: { name: "Weather & earthquakes", formats: "National Weather Service alerts and USGS earthquake feeds", manual: false },
   statenews: { name: "Community and state newsrooms", formats: "Reviewed local publisher and agency RSS/Atom feeds, filtered for community relevance", manual: true },
-  trending: { name: "Locally reported stories", formats: "Wikipedia topic discovery and Bluesky reporting links; recent local reporting required, with explicit community evidence for neighborhoods", manual: false },
+  trending: { name: "Locally reported stories", formats: "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required", manual: false },
     civiccalendar: { name: "City & parks calendars", formats: "CivicPlus calendar iCalendar feeds from the city website, community and parks categories only", manual: true },
     homesafety: { name: "Home & water safety", formats: "EPA Safe Drinking Water health-based violations for community water systems serving the county", manual: false },
     housing: { name: "Housing market", formats: "Census Building Permits Survey monthly place file (new residential units and value)", manual: false },

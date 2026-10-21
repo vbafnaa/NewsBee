@@ -122,7 +122,16 @@ export function resolveTrendRegion(location: LocationProfile, states: Record<str
   return { ...resolveRegion(location, states, TREND_RADIUS_KM), county: null };
 }
 
+export function trendEvidence(place: Region, texts: Array<string | null | undefined>) {
+  const location = place.community_location;
+  if (!location?.community) return null;
+  return communityEvidence({ ...location, community: {
+    ...location.community, coverage_terms: [...location.community.coverage_terms, ...location.community.aliases],
+  } }, texts);
+}
+
 /** A county mention alone is not evidence of a story within the town's trend radius. */
 export function trendTier(place: Region, title: string, body?: string | null) {
+  if (place.community_location) return trendEvidence(place, [title, body]) ? "local" : null;
   return tierFor({ ...place, county: null }, [title, body]);
 }
