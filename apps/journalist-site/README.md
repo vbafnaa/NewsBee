@@ -224,10 +224,11 @@ Vercel function boundary without bypassing serialization or backoff. Optional ti
 also recover interrupted work, but never cross a gate.
 
 1. **Start pipeline (collection)**, per location or all locations: one job per source
-   (library, meetings, hazards, state news, trending).
+   (library, meetings, hazards, state news, trending, and the parent-and-homeowner sources:
+   city calendar, drinking water, housing permits, development permits and school athletics).
    Rule-based preselection keeps up to **5 candidates per source** in hosted and local
-   modes; the combined pool is capped again at five per connector type. With five types,
-   at most **25 candidates per location** reach model ranking. State feeds still retain up
+   modes; the combined pool is capped again at five per connector type. With ten types, at
+   most **50 candidates per location** reach model ranking. State feeds still retain up
    to 25 geographically relevant items per newsroom before preselection,
    use the richest available RSS/Atom content and exclude announcements older than 14
    days or future-dated items. Older onboarded locations without a government profile

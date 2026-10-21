@@ -24,6 +24,7 @@ export const MAX_WIDER = 4;
 export const MAX_WIDER_ATTEMPTS = 6;
 export const WIDER_TIERS = new Set(["region", "nearby"]);
 export const WIDER_SOURCES = ["hazards:", "statenews:", "trending:"] as const;
+export const PARENT_SOURCES: Record<string, string> = { "civiccalendar:": "city calendars", "homesafety:": "water-safety records", "housing:": "housing permit figures", "development:": "development permits", "athletics:": "team-level school sports news" };
 export const TOP_PER_SOURCE = 5;
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; settings: Settings; log: Logger };
 export type AuthoringInput = { location: { id: string; name: string }; runId: string; today: string; window: [string, string]; events: SourceEvent[]; sourceResults: SourceResult[] };
@@ -155,11 +156,12 @@ function editionCoverage(sourceResults: SourceResult[]) {
   if (!sourceResults.length) lines.push("Source coverage was not recorded for this edition.");
   if (!sourceResults.some((item) => item.source_id.startsWith("meetings:"))) lines.push("No public meeting source was checked for this edition.");
   const hasWider = sourceResults.some((item) => WIDER_SOURCES.some((prefix) => item.source_id.startsWith(prefix)));
-  lines.unshift("Private prototype: library listings, public meetings" + (hasWider ? ", official state news and trends about the town and nearby places" : "") + " only, not all local news.");
+  const parents = Object.entries(PARENT_SOURCES).filter(([prefix]) => sourceResults.some((item) => item.source_id.startsWith(prefix))).map(([, label]) => `, ${label}`).join("");
+  lines.unshift("Private prototype: library listings, public meetings" + parents + (hasWider ? ", official state news and trends about the town and nearby places" : "") + " only, not all local news.");
   return lines;
 }
 function validEditionShape(value: any) {
-  const kinds = new Set(["event", "meeting_preview", "meeting_outcome", "state_news", "earthquake", "trending_topic", "social_trend"]);
+  const kinds = new Set(["event", "meeting_preview", "meeting_outcome", "state_news", "earthquake", "trending_topic", "social_trend", "safety_notice", "housing_market", "development", "school_sports"]);
   const itemValid = (item: any) => typeof item.story_id === "string" && typeof item.headline === "string" && typeof item.blurb === "string" && typeof item.when_where === "string" && typeof item.event_date === "string" && (typeof item.source_url === "string" || item.source_url === null) && (Number.isInteger(item.rank) || item.rank === null) && kinds.has(item.kind) && typeof item.source_name === "string" && (typeof item.section === "string" || item.section === null) && typeof item.local === "boolean";
   const correctionValid = (item: any) => typeof item.story_id === "string" && typeof item.reason === "string" && typeof item.created_at === "number";
   const coverageValid = !("coverage" in value) || (Array.isArray(value.coverage) && value.coverage.every((line: unknown) => typeof line === "string"));

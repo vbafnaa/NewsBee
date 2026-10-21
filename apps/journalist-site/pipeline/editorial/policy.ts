@@ -3,7 +3,7 @@ import { httpsLink } from "../connectors/common";
 export const POLICY = "private_poc_v2";
 export const SENSITIVE = /\b(alleg(?:ation|ations|ed|edly)|arrest(?:ed|s)?|charged with|suspect(?:s)?|(?:sexual assault|domestic violence|eviction) (?:case|hearing|proceedings?)|(?:suicide|homicide) investigation|disciplinary|medical records?)\b/i;
 export const PRIVATE = /\((tenant|landlord|appellant|petitioner|respondent|claimant|grievant)\)|security deposit case|effective date of benefit|retirement application|disability retirement|personnel matter|workers'? compensation claim/i;
-export const KINDS = new Set(["event", "meeting_preview", "meeting_outcome", "state_news", "earthquake", "trending_topic", "social_trend"]);
+export const KINDS = new Set(["event", "meeting_preview", "meeting_outcome", "state_news", "earthquake", "trending_topic", "social_trend", "safety_notice", "housing_market", "development", "school_sports"]);
 export type EditorialStory = { title: string; description?: string | null; kind?: string; [key: string]: unknown };
 export function errors(story: EditorialStory): string[] {
   const result: string[] = [];

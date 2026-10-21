@@ -1,0 +1,17 @@
+[
+  {
+    "pwsid": "WA5386470",
+    "pws_name": "SURFSIDE HOMEOWNERS",
+    "primacy_agency_code": "WA",
+    "pws_activity_code": "A",
+    "pws_type_code": "CWS",
+    "population_served_count": 2687,
+    "admin_name": "PAT PLACEHOLDER",
+    "email_addr": "placeholder@example.invalid",
+    "phone_number": "555-0100",
+    "address_line1": "1 PLACEHOLDER WAY",
+    "city_name": "OCEAN PARK",
+    "zip_code": "98640",
+    "state_code": "WA"
+  }
+]

@@ -85,7 +85,11 @@
             "state_news",
             "earthquake",
             "trending_topic",
-            "social_trend"
+            "social_trend",
+            "safety_notice",
+            "housing_market",
+            "development",
+            "school_sports"
           ],
           "title": "Kind",
           "type": "string"

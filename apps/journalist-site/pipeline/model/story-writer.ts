@@ -12,7 +12,7 @@ export const EMAIL_MAX = 280;
 export const KEEP_ALIVE = "10m";
 export const MAX_RETRIES = 1;
 export const NO_EVENTS_INTRO = "No stories are available from the sources checked for this edition. This does not mean nothing is happening locally.";
-export const NEWS_KINDS = new Set(["state_news", "earthquake", "trending_topic", "social_trend"]);
+export const NEWS_KINDS = new Set(["state_news", "earthquake", "trending_topic", "social_trend", "safety_notice", "housing_market", "development", "school_sports"]);
 const ITEM_SCHEMA = { additionalProperties: false, properties: { headline: { maxLength: HEADLINE_MAX, minLength: 1, title: "Headline", type: "string" }, summary: { maxLength: SUMMARY_MAX, minLength: 1, title: "Summary", type: "string" } }, required: ["headline", "summary"], title: "ItemDraft", type: "object" } as const;
 const FRONT_SCHEMA = { additionalProperties: false, properties: { headline: { maxLength: 90, minLength: 1, title: "Headline", type: "string" }, intro: { maxLength: 300, minLength: 1, title: "Intro", type: "string" } }, required: ["headline", "intro"], title: "FrontDraft", type: "object" } as const;
 const EMAIL_SCHEMA = { additionalProperties: false, properties: { blurb: { maxLength: 280, minLength: 1, title: "Blurb", type: "string" } }, required: ["blurb"], title: "EmailDraft", type: "object" } as const;
@@ -40,7 +40,11 @@ const PURPOSE: Record<string, string> = {
   earthquake: "tells neighbours calmly and plainly what the U.S. Geological Survey recorded. Do not mention damage, injuries, aftershocks or safety advice unless the description does",
   trending_topic: "reports the actual local development and its sourced local relevance, attributing reporting to the publisher. Wikipedia was only a discovery signal: do not mention trending, page views, searches, readership or speculate about why it attracted attention",
   social_trend: "reports the actual local development and its sourced local relevance, attributing reporting to the publisher. Bluesky was only a link-discovery source: do not mention trending, post counts, virality or quote individual social-media users",
-};
+    safety_notice: "tells households calmly and plainly what the federal record shows about their water system, naming the agency and the water system. Do not give health advice, predict harm or say the water is unsafe unless the description says so",
+    housing_market: "tells homeowners and would-be buyers what the official building permit figures show, naming the agency and period. Do not forecast prices, give buying advice or explain causes the description does not state",
+    development: "tells neighbours what was filed or approved and where, naming the city permit record. Do not name owners, applicants or contractors, and do not speculate about who is building or why",
+    school_sports: "celebrates the team-level school sports news exactly as published, naming the association that reported it. Never name or describe individual students, and do not add scores, records or rankings that are not in the description",
+  };
 export type StoryInput = { id: string; title: string; description?: string | null; venues?: string[]; kind?: string; [key: string]: unknown };
 export type ItemDraft = { headline: string; summary: string };
 export type FrontDraft = { headline: string; intro: string };

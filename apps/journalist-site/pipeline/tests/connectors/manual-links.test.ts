@@ -50,14 +50,14 @@ describe("validated location links", () => {
     await new MongoLinkCache(mongo.db).invalidate(location.id);
     expect(await manualLinks(mongo.db).countDocuments({})).toBe(1);
     const inventory = await connectorInventory(mongo.db, settings);
-    expect(inventory.connectors.map(({ id }) => id)).toEqual(["library", "meetings", "hazards", "statenews", "trending"]);
+    expect(inventory.connectors.map(({ id }) => id)).toEqual(["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics"]);
     expect(inventory.sources.some(({ source_id }) => source_id === "library:WA001")).toBe(true);
     expect(inventory.sources.some(({ source_id }) => source_id === manualTask(saved).source_id)).toBe(true);
 
     replay.on(url, { body: calendar() });
     const none = (type: SourceType): Connector => ({ type, sources: () => [], collect: async () => { throw new Error("Only the retained manual link should run"); } });
     const deps = { db: mongo.db, settings, transport: replay.transport, store: new LocalArtifacts(dir), model: new FakeModel(() => ({})),
-      connectors: { library: none("library"), meetings: none("meetings"), hazards: none("hazards"), statenews: none("statenews"), trending: none("trending") } };
+      connectors: { library: none("library"), meetings: none("meetings"), hazards: none("hazards"), statenews: none("statenews"), trending: none("trending"), civiccalendar: none("civiccalendar"), homesafety: none("homesafety"), housing: none("housing"), development: none("development"), athletics: none("athletics") } };
     const { run } = await startRun(deps, location.id, { by: "test", kind: "manual" });
     expect(run.sources.map(({ source_id }) => source_id)).toEqual([manualTask(saved).source_id]);
     expect(await runOne(deps)).toBe(true);

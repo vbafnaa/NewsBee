@@ -1,0 +1,6 @@
+Survey,State,6-Digit,County,Census Place,FIPS Place,FIPS MCD,Pop,CSA,CBSA,Footnote,Central,Zip,Region,Division,Source,Place,,1-unit,,,2-units,,,3-4 units,,,5+ units
+Date,Code,ID,Code,Code,Code,Code,  ,Code,Code,Code,City,Code,Code,Code,Code,Name,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value,Bldgs,Units,Value
+ 
+202608,53,149000,061,0367,20750 ,00000 ,42515 ,500,42660, , ,98020      ,4,9,3,Edmonds,6,6,1035598,0,0,0,0,0,0,0,0,0
+202608,53,443000,033,1065,57535 ,00000 ,72507 ,500,42660, ,1,980739710  ,4,9,3,Redmond,10,10,5082176,0,0,0,0,0,0,0,0,0
+202608,41,425000,017,0945,61200 ,00000 ,34293 ,999,13460, , ,977562213  ,4,9,3,Redmond,12,12,3750959,0,0,0,0,0,0,0,0,0
