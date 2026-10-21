@@ -1,7 +1,7 @@
 export type EmailPreviewContent = { subject: string; text: string; html: string };
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;" })[char]!); }
 /** Stage 2 creates a preview artifact only; it never sends email. */
-export function previewContent(locationName: string, locationId: string, edition: { headline: string; intro: string; email?: { blurb?: string } }, websiteUrl = "http://127.0.0.1:4321") {
+export function previewContent(locationName: string, locationId: string, edition: { headline: string; intro: string; email?: { blurb?: string } }, websiteUrl = process.env.NEWSBEE_READER_SITE_URL ?? "http://127.0.0.1:4321/reader") {
   const headline = edition.headline.trim().split(/\s+/).join(" ");
   const link = `${websiteUrl.replace(/\/$/, "")}/?location=${encodeURIComponent(locationId)}`;
   const blurb = edition.email?.blurb ?? `See what is happening around ${locationName.split(",")[0]} this week in the new edition.`;

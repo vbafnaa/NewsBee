@@ -91,6 +91,8 @@ return HTTP 503 without serving cached edition responses.
 - `POST /api/locations/<location_id>/interest`: validates and stores an interest email in
   MongoDB; addresses are never returned by a public endpoint.
 
+The paths above are service-relative; publicly they are under `/reader/api/`.
+Astro's `/reader` base also prefixes generated assets and browser API calls.
 The reader calls these same-origin routes. Google Drive content is read on the server;
 the browser never receives service-account credentials. Search and edition content are
 public. Interest signups require a same-origin request and are stored durably in MongoDB.
@@ -110,5 +112,9 @@ directory and set the server-side environment variables above before using the A
 The TypeScript pipeline in the journalist app handles ingestion, edition authoring and
 publishing; this app serves only reader operations.
 
-Deploy with Vercel's root directory set to `apps/reader-site`. Enable access to files
-outside the root directory for imports from `shared/`.
+Deploy from the repository root using the services in [`../../vercel.json`](../../vercel.json).
+The reader is public at `/reader`; the journalist app owns the other paths.
+Both services share project environment variables. Set the reader's email/private key
+in `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`, and the
+journalist writer's credentials separately in `GOOGLE_SERVICE_ACCOUNT_JSON`.
+For standalone `npm run dev`, open `http://127.0.0.1:4321/reader`.

@@ -15,7 +15,7 @@ npm run local
 ```
 
 `npm run local` starts a local MongoDB (data in `.local/stage2/mongo`), this site on
-http://127.0.0.1:3000, the reader site on http://127.0.0.1:4321, and a pipeline tick every
+http://127.0.0.1:3000, the reader site on http://127.0.0.1:4321/reader, and a pipeline tick every
 5 s as a recovery aid. Drive is a local folder (`.local/stage2/drive`). Google sign-in
 is skipped on localhost.
 
@@ -318,16 +318,18 @@ removing manual links. Legacy global source configuration is read-only through t
 | `NEWSBEE_MODE=cloud` | Use Drive and require Google sign-in |
 | `MONGODB_URI`, `MONGODB_DATABASE` | MongoDB Atlas |
 | `NEWSBEE_MODEL_PROVIDERS` plus each provider's variables (see Model providers) | LLM APIs, in fallback order |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` (or `_EMAIL` and `_PRIVATE_KEY`) | Drive writer (Editor on the folders below) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Drive writer key; use JSON to keep it distinct from the reader's email/private-key variables in the shared project |
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Drive folder for run artifacts and new channel folders |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
-| `NEWSBEE_READER_SITE_URL` (optional) | URL of the default `reader-site` channel |
+| `NEWSBEE_READER_SITE_URL` | Full reader URL, `https://<host>/reader`; used only when inserting the default channel |
 
-Set this Vercel project's root directory to `apps/journalist-site` and enable access to
-files outside the root directory for the shared code and bundled root `config/` seeds.
+Deploy one Vercel project from the repository root using root `vercel.json`.
+The journalist service owns `/` and its existing APIs; the reader owns `/reader`.
+There are no HTTP dependencies between services, so no bindings are required.
+See the [root deployment guide](../../README.md#deploy) for shared environment settings.
 
 ### Configure Google Drive
 
@@ -339,9 +341,10 @@ files outside the root directory for the shared code and bundled root `config/` 
    access to the output-channel folders where published editions are stored.
 3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
    `GOOGLE_SERVICE_ACCOUNT_JSON` containing the JSON key, and
-   `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` containing the root folder ID. Alternatively, set
-   `GOOGLE_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` instead of the
-   JSON variable. Keep credentials in Vercel's encrypted environment variables; never commit
+   `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` containing the root folder ID. In the shared
+   services project, reserve `GOOGLE_SERVICE_ACCOUNT_EMAIL` and
+   `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` for the reader account; the JSON variable
+   supplies the separate writer identity. Keep credentials in Vercel's encrypted environment variables; never commit
    the key.
 4. Redeploy the journalist site so the variables take effect.
 
@@ -372,9 +375,10 @@ MongoDB; the reader site reads published editions from that channel folder, not 
 from the pipeline root. If a channel folder is changed or created manually, share it with
 the service account as well.
 
-`vercel.mjs` configures the private queue consumer and keeps the optional
-`/api/pipeline/tick` Cron schedule commented out. To enable minute-by-minute recovery,
-uncomment that schedule and set `CRON_SECRET`; scheduled functions require a Vercel Pro plan.
+The journalist service's `functions` in root `vercel.json` configures the private
+queue consumer. Optional `/api/pipeline/tick` Cron recovery is not enabled. To enable
+minute-by-minute recovery, add a top-level `crons` entry targeting that path and set
+`CRON_SECRET`; scheduled functions require an appropriate Vercel plan.
 Optional recovery only processes an editor-started stage; it cannot cross an editor gate.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in

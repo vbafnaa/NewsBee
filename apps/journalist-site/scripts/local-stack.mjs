@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * One-command local stack: a persistent local MongoDB (unless MONGODB_URI is set), the
- * journalist site (http://127.0.0.1:3000), the reader site (http://127.0.0.1:4321) and a
+ * journalist site (http://127.0.0.1:3000), the reader site (http://127.0.0.1:4321/reader) and a
  * pipeline tick every few seconds in place of Vercel Cron.
  */
 import { spawn } from "node:child_process";
@@ -70,7 +70,7 @@ const env = {
   MONGODB_DATABASE: process.env.MONGODB_DATABASE ?? "newsbee",
   CRON_SECRET: cronSecret,
   AUTH_SECRET: process.env.AUTH_SECRET ?? randomBytes(32).toString("hex"),
-  NEWSBEE_READER_SITE_URL: process.env.NEWSBEE_READER_SITE_URL ?? "http://127.0.0.1:4321",
+  NEWSBEE_READER_SITE_URL: process.env.NEWSBEE_READER_SITE_URL ?? "http://127.0.0.1:4321/reader",
 };
 
 run("journalist-site", "npx", ["next", "dev", "--hostname", "127.0.0.1", "--port", "3000"], site, env);
@@ -99,4 +99,4 @@ async function tick() {
 setInterval(() => {
   if (!stopping && inFlight < MAX_TICKS) void tick();
 }, TICK_SECONDS * 1000);
-log("Journalist site: http://127.0.0.1:3000  Reader site: http://127.0.0.1:4321  (Ctrl+C to stop)");
+log("Journalist site: http://127.0.0.1:3000  Reader site: http://127.0.0.1:4321/reader  (Ctrl+C to stop)");

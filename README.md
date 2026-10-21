@@ -65,7 +65,7 @@ npm --prefix apps/journalist-site run local
 ```
 
 This starts the journalist console at http://127.0.0.1:3000, the reader at
-http://127.0.0.1:4321, a persistent local MongoDB and scheduler ticks. Google sign-in
+http://127.0.0.1:4321/reader, a persistent local MongoDB and scheduler ticks. Google sign-in
 is skipped on localhost; Drive files and MongoDB data live under ignored `.local/stage2/`.
 The first run downloads MongoDB. No Python, uv or Mailpit is required.
 Hosted model providers can replace Ollama; see the [journalist guide](apps/journalist-site/README.md).
@@ -82,16 +82,56 @@ reader. Email previews are saved, not sent.
 
 ## Deploy
 
-Create two Vercel projects with root directories `apps/journalist-site` and
-`apps/reader-site`. Enable access to files outside each project's root directory so the
-journalist build can bundle root `config/` seeds and both apps can import `shared/` code.
-The journalist project uses `NEWSBEE_MODE=cloud`, MongoDB Atlas, a Drive writer service
-account, hosted model credentials, Google sign-in and Vercel Queues. Portal-started runs
-use the queue trigger in `apps/journalist-site/vercel.mjs`; the optional Cron schedule
-is commented out and requires `CRON_SECRET` and Vercel Pro if enabled. Seed an
+Create one Vercel project with its Root Directory set to the repository root and
+Node.js 24 selected. The root `vercel.json` builds two services independently:
+
+| Service | Public paths |
+| --- | --- |
+| `journalist-site` (Next.js) | `/` and all paths outside `/reader`, including `/api/auth/*`, `/api/admin/*` and `/api/pipeline/*` |
+| `reader-site` (Astro) | `/reader`, `/reader/api/*` and `/reader/_astro/*` |
+
+The reader rewrites select base-relative Astro output paths with `destination.path`;
+Vercel still passes the original `/reader/...` request path to the application.
+
+The archived Python prototype is not deployed. There are no inter-service HTTP calls
+or service bindings: each app accesses MongoDB and Drive directly. The journalist
+pipeline self-call stays within the journalist service. Queue consumers remain private,
+even though the journalist service has public routes.
+
+Project environment variables are shared by both services. Set `NEWSBEE_MODE=cloud`,
+`MONGODB_URI`, `MONGODB_DATABASE`, model-provider credentials, Google sign-in credentials
+and `AUTH_SECRET`. Set `NEWSBEE_READER_SITE_URL=https://<your-domain>/reader` before
+initializing the default channel; update existing channel URLs in **Output channel**.
+The OAuth callback remains `https://<your-domain>/api/auth/callback/google`. Seed an
 enabled account in `journalist_admins` before signing in.
-The reader uses MongoDB and a Drive service account with Viewer access to its configured
-output-channel folder; keep all credentials server-side.
+
+Both apps currently read `GOOGLE_SERVICE_ACCOUNT_EMAIL` and
+`GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`. To preserve separate Drive identities within
+the shared environment, put the **reader** credentials in those two variables and
+the **writer's complete JSON key** in `GOOGLE_SERVICE_ACCOUNT_JSON` (which only the
+journalist adapter reads). Also set `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` for the writer.
+Grant the writer write access and the reader Viewer access to the channel folder;
+keep all credentials server-side. Shared environment variables are not a security
+boundary between the services. The current Drive adapters still need Shared-drive
+API support for service-account publishing; configuring Vercel does not resolve
+Drive ownership/quota limitations.
+
+The journalist service's `functions` configuration in root `vercel.json` preserves
+the Vercel Queues trigger for portal-started runs. Optional Cron recovery is not
+enabled; enabling it requires `CRON_SECRET` and an appropriate Vercel plan.
+
+To exercise the single-domain routing locally, install both apps' dependencies with
+the `npm ci` commands above, configure local MongoDB/Drive/model settings, and run
+`npx vercel dev -L` from the repository root. The console is at `/` and the reader
+at `/reader` on the URL printed by Vercel. `vercel dev` does not start MongoDB or
+Ollama; the existing `npm --prefix apps/journalist-site run local` launcher remains
+available for the standalone local stack.
+
+Vercel CLI 64 currently rejects service-hosted queue triggers in local mode
+(`DEV_QUEUE_FUNCTION_UNSUPPORTED`). For routing-only checks, use a temporary copy
+of `vercel.json` without the journalist `functions` entry and pass it with
+`vercel dev -L --local-config <temporary-config>`. Keep the queue trigger in the
+production config; queue delivery must be checked in a deployment.
 
 Full environment and setup details: [journalist/pipeline](apps/journalist-site/README.md),
 [reader](apps/reader-site/README.md), [runtime boundaries](Docs/production-architecture-decisions.md),
