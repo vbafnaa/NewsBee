@@ -50,7 +50,7 @@ describe("validated location links", () => {
     await new MongoLinkCache(mongo.db).invalidate(location.id);
     expect(await manualLinks(mongo.db).countDocuments({})).toBe(1);
     const inventory = await connectorInventory(mongo.db, settings);
-    expect(inventory.connectors.map(({ id }) => id)).toEqual(["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics"]);
+    expect(inventory.connectors.map(({ id }) => id)).toEqual(["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics", "neighborhood"]);
     expect(inventory.sources.some(({ source_id }) => source_id === "library:WA001")).toBe(true);
     expect(inventory.sources.some(({ source_id }) => source_id === manualTask(saved).source_id)).toBe(true);
 

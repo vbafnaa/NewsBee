@@ -195,6 +195,7 @@ const LOCATION_COLLECTIONS = [
   ["source_results", COLLECTIONS.sourceResults], ["source_shortlists", COLLECTIONS.shortlists],
   ["editions", COLLECTIONS.editions], ["edition_entries", COLLECTIONS.editionEntries],
   ["story_cache", COLLECTIONS.storyCache], ["withdrawals", COLLECTIONS.withdrawals],
+  ["discovered_sources", COLLECTIONS.discoveredSources],
 ] as const;
 
 export async function removeLocation(db: Db, id: string): Promise<Record<string, number>> {

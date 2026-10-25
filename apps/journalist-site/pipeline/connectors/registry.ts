@@ -11,6 +11,7 @@ import { homeSafetyConnector } from "./homesafety";
 import { housingConnector } from "./housing";
 import { developmentConnector } from "./development";
 import { athleticsConnector } from "./athletics";
+import { neighborhoodConnector } from "./neighborhood";
 
 export const CONNECTORS: Record<SourceType, Connector> = {
   library: libraryConnector,
@@ -23,6 +24,7 @@ export const CONNECTORS: Record<SourceType, Connector> = {
   housing: housingConnector,
   development: developmentConnector,
   athletics: athleticsConnector,
+  neighborhood: neighborhoodConnector,
 };
 
 /**

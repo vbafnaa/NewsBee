@@ -82,6 +82,7 @@ blocked sources are reported in **Connectors & links** and run inspection.
 | Housing permits (`housing`) | Census Building Permits Survey estimates matched to the town's Census place; not property listings or neighborhood-level estimates. |
 | Development permits (`development`) | Geographically filtered new-construction and multi-unit permit records from supported city Socrata portals; minor work is excluded and single-family addresses are withheld. |
 | School athletics (`athletics`) | Reviewed state athletic-association feeds, limited to team-level sports headlines naming the town or nearby places; individual-student stories are excluded. |
+| Neighborhood sites found automatically (`neighborhood`) | Every RSS/Atom feed and event calendar (iCalendar, Trumba, schema.org events) published by schools, libraries, community centers, faith communities, museums, parks, community groups and local news sites inside the area. Organizations come from OpenStreetMap (Overpass API) and the place's Wikipedia article; nothing is configured by hand. Rediscovered weekly; an organization's own feed counts as local, and a shared city-wide calendar keeps only events naming the area. |
 
 Every eligible collected item is published as a listing. Authoring writes stories from the
 whole ranked pool, with no cap unless `NEWSBEE_MAX_STORIES` or
