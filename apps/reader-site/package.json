@@ -16,7 +16,7 @@
   "dependencies": {
     "@astrojs/vercel": "^11.0.0",
     "astro": "^7.3.8",
-    "mongodb": "^6.18.0"
+    "mongodb": "^7.7.0"
   },
   "overrides": {
     "path-to-regexp": "^6.3.0"
