@@ -5,7 +5,7 @@ import { HttpStatusError } from "../../core/http";
 import { Fetcher, DiscoveryBlockedError } from "../fetcher";
 import { sourceResult } from "../types";
 import type { DiscoveryResult } from "./discovery";
-import { discoverGovernmentWithMethod, overrides, sourceId, USER_AGENT, PAST_DAYS, MAX_MEETINGS } from "./discovery";
+import { discoverGovernmentWithMethod, overrides, sourceId, USER_AGENT, PAST_DAYS } from "./discovery";
 import * as civicclerk from "./civicclerk";
 import * as legistar from "./legistar";
 import { outcome, preview, type Meeting, type MeetingFacts } from "./meetings";
@@ -60,11 +60,8 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, location: Locat
   const recent = dated.filter(({ start }) => day(start) >= first && day(start) < today).sort((a, b) => compareStart(b.start, a.start));
   const skipped: Record<string, number> = { outside_window: dated.length - upcoming.length - recent.length };
   const facts: MeetingFacts[] = [];
-  let fetched = 0;
   for (const { start, event } of [...upcoming, ...recent]) {
     if (legistar.isCancelled(event)) { skipped.cancelled = (skipped.cancelled ?? 0) + 1; continue; }
-    if (fetched >= MAX_MEETINGS) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
-    fetched += 1;
     const meeting = scopeMeeting(await legistar.meeting(tenant, event, bytesFetcher(fetcher)), location);
     if (location.community && !meeting.items.length) { skipped.outside_community = (skipped.outside_community ?? 0) + 1; continue; }
     const place = jurisdiction(location);
@@ -84,14 +81,11 @@ async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: Loc
   const skipped: Record<string, number> = {};
   const facts: MeetingFacts[] = [];
   const inc = (key: string) => { skipped[key] = (skipped[key] ?? 0) + 1; };
-  let fetched = 0;
   for (const event of events.sort((a, b) => compareStart(civicclerk.start(a), civicclerk.start(b)))) {
     const start = civicclerk.start(event);
     if (day(start) < first || day(start) > last) { inc("outside_window"); continue; }
     if (typeof event.eventName === "string" && /cancel/i.test(event.eventName)) { inc("cancelled"); continue; }
     if (!civicclerk.usable(event)) { inc("agenda_not_posted"); continue; }
-    if (fetched >= MAX_MEETINGS) { inc("over_limit"); continue; }
-    fetched++;
     const meeting = scopeMeeting(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), location);
     if (location.community && !meeting.items.length) { inc("outside_community"); continue; }
     const made = preview(meeting, jurisdiction(location));

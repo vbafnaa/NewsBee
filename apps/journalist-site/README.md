@@ -201,8 +201,9 @@ limits and publication validation remain unchanged.
 Ranking prefers the configured **hosted providers only**, in their listed order, whenever
 any are configured; it does not silently spill the workload onto Ollama. No new API
 key is needed if Gemini/Groq is already configured. Ollama-only configuration remains
-available with the same five-candidate limit. Hosted APIs may impose rate limits or
-charges; a free tier is not an unlimited quota.
+available. Hosted APIs may impose rate limits or charges; a free tier is not an unlimited
+quota. Because stories are uncapped by default, set `NEWSBEE_MAX_STORIES` or
+`NEWSBEE_STORY_CANDIDATES_PER_SOURCE` (see [Limits](#limits)) if runs exhaust a free quota.
 
 ## Test
 
@@ -265,8 +266,9 @@ also recover interrupted work, but never cross a gate.
    then report deterministic fallback scores explicitly. Ranking reports retain provider,
    model, pool size, attempts, errors and fallback counts. Author candidates in ranked
    order, one story per job, with validation and one retry; failures are held with reasons
-   and do not consume publication slots. Continue until **12 stories pass checks** or the
-   ranked pool is exhausted, without separate town/county/nearby quotas or attempt caps.
+   and do not consume publication slots. Continue until the ranked pool is exhausted, or
+   until `NEWSBEE_MAX_STORIES` stories pass checks when that cap is set, without separate
+   town/county/nearby quotas or attempt caps.
    The run stops at `awaiting_finish`; front-page/email writing and publication wait.
 3. **Write front page and email, then publish**: write the edition front page and email
    preview, save the artifacts, and publish the edition to every enabled output channel
@@ -355,6 +357,39 @@ venue/geographic/editorial filtering, and persist until removed, including when 
 are no current items or a later query fails. Wider-source settings also apply to manual
 state-news links. **Forget discovered links** clears the automatic cache without
 removing manual links. Legacy global source configuration is read-only through the portal.
+
+## Limits
+
+Nothing caps how many items are collected, listed or written unless you set one of these:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `NEWSBEE_MAX_STORIES` | unset (no cap) | Model-written stories per edition. Each story is one or two model calls. |
+| `NEWSBEE_STORY_CANDIDATES_PER_SOURCE` | unset (no cap) | Items per source type sent to ranking and writing. Ranking batches 12 items per call. |
+
+Every collected item is published as a listing whatever these are set to; they only limit
+model writing. The limits that remain are safety and budget guards, and each can be changed
+in code:
+
+| Limit | Where | Why it exists |
+| --- | --- | --- |
+| 500 items and 4 MiB per feed | `pipeline/connectors/common.ts` (`MAX_FEED_ITEMS`, `MAX_FEED_BYTES`) | One huge or broken feed cannot exhaust a run |
+| 2 MiB per web page, 3 redirects | `connectors/library/index.ts`, `connectors/meetings/discovery.ts` (`MAX_PAGE_BYTES`), `connectors/fetcher.ts` (`MAX_REDIRECTS`) | Same, for HTML pages |
+| 5,000 permit rows per query | `connectors/development/index.ts` (`MAX_ROWS`) | Socrata query size |
+| 50 pages of BiblioCommons events | `connectors/library/bibliocommons.ts` (`MAX_PAGES`) | Pagination guard |
+| 25 water systems looked up | `connectors/homesafety/index.ts` (`MAX_SYSTEMS`) | One extra request per system |
+| 3 candidate pages when discovering a library or meeting platform | `connectors/library/index.ts`, `connectors/meetings/discovery.ts` (`MAX_CANDIDATE_PAGES`) | Discovery request budget |
+| 3 articles per trend search, 3 trend feeds | `connectors/wider/trend-context.ts` (`MAX_REPORTS`) | One request per article |
+| AI link discovery: 150 links offered, 3 chosen | `connectors/ai-discovery.ts` (off unless `NEWSBEE_AI_LINK_DISCOVERY`) | Model cost |
+| Events in the next 7 days | `core/time.ts` (`WINDOW_DAYS`) | Edition window |
+| News looked back 7 to 14 days (water violations 180) | each connector's `LOOKBACK_DAYS` / `PAST_DAYS` | Freshness |
+| 5 agenda items quoted in a meeting summary | `connectors/meetings/meetings.ts` (`MAX_ITEMS`) | Summary length only; every meeting is still collected |
+| 10 results per directory search | `communities/directory.ts` (`SEARCH_LIMIT`) | Search box results |
+
+Every run prints its sources to the server log (Vercel **Logs**, or the terminal locally):
+a table of the sources found when a location is onboarded, a table when a run starts,
+one `[newsbee:source]` line per source as it finishes, and a summary table of every
+source's status, item count, listings and category once collection completes.
 
 ## Cloud configuration (Vercel)
 

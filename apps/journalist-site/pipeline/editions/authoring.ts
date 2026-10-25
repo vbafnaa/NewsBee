@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
-import { configuredModel, rankingCandidateLimit } from "../core/config";
+import { configuredModel, maxStories, rankingCandidateLimit } from "../core/config";
 import type { Logger } from "../core/log";
 import type { SourceResult, CollectedEvent } from "../connectors/types";
 import { collapse, whenWhere, weekLabel, type SourceEvent, type Story } from "./stories";
@@ -19,11 +19,9 @@ import { mergeListings, publishedListings, type DraftListing } from "./listings"
 
 export const DEFAULT_MODEL = "qwen3:4b";
 export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}`;
-export const MAX_ENTRIES = 12;
 export const WIDER_TIERS = new Set(["region", "nearby"]);
 export const WIDER_SOURCES = ["hazards:", "statenews:", "trending:"] as const;
 export const PARENT_SOURCES: Record<string, string> = { "civiccalendar:": "city calendars", "homesafety:": "water-safety records", "housing:": "housing permit figures", "development:": "development permits", "athletics:": "team-level school sports news" };
-export const TOP_PER_SOURCE = 5;
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; settings: Settings; log: Logger };
 export type AuthoringInput = { location: { id: string; name: string }; runId: string; today: string; window: [string, string]; events: SourceEvent[]; sourceResults: SourceResult[]; listings?: DraftListing[] };
 type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule"; rank: number; source_id: string; source_type: string; tier: string; section: string | null };
@@ -33,7 +31,7 @@ type DraftDoc = { id: string; run_id: string; location_id: string; location_name
 function community(name: string) { return name.split(",")[0]; }
 function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: story.description, occurrences: story.occurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
 function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
-export function shortlistSource(events: SourceEvent[], kind: string, limit = TOP_PER_SOURCE): { stories: Story[]; summary: Record<string, number> } {
+export function shortlistSource(events: SourceEvent[], kind: string, limit = Number.POSITIVE_INFINITY): { stories: Story[]; summary: Record<string, number> } {
   const stories = collapse(events).filter((story) => sourceType(story.first.source_id) === kind);
   const ranked = rankSource(kind, stories).slice(0, limit);
   return { stories: ranked, summary: { stories: stories.length, considered: stories.length, shortlisted: ranked.length, preselection_limit: limit } };
@@ -104,7 +102,7 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const doneIds = new Set(entries.map((entry) => entry.story_id));
   const pending = draft.candidates.filter((candidate) => !doneIds.has(candidate.id)).sort((a, b) => a.rank - b.rank);
   const passedCount = entries.filter((entry) => entry.disposition === "checks_passed").length;
-  if (!pending.length || passedCount >= MAX_ENTRIES) {
+  if (!pending.length || passedCount >= maxStories(deps.settings)) {
     await collection.updateOne({ id: draftId }, { $set: { status: "ready", attempted: entries.length, held: entries.filter((entry) => entry.disposition === "held").length, held_reasons: heldReasons(entries) } });
     return { more: false, done: true };
   }
@@ -127,7 +125,7 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const totalPassed = refreshed.filter((entry) => entry.disposition === "checks_passed").length;
   const wideEntriesAfter = refreshed.filter((entry) => WIDER_TIERS.has(entry.tier));
   const widePassedAfter = wideEntriesAfter.filter((entry) => entry.disposition === "checks_passed").length;
-  const more = remaining.length > 0 && totalPassed < MAX_ENTRIES;
+  const more = remaining.length > 0 && totalPassed < maxStories(deps.settings);
   const errors = result.error ? [...((draft.model_errors as string[]) ?? []), String(result.error)] : (draft.model_errors as string[] ?? []);
   await collection.updateOne({ id: draftId }, { $set: { status: more ? "drafting" : "ready", attempted: refreshed.length, held: refreshed.filter((entry) => entry.disposition === "held").length, held_reasons: heldReasons(refreshed), model_errors: errors, local_passed: refreshed.filter((entry) => entry.tier === "local" && entry.disposition !== "held").length, wider_passed: widePassedAfter, wider_attempted: wideEntriesAfter.length } });
   deps.log.info("Edition item", { edition_id: draftId, story_id: story.id, rank: candidate.rank, score: candidate.score, category: candidate.rating.category, tier: candidate.tier, occurrences: story.occurrences.length, attempts: result.attempts, disposition: result.disposition, errors: result.validation_errors ?? result.error, wall_seconds: result.wall_seconds });
@@ -167,7 +165,7 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string, publ
   if (entries.length < draft.candidates.length && draft.status !== "ready") return { done: false, more: true };
   const passed = entries.filter((entry) => entry.disposition === "checks_passed" && !expiredAt(publishToday, entry.result.story.kind, entry.event_date))
     .sort((a, b) => Number(a.result.ranking.rank) - Number(b.result.ranking.rank))
-    .slice(0, MAX_ENTRIES);
+    .slice(0, maxStories(deps.settings));
   const itemStories = passed.map((entry) => entry.result.story as writer.StoryInput);
   const itemDrafts = passed.map((entry) => entry.result.draft as writer.ItemDraft);
   const week = weekLabel(draft.window_start, draft.window_end);

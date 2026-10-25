@@ -22,6 +22,7 @@ import { getLocation, listLocations } from "../communities/locations";
 import { finishAuthoring, authorNextStory, shortlistSource, startAuthoring } from "../editions/authoring";
 import type { SourceEvent } from "../editions/stories";
 import { sourceListings, type DraftListing } from "../editions/listings";
+import { itemsBySection, logCollectionSummary, logRunSources, logSourceCollected } from "./source-log";
 import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
@@ -91,6 +92,7 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
     }
   }
   log.info("run_started", { run_id: run._id, location_id: location.id, sources: tasks.length, trigger: trigger.kind, by: trigger.by, status: "collecting", today });
+  logRunSources(location, run._id, tasks);
   if (tasks.length === 0) await advanceToAuthoring(deps, run._id, location.id);
   return { run: (await getRun(deps.db, run._id)) ?? run, started: true };
 }
@@ -218,7 +220,8 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   await deps.db.collection(COLLECTIONS.sourceResults).replaceOne({ _id: id as never }, { ...saved, result: collected.result, event_count: events.length }, { upsert: true });
   // Stories use the shortlist; listings publish every eligible item, without model writing.
   const listings = sourceListings(events, collected.result.name, run.window);
-  await deps.db.collection(COLLECTIONS.shortlists).replaceOne({ _id: id as never }, { ...saved, events: kept, listings, summary }, { upsert: true });
+  await deps.db.collection(COLLECTIONS.shortlists).replaceOne({ _id: id as never }, { ...saved, events: kept, listings, summary, kinds: events.map((event) => String(event.facts.kind ?? "event")) }, { upsert: true });
+  logSourceCollected(run.location_name, task, collected.result, events.map((event) => event.facts.kind as string | undefined), listings.length);
   await updateSource(deps.db, run._id, task.source_id, {
     status: "completed",
     result_status: collected.result.status,
@@ -247,6 +250,12 @@ async function authorStart(deps: OrchestratorDeps, job: Job) {
     const sourceResults = run.sources.map((source) => resultsById.get(source.source_id) ?? {
       source_id: source.source_id, name: source.name, status: "failed", detail: source.error ?? "Source was not collected", events: 0,
     });
+    const shortlistById = new Map(shortlists.map((doc) => [doc.source_id, doc]));
+    logCollectionSummary(run.location_name, run._id, run.sources.map((source) => {
+      const doc = shortlistById.get(source.source_id);
+      const kinds = (doc?.kinds ?? []) as string[];
+      return { task: source, result: resultsById.get(source.source_id), items: kinds.length, listed: (doc?.listings ?? []).length, sections: kinds.length ? itemsBySection(kinds) : "none" };
+    }));
     draftId = await startAuthoring(authoringDeps(deps), {
       location: { id: run.location_id, name: run.location_name },
       runId: run._id,

@@ -1,6 +1,6 @@
 /** Provider onboarding from env vars, the OpenAI-compatible adapter and ordered fallback. */
 import { afterEach, describe, expect, it } from "vitest";
-import { loadSettings, modelProviders, rankingCandidateLimit, rankingSettings } from "../../core/config";
+import { loadSettings, maxStories, modelProviders, rankingCandidateLimit, rankingSettings } from "../../core/config";
 import type { HttpRequest, HttpTransport } from "../../core/http";
 import { logger, setLogSink, type LogRecord } from "../../core/log";
 import { createRuntime, FallbackRuntime, GeminiRuntime, ModelUnavailableError, ModelRateLimitError, OpenAICompatibleRuntime, retryAfterSeconds, type ModelRuntime } from "../../model/runtime";
@@ -35,10 +35,10 @@ afterEach(() => {
 });
 
 describe("model provider config", () => {
-  it("prefers hosted ranking while keeping the five-candidate budget in every mode", () => {
+  it("prefers hosted ranking and applies no candidate cap unless one is configured", () => {
     const local = loadSettings(env({}));
     expect(rankingSettings(local)).toBe(local);
-    expect(rankingCandidateLimit(local)).toBe(5);
+    expect(rankingCandidateLimit(local)).toBe(Number.POSITIVE_INFINITY);
     const mixed = loadSettings(env({
       NEWSBEE_MODEL_PROVIDERS: "ollama,gemini,groq",
       NEWSBEE_LLM_GROQ_BASE_URL: "https://api.groq.com/openai/v1",
@@ -46,7 +46,15 @@ describe("model provider config", () => {
     }));
     expect(rankingSettings(mixed).modelProviders.map(({ name }) => name)).toEqual(["gemini", "groq"]);
     expect(mixed.modelProviders[0].name).toBe("ollama");
-    expect(rankingCandidateLimit(mixed)).toBe(5);
+    expect(rankingCandidateLimit(mixed)).toBe(Number.POSITIVE_INFINITY);
+  });
+  it("reads optional story caps, where unset or 0 means no cap", () => {
+    expect(maxStories(loadSettings(env({})))).toBe(Number.POSITIVE_INFINITY);
+    expect(maxStories(loadSettings(env({ NEWSBEE_MAX_STORIES: "0" })))).toBe(Number.POSITIVE_INFINITY);
+    expect(maxStories(loadSettings(env({ NEWSBEE_MAX_STORIES: "30" })))).toBe(30);
+    expect(rankingCandidateLimit(loadSettings(env({ NEWSBEE_STORY_CANDIDATES_PER_SOURCE: "8" })))).toBe(8);
+    expect(() => loadSettings(env({ NEWSBEE_MAX_STORIES: "2.5" }))).toThrow("whole number");
+    expect(() => loadSettings(env({ NEWSBEE_STORY_CANDIDATES_PER_SOURCE: "-1" }))).toThrow("non-negative");
   });
   it("defaults to Ollama locally and Gemini in cloud mode", () => {
     expect(modelProviders(env({}), "local").map((item) => item.name)).toEqual(["ollama"]);

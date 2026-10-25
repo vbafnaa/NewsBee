@@ -21,7 +21,7 @@ export function feedLinks(html: string, page: string): string[] {
     },
   });
   parser.end(html);
-  return [...new Set(links)].slice(0, 3);
+  return [...new Set(links)];
 }
 
 /** Only retain feeds actually linked by a resolved community website and parsed successfully. */
