@@ -14,7 +14,8 @@ import * as policy from "../editorial/policy";
 import * as withdrawals from "../editorial/withdrawals";
 import { previewContent } from "../email/preview";
 import { sourceType, rank as rankSource } from "../ranking";
-import { isUpcoming } from "../../../../shared/newsletter-layout";
+import { isUpcoming, type CalendarEntry } from "../../../../shared/newsletter-layout";
+import { mergeListings, publishedCalendar, type DraftListing } from "./calendar";
 
 export const DEFAULT_MODEL = "qwen3:4b";
 export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}`;
@@ -24,11 +25,11 @@ export const WIDER_SOURCES = ["hazards:", "statenews:", "trending:"] as const;
 export const PARENT_SOURCES: Record<string, string> = { "civiccalendar:": "city calendars", "homesafety:": "water-safety records", "housing:": "housing permit figures", "development:": "development permits", "athletics:": "team-level school sports news" };
 export const TOP_PER_SOURCE = 5;
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; settings: Settings; log: Logger };
-export type AuthoringInput = { location: { id: string; name: string }; runId: string; today: string; window: [string, string]; events: SourceEvent[]; sourceResults: SourceResult[] };
+export type AuthoringInput = { location: { id: string; name: string }; runId: string; today: string; window: [string, string]; events: SourceEvent[]; sourceResults: SourceResult[]; listings?: DraftListing[] };
 type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule"; rank: number; source_id: string; source_type: string; tier: string; section: string | null };
-type EditionPayload = { id: string; location_id: string; location_name: string; window_start: string; window_end: string; published_at: number; headline: string; intro: string; items: Array<Record<string, any>>; coverage: string[]; corrections: Array<{ story_id: string; reason: string; created_at: number }> };
+type EditionPayload = { id: string; location_id: string; location_name: string; window_start: string; window_end: string; published_at: number; headline: string; intro: string; items: Array<Record<string, any>>; coverage: string[]; corrections: Array<{ story_id: string; reason: string; created_at: number }>; calendar?: CalendarEntry[] };
 type EntryDoc = { id: string; edition_id: string; position: number; disposition: string; story_id: string; source_id: string; source_type: string; tier: string; event_date: string; result: Record<string, any> };
-type DraftDoc = { id: string; run_id: string; location_id: string; location_name: string; today: string; window_start: string; window_end: string; status: string; created_at: number; model: string; provider: string; validation_policy: string; published?: EditionPayload; email_preview?: { subject: string; text: string; html: string }; summary?: Record<string, unknown>; events: SourceEvent[]; source_results: SourceResult[]; candidates: RankedCandidate[]; source_summary: Record<string, unknown>; ranking: Record<string, unknown>; event_count: number; story_count: number; started_at_ms: number; [key: string]: unknown };
+type DraftDoc = { id: string; run_id: string; location_id: string; location_name: string; today: string; window_start: string; window_end: string; status: string; created_at: number; model: string; provider: string; validation_policy: string; published?: EditionPayload; email_preview?: { subject: string; text: string; html: string }; summary?: Record<string, unknown>; events: SourceEvent[]; listings?: DraftListing[]; source_results: SourceResult[]; candidates: RankedCandidate[]; source_summary: Record<string, unknown>; ranking: Record<string, unknown>; event_count: number; story_count: number; started_at_ms: number; [key: string]: unknown };
 function community(name: string) { return name.split(",")[0]; }
 function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: story.description, occurrences: story.occurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
 function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
@@ -87,7 +88,7 @@ export async function startAuthoring(deps: AuthoringDeps, input: AuthoringInput)
     return { ...candidate, rank: index + 1, source_id: story.first.source_id, source_type: sourceType(story.first.source_id), tier: String(story.facts.tier ?? "local"), section: typeof story.facts.section === "string" ? story.facts.section : null } as RankedCandidate;
   });
   const id = input.runId;
-  const doc: DraftDoc = { id, run_id: input.runId, location_id: input.location.id, location_name: input.location.name, today: input.today, window_start: input.window[0], window_end: input.window[1], status: "drafting", created_at: Date.now() / 1000, model: deps.model.model ?? configuredModel(deps.settings) ?? DEFAULT_MODEL, provider: deps.model.provider, validation_policy: VALIDATION_POLICY, events: input.events, source_results: sourceResults, candidates: rankedCandidates, source_summary: picked.summary, ranking: rankSummary, event_count: input.events.length, story_count: allStories.length, started_at_ms: start, local_passed: 0, wider_passed: 0, wider_attempted: 0, held: 0, attempted: 0, held_reasons: {}, model_errors: [] };
+  const doc: DraftDoc = { id, run_id: input.runId, location_id: input.location.id, location_name: input.location.name, today: input.today, window_start: input.window[0], window_end: input.window[1], status: "drafting", created_at: Date.now() / 1000, model: deps.model.model ?? configuredModel(deps.settings) ?? DEFAULT_MODEL, provider: deps.model.provider, validation_policy: VALIDATION_POLICY, events: input.events, listings: mergeListings(input.listings ?? []), source_results: sourceResults, candidates: rankedCandidates, source_summary: picked.summary, ranking: rankSummary, event_count: input.events.length, story_count: allStories.length, started_at_ms: start, local_passed: 0, wider_passed: 0, wider_attempted: 0, held: 0, attempted: 0, held_reasons: {}, model_errors: [] };
   await deps.db.collection<DraftDoc>(COLLECTIONS.editions).insertOne(doc);
   deps.log.info("Edition authoring started", { edition_id: id, location_id: input.location.id, events: input.events.length, stories: allStories.length, ranked: rankedCandidates.length, model: doc.model, provider: doc.provider, policy: VALIDATION_POLICY });
   return id;
@@ -147,17 +148,24 @@ function validEditionShape(value: any) {
   const itemValid = (item: any) => typeof item.story_id === "string" && typeof item.headline === "string" && typeof item.blurb === "string" && typeof item.when_where === "string" && typeof item.event_date === "string" && (typeof item.source_url === "string" || item.source_url === null) && (Number.isInteger(item.rank) || item.rank === null) && kinds.has(item.kind) && typeof item.source_name === "string" && (typeof item.section === "string" || item.section === null) && typeof item.local === "boolean";
   const correctionValid = (item: any) => typeof item.story_id === "string" && typeof item.reason === "string" && typeof item.created_at === "number";
   const coverageValid = !("coverage" in value) || (Array.isArray(value.coverage) && value.coverage.every((line: unknown) => typeof line === "string"));
+  const listingValid = (item: any) => ["id", "title", "event_date", "schedule_text", "venue", "source_url", "source_name"].every((key) => typeof item[key] === "string") && (item.kind === "event" || item.kind === "meeting_preview");
+  const calendarValid = !("calendar" in value) || (Array.isArray(value.calendar) && value.calendar.every(listingValid));
   const correctionsValid = !("corrections" in value) || (Array.isArray(value.corrections) && value.corrections.every(correctionValid));
-  return typeof value.id === "string" && typeof value.location_id === "string" && typeof value.location_name === "string" && typeof value.window_start === "string" && typeof value.window_end === "string" && typeof value.published_at === "number" && typeof value.headline === "string" && typeof value.intro === "string" && Array.isArray(value.items) && value.items.every(itemValid) && coverageValid && correctionsValid;
+  return typeof value.id === "string" && typeof value.location_id === "string" && typeof value.location_name === "string" && typeof value.window_start === "string" && typeof value.window_end === "string" && typeof value.published_at === "number" && typeof value.headline === "string" && typeof value.intro === "string" && Array.isArray(value.items) && value.items.every(itemValid) && coverageValid && correctionsValid && calendarValid;
 }
-export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
+/** An upcoming item whose date is before the publish date has already happened. */
+export function expiredAt(publishToday: string | undefined, kind: string | undefined, eventDate: string) {
+  return publishToday !== undefined && isUpcoming(kind ?? "event") && /^\d{4}-\d{2}-\d{2}$/.test(eventDate) && eventDate < publishToday;
+}
+
+export async function finishAuthoring(deps: AuthoringDeps, draftId: string, publishToday?: string) {
   const collection = deps.db.collection<DraftDoc>(COLLECTIONS.editions);
   const draft = await collection.findOne({ id: draftId });
   if (!draft) throw new Error(`No authoring draft: ${draftId}`);
   if (draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary };
   const entries = await getEntries(deps.db, draftId);
   if (entries.length < draft.candidates.length && draft.status !== "ready") return { done: false, more: true };
-  const passed = entries.filter((entry) => entry.disposition === "checks_passed")
+  const passed = entries.filter((entry) => entry.disposition === "checks_passed" && !expiredAt(publishToday, entry.result.story.kind, entry.event_date))
     .sort((a, b) => Number(a.result.ranking.rank) - Number(b.result.ranking.rank))
     .slice(0, MAX_ENTRIES);
   const itemStories = passed.map((entry) => entry.result.story as writer.StoryInput);
@@ -167,7 +175,7 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const email = await writer.writeEmail(deps.model, community(draft.location_name), week, itemStories, itemDrafts, { headline: String(front.headline), intro: String(front.intro) });
   const now = Date.now() / 1000;
   const items = passed.map((entry) => ({ story_id: entry.result.story.id, headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date, source_url: entry.result.source_url ?? null, rank: entry.result.ranking.rank, kind: entry.result.story.kind ?? "event", source_name: draft.source_results.find((result) => result.source_id === entry.source_id)?.name ?? "Local source", section: isUpcoming(entry.result.story.kind ?? "event") ? "Upcoming events" : entry.result.section ?? null, local: entry.tier === "local" }));
-  const payload: EditionPayload = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }> };
+  const payload: EditionPayload = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }>, calendar: publishedCalendar(draft.listings ?? [], publishToday, await withdrawals.forLocation(deps.db, draft.location_id)) };
   if (!validEditionShape(payload)) throw new Error("Generated edition does not match the published edition contract");
   const emailPreview = previewContent(draft.location_name, draft.location_id, { headline: payload.headline, intro: payload.intro, email: email as { blurb?: string } });
   const allEntries = await getEntries(deps.db, draftId);

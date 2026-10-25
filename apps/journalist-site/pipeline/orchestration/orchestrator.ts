@@ -21,6 +21,7 @@ import type { CollectedSource, Connector, ConnectorContext, SourceTask, SourceTy
 import { getLocation, listLocations } from "../communities/locations";
 import { finishAuthoring, authorNextStory, shortlistSource, startAuthoring } from "../editions/authoring";
 import type { SourceEvent } from "../editions/stories";
+import { sourceListings, type DraftListing } from "../editions/calendar";
 import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
@@ -215,7 +216,9 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   const id = `${run._id}:${task.source_id}`;
   const saved = { run_id: run._id, location_id: run.location_id, source_id: task.source_id, type: task.type, created_at: now() };
   await deps.db.collection(COLLECTIONS.sourceResults).replaceOne({ _id: id as never }, { ...saved, result: collected.result, event_count: events.length }, { upsert: true });
-  await deps.db.collection(COLLECTIONS.shortlists).replaceOne({ _id: id as never }, { ...saved, events: kept, summary }, { upsert: true });
+  // Stories use the shortlist; the calendar lists every eligible upcoming item, without model writing.
+  const listings = sourceListings(events, collected.result.name, run.window);
+  await deps.db.collection(COLLECTIONS.shortlists).replaceOne({ _id: id as never }, { ...saved, events: kept, listings, summary }, { upsert: true });
   await updateSource(deps.db, run._id, task.source_id, {
     status: "completed",
     result_status: collected.result.status,
@@ -250,6 +253,7 @@ async function authorStart(deps: OrchestratorDeps, job: Job) {
       today: run.today,
       window: run.window,
       events: shortlists.flatMap((doc) => doc.events as SourceEvent[]),
+      listings: shortlists.flatMap((doc) => (doc.listings ?? []) as DraftListing[]),
       sourceResults,
     });
     await setRun(deps.db, run._id, { draft_id: draftId });
@@ -283,7 +287,9 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   if (!run) return { skipped: true };
   log.info("stage_transition", { run_id: job.run_id, status: "publishing", by: "worker" });
   const draftId = String(job.payload.draft_id);
-  const finished = await finishAuthoring(authoringDeps(deps), draftId).catch(async (error: unknown) => {
+  // Gates can wait days, so expire events against the publish date, not the run's start date.
+  const publishToday = localToday((await getLocation(deps.db, run.location_id)).state);
+  const finished = await finishAuthoring(authoringDeps(deps), draftId, publishToday).catch(async (error: unknown) => {
     // No edition is published on a quota failure; allow durable retries and cancellation.
     if (error instanceof ModelRateLimitError) {
       await runs(deps.db).updateOne(

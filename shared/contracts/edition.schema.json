@@ -126,6 +126,59 @@
       ],
       "title": "EditionItem",
       "type": "object"
+    },
+    "CalendarEntry": {
+      "description": "An upcoming event or public meeting published as source facts, without model writing.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "event_date": {
+          "title": "Event Date",
+          "type": "string"
+        },
+        "schedule_text": {
+          "title": "Schedule Text",
+          "type": "string"
+        },
+        "venue": {
+          "title": "Venue",
+          "type": "string"
+        },
+        "source_url": {
+          "title": "Source Url",
+          "type": "string"
+        },
+        "source_name": {
+          "title": "Source Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "event",
+            "meeting_preview"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "event_date",
+        "schedule_text",
+        "venue",
+        "source_url",
+        "source_name",
+        "kind"
+      ],
+      "title": "CalendarEntry",
+      "type": "object"
     }
   },
   "properties": {
@@ -180,6 +233,14 @@
         "$ref": "#/$defs/CorrectionNotice"
       },
       "title": "Corrections",
+      "type": "array"
+    },
+    "calendar": {
+      "description": "Every eligible upcoming listing in the window; absent from older editions.",
+      "items": {
+        "$ref": "#/$defs/CalendarEntry"
+      },
+      "title": "Calendar",
       "type": "array"
     }
   },
