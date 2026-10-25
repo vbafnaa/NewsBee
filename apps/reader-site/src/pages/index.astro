@@ -98,19 +98,28 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           and a little more connection to yours.</p>
       </section>
       <article id="edition" aria-label="Edition" tabindex="-1" hidden>
+        <nav id="section-tabs" aria-label="Sections"></nav>
         <p id="edition-freshness" role="status"></p>
         <aside id="corrections" aria-label="Corrections" hidden></aside>
-        <h2 id="edition-headline" tabindex="-1"></h2>
-        <p id="edition-intro" class="deck"></p>
-        <!-- Events lead: readers ranked upcoming events as the content they want most. -->
-        <section id="upcoming-events" aria-labelledby="upcoming-events-title" hidden>
-          <h2 id="upcoming-events-title">Upcoming events</h2>
-          <div id="upcoming-items" class="columns"></div>
-        </section>
-        <div id="front-page">
-          <div id="edition-lead"></div>
-          <div id="edition-items" class="columns"></div>
+        <div id="home-view">
+          <h2 id="edition-headline" tabindex="-1"></h2>
+          <p id="edition-intro" class="deck"></p>
+          <!-- Events lead: readers ranked upcoming events as the content they want most. -->
+          <section id="upcoming-events" aria-labelledby="upcoming-events-title" hidden>
+            <h2 id="upcoming-events-title">Upcoming events</h2>
+            <div id="upcoming-items" class="columns"></div>
+            <a id="all-events" href="?section=events" hidden></a>
+          </section>
+          <div id="front-page">
+            <div id="edition-lead"></div>
+            <div id="edition-items" class="columns"></div>
+          </div>
         </div>
+        <section id="section-view" aria-labelledby="section-view-title" hidden>
+          <h2 id="section-view-title" tabindex="-1"></h2>
+          <p id="section-view-note" class="deck"></p>
+          <div id="section-view-items"></div>
+        </section>
         <details id="edition-sources" class="coverage">
           <summary>Sources &amp; edition notes <span id="source-count"></span></summary>
           <ol id="source-items"></ol>
@@ -131,7 +140,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       </section>
     </main>
     <script>
-      import { newsletterSections } from "../../../../shared/newsletter-layout";
+      import { calendarDays, newsletterSections, sectionOf, SECTIONS, type CalendarEntry, type SectionId } from "../../../../shared/newsletter-layout";
       type Listing = { location_id: string; location_name: string; edition_id: string | null };
       type Town = { id: string; name: string };
       type Item = {
@@ -155,6 +164,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         items: Item[];
         coverage: string[];
         corrections: { reason: string; created_at: number }[];
+        /** Every upcoming event and meeting in the window; absent from editions published before it existed. */
+        calendar?: CalendarEntry[];
       };
 
       const main = document.querySelector("main")!;
@@ -189,6 +200,10 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       let searchTimer: ReturnType<typeof setTimeout>;
       let discovering = false;
       let navigationVersion = 0;
+      let current: { edition: Edition; references: Map<Item, number> } | undefined;
+      const sectionTabs = document.querySelector<HTMLElement>("#section-tabs")!;
+      const homeView = document.querySelector<HTMLElement>("#home-view")!;
+      const sectionView = document.querySelector<HTMLElement>("#section-view")!;
 
       const text = (tag: string, value: string, className?: string) => {
         const node = document.createElement(tag);
@@ -267,6 +282,108 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         back.setAttribute("aria-label", `Back to story ${index + 1}`);
         entry.append(" ", back);
         return entry;
+      }
+
+      /** A tab's content: written stories of its kinds, plus calendar listings for events and council. */
+      function sectionContent(edition: Edition, id: Exclude<SectionId, "home">) {
+        const calendar = edition.calendar ?? [];
+        const listingKind = id === "events" ? "event" : id === "council" ? "meeting_preview" : null;
+        return {
+          stories: edition.items.filter((item) => sectionOf(item.kind) === id),
+          listings: listingKind ? calendar.filter((entry) => entry.kind === listingKind) : [],
+        };
+      }
+
+      const TIME = /\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?/i;
+
+      /** Listings grouped by day: time, linked title, then venue and source. */
+      function agenda(entries: CalendarEntry[]) {
+        return calendarDays(entries).map(({ date, items }) => {
+          const group = document.createElement("section");
+          group.className = "agenda-day";
+          group.append(text("h3", day(date, { weekday: "long", month: "long", day: "numeric" })));
+          const list = document.createElement("ul");
+          for (const entry of items) {
+            const row = document.createElement("li");
+            row.append(text("span", TIME.exec(entry.schedule_text)?.[0] ?? "All day", "agenda-time"));
+            const details = document.createElement("span");
+            if (entry.source_url.startsWith("https://")) {
+              const link = text("a", entry.title) as HTMLAnchorElement;
+              link.href = entry.source_url;
+              link.rel = "noreferrer";
+              details.append(link);
+            } else {
+              details.append(text("span", entry.title));
+            }
+            const meta = [...new Set([entry.venue, entry.source_name].filter(Boolean))].join(" · ");
+            if (meta) details.append(text("span", meta, "agenda-meta"));
+            row.append(details);
+            list.append(row);
+          }
+          group.append(list);
+          return group;
+        });
+      }
+
+      function sectionUrl(id: SectionId) {
+        const url = new URL(window.location.href);
+        if (id === "home") url.searchParams.delete("section");
+        else url.searchParams.set("section", id);
+        url.hash = "";
+        return url;
+      }
+
+      /** Tabs for Home plus every section this edition has content for. */
+      function renderTabs(active: SectionId) {
+        if (!current) return;
+        const edition = current.edition;
+        sectionTabs.replaceChildren(...SECTIONS.flatMap(({ id, label }) => {
+          // The events tab shows full listings when it has them, so it counts those rather than stories.
+          const count = id === "home" ? 0 : (({ stories, listings }) => id === "events" ? listings.length || stories.length : stories.length + listings.length)(sectionContent(edition, id));
+          if (id !== "home" && !count) return [];
+          const tab = text("a", id === "events" && count ? `${label} (${count})` : label) as HTMLAnchorElement;
+          tab.href = sectionUrl(id).toString();
+          if (id === active) tab.setAttribute("aria-current", "page");
+          tab.addEventListener("click", (event) => {
+            event.preventDefault();
+            selectSection(id);
+          });
+          return [tab];
+        }));
+      }
+
+      function selectSection(requested: SectionId, updateUrl = true) {
+        if (!current) return;
+        const { edition, references } = current;
+        const id = requested !== "home" && renderableSection(edition, requested) ? requested : "home";
+        homeView.hidden = id !== "home";
+        sectionView.hidden = id === "home";
+        renderTabs(id);
+        if (updateUrl) history.replaceState(null, "", sectionUrl(id));
+        if (id === "home") return;
+        const { stories, listings } = sectionContent(edition, id);
+        const label = SECTIONS.find((section) => section.id === id)!.label;
+        document.querySelector("#section-view-title")!.textContent = label;
+        document.querySelector("#section-view-note")!.textContent = listings.length
+          ? `${listings.length} ${id === "council" ? "public meeting" : "event"}${listings.length === 1 ? "" : "s"} from ${day(edition.window_start, { month: "short", day: "numeric" })} to ${day(edition.window_end, { month: "short", day: "numeric" })}, from public calendars. Check the source before you go.`
+          : "";
+        // Written stories come first; the events tab shows the full listings instead when it has them.
+        const shown = id === "events" && listings.length ? [] : stories;
+        const items = document.querySelector("#section-view-items")!;
+        items.replaceChildren(...agenda(listings));
+        if (shown.length) {
+          const columns = document.createElement("div");
+          columns.className = "columns";
+          columns.append(...shown.map((item) => story(item, false, references.get(item)!)));
+          items.prepend(columns);
+        }
+        document.querySelector<HTMLElement>("#section-view-title")!.focus({ preventScroll: true });
+      }
+
+      function renderableSection(edition: Edition, id: string): id is Exclude<SectionId, "home"> {
+        if (!SECTIONS.some((section) => section.id === id) || id === "home") return false;
+        const { stories, listings } = sectionContent(edition, id as Exclude<SectionId, "home">);
+        return stories.length + listings.length > 0;
       }
 
       function masthead(listing: Listing | undefined, edition?: Edition) {
@@ -443,6 +560,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         if (updateUrl) {
           const url = new URL(window.location.href);
           url.searchParams.set("location", town.id);
+          url.searchParams.delete("section");
           url.hash = "";
           history.pushState(null, "", url);
         }
@@ -571,9 +689,23 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           document.querySelector<HTMLElement>("#front-page")!.classList.toggle("lead-only", news.length === 1);
           document.querySelector<HTMLElement>("#upcoming-events")!.hidden = upcoming.length === 0;
           document.querySelector("#upcoming-items")!.replaceChildren(...upcoming.map((item) => story(item, false, references.get(item)!)));
+          current = { edition, references };
+          const eventCount = sectionContent(edition, "events").listings.length;
+          const allEvents = document.querySelector<HTMLAnchorElement>("#all-events")!;
+          allEvents.hidden = eventCount === 0;
+          allEvents.textContent = `See all ${eventCount} events this week →`;
+          allEvents.href = sectionUrl("events").toString();
+          allEvents.onclick = (event) => {
+            event.preventDefault();
+            selectSection("events");
+          };
+          // Events still lead the home page when no written event stories made the cut.
+          if (!upcoming.length && eventCount) document.querySelector<HTMLElement>("#upcoming-events")!.hidden = false;
+          const requested = new URLSearchParams(location.search).get("section") ?? "home";
+          selectSection(renderableSection(edition, requested) ? requested : "home", false);
           article.hidden = false;
           status.textContent = "";
-          if (!generic) headline.focus({ preventScroll: true });
+          if (!generic && homeView.hidden === false) headline.focus({ preventScroll: true });
         } catch (error) {
           if (selected?.id !== locationId) return;
           status.textContent = `Edition unavailable: ${failure(error)}`;
@@ -968,6 +1100,20 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       #upcoming-events:not([hidden]) + #front-page { margin-top: 0.7rem; }
       #upcoming-events > h2 { margin: 0 -0.75rem 0.7rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid #b5a386; background: rgb(137 112 71 / 0.2); color: #51432f; text-align: center; font: 700 1rem var(--display); letter-spacing: 0.1em; }
       #upcoming-items { columns: 3; }
+      #all-events { display: block; margin: 0.2rem 0 0.5rem; text-align: right; font: italic 0.9rem var(--display); color: var(--accent); }
+      #section-tabs { display: flex; gap: 0.25rem 1.1rem; flex-wrap: wrap; justify-content: center; margin: 0 0 0.8rem; padding: 0.45rem 0; border-bottom: 1px solid var(--rule); font: 700 0.78rem var(--serif); letter-spacing: 0.08em; text-transform: uppercase; }
+      #section-tabs:not(:has(a + a)) { display: none; }
+      #section-tabs a { color: var(--ink); text-decoration: none; padding: 0.15rem 0; border-bottom: 2px solid transparent; }
+      #section-tabs a:hover { border-bottom-color: var(--muted); }
+      #section-tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+      #section-view-title { margin: 0.4rem 0 0.2rem; font: 900 2.2rem/1.1 var(--display); text-align: center; }
+      #section-view-note { text-align: center; }
+      .agenda-day h3 { margin: 1rem 0 0.3rem; padding-bottom: 0.2rem; border-bottom: 1px solid #b5a386; font: 700 1.05rem var(--display); }
+      .agenda-day ul { list-style: none; margin: 0; padding: 0; }
+      .agenda-day li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px dotted #c9c0ae; }
+      .agenda-time { font: italic 0.85rem var(--display); color: var(--muted); }
+      .agenda-day li a { color: var(--ink); font-weight: 700; }
+      .agenda-meta { display: block; font-size: 0.82rem; color: var(--muted); }
       footer {
         border-top: 4px double var(--rule);
         margin-top: 1rem;
@@ -1000,6 +1146,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       }
       @media (max-width: 480px) {
         #front-page, .columns, #upcoming-items, #source-items { columns: 1; }
+        #section-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; }
+        .agenda-day li { grid-template-columns: 4.5rem 1fr; }
         #edition { font-size: 0.86rem; }
       }
       @media print {
