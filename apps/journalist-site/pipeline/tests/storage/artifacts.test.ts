@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactStore } from "../../storage/artifacts";
 import { runFolder } from "../../storage/artifacts";
-import { createChannelFolder } from "../../orchestration/publish";
+import { createChannelFolder, readerDriveFolderId } from "../../orchestration/publish";
 
 function driveStore(): ArtifactStore {
   return {
@@ -48,5 +48,17 @@ describe("journalist Drive workspace", () => {
     await expect(runFolder(driveStore(), "editions", "kent")).rejects.toThrow(
       "NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured",
     );
+  });
+});
+
+describe("default reader channel folder", () => {
+  it("uses the configured folder for a new deployment", () => {
+    expect(readerDriveFolderId({ NEWSBEE_READER_DRIVE_FOLDER_ID: " abc_DEF-123 " })).toBe("abc_DEF-123");
+  });
+  it("rejects a value that is not a Drive folder ID", () => {
+    expect(() => readerDriveFolderId({ NEWSBEE_READER_DRIVE_FOLDER_ID: "https://drive.google.com/x" })).toThrow("not a Drive folder ID");
+  });
+  it("falls back to the legacy folder when unset", () => {
+    expect(readerDriveFolderId({})).toBe("1S2uePphOd_25yandeFtQJ6iZvSz2ydYw");
   });
 });

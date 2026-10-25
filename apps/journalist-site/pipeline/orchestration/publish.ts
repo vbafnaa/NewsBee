@@ -7,6 +7,7 @@ import type { Db } from "mongodb";
 import type { LocationProfile } from "../connectors/types";
 import type { ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
+import { logger } from "../core/log";
 
 export type ChannelDocument = {
   _id: string;
@@ -28,15 +29,32 @@ export function channels(db: Db) {
   return db.collection<ChannelDocument>(COLLECTIONS.outputChannels);
 }
 
+/** The original team deployment's reader folder, kept only as a fallback for that deployment. */
+const LEGACY_READER_DRIVE_FOLDER_ID = "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw";
+
+/** Drive folder for a newly created default reader channel; existing channels keep their folder. */
+export function readerDriveFolderId(env: NodeJS.ProcessEnv = process.env) {
+  const configured = env.NEWSBEE_READER_DRIVE_FOLDER_ID?.trim();
+  if (configured) {
+    if (!/^[A-Za-z0-9_-]+$/.test(configured)) throw new Error("NEWSBEE_READER_DRIVE_FOLDER_ID is not a Drive folder ID");
+    return configured;
+  }
+  logger("publish").warn("reader_drive_folder_default", { detail: "NEWSBEE_READER_DRIVE_FOLDER_ID is unset; using the legacy reader folder" });
+  return LEGACY_READER_DRIVE_FOLDER_ID;
+}
+
 export async function ensureReaderChannel(db: Db) {
   const collection = channels(db);
+  const existing = await collection.findOne({ _id: "reader-site" }, { projection: { drive_folder_id: 1 } });
+  if (existing?.drive_folder_id) return;
+  const driveFolderId = readerDriveFolderId();
   await collection.updateOne(
     { _id: "reader-site" },
     {
       $setOnInsert: {
         name: "Newsbee reader site",
         url: process.env.NEWSBEE_READER_SITE_URL ?? "https://newsbee-reader-site.vercel.app",
-        drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw",
+        drive_folder_id: driveFolderId,
         enabled: true,
       },
     },
@@ -44,7 +62,7 @@ export async function ensureReaderChannel(db: Db) {
   );
   await collection.updateOne(
     { _id: "reader-site", drive_folder_id: { $exists: false } },
-    { $set: { drive_folder_id: "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw" } },
+    { $set: { drive_folder_id: driveFolderId } },
   );
 }
 
