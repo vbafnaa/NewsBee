@@ -11,18 +11,27 @@ function privateAddress(address: string) {
   return !/^[23][0-9a-f]{0,3}:/i.test(address) || /^2001:db8:/i.test(address);
 }
 
+/** Publishers whose terms or robots.txt forbid automated or AI use of their content. */
+const NO_AUTOMATED_USE = /(?:^|\.)(?:seattletimes\.com|kuow\.org|mynorthwest\.com)$/i;
+
 export async function assertPublicReportingUrl(raw: string) {
   const url = new URL(raw);
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (!httpsLink(raw) || (url.port && url.port !== "443") || hostname === "localhost" || hostname.endsWith(".local")) throw new Error("Source URL must use public HTTPS");
+  if (NO_AUTOMATED_USE.test(hostname)) throw new Error("Publisher does not permit automated or AI use");
   const addresses = isIP(hostname) ? [{ address: hostname }] : await lookup(hostname, { all: true });
   if (!addresses.length || addresses.some(({ address }) => privateAddress(address))) throw new Error("Source URL resolves to a non-public address");
 }
 
-/** Validate every request, including robots and redirect hops, not just the initial link. */
-export function publicSourceTransport(transport: HttpTransport, timeoutMs = 8000): HttpTransport {
+/** Validate every request's destination, keeping each request's own timeout. */
+export function publicOnlyTransport(transport: HttpTransport): HttpTransport {
   return async (request) => {
     await assertPublicReportingUrl(request.url);
-    return transport({ ...request, timeoutMs });
+    return transport(request);
   };
+}
+
+/** Validate every request, including robots and redirect hops, not just the initial link. */
+export function publicSourceTransport(transport: HttpTransport, timeoutMs = 8000): HttpTransport {
+  return publicOnlyTransport((request) => transport({ ...request, timeoutMs }));
 }

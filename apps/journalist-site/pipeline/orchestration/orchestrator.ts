@@ -11,6 +11,7 @@
 import type { Db } from "mongodb";
 import { rankingCandidateLimit, type Settings } from "../core/config";
 import { fetchTransport, type HttpTransport } from "../core/http";
+import { publicOnlyTransport } from "../connectors/public-http";
 import { logger, withLogSink, type LogRecord, type Logger } from "../core/log";
 import { ingestWindow, localToday } from "../core/time";
 import { Fetcher } from "../connectors/fetcher";
@@ -188,7 +189,8 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   const connector = connectorsOf(deps)[task.type];
   if (!connector) throw new PermanentJobError(`No connector for source type ${task.type}`);
   const location = await getLocation(deps.db, run.location_id);
-  const transport = deps.transport ?? fetchTransport;
+  // Source URLs come from saved configs and discovery, so production fetches only reach public hosts.
+  const transport = deps.transport ?? publicOnlyTransport(fetchTransport);
   const sourceLog = logger(`connector.${task.type}`, { source_id: task.source_id, run_id: run._id, location_id: run.location_id });
   const context: ConnectorContext = {
     location,
