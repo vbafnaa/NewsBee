@@ -10,7 +10,6 @@ import type { Region } from "../wider/regions";
 import { decode, fetchBytes, label, locationRegion, placeTier, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
 import { FAMILY } from "../../ranking/parents";
 
-export const MAX_CATEGORIES = 6;
 const ACCEPT_HTML = "text/html, application/xhtml+xml";
 const ACCEPT_ICS = "text/calendar, text/plain";
 export const MEETING_CATEGORY = /\b(councils?|boards?|commissions?|committees?|hearings?|meetings?|agendas?|planning|courts?|budget|advisory|task force|staff)\b/i;
@@ -56,8 +55,7 @@ async function collectCalendar(task: SourceTask, context: ConnectorContext, reco
   const wanted = categories.filter((category) => !MEETING_CATEGORY.test(category.name));
   skip(record, "meeting_category", categories.length - wanted.length);
   if (!wanted.length) throw new SourceUnavailable("no_feed", "Every calendar category is a public meeting calendar, which the meetings connector covers");
-  const chosen = wanted.slice(0, MAX_CATEGORIES);
-  skip(record, "category_limit", wanted.length - chosen.length);
+  const chosen = wanted;
   record.feed_url = icsUrl(origin, chosen[0].id);
   const region = await locationRegion(context);
   const events = new Map<string, ReturnType<typeof eventFacts>>();

@@ -14,8 +14,7 @@ import { websiteOrigin } from "../civiccalendar";
 export const CATALOG = "https://api.us.socrata.com/api/catalog/v1";
 export const CITY_RADIUS_M = 15000;
 export const COMMUNITY_RADIUS_M = 3000;
-export const MAX_ROWS = 400;
-export const MAX_ITEMS = 8;
+export const MAX_ROWS = 5000;
 const KEEP = /\b(new|construct\w*|demoli\w*|demo|multi[- ]?family|apartments?|townhou\w*|mixed[- ]use|rezon\w*|subdivi\w*|plat|adu|accessory dwelling|school|park)\b/i;
 const MINOR = /\b(alteration|alter|tenant improvement|repair|re-?roof|remodel|sign|mechanical|plumbing|electrical|side sewer|tree|fence|deck|solar|furnace|water heater|interior)\b/i;
 const COMMERCIAL = /\b(commercial|industrial|institutional|mixed[- ]use|multi[- ]?family)\b/i;
@@ -133,8 +132,7 @@ async function collectPermits(task: SourceTask, context: ConnectorContext, recor
     events.push(permitFacts(row, columns, dataset, { issued, units, description, kinds, distance_km: place.distance_km, key }, region.town, domain));
   }
   events.sort((a, b) => Number((b.signals as any).units) - Number((a.signals as any).units) || Number((b.signals as any).cost) - Number((a.signals as any).cost) || String(b.event_date).localeCompare(String(a.event_date)));
-  const kept = events.slice(0, MAX_ITEMS);
-  skip(record, "item_limit", events.length - kept.length);
+  const kept = events;
   record.detail = `${dataset.name} (${dataset.id}): ${rows.length} permits issued within ${meters / 1000} km since ${since}, ${events.length} new construction or multi-unit, ${kept.length} kept`;
   return kept;
 }

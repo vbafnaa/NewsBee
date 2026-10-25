@@ -127,8 +127,8 @@
       "title": "EditionItem",
       "type": "object"
     },
-    "CalendarEntry": {
-      "description": "An upcoming event or public meeting published as source facts, without model writing.",
+    "SourceListing": {
+      "description": "One collected item published as source facts, without model writing.",
       "properties": {
         "id": {
           "title": "Id",
@@ -159,12 +159,19 @@
           "type": "string"
         },
         "kind": {
-          "enum": [
-            "event",
-            "meeting_preview"
-          ],
           "title": "Kind",
-          "type": "string"
+          "type": "string",
+          "description": "A story kind, such as event, meeting_outcome or state_news."
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string",
+          "description": "The source's own description, shortened; never model-written."
+        },
+        "local": {
+          "title": "Local",
+          "type": "boolean",
+          "description": "False for items from nearby towns or the wider region."
         }
       },
       "required": [
@@ -175,9 +182,11 @@
         "venue",
         "source_url",
         "source_name",
-        "kind"
+        "kind",
+        "summary",
+        "local"
       ],
-      "title": "CalendarEntry",
+      "title": "SourceListing",
       "type": "object"
     }
   },
@@ -236,11 +245,19 @@
       "type": "array"
     },
     "calendar": {
-      "description": "Every eligible upcoming listing in the window; absent from older editions.",
+      "description": "Upcoming events and meetings only, from editions published before listings existed.",
       "items": {
-        "$ref": "#/$defs/CalendarEntry"
+        "type": "object"
       },
       "title": "Calendar",
+      "type": "array"
+    },
+    "listings": {
+      "description": "Every eligible item the sources returned, uncapped; absent from older editions.",
+      "items": {
+        "$ref": "#/$defs/SourceListing"
+      },
+      "title": "Listings",
       "type": "array"
     }
   },

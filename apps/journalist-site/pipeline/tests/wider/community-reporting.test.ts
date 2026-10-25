@@ -139,7 +139,7 @@ describe("automated community reporting", () => {
     expect(collapse([newsroom, { source_id: bsky.source_id, facts: result.events[0] }])[0].id).toBe(stories[0].id);
   });
 
-  it("samples every search before selecting five articles and respects the article-fetch budget", async () => {
+  it("samples every search, keeps every fetched article and respects the article-fetch budget", async () => {
     const profile = structuredClone(location);
     profile.community!.coverage_terms = ["Hillside", "Subarea A", "Subarea B", "Subarea C"];
     profile.systems[0].branches.push({ name: "Cedar Branch", address: "22 Oak Lane" });
@@ -156,8 +156,8 @@ describe("automated community reporting", () => {
     expect(queries(replay)).toHaveLength(6);
     expect(replay.requests.filter(({ url }) => /local\.example\/feed-/.test(url))).toHaveLength(3);
     expect(replay.requests.filter(({ url }) => url.startsWith("https://news.example/") && !url.endsWith("robots.txt"))).toHaveLength(12);
-    expect(result.events).toHaveLength(5);
-    expect(new Set(result.events.map(({ venue }) => venue)).size).toBe(5);
+    expect(result.events).toHaveLength(12);
+    expect(new Set(result.events.map(({ source_url }) => source_url)).size).toBe(12);
     expect(result.events.some(({ title }) => title.includes("Juniper"))).toBe(true);
   });
 

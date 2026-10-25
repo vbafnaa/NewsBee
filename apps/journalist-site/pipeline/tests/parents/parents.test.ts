@@ -71,7 +71,7 @@ describe("civiccalendar", () => {
     const transport = replay();
     const { result, events } = await civicCalendarConnector.collect(only(civicCalendarConnector, REDMOND), context(transport, REDMOND));
     expect(result.status).toBe("ingested");
-    expect(result.skipped_unusable).toMatchObject({ meeting_category: 3, category_limit: 3, outside_area: 2, virtual_only: 1, recurring: 1 });
+    expect(result.skipped_unusable).toMatchObject({ meeting_category: 3, outside_area: 2, virtual_only: 1, recurring: 1 });
     expect(transport.requests.map((request) => request.url).filter((url) => /catID=(32|35|34)&/.test(url))).toEqual([]);
     expect(events.map((event) => [event.title, event.event_date, event.tier])).toEqual(expect.arrayContaining([
       ["Haunted House at Redmond Community Center at Marymoor Village", "2026-10-24", "local"],

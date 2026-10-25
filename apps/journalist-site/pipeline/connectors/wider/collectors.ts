@@ -15,7 +15,7 @@ import { communityEvidence } from "../community";
 
 const ACCEPT_JSON = "application/json";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
-const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MIN_DISTANT_MAGNITUDE = 4, MAX_ITEMS = 5;
+const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MIN_DISTANT_MAGNITUDE = 4;
 const OFFSET = /^\s*\d+(?:\.\d+)?\s*km\s+[NSEW]{1,3}\s+of\s+/i;
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const dateDelta = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -75,7 +75,7 @@ async function collectHazards(task: SourceTask, context: ConnectorContext): Prom
     groups.set(key, [...(groups.get(key) ?? []), quake]);
   }
   const grouped = [...groups.values()].map((group) => group.sort((a, b) => b.magnitude - a.magnitude || a.distance_km - b.distance_km || b.felt - a.felt));
-  const events = grouped.slice(0, MAX_ITEMS).map((quakes) => quakes.length === 1 ? quakeFacts(quakes[0], place.town) : mergedQuakeFacts(quakes, place.town));
+  const events = grouped.map((quakes) => quakes.length === 1 ? quakeFacts(quakes[0], place.town) : mergedQuakeFacts(quakes, place.town));
   const merged = kept.length - groups.size;
   if (merged) skipped.merged_same_place = merged;
   record.detail = `${all.length} earthquakes of magnitude ${QUERY_MAGNITUDE}+ within ${RADIUS_KM} km in ${PAST_DAYS} days; ${kept.length} noticeable in ${events.length} stories`;
@@ -113,7 +113,6 @@ function mergedQuakeFacts(quakes: ReturnType<typeof parseUsgs>, town: string): C
     kind: "earthquake", tier: quakeTier(closest), section: "Earthquakes nearby", signals: { magnitude: strongest.magnitude, distance_km: closest, felt, depth_km: strongest.depth_km, count: quakes.length } });
 }
 
-const MAX_PER_NEWSROOM = 25;
 const NEWS_LOOKBACK_DAYS = 14;
 export const stateNewsConnector: Connector = {
   type: "statenews",
@@ -144,7 +143,6 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
         continue;
       }
       success++; record.pages_checked.push(newsroom.feed); digest.update(content);
-      let kept = 0;
       for (const item of items!) {
         const day = item.published_day;
         if (day < dateDelta(context.today, -NEWS_LOOKBACK_DAYS) || day > context.today) {
@@ -155,8 +153,6 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
         const tier = itemTier(place, item.title, item.summary, true, item.coordinates);
         if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }
         if (distantHazard(tier, item.title, item.summary)) { skipped.hazard_not_local = (skipped.hazard_not_local ?? 0) + 1; continue; }
-        if (kept >= MAX_PER_NEWSROOM) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
-        kept++;
         facts.push(createNewsFacts({ source_event_id: sha256(item.id).slice(0, 16), title: item.title, event_date: day, schedule_text: publishedText(day), venue: newsroom.name,
           source_url: item.link, description: item.summary, kind: "state_news", tier, section: section(place, tier), signals: { publisher: newsroom.name },
           ...(context.location.community ? { community_relevance: communityEvidence(context.location, [item.title, item.summary], item.coordinates) } : {}) }));
@@ -209,7 +205,6 @@ async function collectStateNews(task: SourceTask, context: ConnectorContext): Pr
 
 const TOP_DAYS = 3, TOP_LOOKBACK = 6, MAX_MOST_READ = 8, MIN_RATIO = 2, MIN_RATIO_MOST_READ = 1.5, MIN_VIEWS = 1000;
 const EXCLUDED_PREFIXES = ["List_of", "Lists_of", "Deaths_in", "Timeline_of", "Index_of"];
-const WIKI_MAX_ITEMS = 5;
 type WikiTopic = { article: string; about: string | null; origin: "watchlist" | "most_read"; recent_daily_views: number; baseline_daily_views: number; ratio: number; latest_day: string | null; best_rank?: number; social_mentions?: number | null };
 type WikiData = { topics: WikiTopic[]; top_days: string[]; errors: string[]; failed: boolean };
 async function cacheState<T>(context: ConnectorContext, kind: string, state: string, day: string, build: () => Promise<T & { failed?: boolean }>): Promise<T & { failed?: boolean }> {
@@ -318,7 +313,7 @@ async function collectWikipedia(task: SourceTask, context: ConnectorContext): Pr
   const near = trending.filter((topic) => topicTier(topic, place));
   const events: CollectedEvent[] = [];
   let noContext = 0, distantHazards = 0;
-  for (const topic of near.slice(0, WIKI_MAX_ITEMS)) {
+  for (const topic of near) {
     const phrase = place.community_location ? reportingSearches(place).find((search) => mentions(wikiLabel(topic.article), search.topic))?.topic ?? place.town : wikiLabel(topic.article);
     const report = await verifiedTrend(context, phrase, place, wikiArticleUrl(topic.article));
     if (!report) noContext++;
@@ -346,7 +341,6 @@ export const trendingConnector: Connector = {
   },
 };
 
-const TREND_MAX_ITEMS = 5;
 async function collectBluesky(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
   const place = resolveTrendRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
   const record = sourceResult(task.source_id, task.name, "ingested", "", {
@@ -379,7 +373,7 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
     counts.set(key, count + 1);
     return { fact, count, index };
   }).sort((a, b) => Number(a.fact.tier !== "local") - Number(b.fact.tier !== "local") || a.count - b.count || a.index - b.index)
-    .slice(0, TREND_MAX_ITEMS).map(({ fact }) => fact);
+    .map(({ fact }) => fact);
   record.detail = `${events.length} recent linked news reports ${place.community_location ? `with evidence for ${place.town}` : `about ${place.town} or places within 15 miles`}; popularity counts and national trends are not news`;
   record.search_queries = searches.map((search) => search.query);
   record.publisher_feeds = [...new Set(feeds)].slice(0, 3);
