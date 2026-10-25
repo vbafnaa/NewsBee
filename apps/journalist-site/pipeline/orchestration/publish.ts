@@ -156,8 +156,8 @@ export async function createChannelFolder(store: ArtifactStore, pipelineFolderId
   if (store.kind === "local") {
     folder = `channel-${channelId}`;
   } else {
-    if (!pipelineFolderId) throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
-    folder = await store.ensureFolder(await store.ensureFolder(pipelineFolderId, "output-channels"), channelId);
+    if (!pipelineFolderId && store.kind === "drive") throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
+    folder = await store.ensureFolder(await store.ensureFolder(pipelineFolderId ?? "pipeline", "output-channels"), channelId);
   }
   await store.saveJson(folder, "locations.json", { locations: [] });
   return folder;

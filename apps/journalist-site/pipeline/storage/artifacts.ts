@@ -1,17 +1,21 @@
 /**
  * Artifact storage: published editions, locations.json, email previews and per-run artifacts.
  * Cloud mode uses Google Drive; local mode uses a folder under .local/stage2/drive with the
- * same layout, so the reader site can read either.
+ * same layout, so the reader site can read either. NEWSBEE_ARTIFACT_STORE=mongo uses
+ * MongoDB in either mode, for deployments without a Google Shared drive.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadSettings } from "../core/config";
 import { DriveArtifacts } from "./drive";
+import { MongoArtifacts } from "./mongo-artifacts";
+import { getDatabase } from "./mongo";
+import { usesMongoArtifacts } from "../../../../shared/artifact-store";
 
 export type StoredFile = { id: string; name: string };
 
 export interface ArtifactStore {
-  readonly kind: "drive" | "local";
+  readonly kind: "drive" | "local" | "mongo";
   ensureFolder(parentId: string, name: string): Promise<string>;
   saveJson(parentId: string, name: string, value: unknown): Promise<string>;
   saveText(parentId: string, name: string, value: string, mimeType: string): Promise<string>;
@@ -88,6 +92,7 @@ export function localDriveRoot() {
 
 export function getArtifacts(): ArtifactStore {
   if (override) return override;
+  if (usesMongoArtifacts()) return new MongoArtifacts(getDatabase);
   return loadSettings().mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
 }
 

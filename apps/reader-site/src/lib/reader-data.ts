@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
 import { COMMUNITY_SEED, communityDirectory, communityName, matchingCommunities } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
+import { ARTIFACTS_COLLECTION, usesMongoArtifacts } from "../../../../shared/artifact-store";
 import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
 
 export type EditionItem = {
@@ -272,12 +273,31 @@ function localFolder(folderId: string): FolderReader {
   };
 }
 
+/** NEWSBEE_ARTIFACT_STORE=mongo: a channel folder is a namespace in the pipeline's artifacts collection. */
+function mongoFolder(folderId: string): FolderReader {
+  type ArtifactDoc = { _id: string; parent_id: string; name: string; folder: boolean; content?: string };
+  const collection = async () => (await readerDatabase()).collection<ArtifactDoc>(ARTIFACTS_COLLECTION);
+  return {
+    async list() {
+      const docs = await (await collection())
+        .find({ parent_id: folderId, folder: false }, { projection: { _id: 1, name: 1 } })
+        .toArray();
+      return docs.map((doc) => ({ id: doc._id, name: doc.name }));
+    },
+    async read(file) {
+      const doc = await (await collection()).findOne({ _id: file.id, folder: false });
+      if (typeof doc?.content !== "string") throw new Error(`Artifact ${file.name} was not found`);
+      return JSON.parse(doc.content);
+    },
+  };
+}
+
 export function isLocalMode() {
   return (process.env.NEWSBEE_MODE ?? "local") !== "cloud";
 }
 
 async function loadDriveData(folderId: string) {
-  const folder = isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
+  const folder = usesMongoArtifacts() ? mongoFolder(folderId) : isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
   const files = await folder.list();
 
   const jsonFiles = files.filter((file) => file.name.endsWith(".json"));

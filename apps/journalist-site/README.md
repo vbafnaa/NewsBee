@@ -366,6 +366,7 @@ removing manual links. Legacy global source configuration is read-only through t
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Drive writer key; use JSON to keep it distinct from the reader's email/private-key variables in the shared project |
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts and new channel folders |
 | `NEWSBEE_READER_DRIVE_FOLDER_ID` | Drive folder for the default `reader-site` channel when it is first created; set it so a new deployment does not publish into the original team's folder. Existing channels keep their folder (edit `output_channels.drive_folder_id` to move one) |
+| `NEWSBEE_ARTIFACT_STORE=mongo` (optional) | Store editions, locations.json and run artifacts in MongoDB (`artifacts` collection) instead of Google Drive. Use it when you have no Workspace Shared drive; the Google service-account and Drive folder variables are then not needed. Set it for both services, since the reader reads from the same collection |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
