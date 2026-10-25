@@ -2,6 +2,20 @@
 
 Newsbee turns community events, public meetings, and nearby news into local newspaper editions. It has a journalist console and pipeline, plus a public reader site.
 
+- [Run locally](#run-locally) · [Source connectors](#source-connectors) · [Pages](#pages) · [Deploy](#deploy) · [Develop](#develop) · [Contributing](CONTRIBUTING.md)
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [`apps/journalist-site/`](apps/journalist-site/README.md) | Next.js journalist console, admin and pipeline API routes, and the pipeline itself under `pipeline/` (connectors, ranking, model calls, editorial checks, orchestration, storage) with its Vitest suite. |
+| [`apps/reader-site/`](apps/reader-site/README.md) | Astro public reader site served under `/reader`, with its edition, location-search and signup APIs. |
+| [`shared/`](shared/) | TypeScript shared by both apps (community directory, geography, newsletter layout) and [JSON contracts](shared/contracts/README.md) for editions, health and metrics. |
+| [`config/`](config/README.md) | Reviewed source and community seeds loaded into MongoDB `source_configs` on first use. |
+| [`Docs/`](Docs/) | Design spec, implementation roadmap, architecture diagrams, [production architecture decisions](Docs/production-architecture-decisions.md) and [source connector feasibility](Docs/source-connector-feasibility.md). |
+| [`.github/`](.github/) | CI workflow, code owners, Dependabot and the pull request template. |
+| [`vercel.json`](vercel.json) | Single-domain Vercel deployment of both apps; see [Deploy](#deploy). |
+
 ## Architecture
 
 ### Components
@@ -102,6 +116,7 @@ for configuration, geographic limits and the manual authoring/publication gates.
 **Reader site**
 
 - **Find your neighborhood** (`/reader`) — Choose a published edition or search for a US town or neighborhood. Published communities open their newspaper; communities without an edition open the “we're not here yet” interest page.
+- **Weekly updates signup** (`/reader/subscribe?location=<id>`) — Sign up for a community's weekly email updates.
 
 ## Deploy
 
@@ -116,7 +131,7 @@ Node.js 24 selected. The root `vercel.json` builds two services independently:
 The reader rewrites select base-relative Astro output paths with `destination.path`;
 Vercel still passes the original `/reader/...` request path to the application.
 
-The archived Python prototype is not deployed. There are no inter-service HTTP calls
+There are no inter-service HTTP calls
 or service bindings: each app accesses MongoDB and Drive directly. The journalist
 pipeline self-call stays within the journalist service. Queue consumers remain private,
 even though the journalist service has public routes.
@@ -156,12 +171,41 @@ Vercel CLI 64 currently rejects service-hosted queue triggers in local mode
 of `vercel.json` without the journalist `functions` entry and pass it with
 `vercel dev -L --local-config <temporary-config>`. Keep the queue trigger in the
 production config; queue delivery must be checked in a deployment.
+
 ## Develop
 
+Use Node 24 (see [`.nvmrc`](.nvmrc)). Install **both** apps even if you only work on
+one, because the journalist-site tests import reader-site code:
+
 ```text
-npm --prefix apps/journalist-site test
-npm --prefix apps/journalist-site run lint
-npm --prefix apps/reader-site run check
+npm --prefix apps/reader-site ci
+npm --prefix apps/journalist-site ci
 ```
 
-For deployment and environment setup, see the [journalist-site guide](apps/journalist-site/README.md) and [reader-site guide](apps/reader-site/README.md). The [production architecture decisions](Docs/production-architecture-decisions.md) describe runtime boundaries. The earlier Python prototype is archived in [archive/python](archive/python/README.md).
+Before opening a pull request, run the checks for what you changed:
+
+```text
+# Journalist site: type check, tests, production build
+npm --prefix apps/journalist-site run lint
+npm --prefix apps/journalist-site test
+npm --prefix apps/journalist-site run build
+
+# Reader site: Astro check, production build
+npm --prefix apps/reader-site run check
+npm --prefix apps/reader-site run build
+```
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) picks checks by path:
+
+| Changed | Checks that run |
+| --- | --- |
+| `apps/journalist-site/` | Journalist site |
+| `apps/reader-site/`, `shared/` or `config/` | Journalist site and reader site |
+
+`main` is protected: branch as `feat/…`, `fix/…` or `chore/…`, open a PR, and merge
+once it has an approval and a green `ci-ok` check. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for the full workflow. Never commit API keys or `.env` files.
+
+For environment variables, model providers and community coverage, see the
+[journalist-site guide](apps/journalist-site/README.md) and [reader-site guide](apps/reader-site/README.md).
+The [production architecture decisions](Docs/production-architecture-decisions.md) describe runtime boundaries.

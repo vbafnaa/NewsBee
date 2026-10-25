@@ -150,14 +150,19 @@ function validEditionShape(value: any) {
   const correctionsValid = !("corrections" in value) || (Array.isArray(value.corrections) && value.corrections.every(correctionValid));
   return typeof value.id === "string" && typeof value.location_id === "string" && typeof value.location_name === "string" && typeof value.window_start === "string" && typeof value.window_end === "string" && typeof value.published_at === "number" && typeof value.headline === "string" && typeof value.intro === "string" && Array.isArray(value.items) && value.items.every(itemValid) && coverageValid && correctionsValid;
 }
-export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
+/** An upcoming item whose date is before the publish date has already happened. */
+export function expiredAt(publishToday: string | undefined, kind: string | undefined, eventDate: string) {
+  return publishToday !== undefined && isUpcoming(kind ?? "event") && /^\d{4}-\d{2}-\d{2}$/.test(eventDate) && eventDate < publishToday;
+}
+
+export async function finishAuthoring(deps: AuthoringDeps, draftId: string, publishToday?: string) {
   const collection = deps.db.collection<DraftDoc>(COLLECTIONS.editions);
   const draft = await collection.findOne({ id: draftId });
   if (!draft) throw new Error(`No authoring draft: ${draftId}`);
   if (draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary };
   const entries = await getEntries(deps.db, draftId);
   if (entries.length < draft.candidates.length && draft.status !== "ready") return { done: false, more: true };
-  const passed = entries.filter((entry) => entry.disposition === "checks_passed")
+  const passed = entries.filter((entry) => entry.disposition === "checks_passed" && !expiredAt(publishToday, entry.result.story.kind, entry.event_date))
     .sort((a, b) => Number(a.result.ranking.rank) - Number(b.result.ranking.rank))
     .slice(0, MAX_ENTRIES);
   const itemStories = passed.map((entry) => entry.result.story as writer.StoryInput);

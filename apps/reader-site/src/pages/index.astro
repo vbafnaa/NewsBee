@@ -102,14 +102,15 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         <aside id="corrections" aria-label="Corrections" hidden></aside>
         <h2 id="edition-headline" tabindex="-1"></h2>
         <p id="edition-intro" class="deck"></p>
-        <div id="front-page">
-          <div id="edition-lead"></div>
-          <div id="edition-items" class="columns"></div>
-        </div>
+        <!-- Events lead: readers ranked upcoming events as the content they want most. -->
         <section id="upcoming-events" aria-labelledby="upcoming-events-title" hidden>
           <h2 id="upcoming-events-title">Upcoming events</h2>
           <div id="upcoming-items" class="columns"></div>
         </section>
+        <div id="front-page">
+          <div id="edition-lead"></div>
+          <div id="edition-items" class="columns"></div>
+        </div>
         <details id="edition-sources" class="coverage">
           <summary>Sources &amp; edition notes <span id="source-count"></span></summary>
           <ol id="source-items"></ol>
@@ -555,7 +556,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             ),
           );
           const { news, upcoming } = newsletterSections(edition.items);
-          const ordered = [...news, ...upcoming];
+          const ordered = [...upcoming, ...news];
           const references = new Map(ordered.map((item, index) => [item, index + 1]));
           document.querySelector("#source-items")!.replaceChildren(...ordered.map(source));
           document.querySelector("#source-count")!.textContent = `(${edition.items.length})`;
@@ -964,6 +965,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       .columns .story { break-inside: avoid; padding: 0 0 0.55rem; border-bottom: 1px solid #b5a386; margin-bottom: 0.6rem; }
       .columns .story:nth-child(3n + 2) h3 { font-style: italic; }
       #upcoming-events { margin-top: 0.7rem; border: 1px solid var(--rule); padding: 0 0.75rem 0.25rem; background: rgb(212 191 149 / 0.16); }
+      #upcoming-events:not([hidden]) + #front-page { margin-top: 0.7rem; }
       #upcoming-events > h2 { margin: 0 -0.75rem 0.7rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid #b5a386; background: rgb(137 112 71 / 0.2); color: #51432f; text-align: center; font: 700 1rem var(--display); letter-spacing: 0.1em; }
       #upcoming-items { columns: 3; }
       footer {
