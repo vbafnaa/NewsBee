@@ -8,8 +8,8 @@ import type { Fetcher } from "./fetcher";
 import type { Community } from "../../../../shared/community-directory";
 
 /** Source types the orchestrator can run; each has its own connector and per-source ranker. */
-export type SourceType = "library" | "meetings" | "hazards" | "statenews" | "trending" | "civiccalendar" | "homesafety" | "housing" | "development" | "athletics";
-export const SOURCE_TYPES: readonly SourceType[] = ["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics"];
+export type SourceType = "library" | "meetings" | "hazards" | "statenews" | "trending" | "civiccalendar" | "homesafety" | "housing" | "development" | "athletics" | "neighborhood";
+export const SOURCE_TYPES: readonly SourceType[] = ["library", "meetings", "hazards", "statenews", "trending", "civiccalendar", "homesafety", "housing", "development", "athletics", "neighborhood"];
 
 export type LibraryBranch = { name: string; address: string; latitude?: number | null; longitude?: number | null };
 

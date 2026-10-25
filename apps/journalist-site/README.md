@@ -385,6 +385,15 @@ in code:
 | News looked back 7 to 14 days (water violations 180) | each connector's `LOOKBACK_DAYS` / `PAST_DAYS` | Freshness |
 | 5 agenda items quoted in a meeting summary | `connectors/meetings/meetings.ts` (`MAX_ITEMS`) | Summary length only; every meeting is still collected |
 | 10 results per directory search | `communities/directory.ts` (`SEARCH_LIMIT`) | Search box results |
+| Automatic discovery searches 1.5 km around a neighborhood's center, 4 km around a town's | `communities/source-discovery.ts` (`NEIGHBORHOOD_RADIUS_M`, `TOWN_RADIUS_M`) | Area of the location |
+| Organization types searched | `communities/source-discovery.ts` (`PLACE_TAGS`) | Schools, libraries, community, faith, arts, parks, public safety, community groups; gyms and private daycares are left out |
+| Discovery time budget: 150 s per run, 120 s at onboarding | `communities/source-discovery.ts` (`DISCOVERY_BUDGET_MS`) | Fits one 300-second job; unchecked sites are retried on the next run |
+| Rediscovery every 7 days | `communities/source-discovery.ts` (`REDISCOVER_AFTER_DAYS`) | Incomplete discoveries are retried on the next run |
+| One feed per kind per organization website | `communities/source-discovery.ts` | The same content is often offered as RSS and Atom, or several iCalendar exports |
+
+Automatic discovery prints every place it checked and every feed it found, with its category,
+when a location is onboarded and whenever sources are rediscovered; the `neighborhood` source
+then prints each feed's status and item count on every run.
 
 Every run prints its sources to the server log (Vercel **Logs**, or the terminal locally):
 a table of the sources found when a location is onboarded, a table when a run starts,

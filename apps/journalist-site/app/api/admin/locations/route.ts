@@ -4,7 +4,8 @@ import { discoverGovernment, overrides } from "@/pipeline/connectors/meetings/di
 import { fetchTransport } from "@/pipeline/core/http";
 import { publicOnlyTransport } from "@/pipeline/connectors/public-http";
 import { selectSources } from "@/pipeline/connectors/registry";
-import { logLocationSources } from "@/pipeline/orchestration/source-log";
+import { logDiscovery, logLocationSources } from "@/pipeline/orchestration/source-log";
+import { discoverSources } from "@/pipeline/communities/source-discovery";
 import { ensureDirectories } from "@/pipeline/communities/bootstrap";
 import { logger } from "@/pipeline/core/log";
 
@@ -37,6 +38,12 @@ export async function POST(request: Request) {
       discoverGovernment: (profile) => discoverGovernment(transport, profile, governmentOverrides[profile.id] ?? governmentOverrides[profile.community?.parent_id ?? ""] ?? null),
     });
     logLocationSources(location, selectSources(location, settings));
+    // Find every local organization feed now, so the first run already has them; runs also rediscover weekly.
+    try {
+      logDiscovery(location.name, await discoverSources(db, transport, location, { budgetMs: 120_000 }));
+    } catch (error) {
+      logger("communities").warn("source_discovery_failed", { location_id: location.id, detail: error instanceof Error ? error.message : String(error) });
+    }
     return { location };
   });
 }

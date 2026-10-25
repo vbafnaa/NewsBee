@@ -18,6 +18,7 @@ const DETAILS: Record<SourceType, { name: string; formats: string; manual: boole
     housing: { name: "Housing market", formats: "Census Building Permits Survey monthly place file (new residential units and value)", manual: false },
     development: { name: "Development & permits", formats: "Socrata open-data building permit datasets within 15 km (new construction, demolition, multi-unit)", manual: false },
     athletics: { name: "School athletics", formats: "Reviewed state athletic association RSS feeds; team-level results only, no student names", manual: false },
+    neighborhood: { name: "Neighborhood sites found automatically", formats: "RSS/Atom feeds and event calendars (iCalendar, Trumba) of schools, libraries, community centers, faith communities, museums, parks and local news sites found inside the area through OpenStreetMap and Wikipedia, rediscovered weekly", manual: false },
   };
 
 export async function connectorInventory(db: Db, settings: Settings) {

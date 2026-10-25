@@ -52,4 +52,5 @@ export const COLLECTIONS = {
   outputChannels: "output_channels",
   heartbeat: "pipeline_heartbeat",
   modelUsage: "model_usage",
+  discoveredSources: "discovered_sources",
 } as const;

@@ -4,6 +4,7 @@
  * run starts, as each source finishes, and once more when collection is complete.
  */
 import type { LocationProfile, SourceResult, SourceTask, SourceType } from "../connectors/types";
+import type { DiscoveredSource, SourceDiscovery } from "../communities/source-discovery";
 import { SECTIONS, sectionOf } from "../../../../shared/newsletter-layout";
 
 /** The reader category each source type mainly feeds. */
@@ -18,6 +19,7 @@ export const SOURCE_CATEGORIES: Record<SourceType, string> = {
   housing: "Real Estate & Development / Housing",
   development: "Real Estate & Development / Permits",
   athletics: "Schools / Athletics",
+  neighborhood: "Mixed / Neighborhood sites found automatically",
 };
 
 export function sourceCategory(type: string) {
@@ -87,4 +89,33 @@ export function logCollectionSummary(locationName: string, runId: string, rows: 
   const items = rows.reduce((sum, row) => sum + row.items, 0);
   const listed = rows.reduce((sum, row) => sum + row.listed, 0);
   print(`run ${runId} for ${locationName} collected, ${items} items, ${listed} listings`, table);
+}
+
+/** Every place and feed source discovery found, printed when a location's sources are (re)discovered. */
+export function logDiscovery(locationName: string, discovery: SourceDiscovery) {
+  const feeds = textTable(
+    ["#", "Category", "Organization", "Kind", "Scope", "Items", "Found via", "Feed"],
+    discovery.sources.map((source, index) => [String(index + 1), source.category, source.name, source.feed_kind, source.scope, String(source.items_at_discovery), source.found_via, source.feed_url]),
+  );
+  const withFeeds = new Set(discovery.sources.map((source) => source.site));
+  const places = textTable(
+    ["Category", "Place", "Has feed", "Website"],
+    discovery.places.map((place) => [place.category, place.name, withFeeds.has(place.website) ? "yes" : "no", place.website]),
+  );
+  print(`${locationName}, ${discovery.sources.length} feeds found automatically from ${discovery.places.length} places`,
+    `${feeds}
+
+Places checked:
+${places}${discovery.gaps.length ? `
+
+Gaps: ${discovery.gaps.join("; ")}` : ""}`);
+}
+
+/** One row per automatically found feed, printed after the neighborhood source collects. */
+export function logDiscoveredFeeds(locationName: string, discovery: SourceDiscovery, outcomes: Array<{ source: DiscoveredSource; status: string; items: number; detail: string }>) {
+  const table = textTable(
+    ["Category", "Organization", "Kind", "Status", "Items", "Feed", "Detail"],
+    outcomes.map(({ source, status, items, detail }) => [source.category, source.name, source.feed_kind, status, String(items), source.feed_url, detail]),
+  );
+  print(`${locationName} neighborhood feeds collected (discovered ${discovery.checked_at})`, table);
 }
