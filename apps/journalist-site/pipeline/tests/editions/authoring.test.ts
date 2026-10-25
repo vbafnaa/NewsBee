@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { logger } from "../../core/log";
 import { loadSettings } from "../../core/config";
 import type { SourceResult } from "../../connectors/types";
-import { authorNextStory, finishAuthoring, emailContent, latestPublished, shortlistSource, startAuthoring, VALIDATION_POLICY } from "../../editions/authoring";
+import { authorNextStory, expiredAt, finishAuthoring, emailContent, latestPublished, shortlistSource, startAuthoring, VALIDATION_POLICY } from "../../editions/authoring";
 import { restore, withdraw } from "../../editorial/withdrawals";
 import type { SourceEvent } from "../../editions/stories";
 import { FakeModel } from "../support/fake-model";
@@ -272,4 +272,15 @@ describe("resumable edition authoring", () => {
     expect(wide.summary).toMatchObject({ attempted: 7, held: 7, included: 0, not_attempted: 0, wider_attempted: 7 });
   });
 
+});
+
+describe("publish-time expiry", () => {
+  it("drops upcoming items dated before the publish date and keeps news and later events", () => {
+    expect(expiredAt("2026-10-25", "event", "2026-10-24")).toBe(true);
+    expect(expiredAt("2026-10-25", "meeting_preview", "2026-10-20")).toBe(true);
+    expect(expiredAt("2026-10-25", "event", "2026-10-25")).toBe(false);
+    expect(expiredAt("2026-10-25", "state_news", "2026-10-01")).toBe(false);
+    expect(expiredAt("2026-10-25", "event", "")).toBe(false);
+    expect(expiredAt(undefined, "event", "2026-10-01")).toBe(false);
+  });
 });
