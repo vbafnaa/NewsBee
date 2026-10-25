@@ -73,7 +73,7 @@ describe("resumable edition authoring", () => {
     expect(await finishAuthoring(deps, id)).toMatchObject({ edition: result.edition });
   });
 
-  it("authors and publishes in rank order without source, tier or news priorities", async () => {
+  it("authors and publishes in rank order without source, tier or news priorities when caps are configured", async () => {
     const events: SourceEvent[] = [
       ["library:main", "Library one", "2026-11-01", "event"],
       ["library:main", "Library two", "2026-11-02", "event"],
@@ -104,7 +104,7 @@ describe("resumable edition authoring", () => {
       }
       return { blurb: "Discover the latest local community stories." };
     });
-    const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
+    const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test", NEWSBEE_STORY_CANDIDATES_PER_SOURCE: "5", NEWSBEE_MAX_STORIES: "12" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
     const sourceIds = [...new Set(events.map((event) => event.source_id))];
     const sourceResults: SourceResult[] = sourceIds.map((source_id) => ({ source_id, name: source_id, website: null, status: "ingested", detail: "ok", feed_kind: null, feed_url: null, pages_checked: [], response_sha256: null, event_count: 1, skipped_other_venues: 0, skipped_outside_window: 0, skipped_unusable: {}, unmatched_venues: {} }));
     const id = await startAuthoring(deps, { location: { id: "town", name: "Auburn, WA" }, runId: "coverage-run", today: "2026-10-19", window: ["2026-11-01", "2026-11-07"], events, sourceResults });
@@ -177,7 +177,7 @@ describe("resumable edition authoring", () => {
   });
 
 
-  it.each([0, 8, 12, 20])("publishes up to 12 checked stories from %i ranked candidates, backfilling holds", async (count) => {
+  it.each([0, 8, 12, 20])("with NEWSBEE_MAX_STORIES=12, publishes up to 12 checked stories from %i ranked candidates, backfilling holds", async (count) => {
     const held = count === 20 ? 3 : 0;
     const attempted = Math.min(count, 12 + held);
     const events: SourceEvent[] = Array.from({ length: count }, (_, index) => ({
@@ -210,7 +210,7 @@ describe("resumable edition authoring", () => {
       if (prompt.startsWith("You write the email")) return { blurb: "Discover the latest local community stories." };
       throw new Error(`Unexpected prompt: ${prompt.slice(0, 40)}`);
     });
-    const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
+    const deps = { db: mongo.db, model, settings: loadSettings({ NEWSBEE_ROOT: "C:\\newsbee-test", NEWSBEE_STORY_CANDIDATES_PER_SOURCE: "5", NEWSBEE_MAX_STORIES: "12" } as unknown as NodeJS.ProcessEnv), log: logger("test", {}) };
     const input = { location: { id: "town", name: "Auburn, WA" }, runId: `ranked-${count}`, today: "2026-10-19", window: ["2026-11-01", "2026-11-30"] as [string, string], events, sourceResults: [] };
     const id = await startAuthoring(deps, input);
     let step = await authorNextStory(deps, id);

@@ -43,6 +43,10 @@ export type Settings = {
   cronSecret: string | null;
   /** Active runs older than this are failed with a diagnosis; null disables the deadline. */
   runTimeoutSeconds: number | null;
+  /** NEWSBEE_MAX_STORIES: model-written stories per edition; unset writes every story that passes the checks. */
+  maxStories?: number | null;
+  /** NEWSBEE_STORY_CANDIDATES_PER_SOURCE: items per source type sent to ranking and writing; unset sends them all. */
+  storyCandidatesPerSource?: number | null;
 };
 
 export const DEFAULT_RUN_TIMEOUT_MINUTES = 60;
@@ -61,6 +65,14 @@ function nonNegative(value: string | undefined, variable: string): number | null
   if (raw === null) return null;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${variable} must be a non-negative number`);
+  return parsed;
+}
+
+/** An optional whole-number cap; unset or 0 means no cap. */
+function optionalCap(value: string | undefined, variable: string): number | null {
+  const parsed = nonNegative(value, variable);
+  if (parsed === null || parsed === 0) return null;
+  if (!Number.isInteger(parsed)) throw new Error(`${variable} must be a whole number`);
   return parsed;
 }
 
@@ -103,6 +115,8 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     pipelineDriveFolderId: blank(env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID),
     cronSecret: blank(env.CRON_SECRET),
     runTimeoutSeconds: runTimeoutSeconds(env),
+    maxStories: optionalCap(env.NEWSBEE_MAX_STORIES, "NEWSBEE_MAX_STORIES"),
+    storyCandidatesPerSource: optionalCap(env.NEWSBEE_STORY_CANDIDATES_PER_SOURCE, "NEWSBEE_STORY_CANDIDATES_PER_SOURCE"),
   };
 }
 
@@ -183,7 +197,12 @@ export function rankingSettings(settings: Settings): Settings {
   return hosted.length ? { ...settings, modelProviders: hosted } : settings;
 }
 
-/** Keep both shortlist stages bounded regardless of the inference provider. */
-export function rankingCandidateLimit(_settings: Settings) {
-  return 5;
+/** Items per source type sent to ranking and writing, at both shortlist stages; no cap unless configured. */
+export function rankingCandidateLimit(settings: Settings) {
+  return settings.storyCandidatesPerSource ?? Number.POSITIVE_INFINITY;
+}
+
+/** Model-written stories per edition; no cap unless NEWSBEE_MAX_STORIES is set. */
+export function maxStories(settings: Settings) {
+  return settings.maxStories ?? Number.POSITIVE_INFINITY;
 }

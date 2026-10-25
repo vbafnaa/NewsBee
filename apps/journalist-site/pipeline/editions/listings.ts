@@ -1,7 +1,7 @@
 /**
  * The edition's listings: every eligible item each source returned, published as source facts
  * with no model writing. Only the front-page stories are model-written and capped at
- * MAX_ENTRIES; listings are not capped, so readers can see everything that was collected.
+ * NEWSBEE_MAX_STORIES when it is set; listings are never capped, so readers see everything collected.
  * Listings pass the same deterministic checks as stories: a supported kind, an HTTPS source
  * link, no sensitive or private matters, not cancelled, and not withdrawn by an editor.
  * Upcoming events and meetings must fall in the run window and be local; news-like items

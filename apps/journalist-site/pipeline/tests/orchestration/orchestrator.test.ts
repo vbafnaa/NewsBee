@@ -302,7 +302,7 @@ describe("orchestrator", () => {
     }
     expect(jobs.map((job) => job.kind)).toContain("author_finish");
   });
-  it("caps hosted candidates at five through both shortlist stages and uses the injected ranking model", async () => {
+  it("with NEWSBEE_STORY_CANDIDATES_PER_SOURCE=5, caps candidates at five through both shortlist stages and uses the injected ranking model", async () => {
     const base = deps();
     const libraryEvents = Array.from({ length: 20 }, (_, index) => event(`workshop-${index}`, `Workshop ${String(index).padStart(2, "0")}`, 2));
     const rankingModel = new FakeModel(({ prompt }) => {
@@ -310,7 +310,7 @@ describe("orchestrator", () => {
       return { ratings: candidates.map(({ id, title }) => ({ id, category: "other", civic: title === "Workshop 04" ? 3 : 0, appeal: 0, special: 0 })) };
     });
     const d = { ...base,
-      settings: loadSettings({ ...process.env, NEWSBEE_ROOT: dir, NEWSBEE_MODEL_PROVIDERS: "gemini" }),
+      settings: loadSettings({ ...process.env, NEWSBEE_ROOT: dir, NEWSBEE_MODEL_PROVIDERS: "gemini", NEWSBEE_STORY_CANDIDATES_PER_SOURCE: "5" }),
       rankingModel,
       connectors: { ...base.connectors, library: fakeConnector("library", () => "ok", libraryEvents) },
     };

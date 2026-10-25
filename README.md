@@ -83,9 +83,9 @@ blocked sources are reported in **Connectors & links** and run inspection.
 | Development permits (`development`) | Geographically filtered new-construction and multi-unit permit records from supported city Socrata portals; minor work is excluded and single-family addresses are withheld. |
 | School athletics (`athletics`) | Reviewed state athletic-association feeds, limited to team-level sports headlines naming the town or nearby places; individual-student stories are excluded. |
 
-Collection preselects up to five candidates per connector type (at most 50 per location).
-Authoring walks the combined ranked pool until **12 stories pass editorial checks** or
-the pool is exhausted. Held stories retain their reasons and do not consume publication
+Every eligible collected item is published as a listing. Authoring writes stories from the
+whole ranked pool, with no cap unless `NEWSBEE_MAX_STORIES` or
+`NEWSBEE_STORY_CANDIDATES_PER_SOURCE` is set (see [Limits](apps/journalist-site/README.md#limits)). Held stories retain their reasons and do not consume publication
 slots. Published items retain ranked order; the reader groups them into news and
 upcoming-event sections. See the [journalist guide](apps/journalist-site/README.md)
 for configuration, geographic limits and the manual authoring/publication gates.

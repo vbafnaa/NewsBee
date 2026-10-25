@@ -13,7 +13,6 @@ import { lookup } from "./wikidata";
 
 export const USER_AGENT = "Newsbee-LocalPrototype/0.1 (local government meetings evaluation)";
 export const PAST_DAYS = 7;
-export const MAX_MEETINGS = 25;
 export const MAX_CANDIDATE_PAGES = 3;
 export const SUPPORTED = ["legistar", "civicclerk"] as const;
 export const TENANT = /^[a-z0-9][a-z0-9-]{0,62}$/;

@@ -2,7 +2,8 @@ import { cancelledTitle, checkCount, FeedFormatError, plainText, scheduleText, t
 
 export const GATEWAY = "https://gateway.bibliocommons.com/v2/libraries/{slug}";
 export const PAGE_LIMIT = 100;
-export const MAX_PAGES = 5;
+/** Pagination guard only: 50 pages of 100 events per run is far beyond a week of branch events. */
+export const MAX_PAGES = 50;
 export const REQUEST_INTERVAL_SECONDS = 1;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SLUG_PATTERNS = [
