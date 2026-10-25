@@ -1,0 +1,11 @@
+# Who is asked to review changes to each part of the repo.
+# Later lines win. Replace <github-username> with teammates' handles and
+# uncomment before turning on "Require review from Code Owners" for main.
+
+*                         @vbafnaa
+
+# /apps/journalist-site/  @<github-username>
+# /apps/reader-site/      @<github-username>
+# /config/                @<github-username>
+# /shared/                @<github-username>
+# /.github/               @vbafnaa
