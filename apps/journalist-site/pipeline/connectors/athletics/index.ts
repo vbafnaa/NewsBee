@@ -12,7 +12,6 @@ import { loadSourceConfig } from "../../storage/source-configs";
 import { fetchBytes, locationRegion, reportingSince, runCollector, skip, SourceUnavailable, type Tier } from "../parents/shared";
 import { CHAMPIONSHIP } from "../../ranking/parents";
 
-export const MAX_ITEMS = 6;
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
 const SPORTS: Array<[string, RegExp]> = [
   ["Football", /\bfootball\b/i], ["Basketball", /\bbasketball\b/i], ["Soccer", /\bsoccer\b/i], ["Volleyball", /\bvolleyball\b/i],
@@ -82,8 +81,7 @@ async function collectAthletics(task: SourceTask, context: ConnectorContext, rec
   }
   record.feed_kind = "athletics_rss"; record.pages_checked = checked; record.website = checked[0] ? new URL(checked[0]).origin : null;
   events.sort((a, b) => Number(a.tier !== "local") - Number(b.tier !== "local") || String(b.event_date).localeCompare(String(a.event_date)));
-  const kept = events.slice(0, MAX_ITEMS);
-  skip(record, "item_limit", events.length - kept.length);
+  const kept = events;
   record.detail = `${feeds.length} reviewed feed${feeds.length === 1 ? "" : "s"}; ${kept.length} team headlines naming ${region.town} or a place within 50 km since ${since}`;
   return kept;
 }

@@ -14,8 +14,11 @@ export function newsletterSections<T extends { kind?: string; local?: boolean; r
   return { news: ordered.filter((item) => !isUpcoming(item.kind)), upcoming: ordered.filter((item) => isUpcoming(item.kind)) };
 }
 
-/** A calendar listing: an upcoming event or meeting published as source facts, without model writing. */
-export type CalendarEntry = {
+/**
+ * A listing: one collected item published as source facts, without model writing. Every
+ * eligible item a source returns is listed; only the front-page stories are model-written.
+ */
+export type SourceListing = {
   id: string;
   title: string;
   event_date: string;
@@ -23,7 +26,12 @@ export type CalendarEntry = {
   venue: string;
   source_url: string;
   source_name: string;
-  kind: "event" | "meeting_preview";
+  /** A story kind, such as "event", "meeting_outcome" or "state_news". */
+  kind: string;
+  /** The source's own description, shortened; never model-written. */
+  summary: string;
+  /** False for items from nearby towns or the wider region. */
+  local: boolean;
 };
 
 /** Reader tabs, in display order. "home" is the full edition; the rest filter it. */
@@ -53,9 +61,9 @@ export function sectionOf(kind: string | undefined): Exclude<SectionId, "home"> 
   }
 }
 
-/** Calendar listings grouped by day, in date order. */
-export function calendarDays(entries: CalendarEntry[]) {
-  const days = new Map<string, CalendarEntry[]>();
+/** Listings grouped by day, in date order. */
+export function calendarDays(entries: SourceListing[]) {
+  const days = new Map<string, SourceListing[]>();
   for (const entry of [...entries].sort((a, b) => a.event_date.localeCompare(b.event_date))) {
     days.set(entry.event_date, [...(days.get(entry.event_date) ?? []), entry]);
   }

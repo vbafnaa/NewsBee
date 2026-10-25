@@ -140,7 +140,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       </section>
     </main>
     <script>
-      import { calendarDays, newsletterSections, sectionOf, SECTIONS, type CalendarEntry, type SectionId } from "../../../../shared/newsletter-layout";
+      import { calendarDays, isUpcoming, newsletterSections, sectionOf, SECTIONS, type SectionId, type SourceListing } from "../../../../shared/newsletter-layout";
       type Listing = { location_id: string; location_name: string; edition_id: string | null };
       type Town = { id: string; name: string };
       type Item = {
@@ -164,8 +164,10 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         items: Item[];
         coverage: string[];
         corrections: { reason: string; created_at: number }[];
-        /** Every upcoming event and meeting in the window; absent from editions published before it existed. */
-        calendar?: CalendarEntry[];
+        /** Every item the sources returned, as source facts; absent from older editions. */
+        listings?: SourceListing[];
+        /** Upcoming events and meetings only, from editions published before listings existed. */
+        calendar?: (Omit<SourceListing, "summary" | "local"> & Partial<Pick<SourceListing, "summary" | "local">>)[];
       };
 
       const main = document.querySelector("main")!;
@@ -286,18 +288,50 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
       /** A tab's content: written stories of its kinds, plus calendar listings for events and council. */
       function sectionContent(edition: Edition, id: Exclude<SectionId, "home">) {
-        const calendar = edition.calendar ?? [];
-        const listingKind = id === "events" ? "event" : id === "council" ? "meeting_preview" : null;
-        return {
-          stories: edition.items.filter((item) => sectionOf(item.kind) === id),
-          listings: listingKind ? calendar.filter((entry) => entry.kind === listingKind) : [],
-        };
+        const stories = edition.items.filter((item) => sectionOf(item.kind) === id);
+        const written = new Set(stories.map((item) => item.source_url));
+        // Editions published before listings existed carry upcoming items in `calendar`.
+        const all = edition.listings ?? (edition.calendar ?? []).map((entry) => ({ ...entry, summary: entry.summary ?? "", local: entry.local ?? true }));
+        const listings = all.filter((entry) => sectionOf(entry.kind) === id && (id === "events" || !written.has(entry.source_url)));
+        return { stories, listings };
+      }
+
+      /** How many things a tab holds: the events tab shows listings instead of stories when it has them. */
+      function sectionCount(edition: Edition, id: Exclude<SectionId, "home">) {
+        const { stories, listings } = sectionContent(edition, id);
+        return id === "events" ? listings.length || stories.length : stories.length + listings.length;
+      }
+
+      function linkedTitle(entry: SourceListing) {
+        if (!entry.source_url.startsWith("https://")) return text("span", entry.title);
+        const link = text("a", entry.title) as HTMLAnchorElement;
+        link.href = entry.source_url;
+        link.rel = "noreferrer";
+        return link;
+      }
+
+      /** News-style listings, newest first: date, linked title, source, and the source's own excerpt. */
+      function briefs(entries: SourceListing[]) {
+        const list = document.createElement("ul");
+        list.className = "briefs";
+        for (const entry of [...entries].sort((a, b) => b.event_date.localeCompare(a.event_date))) {
+          const row = document.createElement("li");
+          row.append(text("span", day(entry.event_date, { month: "short", day: "numeric" }), "agenda-time"));
+          const details = document.createElement("span");
+          details.append(linkedTitle(entry));
+          const meta = [...new Set([entry.source_name, entry.venue].filter(Boolean))].join(" · ");
+          if (meta || !entry.local) details.append(text("span", [meta, entry.local ? "" : "Nearby"].filter(Boolean).join(" · "), "agenda-meta"));
+          if (entry.summary) details.append(text("span", entry.summary, "brief-summary"));
+          row.append(details);
+          list.append(row);
+        }
+        return list;
       }
 
       const TIME = /\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?/i;
 
       /** Listings grouped by day: time, linked title, then venue and source. */
-      function agenda(entries: CalendarEntry[]) {
+      function agenda(entries: SourceListing[]) {
         return calendarDays(entries).map(({ date, items }) => {
           const group = document.createElement("section");
           group.className = "agenda-day";
@@ -307,14 +341,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
             const row = document.createElement("li");
             row.append(text("span", TIME.exec(entry.schedule_text)?.[0] ?? "All day", "agenda-time"));
             const details = document.createElement("span");
-            if (entry.source_url.startsWith("https://")) {
-              const link = text("a", entry.title) as HTMLAnchorElement;
-              link.href = entry.source_url;
-              link.rel = "noreferrer";
-              details.append(link);
-            } else {
-              details.append(text("span", entry.title));
-            }
+            details.append(linkedTitle(entry));
             const meta = [...new Set([entry.venue, entry.source_name].filter(Boolean))].join(" · ");
             if (meta) details.append(text("span", meta, "agenda-meta"));
             row.append(details);
@@ -338,10 +365,9 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         if (!current) return;
         const edition = current.edition;
         sectionTabs.replaceChildren(...SECTIONS.flatMap(({ id, label }) => {
-          // The events tab shows full listings when it has them, so it counts those rather than stories.
-          const count = id === "home" ? 0 : (({ stories, listings }) => id === "events" ? listings.length || stories.length : stories.length + listings.length)(sectionContent(edition, id));
+          const count = id === "home" ? 0 : sectionCount(edition, id);
           if (id !== "home" && !count) return [];
-          const tab = text("a", id === "events" && count ? `${label} (${count})` : label) as HTMLAnchorElement;
+          const tab = text("a", count ? `${label} (${count})` : label) as HTMLAnchorElement;
           tab.href = sectionUrl(id).toString();
           if (id === active) tab.setAttribute("aria-current", "page");
           tab.addEventListener("click", (event) => {
@@ -363,14 +389,18 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         if (id === "home") return;
         const { stories, listings } = sectionContent(edition, id);
         const label = SECTIONS.find((section) => section.id === id)!.label;
+        const upcoming = listings.filter((entry) => isUpcoming(entry.kind));
+        const reported = listings.filter((entry) => !isUpcoming(entry.kind));
         document.querySelector("#section-view-title")!.textContent = label;
-        document.querySelector("#section-view-note")!.textContent = listings.length
-          ? `${listings.length} ${id === "council" ? "public meeting" : "event"}${listings.length === 1 ? "" : "s"} from ${day(edition.window_start, { month: "short", day: "numeric" })} to ${day(edition.window_end, { month: "short", day: "numeric" })}, from public calendars. Check the source before you go.`
-          : "";
+        const span = `${day(edition.window_start, { month: "short", day: "numeric" })} to ${day(edition.window_end, { month: "short", day: "numeric" })}`;
+        document.querySelector("#section-view-note")!.textContent = upcoming.length
+          ? `${upcoming.length} ${id === "council" ? "upcoming public meeting" : "event"}${upcoming.length === 1 ? "" : "s"} from ${span}, from public calendars. Check the source before you go.`
+          : reported.length ? "Every item our sources reported, newest first, in the sources' own words." : "";
         // Written stories come first; the events tab shows the full listings instead when it has them.
         const shown = id === "events" && listings.length ? [] : stories;
         const items = document.querySelector("#section-view-items")!;
-        items.replaceChildren(...agenda(listings));
+        const reportedHeading = upcoming.length && reported.length ? [text("h3", "Recently reported", "briefs-title")] : [];
+        items.replaceChildren(...agenda(upcoming), ...reportedHeading, ...(reported.length ? [briefs(reported)] : []));
         if (shown.length) {
           const columns = document.createElement("div");
           columns.className = "columns";
@@ -382,8 +412,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 
       function renderableSection(edition: Edition, id: string): id is Exclude<SectionId, "home"> {
         if (!SECTIONS.some((section) => section.id === id) || id === "home") return false;
-        const { stories, listings } = sectionContent(edition, id as Exclude<SectionId, "home">);
-        return stories.length + listings.length > 0;
+        return sectionCount(edition, id as Exclude<SectionId, "home">) > 0;
       }
 
       function masthead(listing: Listing | undefined, edition?: Edition) {
@@ -1108,12 +1137,16 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       #section-tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
       #section-view-title { margin: 0.4rem 0 0.2rem; font: 900 2.2rem/1.1 var(--display); text-align: center; }
       #section-view-note { text-align: center; }
-      .agenda-day h3 { margin: 1rem 0 0.3rem; padding-bottom: 0.2rem; border-bottom: 1px solid #b5a386; font: 700 1.05rem var(--display); }
+      .agenda-day h3, .briefs-title { margin: 1rem 0 0.3rem; padding-bottom: 0.2rem; border-bottom: 1px solid #b5a386; font: 700 1.05rem var(--display); }
       .agenda-day ul { list-style: none; margin: 0; padding: 0; }
       .agenda-day li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.6rem; padding: 0.35rem 0; border-bottom: 1px dotted #c9c0ae; }
       .agenda-time { font: italic 0.85rem var(--display); color: var(--muted); }
       .agenda-day li a { color: var(--ink); font-weight: 700; }
       .agenda-meta { display: block; font-size: 0.82rem; color: var(--muted); }
+      .briefs { list-style: none; margin: 0.8rem 0 0; padding: 0; }
+      .briefs li { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.6rem; padding: 0.45rem 0; border-bottom: 1px dotted #c9c0ae; }
+      .briefs li a { color: var(--ink); font-weight: 700; }
+      .brief-summary { display: block; margin-top: 0.15rem; font-size: 0.86rem; }
       footer {
         border-top: 4px double var(--rule);
         margin-top: 1rem;
@@ -1147,7 +1180,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       @media (max-width: 480px) {
         #front-page, .columns, #upcoming-items, #source-items { columns: 1; }
         #section-tabs { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; }
-        .agenda-day li { grid-template-columns: 4.5rem 1fr; }
+        .agenda-day li, .briefs li { grid-template-columns: 4.5rem 1fr; }
         #edition { font-size: 0.86rem; }
       }
       @media print {

@@ -58,13 +58,13 @@ it("uses longer encoded article content instead of discarding it behind a short 
   const rss = new TextEncoder().encode(`<rss xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item><title>Road changes</title><link>https://gov.example/change</link><pubDate>Sat, 17 Oct 2026 00:00:00 GMT</pubDate><description>Read more.</description><content:encoded><![CDATA[<p>Auburn bridge lanes close for repairs, with a signed detour.</p>]]></content:encoded></item></channel></rss>`);
   expect(parseNewsFeed(rss)[0].summary).toBe("Auburn bridge lanes close for repairs, with a signed detour.");
 });
-it("allows up to 25 relevant recent items per newsroom, while retaining freshness and geographic filters", async () => {
+it("keeps every relevant recent item per newsroom, while retaining freshness and geographic filters", async () => {
   const feedItems = Array.from({ length: 30 }, (_, n) => `<item><title>Auburn service update ${n}</title><link>https://gov.example/${n}</link><pubDate>Sat, 17 Oct 2026 00:00:00 GMT</pubDate><description>Auburn road maintenance details.</description></item>`).join("");
   const replay = new ReplayTransport().on("https://gov.example/rss.xml", { body: `<rss><channel>${feedItems}</channel></rss>` })
     .on("https://dot.example/rss.xml", fixtureResponse("empty-rss.xml"));
   const result = await stateNewsConnector.collect(newsTask, context(replay));
-  expect(result.events).toHaveLength(25);
-  expect(result.result.skipped_unusable.over_limit).toBe(5);
+  expect(result.events).toHaveLength(30);
+  expect(result.result.skipped_unusable.over_limit).toBeUndefined();
   expect(result.events.every(({ tier }) => tier === "local")).toBe(true);
 });
 

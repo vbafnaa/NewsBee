@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeListings, minutesOf, publishedCalendar, sourceListings } from "../../editions/calendar";
+import { mergeListings, minutesOf, publishedListings, sourceListings } from "../../editions/listings";
 import type { SourceEvent } from "../../editions/stories";
 import { calendarDays, sectionOf } from "../../../../../shared/newsletter-layout";
 
@@ -12,17 +12,21 @@ const event = (id: string, overrides: Record<string, unknown> = {}): SourceEvent
     ...overrides,
   },
 });
+const news = (id: string, overrides: Record<string, unknown> = {}) =>
+  event(id, { kind: "state_news", title: `Ballard news ${id}`, event_date: "2026-10-20", schedule_text: "Oct 20", ...overrides });
 
-describe("calendar listings", () => {
-  it("lists every eligible upcoming item with no story cap", () => {
-    const events = Array.from({ length: 30 }, (_, index) => event(`e${index}`));
-    expect(sourceListings(events, "Seattle Public Library", window)).toHaveLength(30);
+describe("listings", () => {
+  it("lists every eligible item, with no cap", () => {
+    const events = [...Array.from({ length: 400 }, (_, index) => event(`e${index}`)), ...Array.from({ length: 200 }, (_, index) => news(`n${index}`))];
+    expect(sourceListings(events, "Source", window)).toHaveLength(600);
+    expect(mergeListings(sourceListings(events, "Source", window))).toHaveLength(600);
   });
 
   it("applies the same deterministic checks as stories", () => {
     const listings = sourceListings([
       event("ok"),
-      event("news", { kind: "state_news" }),
+      news("news"),
+      event("unsupported", { kind: "gossip" }),
       event("cancelled", { title: "CANCELLED: Story time" }),
       event("http", { source_url: "http://spl.example/x" }),
       event("before", { event_date: "2026-10-25" }),
@@ -31,35 +35,41 @@ describe("calendar listings", () => {
       event("nearby", { tier: "nearby" }),
       event("meeting", { kind: "meeting_preview", title: "Parks committee" }),
     ], "Source", window);
-    expect(listings.map((item) => item.source_event_id).sort()).toEqual(["meeting", "ok"]);
-    expect(listings.find((item) => item.source_event_id === "ok")).toMatchObject({ title: "Story time ok", source_name: "Source", kind: "event" });
+    expect(listings.map((item) => item.source_event_id).sort()).toEqual(["meeting", "news", "ok"]);
+    expect(listings.find((item) => item.source_event_id === "ok")).toMatchObject({ title: "Story time ok", source_name: "Source", kind: "event", summary: "Songs and stories.", local: true });
   });
 
-  it("orders by day then time, with untimed listings first", () => {
+  it("keeps news from the wider region, marked as not local, and shortens source text", () => {
+    const [item] = sourceListings([news("state", { tier: "region", description: "word ".repeat(200) })], "State newsroom", window);
+    expect(item).toMatchObject({ kind: "state_news", local: false });
+    expect(item.summary.length).toBeLessThanOrEqual(303);
+  });
+
+  it("orders upcoming items soonest first, then news newest first", () => {
     expect(minutesOf("Tue, Oct 27, 1:15 PM")).toBe(795);
     expect(minutesOf("12 a.m.")).toBe(0);
     expect(minutesOf("All day")).toBe(-1);
     const listings = sourceListings([
+      news("old", { event_date: "2026-10-18" }),
       event("late", { schedule_text: "Tue, Oct 27, 6 PM" }),
+      news("new", { event_date: "2026-10-22" }),
       event("next", { event_date: "2026-10-28" }),
       event("allday", { schedule_text: "Tue, Oct 27" }),
     ], "Source", window);
-    expect(listings.map((item) => item.source_event_id)).toEqual(["allday", "late", "next"]);
+    expect(listings.map((item) => item.source_event_id)).toEqual(["allday", "late", "next", "new", "old"]);
   });
 
-  it("collapses the same listing from two sources and caps the total", () => {
+  it("collapses the same item from two sources", () => {
     const first = sourceListings([event("a")], "Library", window);
     const second = sourceListings([{ ...event("a"), source_id: "civiccalendar:seattle" }], "City", window);
     expect(mergeListings([...first, ...second])).toHaveLength(1);
-    const many = sourceListings(Array.from({ length: 10 }, (_, index) => event(`m${index}`)), "Library", window);
-    expect(mergeListings(many, 4)).toHaveLength(4);
   });
 
-  it("publishes without past or withdrawn listings or internal references", () => {
-    const listings = sourceListings([event("past", { event_date: "2026-10-26" }), event("keep"), event("gone")], "Library", window);
+  it("publishes without past events, withdrawn items or internal references", () => {
+    const listings = sourceListings([event("past", { event_date: "2026-10-26" }), event("keep"), event("gone"), news("older")], "Library", window);
     const decisions = { s1: { location_id: "ballard", story_id: "s1", reason: "Withdrawn by editor.", created_at: 1, source_refs: [["library:spl", "gone"]] as [string, string][] } };
-    const published = publishedCalendar(listings, "2026-10-27", decisions);
-    expect(published.map((item) => item.title)).toEqual(["Story time keep"]);
+    const published = publishedListings(listings, "2026-10-27", decisions);
+    expect(published.map((item) => item.title)).toEqual(["Story time keep", "Ballard news older"]);
     expect(published[0]).not.toHaveProperty("source_id");
   });
 });
