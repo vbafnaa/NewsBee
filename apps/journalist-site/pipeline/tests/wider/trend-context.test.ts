@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { assertPublicReportingUrl, parseTrendReport, reportingLinks } from "../../connectors/wider/trend-context";
 import { resolveTrendRegion } from "../../connectors/wider/regions";
+import { publicOnlyTransport } from "../../connectors/public-http";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async (hostname: string) => [{ address: hostname === "internal.example" ? "127.0.0.1" : "93.184.216.34" }]) }));
 
@@ -48,5 +49,20 @@ describe("sourced trend context", () => {
       await expect(assertPublicReportingUrl(url)).rejects.toThrow();
     }
     await expect(assertPublicReportingUrl("https://news.example/report")).resolves.toBeUndefined();
+  });
+  it("rejects publishers that forbid automated or AI use", async () => {
+    for (const url of ["https://www.seattletimes.com/seattle-news/", "https://kuow.org/stories/x", "https://mynorthwest.com/feed/"]) {
+      await expect(assertPublicReportingUrl(url)).rejects.toThrow("does not permit automated");
+    }
+  });
+  it("guards collection requests without overriding their timeout", async () => {
+    const seen: Array<number | undefined> = [];
+    const transport = publicOnlyTransport(async (request) => {
+      seen.push(request.timeoutMs);
+      return { status: 200, url: request.url, headers: {}, body: new Uint8Array() };
+    });
+    await transport({ url: "https://news.example/feed", timeoutMs: 12_000 });
+    await expect(transport({ url: "https://internal.example/feed" })).rejects.toThrow("non-public address");
+    expect(seen).toEqual([12_000]);
   });
 });

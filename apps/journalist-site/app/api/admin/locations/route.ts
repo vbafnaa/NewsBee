@@ -2,6 +2,7 @@ import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { listLocations, onboardLocation } from "@/pipeline/communities/locations";
 import { discoverGovernment, overrides } from "@/pipeline/connectors/meetings/discovery";
 import { fetchTransport } from "@/pipeline/core/http";
+import { publicOnlyTransport } from "@/pipeline/connectors/public-http";
 import { ensureDirectories } from "@/pipeline/communities/bootstrap";
 import { logger } from "@/pipeline/core/log";
 
@@ -27,10 +28,12 @@ export async function POST(request: Request) {
       discoveryGaps.push(detail);
     }
     const governmentOverrides = await overrides(settings.root, db);
+    // Discovery follows homepage and feed links from OSM and Wikidata, so only public hosts are reachable.
+    const transport = publicOnlyTransport(fetchTransport);
     return {
-      location: await onboardLocation(db, fetchTransport, body.place_id, {
+      location: await onboardLocation(db, transport, body.place_id, {
         settings, discoveryGaps,
-        discoverGovernment: (profile) => discoverGovernment(fetchTransport, profile, governmentOverrides[profile.id] ?? governmentOverrides[profile.community?.parent_id ?? ""] ?? null),
+        discoverGovernment: (profile) => discoverGovernment(transport, profile, governmentOverrides[profile.id] ?? governmentOverrides[profile.community?.parent_id ?? ""] ?? null),
       }),
     };
   });
