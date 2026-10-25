@@ -17,7 +17,7 @@ jobs:
       reader: ${{ steps.filter.outputs.reader }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           # Journalist tests import reader-site code, so reader changes rerun them too.
