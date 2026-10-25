@@ -281,7 +281,9 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   if (!run) return { skipped: true };
   log.info("stage_transition", { run_id: job.run_id, status: "publishing", by: "worker" });
   const draftId = String(job.payload.draft_id);
-  const finished = await finishAuthoring(authoringDeps(deps), draftId).catch(async (error: unknown) => {
+  // Gates can wait days, so expire events against the publish date, not the run's start date.
+  const publishToday = localToday((await getLocation(deps.db, run.location_id)).state);
+  const finished = await finishAuthoring(authoringDeps(deps), draftId, publishToday).catch(async (error: unknown) => {
     // No edition is published on a quota failure; allow durable retries and cancellation.
     if (error instanceof ModelRateLimitError) {
       await runs(deps.db).updateOne(
