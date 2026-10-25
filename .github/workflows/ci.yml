@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      journalist: ${{ steps.filter.outputs.journalist }}
+      reader: ${{ steps.filter.outputs.reader }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Journalist tests import reader-site code, so reader changes rerun them too.
+          filters: |
+            journalist:
+              - 'apps/journalist-site/**'
+              - 'apps/reader-site/**'
+              - 'shared/**'
+              - 'config/**'
+              - '.github/workflows/ci.yml'
+            reader:
+              - 'apps/reader-site/**'
+              - 'shared/**'
+              - 'config/**'
+              - '.github/workflows/ci.yml'
+
+  journalist:
+    needs: changes
+    if: needs.changes.outputs.journalist == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            apps/journalist-site/package-lock.json
+            apps/reader-site/package-lock.json
+      - run: npm ci
+        working-directory: apps/reader-site
+      - run: npm ci
+        working-directory: apps/journalist-site
+      - run: npm run lint
+        working-directory: apps/journalist-site
+      - run: npm test
+        working-directory: apps/journalist-site
+      - run: npm run build
+        working-directory: apps/journalist-site
+
+  reader:
+    needs: changes
+    if: needs.changes.outputs.reader == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/reader-site/package-lock.json
+      - run: npm ci
+        working-directory: apps/reader-site
+      - run: npm run check
+        working-directory: apps/reader-site
+      - run: npm run build
+        working-directory: apps/reader-site
+
+  # The one check to require on main: it passes when every job that ran passed,
+  # including PRs where path filters skipped a job.
+  ci-ok:
+    needs: [journalist, reader]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "All required jobs passed or were skipped."
