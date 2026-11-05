@@ -31,9 +31,7 @@ export function unfold(lines: string[]) {
   }
   return events;
 }
-/** Fallbacks for an organization's own calendar, whose events often omit LOCATION or URL; library feeds pass none. */
-export type IcalDefaults = { venue?: string; link?: string };
-export function parseIcal(content: Uint8Array, defaults: IcalDefaults = {}): ParsedEvents {
+export function parseIcal(content: Uint8Array): ParsedEvents {
   checkSize(content);
   let source: string;
   try { source = new TextDecoder("utf-8", { fatal: true }).decode(content); }
@@ -48,9 +46,8 @@ export function parseIcal(content: Uint8Array, defaults: IcalDefaults = {}): Par
     const field = (name: string) => unescapeIcs(item[name]?.[1] ?? "").trim();
     if ("RRULE" in item || "RECURRENCE-ID" in item) { skip("recurring"); continue; }
     if (field("STATUS").toUpperCase() === "CANCELLED" || cancelledTitle(field("SUMMARY"))) { skip("cancelled"); continue; }
-    const location = field("LOCATION") || defaults.venue || "";
-    if (!location) { skip("no_venue"); continue; }
-    const link = httpsLink(field("URL")) ?? httpsLink(defaults.link);
+    if (!field("LOCATION")) { skip("no_venue"); continue; }
+    const link = httpsLink(field("URL"));
     if (!link) { skip("no_link"); continue; }
     const startPair = item.DTSTART ?? ["", ""];
     const start = icalMoment(startPair[1], startPair[0]);
@@ -58,7 +55,7 @@ export function parseIcal(content: Uint8Array, defaults: IcalDefaults = {}): Par
     const endPair = item.DTEND;
     const end = endPair ? icalMoment(endPair[1], endPair[0]) : null;
     if (!field("SUMMARY") || !field("UID")) throw new FeedFormatError("Event is missing title or UID");
-    const [venue, room] = location.split("\n", 2);
+    const [venue, room] = field("LOCATION").split("\n", 2);
     events.push({ source_event_id: field("UID"), title: field("SUMMARY").split(/\s+/).join(" "), event_date: `${String(start.year).padStart(4,"0")}-${String(start.month).padStart(2,"0")}-${String(start.day).padStart(2,"0")}`,
       schedule_text: scheduleText(start, end), venue: venue.split(/\s+/).join(" "), room: room?.split(/\s+/).join(" ") || null, source_url: link, description: plainText(field("DESCRIPTION")) });
   }

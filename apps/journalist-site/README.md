@@ -5,43 +5,143 @@ runs locally with stand-ins, or on Vercel with MongoDB Atlas, Google Drive and G
 
 ## Run locally
 
-From this directory, with Node 24 and [Ollama](https://ollama.com/download)
-(`ollama pull qwen3:4b`) running:
+Follow [Run locally](../../README.md#run-locally) in the root README: Node 24 and npm 11, a
+model (an API key in `apps/journalist-site/.env.local`, or a running Ollama with
+`qwen3:4b` pulled), then `npm run local` from this directory after `npm ci` here and in
+`../reader-site`.
 
-```text
-npm ci
-npm --prefix ../reader-site ci
-npm run local
-```
+`npm run local` (`scripts/local-stack.mjs`) starts a local MongoDB on port 27027 (data in
+`.local/stage2/mongo`), this site on http://127.0.0.1:3000, the reader site on
+http://127.0.0.1:4321/reader, and a pipeline tick every 5 s as a recovery aid. Drive is a
+local folder (`.local/stage2/drive`), Google sign-in is skipped on localhost, and
+`.env.local` here is read by both the console and the pipeline. Set `MONGODB_URI` to use
+your own database instead, or `NEWSBEE_LOCAL_TICK_SECONDS` to change the tick.
 
-`npm run local` starts a local MongoDB (data in `.local/stage2/mongo`), this site on
-http://127.0.0.1:3000, the reader site on http://127.0.0.1:4321/reader, and a pipeline tick every
-5 s as a recovery aid. Drive is a local folder (`.local/stage2/drive`). Google sign-in
-is skipped on localhost.
+On **Location workspaces** (`/locations`), search for a town, select a suggestion and click **Add
+location**. Open its workspace, choose the run options, then use **Pipeline & logs → Run end to end**.
+The run discovers sources, collects them, writes and publishes with no further clicks. With
+**Manual** run mode it stops after collection (**Start authoring**) and after writing (**Write
+front page and email, then publish**), and the local poller never crosses those stops.
+Census and library directories are prepared automatically on first use, so that first
+search can take a minute. Publishing adds the location to the reader's edition picker;
+directory search also finds saved communities and towns without an edition and lets
+readers register interest.
 
-On **Runs & locations**, search for a town, select a suggestion and click **Add location**,
-then **Start pipeline (collection)**. When collection finishes, click **Start authoring**;
-when stories finish, click **Write front page and email, then publish**. Each click starts
-and chains that stage's jobs immediately, without cron. The local poller never crosses
-these editor gates. Census and library directories are prepared automatically on first
-use; that first search can take a minute. New towns are enabled for reader publishing
-automatically; adjust them in **Publishing settings** on **Runs & locations**.
-The reader search also finds imported towns without an
-edition and lets readers register interest.
+Under autopilot, a run that collects no usable items ends with that reason. In manual mode,
+the console shows **Collection finished — no usable items** and disables authoring. Use **Review sources** to inspect coverage and
+**Retry collection** to cancel the empty attempt and start a fresh collection, preserving
+its history. The authoring API also rejects attempts with no persisted, usable collected
+items; source summary counters alone do not enable authoring.
+
+### Console pages
+
+- **Newsroom overview** (`/dashboard`, home): global-first health, next-step links and one row per location with its last run, stage,
+  duration and funnel counts (collected, local, candidates, published) against the previous
+  edition, plus model calls today against the cap, queued jobs, failing sources, discovery
+  due and open alerts.
+- **Alerts** (`/alerts`): a source failing 3 runs in a row or newly blocked; fewer than 3
+  local items in several sections, or local items down by more than half; a run stuck in a
+  stage for 15 minutes or a job retried 3 times; model calls above 80% of the cap; a
+  discovery method failing or a source map older than 30 days. Each alert links to its
+  fix, and alerts clear themselves.
+- **Location workspaces** (`/locations`, then a location): **Desk overview**, **Review
+  inputs** (location-scoped held drafts, suggestions, reports, reader stories, family notices
+  and alerts), **Pipeline & logs** (run orchestration and job logs,
+  every item with its outcome, and an **item trace** from source to story with actions:
+  force in or out, pin, extract details and rewrite, collect a source again, reassemble),
+  **Editions** (published output links and decisions per run) and **Location details**
+  (coverage metadata, lookup windows and editable source network). Approvals feed the next
+  collection, not inputs already collected by an existing run. Original run links remain valid.
+  Reader story submissions can include an optional captioned, credited photo: review the
+  image and permission confirmation with the text before approval. Pending/rejected images
+  remain private; the authenticated photo endpoint serves the editor preview. Approval
+  publishes the story and photo together.
+- **Source map** (`/source-map`): read-only, with three views. **Run funnel** shows one run from
+  its first search to its printed edition, in five phases (Find, Collect, Filter, Select, Print),
+  for either flow. Selecting a stage lists what came in, what was left out and why, with filters
+  for topic and who decided, and **Trail** shows one item's full path. The page also shows the
+  run's options, cost per service, topic coverage, the agent's plans and what strict rules would
+  have stopped, and a live run updates as it goes. **Compare runs** puts two runs side by side.
+  **Source network** is the global inventory and location filter. Source editing (pin, pause,
+  reject, windows, manual links and discovery refresh) is in the admin-only location
+  workspace's **Location details** tab. Full item traces and overrides remain in the
+  workspace's run item explorer while retained.
+- **Interest and usage map** (`/interest-usage`): separate reads, subscription and launch
+  interest metrics; interactive zoom/pan by mouse, touch or keyboard, geographic heat grid,
+  overlapping-community chooser, exact counts, UTC date filters and location drill-down,
+  including requested locations not yet onboarded. The interactive map needs no activation
+  flag; see [map controls and development sample preview](../../Docs/deployment.md#preprod-only-interactive-usage-map).
+- **Clear reader data** (`/clear-data`, administrators only): permanently deletes impressions,
+  clicks and shares (`reader_engagement`) and launch-interest signups (`reader_interest_signups`)
+  for one location or all of them, after showing counts and asking for a typed confirmation.
+  Interest-only records are deleted, including their email and consent. Records that also hold a
+  subscription, or an older signup of ambiguous intent, stay and lose only `interest_signup_at`
+  and `launch_notification`. Nothing else is changed. Each clear is logged in `reader_data_clears`
+  with who, when, the scope and the counts, and the page lists the last ten. Afterwards the
+  usage map drops those reads and interest signups, and future runs rank without that evidence;
+  published editions and the per-item ranking explanations of past runs stay as they were.
+- **Inbox** (`/inbox`): held stories (with the rule that held them), reader source
+  suggestions (approve checks the site and pins it on the map), problem reports from
+  readers, reader stories and family notices.
+- **Discovery** (`/discovery`): every location's discovery methods, last result and next
+  run, with **Run now**.
+- **Model usage** (`/model-usage`): 24-hour, 7-day and 30-day views of actual models used,
+  input/output tokens, estimated USD cost and pricing coverage. Breakdowns by location,
+  pipeline role and UTC day, location drill-down, recent failures and quota references.
+  Run trends and live provider readiness are on **System health** (`/health`).
+
+Both internal maps require the same `NEWSBEE_INTERNAL_PASSWORD` from the server environment,
+without requiring journalist sign-in. Their `/api/maps/*` endpoints accept only password-
+authenticated reads; `/api/admin/*` retains separate administrator authentication for
+workspace data and all source edits, item overrides and pipeline actions.
+The password is never sent to client bundles. Unset means locked, including locally;
+admin sign-in and the localhost admin bypass do not
+unlock maps. Unlock lasts eight hours; changing the password revokes existing tokens.
+Cookies are HttpOnly and SameSite=Strict, and Secure in production. Unlock/lock require
+same-origin requests; persistent throttling allows ten unlock attempts per 15-minute
+window. See [deployment](../../Docs/deployment.md) for bucket scope, database
+permissions and the usage-history limits. Public editions retain source links only, with
+no map or editorial ranking details.
 
 **Run orchestration** shows recent attempts with their stages, stories and expandable per-job
 logs (including source outcomes and errors). **Cancel run** stops queued jobs and marks a
 collecting, authoring, finishing or editor-waiting attempt cancelled; a job already executing may finish before its
 cancellation is reflected in the log. Once publication begins, cancellation is unavailable
 to avoid partially published editions. **Restart run** creates a fresh attempt for a
-published, failed or cancelled run;
-the earlier attempt remains in history. Cancel a waiting attempt before restarting it.
-**Resume** re-kicks an in-progress stage without creating duplicate jobs or resetting
-its timeout/backoff. Only one run per location can be open (including editor-waiting) at a time.
-When upgrading from the collecting-only index, startup reconciles legacy overlapping
-attempts before installing the active-run index. The furthest-progressed attempt is kept;
-the others retain their own run IDs and history as cancelled, with queued jobs stopped and
-a superseded-by reason. Publication already in progress is never interrupted.
+published, failed or cancelled run; the earlier attempt remains in history. **Resume**
+re-kicks an in-progress stage without creating duplicate jobs or resetting its
+timeout/backoff. Only one run per location can be open (including editor-waiting) at a time.
+
+### Remove a location
+
+Open its workspace, then **Location details → Remove location and generated files**.
+The **Pipeline & logs → Location actions** link leads to the same confirmation.
+Read the retention summary and type the location ID to confirm. This is admin-only;
+the internal-map password cannot authorize removal.
+
+Cancel active/editor-waiting runs first, then wait for executing workers to finish.
+Publication cannot be cancelled. Cleanup uses the pipeline worker lease, so an executing
+worker (including another location's worker) may temporarily block removal; retry when idle.
+Removal deletes the existing location-scoped pipeline records, including edition entries
+linked through their owned edition IDs. It removes exact known generated edition JSON,
+source snapshots, email previews and per-job logs from the **currently configured**
+reader/pipeline folders. It never recursively deletes a folder or follows arbitrary stored
+artifact IDs. Empty folders, untracked files and artifacts in old/unconfigured folders remain.
+The Drive service account must be allowed to delete these files, not just upload them;
+permission failures leave removal incomplete and retryable.
+
+Shared configuration, geographic/library directories, shared text/detail/publication caches,
+other locations, reader submissions and problem reports, subscriptions, interest, engagement
+and model-usage history are retained. The geographic place remains searchable and can be
+onboarded again after cleanup finishes. This is not a reader-data erasure operation.
+
+The reader directory is rewritten before file cleanup and again before completion.
+If cleanup or publication of the directory fails, the API reports **Removal incomplete**,
+not success. The location and its durable cleanup manifest remain visible under Location
+workspaces for **retry cleanup**; new runs, onboarding and source updates are blocked.
+Retrying is safe for already removed files and records. Keep storage configuration unchanged
+until cleanup finishes. Readers may see cached editions until their normal cache expires.
+No live data is removed by tests; removal regressions use an isolated MongoDB and local fixtures.
 
 ## Neighborhood and community coverage
 
@@ -54,14 +154,15 @@ overrides and previously resolved places; it never sends autocomplete requests u
 `Freemont` remains an alias for the optional Fremont override.
 
 Each provider place has a stable OSM-based ID, separate run history, source settings,
-link cache, output selection and reader interest signup. Onboarding reads the saved
+link cache and reader interest signup. Onboarding reads the saved
 provider record, not client-supplied coordinates. Existing Census city editions and IDs
-are unchanged. Reader search includes saved provider communities without making public
-geocoder requests. No catalog entry or matching Census parent row is required.
+are unchanged. Reader autocomplete includes saved communities without upstream geocoder
+requests; an explicit **Search all communities** can query the provider. No catalog
+entry or matching Census parent row is required.
 
 **Location resolved is not sources ready.** Source discovery runs independently; missing
 branches, websites, supported government platforms and community feeds are visible gaps,
-not a reason to reject a valid place. Location cards and **Sources** report `ready`,
+not a reason to reject a valid place. Location cards and **Location details** report `ready`,
 `partial` or `no_local_sources`. These statuses describe configuration availability, not
 a guarantee of fresh content; run inspection still reports actual connector outcomes.
 Validated manual links are included when evaluating readiness.
@@ -81,9 +182,11 @@ Outlets without coordinates are not silently selected from the whole parent city
 | Trends | Automatically search community names, aliases, coverage terms and selected library branches, qualified by the parent jurisdiction; also read the community's discovered RSS/Atom feeds. Keep only recent articles with community evidence, independently of Wikipedia traffic. Popularity or parent/nearby city mentions alone do not qualify. |
 | Hazards | Keep regional USGS coverage centered on the neighborhood, labeled as nearby earthquakes rather than neighborhood reporting. |
 
-The **Sources** location filter shows coverage terms, selected branches, feed configuration,
-area uncertainty and discovery gaps. Additional validated
-publisher RSS/Atom feeds can be added with the **Community and state newsrooms** connector.
+The saved location profile records coverage terms, selected branches, feed configuration,
+area uncertainty and discovery gaps. **Location details** shows library systems, source
+coverage and gaps; the administrator-only location read API returns the full profile.
+Additional validated publisher RSS/Atom feeds can be added as website/feed sources under
+**Location details → Source network → Add a source**.
 All normal date, safety and editorial checks still apply. Broad citywide policy changes
 without community/venue/geographic evidence are intentionally omitted. Retained candidate
 facts record the evidence method and matches. RSS/Atom items can supply validated
@@ -117,23 +220,42 @@ on the community-reporting source result; failures of every discovery source are
 as failures, not empty successful collections. Changes to profile terms, venues or feeds
 invalidate the daily Wikipedia cache identity.
 
-Optional reviewed overrides live in `config/communities.json` and are seeded once into the
-`communities` document in MongoDB `source_configs`. They enrich matching provider places
-and retain legacy catalog IDs; they do not gate discovery. Entries specify an ID ending in the parent's
-Census ID, a display name, state code/name, parent city, center coordinates, search aliases,
-coverage terms, exact library branch selections (name normalization is supported), and
-reviewed HTTPS RSS/Atom feeds. Use the official
-[Seattle Public Library branch directory](https://www.spl.org/hours-and-locations) to review
-branch selections; the current local feeds are
-[My Ballard](https://www.myballard.com/feed/) and
-[West Seattle Blog](https://westseattleblog.com/feed/).
+### Source map and discovery
 
-To discover another community, use the search UI; **do not add a catalog entry**.
-To maintain reviewed overrides, update MongoDB as well if it was already seeded.
-Changing a checked-in seed never overwrites live configuration. Re-onboard affected communities to refresh their saved
-coverage/branch/feed snapshot; manually managed library websites and government settings
-are preserved. Reader search reads the same directory, so communities can collect interest
-before their first edition. Census re-imports do not erase saved provider identities.
+Onboarded locations and source inventory live in MongoDB, with optional reviewed community
+overrides and connector defaults rather than an exhaustive checked-in source list.
+Each location has a **source map**
+(`source_map`, one record per source: reader, parameters, section, how it was found, health,
+editor status and an optional window override). At the start of a run, each discovery
+method that is due runs as its own job, then `plan_sources` turns the map into collection
+tasks. A failed method keeps what it found before and retries after an hour.
+
+| Method | Finds | Refresh |
+| --- | --- | --- |
+| `government` | The city's and county's official websites (location profile; county via OpenStreetMap Nominatim) and their CivicPlus feeds (news, calendar, agendas, alerts); Agenda Center as a link | 30 days |
+| `osm` | Websites of town halls, libraries, community centres, schools, colleges, arts venues, theatres, museums, markets, associations, places of worship, funeral homes and parks inside the area (Overpass, with mirrors; at most 2 per host, 40 per location) | 30 days |
+| `meetings` | Legistar, CivicClerk and PrimeGov accounts for the city and county, by name | 30 days |
+| `opendata` | Socrata portals for the city, county and state (found by catalogue search and `data.<name>.gov`) and their police, fire, permit, inspection, licence and 311 datasets with a date column and a location or city column | 14 days |
+| `newsrooms` | Wikidata outlets published within 25 km with a current feed | 14 days |
+| `athletics` | The state's school athletic association (Wikidata) | 30 days |
+| `publishers` | Outlets news search found covering the place 2+ times (`news_publishers`) | 7 days |
+| `llm` | Gemini Flash-Lite suggestions (Google Search grounding when the key allows it); every URL is fetched before it is kept; inside the area only when the site names the place | 30 days |
+| `national` | NWS, USGS, EPA, Census, Justice Department, Wikipedia, Bluesky, library systems, the city's meetings, news search, reader stories, family notices | 7 days |
+| `dork` | Agentic runs only. Google operator queries per priority topic, each tied to the place, its city or a local institution, then general families; every result is fetched and tested. Saved as `proposed`. Fails and retries within the hour if no search could run | Every agentic run; results cached 7 days |
+| `agent` | Agentic runs only, as `agent_round` jobs after the methods above. Checks the city's website, local institutions and each good site's sections, then queries planned from what was just found. Saved as `proposed` | Every agentic run |
+
+An agentic find never changes a source already on the map. Editors pin (always read, ranked higher), pause, reject (never rediscovered) or add sources
+under the location workspace's **Location details → Source network**; readers suggest
+sources on the reader site, and an approved suggestion joins the map pinned.
+A source with nothing for 3 runs, or failing 3
+runs in a row, goes **dormant** and is retried every 14 days. `discovered_sources` still
+caches area facts, newsrooms, athletics and topics; `discovery_state` records each method's
+last result.
+
+To discover another community, use the search UI. Reader search reads the same
+`locations` and saved geographic/Census collections. A community can be searched and
+receive interest signups before publication; only published locations appear in the
+Drive-backed edition picker.
 
 ### Geographic provider operations
 
@@ -152,28 +274,64 @@ import; a failed library reference download is reported as a source gap.
 The public Photon demo has fair-use limits and no availability guarantee. For production
 traffic, configure a hosted or self-managed Photon endpoint and follow its usage policy.
 OSM coverage, jurisdiction metadata, boundaries and publisher websites vary; missing
-sources require editorial configuration, not broader citywide scraping. Feed discovery
+sources are added as editor source links, not broader citywide scraping. Feed discovery
 uses the existing public-HTTPS/robots/DNS/redirect protections and validates feed format.
 
-To remove an onboarded community or town, expand its card's **Location actions**, choose **Remove**
-and confirm. Removal is blocked while a job is running. It clears the town's pipeline
-records and manual links and removes it from output-channel directories.
+To remove an onboarded community or town, open **Pipeline & logs**, expand the pipeline
+card's **Location actions**, choose **Remove** and confirm. Removal is blocked while a
+job is running or a run is active, including an editor-waiting run; cancel that run first.
+It clears the town's pipeline records and manual links and removes it from the reader
+site's published-location directory.
 
-### Publishing settings
+### Reader publishing
 
-Expand **Publishing settings** in **Runs & locations** to manage the main reader site:
-edit its URL, enable or disable publishing, and turn individual locations off.
-Newly onboarded locations are enabled for the default reader site automatically.
-Re-onboarding an existing location preserves any publishing disablement. Existing
-location selections are not changed automatically. Saving settings
-copies the latest published edition for re-enabled towns (if available) and refreshes
-the reader's location directory. Unselected towns leave the directory; their stored
-edition files are not deleted. Towns without a published edition do not appear yet.
+There are no output channels. Publishing writes each edition JSON to the reader folder
+and rewrites that folder's `locations.json` to list every onboarded location with a
+published edition. The reader folder is `NEWSBEE_READER_DRIVE_FOLDER_ID` (default
+`1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`; in local mode, the folder of that name under
+`.local/stage2/drive`). Removing a location rewrites the directory; its stored edition
+files are kept but no longer served. Withdrawing or restoring a story republishes the
+location's latest edition. The `output_channels` collection is no longer read; existing
+documents can be left in place or dropped.
 
-The console no longer has a separate output-channel page, channel picker, or
-channel-creation form. Old `/output-channel` bookmarks redirect to these settings.
-The underlying output-channel API, storage folders, and multi-channel pipeline remain
-unchanged; the simplified UI manages the default `reader-site` channel.
+## Limits
+
+Count limits belong to the `caps` rule group, which is **off by default**: every source on the
+map is read, every item a reader finds is kept, and every section prints every story that passes
+the editorial checks. Turn caps back on for one run on the kick-off panel, or for every run with
+`NEWSBEE_GUARDRAILS_OFF=none` (or any list of groups without `caps`). With caps on, these apply:
+
+| Limit | With caps on | Where |
+| --- | --- | --- |
+| Items rated, candidates and stories printed per section | 30, 20, 10 | `limits()` in `pipeline/core/run-options.ts` |
+| Items per source per section; city-wide items per edition | 5; 3 | `limits()` |
+| Website reads per site: requests, pages, items | 10, 5, 25 | `limits()` |
+| New web sources per host; agentic proposals per host | 2; 12 | `limits()`, `PROPOSED_PER_HOST` in `pipeline/sourcemap/store.ts` |
+| OpenStreetMap places per location; per host | 40; 2 | `OSM_CAP` in `pipeline/discovery/methods.ts` |
+| Items per reader: home safety, justice, neighbours, open data, property, remembrance, earthquakes, Wikipedia, trends | 5, 6, 6, 25, 40, 8, 5, 5, 5 | `MAX_ITEMS` in each connector, through `itemCap()` |
+| Pages per paged API: Justice Department, BiblioCommons | 20, 5 | `MAX_PAGES` in each connector, through `itemCap()` |
+| Stories per run | Off unless set | **Story limit** on the kick-off panel |
+
+These stay on whatever the caps setting, because they keep a run safe or inside its time:
+
+| Limit | Value | Where |
+| --- | --- | --- |
+| Time per source, collection and run | `SOURCE_BUDGET_MS`, `NEWSBEE_COLLECT_BUDGET_MINUTES`, `NEWSBEE_RUN_TIMEOUT_MINUTES` | `pipeline/orchestration/orchestrator.ts`, `pipeline/core/config.ts` |
+| Bytes per feed or page | `MAX_FEED_BYTES` | `pipeline/connectors/common.ts` |
+| Model calls per day for extraction and discovery | `NEWSBEE_MODEL_DAILY_CALLS` | `pipeline/model/budget.ts` |
+| Paid calls per run | `NEWSBEE_PAID_BUDGETS` | `pipeline/trace/gateway.ts` |
+| Feed probes per site at discovery; meeting document pages; agenda items in a meeting summary | 4; 3; 5 | `discovery/feeds.ts`, `connectors/meetings/documents.ts`, `connectors/meetings/meetings.ts` |
+| Items per source on the public edition map | 60 | `MAX_ITEMS_PER_SOURCE` in `pipeline/editions/edition-map.ts` |
+| Sites never fetched: social platforms, plus publishers whose terms forbid automated or AI use (Seattle Times, KUOW, MyNorthwest) | | `DO_NOT_SCRAPE` in `pipeline/connectors/fetcher.ts` |
+
+### Source log
+
+Besides the JSON log records, the server log (Vercel Logs, or the terminal locally) prints
+readable tables of every source with its newsletter section (`pipeline/orchestration/source-log.ts`):
+
+- `=== Newsbee sources: <location>: <discovery method>, N found, M new on the map ===` as each discovery method finishes;
+- `=== Newsbee sources: run <id> for <location>, N of M sources on the map read ===` when a run plans collection, listing every source on the map, how it was found and why any is not read;
+- one `[newsbee:source] <location> | <section> | <source> | <status> | N items kept, M left out | <url> | <detail>` line as each source finishes.
 
 ## Model providers
 
@@ -189,94 +347,152 @@ provider or network error, the same call is retried on the next provider.
 
 Example: `NEWSBEE_MODEL_PROVIDERS=gemini,openai`, `NEWSBEE_GEMINI_API_KEY=...`,
 `NEWSBEE_LLM_OPENAI_MODEL=gpt-4.1-mini`, `NEWSBEE_LLM_OPENAI_API_KEY=...`. Cloud mode
-defaults to `gemini` and rejects `ollama`. **Health** shows each provider's status; health
+defaults to `gemini` and rejects `ollama`. **System health** shows each provider's status; health
 is failed when none can serve requests and warning when running on a fallback.
-Every provider call is recorded (35-day retention); **Health** shows calls, tokens, 429s
-and estimated cost. Optionally set `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK`,
-`_OUTPUT_COST_PER_MTOK` (USD per million tokens), `_RPM_LIMIT` and `_RPD_LIMIT` to see
-cost and limit warnings (e.g. `NEWSBEE_MODEL_GEMINI_RPM_LIMIT=15`).
+Every generation attempt is recorded (35-day retention), including failures and fallbacks.
+**Model usage** shows calls, reported input/output tokens, estimated cost and coverage by
+actual provider/model, location, pipeline role and UTC day. Plain and structured generations
+retain provider token metadata; Gemini output includes separately reported reasoning tokens.
+Pipeline jobs attach location/run context safely across concurrent workers. Manual discovery
+attaches location context. Older calls without context remain **Unassigned / historical**.
+No prompts or generated text are stored in usage accounting.
+
+Set both `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK` and `_OUTPUT_COST_PER_MTOK`
+(USD per million tokens) for the currently configured model. Gemini's light model has its
+own `NEWSBEE_MODEL_GEMINI_LIGHT_*` prices, never the writing model's rates. `_RPM_LIMIT`
+and `_RPD_LIMIT` remain optional quota references (for example
+`NEWSBEE_MODEL_GEMINI_RPM_LIMIT=15`). For exact historical/other models, set
+`NEWSBEE_MODEL_PRICING` to a JSON array with `provider`, `model`, `input_per_mtok` and
+`output_per_mtok`; see [deployment](../../Docs/deployment.md#model-usage-pricing).
+Unknown prices/token counts are excluded from the **priced subtotal**, never treated as
+free. Both rates must be configured; explicit zero rates are supported. These estimates
+apply current configured prices to history, not historical price snapshots or provider bills.
 Hosted structured calls reserve at least 4,096 tokens for reasoning and output; story-length
 limits and publication validation remain unchanged.
 
 Ranking prefers the configured **hosted providers only**, in their listed order, whenever
 any are configured; it does not silently spill the workload onto Ollama. No new API
 key is needed if Gemini/Groq is already configured. Ollama-only configuration remains
-available. Hosted APIs may impose rate limits or charges; a free tier is not an unlimited
-quota. Because stories are uncapped by default, set `NEWSBEE_MAX_STORIES` or
-`NEWSBEE_STORY_CANDIDATES_PER_SOURCE` (see [Limits](#limits)) if runs exhaust a free quota.
+available. Authoring stages up to twenty candidates per section and publishes up to
+ten passing stories per section. Hosted APIs may impose rate limits or
+charges; a free tier is not an unlimited quota.
 
 ## Test
 
 ```text
-npm test            # vitest: connectors, ranking, authoring, model providers, orchestration (in-memory MongoDB; no real model or API calls)
 npm run lint        # tsc --noEmit
+npm test            # Vitest unit and isolated MongoDB-backed regression tests
+npm run build       # production Next.js build and type validation
 ```
 
-Opt-in live neighborhood smoke (Ollama running with `qwen3:4b` installed):
+The suite covers model/provider accounting and concurrency, writing/ranking checks,
+reader boundaries and usage aggregation, password-only map/admin isolation, deployment
+routing, connector contracts and storage. MongoDB-backed tests create isolated databases;
+the first run may download a MongoDB binary. For a focused check:
 
-```powershell
-$env:NEWSBEE_TEST_OLLAMA = "1"
-npm test -- pipeline/tests/communities/ollama.integration.test.ts --maxWorkers=1
+```text
+npm test -- pipeline/tests/workspace/internal-access.test.ts pipeline/tests/workspace/usage.test.ts pipeline/tests/model/usage.test.ts
 ```
 
-This searches uncataloged Wallingford through live Photon, adds and validates the live
-Wallyhood RSS feed, and runs the real news connector, ranking, authoring and local
-publication with **Ollama only**, explicitly advancing both editor gates. Automatic
-sources are disabled to bound the smoke to that feed. Missing reference-library
-branches remain a visible gap; this is not a full live library/government crawl.
-Artifacts and `smoke-result.json` persist under `.local/community-smoke`
-(override with `NEWSBEE_SMOKE_ROOT`); the isolated test MongoDB is temporary.
+These are not live-provider or full browser end-to-end tests. Use the run inspector,
+item traces and alerts in preprod, and inspect a real published edition before a production
+release. Local sample-data previews verify presentation and access boundaries, not live
+source coverage, real model output, billing or cloud credentials.
 
 ## How a run works
 
-One run per location, with three manually triggered stages; each step is a job in MongoDB
-`pipeline_jobs`, sized for one Vercel function call. Cloud admin triggers publish a wake-up
-to Vercel Queues; its private `/api/pipeline/queue` consumer executes one job and publishes
-the next within the current stage. Retries and worker-lease waits use delayed deliveries;
-editor gates never start automatically. No self-HTTP calls or `CRON_SECRET` are needed for
-portal-started cloud stages. The deployed Vercel cron remains disabled. Locally, admin
-triggers use `/api/pipeline/advance` with short-lived tokens signed with `AUTH_SECRET`,
-and `npm run local` supplies that secret automatically. Configure it yourself when using
-`npm run dev` directly.
+One open run per location, of two kinds that share the job queue and never start each other:
 
-Locations execute **sequentially**, including across overlapping local ticks, queue deliveries
-and manual triggers. A renewable MongoDB worker lease prevents parallel model requests
-from different scheduler calls. The oldest run with pending/running jobs in its
-in-progress stage finishes that stage (or fails) before the next location starts; a run
-waiting for backoff keeps later locations queued. A run waiting for an editor holds no
-worker lease and does not block another location.
-Each job executes in its own invocation in local and cloud mode, preserving the separate
-Vercel function boundary without bypassing serialization or backoff. Optional ticks can
-also recover interrupted work, but never cross a gate.
+- A **map run** (**Refresh source map**) only writes the source map: `discover` jobs, `agent_round` jobs when the source map method is agentic, then `finish_map`, which saves each meeting and library source's working address. It stops at `mapped`.
+- An **edition run** (**Create edition**) only reads the map. A saved address that fails is marked `needs_remap` for the next map run, with no searching and no link-picking model calls. A location with no sources is refused with "Build the source map first".
 
-1. **Start pipeline (collection)**, per location or all locations: one job per source
-   (library, meetings, hazards, state news, trending, and the parent-and-homeowner sources:
-   city calendar, drinking water, housing permits, development permits and school athletics).
-   Rule-based preselection keeps up to **5 candidates per source** in hosted and local
-   modes; the combined pool is capped again at five per connector type. With ten types, at
-   most **50 candidates per location** reach model ranking. State feeds still retain up
-   to 25 geographically relevant items per newsroom before preselection,
-   use the richest available RSS/Atom content and exclude announcements older than 14
-   days or future-dated items. Older onboarded locations without a government profile
-   get a real meeting-discovery task rather than silently skipping meetings.
-   Failed sources are retried, then recorded without blocking the other sources.
-   The run stops at `awaiting_authoring`; no ranking or writing starts automatically.
-2. **Start authoring**: score candidates in batches of at most 12 with up to 600 characters of
-   source context for hosted ranking (280 for Ollama). Retry missing/invalid ratings once,
-   then report deterministic fallback scores explicitly. Ranking reports retain provider,
-   model, pool size, attempts, errors and fallback counts. Author candidates in ranked
-   order, one story per job, with validation and one retry; failures are held with reasons
-   and do not consume publication slots. Continue until the ranked pool is exhausted, or
-   until `NEWSBEE_MAX_STORIES` stories pass checks when that cap is set, without separate
-   town/county/nearby quotas or attempt caps.
-   The run stops at `awaiting_finish`; front-page/email writing and publication wait.
-3. **Write front page and email, then publish**: write the edition front page and email
-   preview, save the artifacts, and publish the edition to every enabled output channel
-   that selects the location. Published items and front-page/email context use ranked
-   order; the reader still groups stories into news and upcoming-event sections.
-   Email is preview-only: **no email is sent**.
+Each step is a job in MongoDB `pipeline_jobs`, sized for one Vercel function call. An edition has three stages. Under **autopilot** (the default) they follow on from each other, recorded in `stage_transitions` with the actor `autopilot`; in **manual** mode each waits for a click. Cloud admin triggers publish wake-ups to Vercel Queues; the private `/api/pipeline/queue` consumer executes one job per delivery, then starts a worker for each free slot with work ready (`pipeline/orchestration/dispatch.ts`). Retries and interrupted workers use one delayed delivery. No cron, self-HTTP calls or `CRON_SECRET` are needed for portal-started cloud stages. Locally, admin triggers use `/api/pipeline/advance` with short-lived tokens signed with `AUTH_SECRET`, and `npm run local` supplies that secret automatically. Configure it yourself when using `npm run dev` directly.
 
-The run list/detail and Health show both waiting states. Authenticated same-origin admin
+Jobs run in **worker slots**, `NEWSBEE_COLLECT_CONCURRENCY` at once (default 3 in the cloud, 6 locally). Sources and discovery methods overlap; agent rounds, planning and authoring go one at a time within a run. Editions come before map runs, then the oldest run first, and spare slots go to the next run. A run waiting for an editor holds no slot.
+
+Each source stops starting new requests after 60 s and keeps what it has (`partial`). Collection moves on to writing after `NEWSBEE_COLLECT_BUDGET_MINUTES` (default 8, from when its first source starts), marking sources it didn't reach as `not_reached`. Job logs stay in MongoDB for 14 days, with one file per stage saved to the artifact store.
+
+1. **Collection** (**Create edition**, per location or all locations): `plan_sources`, then one
+   `collect_source` job per source on the map, the quickest and most useful first (active, pinned, and dormant ones due a retry). Each reader reads its source
+   over its window and keeps every item, recording what it left out and why
+   (`collected_items`). Failed sources are retried, then recorded without blocking the
+   others. The run passes through `awaiting_authoring`.
+
+   The **agentic flow** adds these steps, the first two in map runs and sweeps in editions, and
+   everything from authoring onward is shared:
+   - The `dork` discovery method runs operator queries per priority topic
+     (`pipeline/discovery/topics.ts`), and each result is fetched and tested for access,
+     coverage, format and whether it is current before it becomes a source
+     (`pipeline/discovery/evaluate.ts`, `pipeline/discovery/inspect.ts`).
+   - `agent_round` jobs (`pipeline/agent/map-sources.ts`) start from free leads: the city's checked
+     website (`discovery/city-site.ts`), local institutions from OpenStreetMap
+     (`discovery/institutions.ts`), then the other sections of each good site. They then plan
+     queries for the thinnest topics, using `site:` only on confirmed sites and throwing away any
+     query not tied to the community, and the model judges what passed the rules. The prompt loads `skills/map-sources/SKILL.md`. Each round is one job,
+     so the queue is its checkpoint, and each stops starting new work after 200 seconds. They stop
+     after six rounds, or when leads run out and two rounds find no new primary source. The agent
+     has no database access, and page text is data. A topic with no evidence ends as "not found"
+     with the queries tried.
+   - A rejected key (HTTP 401 or 403) stops further calls to that service for the run, and the
+     funnel shows failed searches apart from those that ran.
+   - New sources are saved as `proposed`, with evidence, source tier and an access record. Only
+     agentic runs read them, so current runs stay a clean baseline. To let current runs read one,
+     **Activate** it on the source map.
+   - `sweep` tasks (`pipeline/connectors/sweep`) run `after:` queries per topic, trace secondary
+     stories to original records, and propose useful new sites back to the map.
+   - Agent extraction (`pipeline/agent/extract.ts`) reads pages the readers can't parse. Each
+     item needs a verbatim quote found in the page, or it is dropped. The web reader does this
+     for at most two pages per site per run.
+2. **Authoring**: `author_start` assembles the pool: locality checks for items not
+   already placed (name, alias, landmark, geocoded address, then the article text; up to
+   40 geocodes and 20 articles), merging copies of one story, the no-repeat ledger, and
+   sections. Then one `author_rank` job per section: rules order the section, bounded
+   evidence gathering enriches its top 30, the model rates them using source passages
+   rather than just feed teasers, and the v5 pass refines them; when all sections are ranked, the top
+   **20 per section** become candidates (at most 5 per source per section, at most 3
+   city-wide items). `author_story` writes one candidate per job: details extraction with
+   the light model (cached, within the daily cap; otherwise rule details), the writing
+   floor, the writer with one validation retry. A section stops once **10 stories** pass.
+   Across the eleven sections this permits up to 110 stories, not a required fill count:
+   local relevance, diversity, withdrawals, validation and model budgets still apply.
+   The reader's **All stories** view includes every published item even when it is not
+   in the top five, a topic preview or the edition's seven-day event grid.
+   Home sales, permits, scores and death notices print as compact digest entries from their
+   source facts, with no model call. Exploration raises the limits above, keeps and flags items
+   that fail a check, and records the rule on each.
+   The run passes through `awaiting_finish`.
+3. **Publish**: the strongest story leads; the front page
+   and email preview are written; the edition, the ledger, the source map's published
+   counts and the **edition map** (`edition_maps`) are saved and the edition is published
+   to the reader folder. Email is preview-only: **no email is sent**. Under autopilot on a
+   deployed environment this publishes live with no human check; the floor and validators still
+   apply, and a story can be withdrawn. Runs with **Count toward history** off print, but leave
+   the no-repeat ledger and edition window alone.
+
+### Run options and the decision record
+
+Each run saves its options (`pipeline/core/run-options.ts`) and reads them through an async
+context, so the fetcher, the gateway, the floor and the assembler see the same choices. See
+[Run options](../../README.md#run-options) for every setting.
+
+| Collection | Holds |
+| --- | --- |
+| `pipeline_runs` | `options`, and `source_snapshot`: the sources as they stood when the run planned collection |
+| `source_map` | Adds status `proposed`, `source_tier`, `evidence`, `access`, `why`, `topics`, `access_overrides`; `found_by.query` holds the exact query |
+| `collected_items` | Adds `would_have_blocked` and `access_overrides`; `facts` adds `source_tier`, `topic` and `found_by_query` |
+| `run_decisions` | The decision log: stage, actor (`rule`, `model`, `classifier`, `agent`, `provider`, `reader`), subject, decision, reason and evidence. No expiry |
+| `search_queries` | Each query, its topic and results, and the sources it led to. Results are reused for 7 days, so a repeat doesn't pay twice |
+| `api_calls` | Each external and paid call or skip, with estimated cost |
+| `agent_state` | The mapping agent's progress per run |
+
+The source map's run funnel (`pipeline/trace/funnel.ts`) reads these. Runs from before this record
+fall back to their saved `edition_maps`, and what was never recorded is labelled, not estimated.
+Routes: `GET /api/maps/locations/<id>/runs`, `GET /api/maps/locations/<id>/runs/<run>/funnel`
+(with `?stage=` or `?item=`), `GET /api/admin/runs/<run>/decisions`,
+`GET /api/admin/runs/<run>/api-calls`, `GET /api/admin/run-options`,
+`DELETE /api/admin/relaxed-content`, and `POST /api/agent-tools` (local only, for a harness).
+
+The run list/detail and the Dashboard show both waiting states. Authenticated same-origin admin
 POSTs to `/api/admin/runs/<run-id>/authoring`, `/finish` and `/resume` back the controls.
 Stage triggers return 409 from an incompatible state; re-clicking the current in-progress
 stage resumes it. Stage transitions record the editor email (or worker identity).
@@ -292,11 +508,13 @@ Exhaustion fails the run before publication and leaves the last published editio
 Job errors, retry counts and availability timestamps expose the wait in run inspection.
 A daily quota cannot be solved by backoff; capacity must recover or be increased.
 
-**Runs & locations** shows pipeline progress, published/held counts and **Inspect run**
-for each source, story (with held reasons) and job. Each cloud source collection runs in
+**Location management** shows pipeline progress and published/held counts for every
+location; open a location for its run history and **Inspect run** for each source, story
+(with held reasons) and job. A failed or interrupted job can be retried on its own with
+**Retry failed step only**, keeping completed jobs and authored work. Each cloud source collection runs in
 its own authenticated Vercel function invocation; structured per-attempt JSON-line logs
 are stored under `.newsbee-pipeline/logs/<run-id>` beneath the configured Drive folder
-and are available from each job in **Inspect run**. **Health** shows current providers,
+and are available from each job in **Inspect run**. **System health** shows current providers,
 scheduler and queue, plus 7/30-day charts filtered by location: completed/failed runs,
 published/held stories, source outcomes and average run duration. History uses recorded
 run data, not estimated provider uptime. Every step writes structured JSON logs.
@@ -314,6 +532,43 @@ claims, repeated sentences, incomplete headlines, sensitive topics, unsafe sourc
 and geographic mismatches are still rejected. Presentation relaxations do not authorize
 inventing missing context. Checks are rule-based safeguards, not a guarantee of factual
 entailment.
+
+### Source evidence before selection
+
+`pipeline/editions/evidence.ts` separates evidence retrieval from model extraction.
+Before final section ranking it reads the shortlisted articles even when the light
+model is unavailable or the daily model-call cap is exhausted. It considers every
+candidate's first source before second sources, with at most **20 new document reads
+per section, 4 per host, 2 sources per story**, and a 45-second admission window
+(an in-flight request, robots pacing, or bounded PDF decoding may finish later).
+Requests time out after 5 seconds and accept at most 4 MiB. Existing public-address,
+redirect, robots, rate-pacing, reuse/AI opt-out and paywall checks still apply.
+Link-only sources are not enriched. One explicit same-origin agenda, staff-report,
+project/application/registration-details link may supplement the article; another
+already-merged reporting source takes precedence. There is no recursive crawl.
+HTML and text PDFs are supported, reusing the meeting reader's maximum 12 PDF pages;
+scans without text and unsupported documents are reported, not invented or OCR'd.
+
+Reuse-checked text has a 24-hour enrichment freshness limit (30-day storage TTL).
+The packet retains source/final URLs, retrieval time, a content hash and verbatim
+passages selected from up to 12,000 characters, favoring useful later details such as
+deadlines and costs instead of only a prefix. Ranking uses up to 600 characters;
+extraction/writing use up to 6,000 characters of selected evidence. These are bounded
+evidence windows, not copies of external articles for publication.
+
+Light-model extraction still obeys the daily call cap. Extracted fact values must be
+verbatim in supporting source passages; unsupported values are discarded. Invalid or
+truncated model responses are reported, and provider quota errors retain worker
+backoff. Cached details are keyed by content as well as policy, so changed evidence
+cannot silently reuse old facts. Raw evidence can support writing without an extraction
+call; it is withheld when new evidence triggers the names/address/suicide floor.
+Existing output-length limits and publication checks are unchanged.
+
+Open an **item trace → Source evidence** to inspect fetched/cached/blocked/failed/
+unsupported/budget-limited documents, passages, extraction outcomes, and fields not
+established in structured details. Text volume is explicitly not a factual-quality
+score; these diagnostics do not guarantee source accuracy or factual entailment.
+Evidence remains in the admin trace, not public articles or internal-map snapshots.
 
 Wikipedia and Bluesky discover **locally reported news**, not popularity statistics.
 Their area is the selected town plus reviewed places whose centres are within **15 miles**
@@ -339,90 +594,106 @@ The reader applies the same grouping to older editions without changing their st
 and hides an empty upcoming section. New edition headlines lead with news when available;
 an event can lead an event-only edition.
 
-## Connectors & links
+## Readers and source links
 
-**Connectors & links** is the single place to inspect code-defined connectors, active
-source queries, latest outcomes and discovered link caches, filtered by location. New
-connectors and format support require a pipeline code change, not a portal action.
+The reader registry (`pipeline/connectors/registry.ts`) lists one reader per kind of
+source; each knows its window, story kinds and default ranking. Which sources a location
+has lives in the source map.
 
-Select a location to add a manual link. Choose an existing connector, enter the link and
-click **Validate & save link**. Library feeds/pages must use supported formats and the
-location's onboarded library system; meetings use Legistar or CivicClerk tenant links;
-state news uses RSS/Atom feeds. Editors are responsible for choosing official sources.
-The existing connector must successfully query and parse a link before it is saved.
-Unsupported links are rejected without saving.
-
-Manual links supplement automatic discovery only for the selected town, retain normal
-venue/geographic/editorial filtering, and persist until removed, including when there
-are no current items or a later query fails. Wider-source settings also apply to manual
-state-news links. **Forget discovered links** clears the automatic cache without
-removing manual links. Legacy global source configuration is read-only through the portal.
-
-## Limits
-
-Nothing caps how many items are collected, listed or written unless you set one of these:
-
-| Variable | Default | Effect |
+| Reader | Reads | Window |
 | --- | --- | --- |
-| `NEWSBEE_MAX_STORIES` | unset (no cap) | Model-written stories per edition. Each story is one or two model calls. |
-| `NEWSBEE_STORY_CANDIDATES_PER_SOURCE` | unset (no cap) | Items per source type sent to ranking and writing. Ranking batches 12 items per call. |
+| `web` | Any website on the map: its feed (on record, advertised or a common path), iCal links, schema.org events and articles, recent sitemap pages, story-like links, and each page's title, date, description, authors, image and main text; 10 requests per site; full text kept 30 days (`item_texts`) for details and locality, never republished | News since the last edition (up to 14 days); events 14 days ahead |
+| `opendata` | Any Socrata dataset on the map, columns read from the dataset's own metadata; police and fire calls grouped into incidents (same block within 2 hours) with plain-word call types, block-level places, unit counts and outcomes, notable ones as stories and the rest in one summary; permits (block level), licence applications, inspections; 311 as one summary. Personal columns are never selected | Calls 7 days; records 21 days |
+| `newssearch` | GDELT DOC API, three topic searches per place (`NEWSBEE_NEWS_SEARCH`, default `gdelt`; `llm` adds Gemini grounded search). Google News RSS is not used (its robots.txt disallows `/rss`) | Since the last edition (up to 14 days) |
+| `library`, `meetings`, `hazards`, `trending`, `homesafety`, `housing`, `justice`, `community`, `remembrance` | Library calendars, Legistar/CivicClerk meetings, NWS and USGS, Wikipedia and Bluesky, EPA water records, Census permits, Justice Department releases, reader stories, family notices | Per reader |
 
-Every collected item is published as a listing whatever these are set to; they only limit
-model writing. The limits that remain are safety and budget guards, and each can be changed
-in code:
+**Source links.** Under **Location details → Source network → Add a source**, add a website or feed (with its section,
+and whether the organisation is inside the area), an open-data dataset (with its topic), a
+meeting platform or a library catalogue. The link is read once with its reader before it is
+saved; unusable links are rejected. Funeral-home sites need a note recording the
+republication permission. Earlier editor links were moved onto the map on the first run.
 
-| Limit | Where | Why it exists |
-| --- | --- | --- |
-| 500 items and 4 MiB per feed | `pipeline/connectors/common.ts` (`MAX_FEED_ITEMS`, `MAX_FEED_BYTES`) | One huge or broken feed cannot exhaust a run |
-| 2 MiB per web page, 3 redirects | `connectors/library/index.ts`, `connectors/meetings/discovery.ts` (`MAX_PAGE_BYTES`), `connectors/fetcher.ts` (`MAX_REDIRECTS`) | Same, for HTML pages |
-| 5,000 permit rows per query | `connectors/development/index.ts` (`MAX_ROWS`) | Socrata query size |
-| 50 pages of BiblioCommons events | `connectors/library/bibliocommons.ts` (`MAX_PAGES`) | Pagination guard |
-| 25 water systems looked up | `connectors/homesafety/index.ts` (`MAX_SYSTEMS`) | One extra request per system |
-| 3 candidate pages when discovering a library or meeting platform | `connectors/library/index.ts`, `connectors/meetings/discovery.ts` (`MAX_CANDIDATE_PAGES`) | Discovery request budget |
-| 3 articles per trend search, 3 trend feeds | `connectors/wider/trend-context.ts` (`MAX_REPORTS`) | One request per article |
-| AI link discovery: 150 links offered, 3 chosen | `connectors/ai-discovery.ts` (off unless `NEWSBEE_AI_LINK_DISCOVERY`) | Model cost |
-| Events in the next 7 days | `core/time.ts` (`WINDOW_DAYS`) | Edition window |
-| News looked back 7 to 14 days (water violations 180) | each connector's `LOOKBACK_DAYS` / `PAST_DAYS` | Freshness |
-| 5 agenda items quoted in a meeting summary | `connectors/meetings/meetings.ts` (`MAX_ITEMS`) | Summary length only; every meeting is still collected |
-| 10 results per directory search | `communities/directory.ts` (`SEARCH_LIMIT`) | Search box results |
-| Automatic discovery searches 1.5 km around a neighborhood's center, 4 km around a town's | `communities/source-discovery.ts` (`NEIGHBORHOOD_RADIUS_M`, `TOWN_RADIUS_M`) | Area of the location |
-| Organization types searched | `communities/source-discovery.ts` (`PLACE_TAGS`) | Schools, libraries, community, faith, arts, parks, public safety, community groups; gyms and private daycares are left out |
-| Discovery time budget: 150 s per run, 120 s at onboarding | `communities/source-discovery.ts` (`DISCOVERY_BUDGET_MS`) | Fits one 300-second job; unchecked sites are retried on the next run |
-| Rediscovery every 7 days | `communities/source-discovery.ts` (`REDISCOVER_AFTER_DAYS`) | Incomplete discoveries are retried on the next run |
-| One feed per kind per organization website | `communities/source-discovery.ts` | The same content is often offered as RSS and Atom, or several iCalendar exports |
+**Crawling guardrails** (`connectors/fetcher.ts`, `connectors/web/page.ts`): public data APIs
+skip robots.txt; websites are robots-checked, sites that opt out of AI crawlers are skipped,
+crawl-delay is honoured up to 5 s, requests to a host are paced (0.75 s), 3 "slow down"
+answers stop a host for the job, login redirects and 401/403 are skipped, pages marked
+`noindex`/`noai` or with a mining reservation are skipped, `nosnippet`/paywalled pages keep
+only the headline and link, and Facebook, Nextdoor, Instagram, X, Reddit, TikTok and
+Legacy.com are never fetched.
 
-Automatic discovery prints every place it checked and every feed it found, with its category,
-when a location is onboarded and whenever sources are rediscovered; the `neighborhood` source
-then prints each feed's status and item count on every run.
+**Lookup windows and repeats.** News-like sources read since the last edition, capped per
+type (news 14 days, calls 7, records 21, meeting minutes 35); events and meeting previews
+read 14 days ahead. The ledger (`published_stories`) records each printed story's merge
+group and distinctive tokens: a later copy with nothing new is dropped, one with 2+ new
+facts is printed as an update; events print at most twice (first mention, then a "this
+week" reminder) and a recurring event at most once every 4 weeks.
 
-Every run prints its sources to the server log (Vercel **Logs**, or the terminal locally):
-a table of the sources found when a location is onboarded, a table when a run starts,
-one `[newsbee:source]` line per source as it finishes, and a summary table of every
-source's status, item count, listings and category once collection completes.
+**Details and the floor.** Before writing, the light model extracts each story's people,
+organisations, places, numbers, what happened, a short quote and the next step from its
+text (names and quotes are checked against the text). The writer leads with them. The floor
+(`editorial/floor.ts`): allegations stay allegations; no names of minors who are suspects,
+defendants or victims, or of sexual-assault or domestic-violence victims (withheld from the
+writer and checked in the draft); no house numbers (block level); suicide reported without
+method details and with the 988 line. Crime, arrests, deaths and court cases are otherwise
+ordinary stories, and students may be named in a positive light. Only private matters
+(tenancy, benefits, personnel) are held before writing.
+
+**Story kinds** are defined once in `pipeline/editorial/kinds.ts`; sections in
+`pipeline/sourcemap/sections.ts`.
+
+### Ranking (v5) and voice
+
+Within each section, after rules order it and the model rates its top 30 (`model/newsworthiness.ts`), `ranking/edition-ranker.ts`:
+1. multiplies each score by a per-community, per-category Thompson-sampling draw learned
+   from anonymous reader views, article opens (historically source opens) and shares (`reader_engagement`), with a prior
+   pooled across communities; categories with no reader data are left unchanged;
+2. asks the model once to order the top ten as an editor would, adding a Borda bonus
+   (no bonus if that call fails);
+3. reorders by maximal marginal relevance so similar stories (same category, source or
+   title) are spread out.
+
+Each story's breakdown appears in run inspection's **Why ranked** column.
+`NEWSBEE_RANKING=classic` uses the model ratings alone.
+
+`model/voice.ts` sets the writing voice (`NEWSBEE_VOICE`: `plain`, `lively` (default) or
+`bold`). Court cases, deaths, safety notices, weather alerts and earthquakes are always
+plain. On top of the existing fact checks, drafts are rejected for clickbait phrases,
+numbers or superlatives not in the source, all-caps shouting or too many exclamation marks.
 
 ## Cloud configuration (Vercel)
 
 | Variable | Purpose |
 | --- | --- |
-| `NEWSBEE_MODE=cloud` | Use Drive and require Google sign-in |
+| `NEWSBEE_MODE=cloud` | Use Drive and require Google administrator sign-in for the workspace; reader pages and password-only maps remain independently reachable |
 | `MONGODB_URI`, `MONGODB_DATABASE` | MongoDB Atlas |
 | `NEWSBEE_MODEL_PROVIDERS` plus each provider's variables (see Model providers) | LLM APIs, in fallback order |
+| `NEWSBEE_VOICE` (optional) | Writing voice: `plain`, `lively` (default) or `bold`. Court, death and safety stories are always plain |
+| `NEWSBEE_RANKING` (optional) | `v5` (default: engagement bandit, editor pass and variety) or `classic` (model ratings only) |
+| `NEWSBEE_ARTIFACT_STORE=mongo` (optional) | Keep editions and run artifacts in the MongoDB `artifacts` collection instead of Google Drive, for accounts without a Shared drive. Set it on both services; the Drive variables below are then not needed |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Drive writer key; use JSON to keep it distinct from the reader's email/private-key variables in the shared project |
-| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts and new channel folders |
-| `NEWSBEE_READER_DRIVE_FOLDER_ID` | Drive folder for the default `reader-site` channel when it is first created; set it so a new deployment does not publish into the original team's folder. Existing channels keep their folder (edit `output_channels.drive_folder_id` to move one) |
-| `NEWSBEE_ARTIFACT_STORE=mongo` (optional) | Store editions, locations.json and run artifacts in MongoDB (`artifacts` collection) instead of Google Drive. Use it when you have no Workspace Shared drive; the Google service-account and Drive folder variables are then not needed. Set it for both services, since the reader reads from the same collection |
+| `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts |
+| `NEWSBEE_READER_DRIVE_FOLDER_ID` | Reader folder that published editions are written to; defaults to `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw` |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
+| `NEWSBEE_INTERNAL_PASSWORD` | Required to enable both read-only maps and `/api/maps/*`; independent of administrator authentication, fail-closed when unset |
+| `NEWSBEE_MODEL_PRICING` (optional) | Exact provider/model input/output USD-per-million-token overrides; see Model providers and the deployment pricing guide |
+| `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK`, `NEWSBEE_MODEL_<NAME>_OUTPUT_COST_PER_MTOK` (optional) | Both rates price the currently configured model; use separate `GEMINI_LIGHT` rates for the light model |
 | `CRON_SECRET` (optional) | Authorizes optional Vercel Cron calls to `/api/pipeline/tick`; cloud stages use Vercel Queues instead |
 | `NEWSBEE_RUN_TIMEOUT_MINUTES` (optional) | Fail an in-progress stage after this time, excluding editor waits (default 60, `0` disables) |
+| `NEWSBEE_COLLECT_CONCURRENCY` (optional) | Jobs running at once (default 3 in the cloud, 6 locally) |
+| `NEWSBEE_COLLECT_BUDGET_MINUTES` (optional) | Move on to writing after this long collecting (default 8, `0` disables) |
+| `NEWSBEE_JINA_API_KEY` (optional) | A higher Jina Reader limit; it works without a key at a lower one |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
-| `NEWSBEE_READER_SITE_URL` | Full reader URL, `https://<host>/reader`; used only when inserting the default channel |
+| `NEWSBEE_READER_SITE_URL` | Full reader URL, `https://<host>/reader`; used for links in email previews |
 
 Deploy one Vercel project from the repository root using root `vercel.json`.
 The journalist service owns `/` and its existing APIs; the reader owns `/reader`.
 There are no HTTP dependencies between services, so no bindings are required.
-See the [root deployment guide](../../README.md#deploy) for shared environment settings.
+See the [deployment guide](../../Docs/deployment.md) for shared environment settings.
 
 ### Configure Google Drive
+
+Skip this section when `NEWSBEE_ARTIFACT_STORE=mongo` is set.
+
 
 1. In Google Cloud Console, create or select a project, enable the **Google Drive API**,
    and create a service account with a JSON key.
@@ -433,7 +704,7 @@ See the [root deployment guide](../../README.md#deploy) for shared environment s
    (`https://drive.google.com/drive/folders/<folder-id>`) and share the folder with the
    service account's `client_email`, granting write access (for example, Shared-drive
    **Content manager** membership). The same account needs
-   access to the output-channel folders where published editions are stored.
+   access to the reader folder where published editions are stored.
 3. In the journalist site's Vercel project, add `NEWSBEE_MODE=cloud`,
    `GOOGLE_SERVICE_ACCOUNT_JSON` containing the JSON key, and
    `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` containing the root folder ID. In the shared
@@ -459,11 +730,11 @@ existing deployment. In **Inspect run**, resume the failed run after redeploymen
 Do not paste credentials into logs, issues, or chat.
 
 The journalist site uses the configured pipeline folder directly: run artifacts are stored
-in `.newsbee-pipeline/` and new channel folders are created in `output-channels/` beneath
-that folder. It does not create an extra app-level folder. Each output channel stores its
-own Drive folder ID in MongoDB; the reader site reads published editions from that channel
-folder, not directly from the pipeline root. Existing channel folder IDs are kept; the app
-does not move existing channel data. Drive API calls support Shared Drives, but the pipeline
+in `.newsbee-pipeline/` beneath that folder. It does not create an extra app-level folder.
+The reader site reads published editions from the reader folder
+(`NEWSBEE_READER_DRIVE_FOLDER_ID`), not from the pipeline root. **Drive diagnostics**
+(`/drive-diagnostics`) shows the service account and pipeline folder and can run a write
+test. Drive API calls support Shared Drives, but the pipeline
 folder must actually be on a Shared Drive for service-account uploads; sharing a My Drive
 folder with the service account alone does not resolve its storage-quota error. If the
 log reports `Service Accounts do not have storage quota`, move or recreate the configured
@@ -477,6 +748,5 @@ minute-by-minute recovery, add a top-level `crons` entry targeting that path and
 Optional recovery only processes an editor-started stage; it cannot cross an editor gate.
 
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
-`journalist_admins` (lowercase); the **Administrators** page adds more. Reviewed source
-overrides (`config/*.json`) are seeded into `source_configs`; location-specific additions
-are validated and stored separately in `location_source_links`.
+`journalist_admins` (lowercase); the **Administrators** page adds more. Each location's sources live in
+`source_map`; editor additions are validated and pinned there.

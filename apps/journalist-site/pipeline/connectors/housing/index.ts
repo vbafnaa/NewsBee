@@ -7,7 +7,8 @@
  */
 import { monthName } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
-import { decode, fetchResponse, reportingSince, runCollector, skip, SourceUnavailable } from "../parents/shared";
+import { decode, fetchResponse, reportingSince, REPORTING_WINDOW, runCollector, skip, SourceUnavailable } from "../parents/shared";
+import * as parentsRanking from "../../ranking/parents";
 
 export const BPS_BASE = "https://www2.census.gov/econ/bps/Place";
 export const MONTHS_BACK = 4;
@@ -61,6 +62,15 @@ export function parsePlace(text: string, state: string, place: string): PlaceRow
 
 export const housingConnector: Connector = {
   type: "housing",
+  meta: {
+    name: "Housing market",
+    formats: "Census Building Permits Survey monthly place file (new residential units and value)",
+    manual: false,
+    coverage: { group: "parents", label: "housing permit figures" },
+    storyKinds: ["housing_market"],
+  },
+  window: REPORTING_WINDOW,
+  rank: parentsRanking.housing,
   sources(location) {
     const geoid = placeGeoid(location.census_geoid);
     return geoid && REGIONS[geoid.state] && !location.community ? [{ source_id: "housing:census-bps", name: "New home permits (Census)", type: "housing" }] : [];

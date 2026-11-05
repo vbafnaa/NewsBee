@@ -11,10 +11,13 @@ import { addDays, plainText } from "../common";
 import type { CollectedEvent, Connector, ConnectorContext, SourceResult, SourceTask } from "../types";
 import { publishedText } from "../wider/adapters";
 import { fetchJson, isoDay, label, locationRegion, placeTier, runCollector, sectionFor, skip, SourceUnavailable } from "../parents/shared";
+import * as parentsRanking from "../../ranking/parents";
+import { itemCap } from "../../core/run-options";
 
 export const EPA_BASE = "https://data.epa.gov/efservice";
 export const LOOKBACK_DAYS = 180;
 export const MAX_SYSTEMS = 25;
+export const MAX_ITEMS = 5;
 const STATE = /^[A-Z]{2}$/;
 const CATEGORY: Record<string, string> = {
   MCL: "a contaminant above the federal maximum level",
@@ -31,6 +34,15 @@ export function reportUrl(pwsid: string) { return `${EPA_BASE}/VIOLATION/PWSID/$
 
 export const homeSafetyConnector: Connector = {
   type: "homesafety",
+  meta: {
+    name: "Home & water safety",
+    formats: "EPA Safe Drinking Water health-based violations for community water systems serving the county",
+    manual: false,
+    coverage: { group: "parents", label: "water-safety records" },
+    storyKinds: ["safety_notice"],
+  },
+  window: { back: { days: LOOKBACK_DAYS } },
+  rank: parentsRanking.homeSafety,
   sources(location) {
     return location.state ? [{ source_id: "homesafety:sdwis", name: "Drinking water safety (EPA)", type: "homesafety" }] : [];
   },
@@ -69,7 +81,8 @@ async function collectWater(task: SourceTask, context: ConnectorContext, record:
     events.push(systemFacts(system, violations, tier, region.town, sectionFor(region, tier, "Water safety")));
   }
   events.sort((a, b) => Number(a.tier !== "local") - Number(b.tier !== "local") || Number((b.signals as Record<string, number>).population_served) - Number((a.signals as Record<string, number>).population_served));
-  const kept = events;
+  const kept = events.slice(0, itemCap(MAX_ITEMS));
+  skip(record, "item_limit", events.length - kept.length);
   record.detail = `${rows.length} health-based violations in ${state} since ${since}; ${bySystem.size} community water systems, ${checked.length} checked, ${kept.length} serving ${region.town} or within 50 km`;
   return kept;
 }

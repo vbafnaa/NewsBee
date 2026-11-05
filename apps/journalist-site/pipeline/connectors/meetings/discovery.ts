@@ -1,5 +1,4 @@
 import type { Db } from "mongodb";
-import { loadSourceConfig } from "../../storage/source-configs";
 import { HttpStatusError, type HttpTransport } from "../../core/http";
 import { logger, type Logger } from "../../core/log";
 import type { ModelRuntime } from "../../model/runtime";
@@ -13,6 +12,7 @@ import { lookup } from "./wikidata";
 
 export const USER_AGENT = "Newsbee-LocalPrototype/0.1 (local government meetings evaluation)";
 export const PAST_DAYS = 7;
+export const MAX_MEETINGS = 25;
 export const MAX_CANDIDATE_PAGES = 3;
 export const SUPPORTED = ["legistar", "civicclerk"] as const;
 export const TENANT = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -28,17 +28,6 @@ export const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 export type DiscoveryOptions = { model?: ModelRuntime | null; log?: Logger };
 export type DiscoveryResult = GovernmentSource & { discovery_method?: "rules" | "ai" };
 
-export async function overrides(root: string, db: Db): Promise<Record<string, { platform: string; tenant: string }>> {
-  const entries: unknown = await loadSourceConfig(db, root, "government-sources");
-  if (!entries || typeof entries !== "object" || Array.isArray(entries)) throw new Error("government-sources.json must map location ids to {platform, tenant}");
-  for (const [key, entry] of Object.entries(entries)) {
-    const value = entry as Record<string, unknown>;
-    if (!value || typeof value !== "object" || !SUPPORTED.includes(value.platform as typeof SUPPORTED[number]) || typeof value.tenant !== "string" || !TENANT.test(value.tenant)) {
-      throw new Error(`government-sources.json entry ${key} needs a platform (${SUPPORTED.join(", ")}) and a lowercase tenant name`);
-    }
-  }
-  return entries as Record<string, { platform: string; tenant: string }>;
-}
 export function sourceId(government: Partial<GovernmentSource> | null | undefined) {
   return `meetings:${government?.platform || "none"}:${government?.tenant || "none"}`;
 }
@@ -185,7 +174,7 @@ async function internalDiscover(transport: HttpTransport, profile: LocationProfi
   }
   if (override) {
     const value = override as { platform: string; tenant: string };
-    return found("override", "Platform from config/government-sources.json", { platform: value.platform, tenant: value.tenant });
+    return found("override", "Platform set by an editor in the journalist portal", { platform: value.platform, tenant: value.tenant });
   }
   const city = profile.name.split(",")[0];
   const system = profile.systems.find((item) => item.latitude !== null && item.latitude !== undefined);

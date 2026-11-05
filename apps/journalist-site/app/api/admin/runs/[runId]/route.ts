@@ -7,6 +7,17 @@ import { COLLECTIONS } from "@/pipeline/storage/mongo";
 
 type Context = { params: Promise<{ runId: string }> };
 
+/** One line on why a story ranked where it did (ranking v5 explain record). */
+function rankingWhy(ranking: { category?: string; explain?: { base: number; engagement: { multiplier: number; views: number }; rerank: { position: number | null; bonus: number }; diversity_penalty: number; final: number } } | undefined) {
+  const explain = ranking?.explain;
+  if (!explain) return ranking?.category ?? null;
+  const parts = [`${ranking?.category ?? "other"}: rating ${explain.base}`];
+  if (explain.engagement.multiplier !== 1) parts.push(`readers ×${explain.engagement.multiplier}${explain.engagement.views ? ` (${explain.engagement.views} views)` : " (exploring)"}`);
+  if (explain.rerank.position) parts.push(`editor #${explain.rerank.position} +${explain.rerank.bonus}`);
+  if (explain.diversity_penalty) parts.push(`variety −${explain.diversity_penalty}`);
+  return `${parts.join(", ")} → ${explain.final}`;
+}
+
 /** One run in detail: every source, every job, and every story (held ones with their reasons). */
 export async function GET(request: Request, context: Context) {
   const { runId } = await context.params;
@@ -26,6 +37,8 @@ export async function GET(request: Request, context: Context) {
       tier: entry.tier,
       disposition: entry.disposition,
       title: entry.result?.story?.title ?? null,
+      rank: entry.result?.ranking?.rank ?? null,
+      why: rankingWhy(entry.result?.ranking),
       reasons: entry.disposition === "held"
         ? (entry.result?.validation_errors?.length ? entry.result.validation_errors : entry.result?.error ? [entry.result.error] : [])
         : [],

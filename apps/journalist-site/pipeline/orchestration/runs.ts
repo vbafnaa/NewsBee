@@ -1,44 +1,61 @@
 /**
- * Pipeline runs: one per trigger per location. A run tracks every source task, the
- * authoring draft and the published edition, and is what the health page summarises.
+ * Pipeline runs: one per trigger per location. A map run only writes the source map; an edition
+ * run reads it, and tracks every source task, the authoring draft and the published edition.
+ * The health page summarises both.
  */
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
 import type { SourceResult, SourceTask, SourceType } from "../connectors/types";
 import { logger } from "../core/log";
+import type { RunOptions } from "../core/run-values";
 import { COLLECTIONS } from "../storage/mongo";
-import { cancelRunJobs } from "./jobs";
+import { cancelRunJobs, type JobKind } from "./jobs";
+import { editionPeriodStart } from "../core/time";
+import { collectedItems } from "../editions/assemble";
 
-export type RunStatus = "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "published" | "failed" | "cancelled";
-export const PROCESSING_RUN_STATUSES: RunStatus[] = ["collecting", "authoring", "finishing", "publishing"];
+/** Count retained inputs in the store authoring reads, not connector/run summary counters. */
+export async function collectionCandidateCount(db: Db, runId: string): Promise<number> {
+  return collectedItems(db).countDocuments({ run_id: runId, status: { $ne: "dropped" }, facts: { $ne: null } });
+}
+
+export type RunStatus = "mapping" | "mapped" | "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "published" | "failed" | "cancelled";
+export const PROCESSING_RUN_STATUSES: RunStatus[] = ["mapping", "collecting", "authoring", "finishing", "publishing"];
 export const ACTIVE_RUN_STATUSES: RunStatus[] = [...PROCESSING_RUN_STATUSES, "awaiting_authoring", "awaiting_finish"];
 export const CANCELLABLE_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter((status) => status !== "publishing");
 
-export async function oldestActiveRun(db: Db) {
+/** The jobs each stage may run. Discovery stays under collecting for runs started before map runs. */
+const STAGE_KINDS: Partial<Record<RunStatus, JobKind[]>> = {
+  mapping: ["discover", "agent_round", "finish_map"],
+  collecting: ["discover", "agent_round", "plan_sources", "collect_source"],
+  authoring: ["author_start", "author_rank", "author_story"],
+  finishing: ["author_finish"],
+  publishing: ["author_finish"],
+};
+export function stageKinds(run: Pick<PipelineRun, "status">): JobKind[] { return STAGE_KINDS[run.status] ?? []; }
+
+/** Runs with work to do. Editions come before map runs, then oldest first, so each finishes in turn. */
+export async function workableRuns(db: Db) {
   return runs(db).aggregate<PipelineRun>([
     { $match: { status: { $in: PROCESSING_RUN_STATUSES } } },
-    { $sort: { created_at: 1, _id: 1 } },
+    { $addFields: { is_map: { $eq: ["$kind", "map"] } } },
+    { $sort: { is_map: 1, created_at: 1, _id: 1 } },
     { $lookup: {
       from: COLLECTIONS.jobs, let: { runId: "$_id", stage: "$status" }, as: "work",
       pipeline: [
         { $match: { status: { $in: ["pending", "running"] }, $expr: { $and: [
           { $eq: ["$run_id", "$$runId"] },
-          { $or: [
-            { $and: [{ $eq: ["$$stage", "collecting"] }, { $eq: ["$kind", "collect_source"] }] },
-            { $and: [{ $eq: ["$$stage", "authoring"] }, { $in: ["$kind", ["author_start", "author_story"]] }] },
-            { $and: [{ $in: ["$$stage", ["finishing", "publishing"]] }, { $eq: ["$kind", "author_finish"] }] },
-          ] },
+          { $or: Object.entries(STAGE_KINDS).map(([stage, kinds]) => ({ $and: [{ $eq: ["$$stage", stage] }, { $in: ["$kind", kinds] }] })) },
         ] } } },
         { $limit: 1 },
       ],
     } },
     { $match: { "work.0": { $exists: true } } },
-    { $limit: 1 },
-    { $project: { work: 0 } },
-  ]).next();
+    { $project: { work: 0, is_map: 0 } },
+  ]).toArray();
 }
 
-export type SourceStatus = "pending" | "completed" | "failed";
+/** `not_reached`: collection ran out of time before this source's turn. */
+export type SourceStatus = "pending" | "completed" | "failed" | "not_reached";
 
 export type RunSource = {
   source_id: string;
@@ -53,25 +70,49 @@ export type RunSource = {
   shortlisted: number;
   link_discovery: SourceResult["link_discovery"] | null;
   error: string | null;
+  /** Streak-based health after this collection: failing (3+ failures) or quiet (4+ empty runs). */
+  health?: "healthy" | "failing" | "quiet";
 };
+
+/** A source as it stood when the run planned collection; the map itself changes later. */
+export type RunSourceSnapshot = { source_id: string; name: string; url: string | null; reader: string; status: string; section: string; found_by: string; detail: string; tier: string | null; topics: string[]; collected: boolean; skip_reason: string | null };
 
 export type PipelineRun = {
   _id: string;
+  /** A map run only writes the source map. Absent on runs from before the split, which were editions. */
+  kind?: "map" | "edition";
   location_id: string;
   location_name: string;
   trigger: { by: string; kind: "manual" | "all" | "cron" };
+  /** Chosen at kick-off and fixed for the run. Absent on runs from before run options. */
+  options?: RunOptions;
+  source_snapshot?: RunSourceSnapshot[];
   status: RunStatus;
   today: string;
   window: [string, string];
+  /** The `today` of this location's last published run; connectors looking back since the last edition start here. */
+  last_edition_day?: string | null;
   sources: RunSource[];
   collection_tasks?: SourceTask[];
+  /** False until the source map has been read into collection tasks (after discovery). */
+  planned?: boolean;
+  /** Map runs: the discovery methods this run refreshes. */
+  discovery?: string[];
+  /** Edition runs: the version of the source map this run read. */
+  map_version?: number | null;
+  /** When the first source started, which starts collection's time budget. */
+  collect_started_at?: number;
+  /** Editor overrides applied when items are assembled. */
+  overrides?: { include?: string[]; exclude?: string[]; pin?: string[] };
   draft_id: string | null;
   edition_id: string | null;
   published: {
     items: number;
     held: number;
     held_reasons: Record<string, number>;
-    channels: string[];
+    /** The reader folder the edition was published to (older runs: channel ids). */
+    reader_folder?: string;
+    channels?: string[];
     artifacts: Record<string, string>;
   } | null;
   error: string | null;
@@ -100,7 +141,7 @@ async function reconcileLegacyActiveRuns(db: Db) {
   ]).toArray();
   let overlappingPublication = false;
   for (const group of duplicates) {
-    const priority: Record<string, number> = { publishing: 5, finishing: 4, awaiting_finish: 3, authoring: 2, awaiting_authoring: 1, collecting: 0 };
+    const priority: Record<string, number> = { publishing: 5, finishing: 4, awaiting_finish: 3, authoring: 2, awaiting_authoring: 1, collecting: 0, mapping: 0 };
     group.attempts.sort((a, b) => priority[b.status] - priority[a.status] || b.created_at - a.created_at || a._id.localeCompare(b._id));
     const [keep, ...superseded] = group.attempts;
     for (const attempt of superseded) {
@@ -128,6 +169,11 @@ export async function ensureRunIndexes(db: Db) {
     { key: { location_id: 1, created_at: -1 } },
     { key: { status: 1, created_at: -1 } },
   ]);
+  // The index's statuses grew with map runs, and an index's filter can't be changed in place.
+  const open = (await runs(db).indexes()).find((index) => index.name === "one_open_run_per_location");
+  if (open && !JSON.stringify(open.partialFilterExpression ?? {}).includes("mapping")) {
+    await runs(db).dropIndex("one_open_run_per_location").catch((error: { codeName?: string }) => { if (error.codeName !== "IndexNotFound") throw error; });
+  }
   // Index builds are repeated across serverless instances. Reconciliation is idempotent,
   // and the collecting-only index remains in place until the stronger index exists.
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -162,16 +208,23 @@ export function newRun(
   today: string,
   window: [string, string],
   tasks: SourceTask[],
+  lastEditionDay: string | null = null,
+  discovery: string[] | null = null,
+  options?: RunOptions,
 ): PipelineRun {
   const created = now();
   return {
+    ...(discovery ? { planned: false, discovery } : {}),
+    ...(options ? { options } : {}),
     _id: randomUUID(),
+    kind: "edition",
     location_id: location.id,
     location_name: location.name,
     trigger,
     status: "collecting",
     today,
     window,
+    last_edition_day: lastEditionDay,
     sources: tasks.map((task) => ({
       source_id: task.source_id,
       name: task.name,
@@ -203,6 +256,24 @@ export async function getRun(db: Db, runId: string) {
   return runs(db).findOne({ _id: runId });
 }
 
+export function runSource(task: SourceTask): RunSource {
+  return { source_id: task.source_id, name: task.name, type: task.type, job_id: null, status: "pending", result_status: null, detail: null, event_count: 0, shortlisted: 0, link_discovery: null, error: null };
+}
+
+/** Records the planned collection tasks once (after discovery). Returns false when already planned. */
+export async function planRun(db: Db, runId: string, tasks: SourceTask[], jobIds: Map<string, string>) {
+  const result = await runs(db).updateOne({ _id: runId, status: "collecting", planned: false }, { $set: { planned: true, collection_tasks: tasks, sources: tasks.map((task) => ({ ...runSource(task), job_id: jobIds.get(task.source_id) ?? null })), updated_at: now() } });
+  return result.modifiedCount === 1;
+}
+
+/** Sources collection didn't get to. They aren't failures, and are shown as not reached. */
+export async function markNotReached(db: Db, runId: string, sourceIds: string[], detail: string) {
+  if (!sourceIds.length) return;
+  await runs(db).updateOne({ _id: runId, status: "collecting" }, {
+    $set: { "sources.$[source].status": "not_reached", "sources.$[source].result_status": "not_reached", "sources.$[source].detail": detail, updated_at: now() },
+  }, { arrayFilters: [{ "source.source_id": { $in: sourceIds }, "source.status": "pending" }] });
+}
+
 export async function updateSource(db: Db, runId: string, sourceId: string, values: Partial<RunSource>) {
   const set: Record<string, unknown> = { updated_at: now() };
   for (const [key, value] of Object.entries(values)) set[`sources.$[source].${key}`] = value;
@@ -216,7 +287,7 @@ export async function updateSource(db: Db, runId: string, sourceId: string, valu
 export async function awaitAuthoringWhenReady(db: Db, runId: string): Promise<boolean> {
   const at = now();
   const updated = await runs(db).updateOne(
-    { _id: runId, status: "collecting", sources: { $not: { $elemMatch: { status: "pending" } } } },
+    { _id: runId, status: "collecting", planned: { $ne: false }, sources: { $not: { $elemMatch: { status: "pending" } } } },
     { $set: { status: "awaiting_authoring", updated_at: at }, $push: { stage_transitions: { status: "awaiting_authoring", by: "worker", at } } },
   );
   return updated.modifiedCount === 1;
@@ -248,10 +319,25 @@ export async function cancelRun(db: Db, runId: string, by: string) {
   throw new RunConflict("Only waiting or in-progress stages can be cancelled; publication may already have started");
 }
 
-export async function recentRuns(db: Db, options: { locationId?: string; limit?: number } = {}) {
+export async function recentRuns(db: Db, options: { locationId?: string; limit?: number; offset?: number } = {}) {
   return runs(db)
     .find(options.locationId ? { location_id: options.locationId } : {})
-    .sort({ created_at: -1 })
+    .sort({ created_at: -1, _id: -1 })
+    .skip(options.offset ?? 0)
     .limit(options.limit ?? 20)
     .toArray();
+}
+
+/**
+ * The `today` of the location's most recent published run from an earlier edition period,
+ * or null before its first edition. A rerun in the same week looks back past the edition
+ * it replaces, so it sees everything that edition saw.
+ */
+export async function lastEditionDay(db: Db, locationId: string, today: string) {
+  const last = await runs(db).findOne(
+    // Comparison runs don't count toward story history.
+    { location_id: locationId, status: "published", today: { $lt: editionPeriodStart(today) }, "options.count_history": { $ne: false } },
+    { sort: { today: -1, completed_at: -1 }, projection: { today: 1 } },
+  );
+  return last?.today ?? null;
 }

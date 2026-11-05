@@ -1,0 +1,58 @@
+---
+import { TOPICS } from "../../../../../shared/topics";
+type Link = { label: string; href: string };
+// place: "Ballard, Seattle" for the tagline. more: the last column (links to submit, sign up…).
+// pageHref: the neighborhood page the section links point into, when this is one of its sub-pages.
+interface Props { place: string; neighborhoods: Link[]; visible: string[]; more: { heading: string; links: Link[] }; homeHref?: string; pageHref?: string }
+const { place, neighborhoods, visible, more, homeHref = "#top", pageHref = "" } = Astro.props;
+const columns = [
+  { heading: "Neighborhoods", links: neighborhoods },
+  {
+    heading: "Sections",
+    links: [
+      { label: "Home", id: "top" },
+      { label: "Top News", id: "top-news" },
+      { label: "Events", id: "events" },
+      ...TOPICS.map((topic) => ({ label: topic.label, id: topic.id })),
+    ].filter((link) => link.id === "top" || visible.includes(link.id))
+      .map((link) => ({ label: link.label, href: link.id === "top" && pageHref ? pageHref : `${pageHref}#${link.id}` })),
+  },
+  more,
+];
+---
+<footer class="footer">
+  <div class="nb-container grid">
+    <div class="brand">
+      <a class="wordmark" href={homeHref}>Newsbee</a>
+      <p class="tagline">Local news for {place}, from primary sources.</p>
+    </div>
+    {columns.map((column) => (
+      <nav aria-label={column.heading}>
+        <h2 class="nb-label">{column.heading}</h2>
+        <ul>
+          {column.links.map((link) => <li><a href={link.href}>{link.label}</a></li>)}
+        </ul>
+      </nav>
+    ))}
+  </div>
+</footer>
+
+<style>
+  /* Same fill as the subscription box */
+  .footer { background: var(--color-paper); padding-block: var(--space-12) var(--space-16); }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-8); }
+  .brand { display: flex; flex-direction: column; gap: var(--space-2); }
+  .wordmark {
+    font: var(--weight-heading) var(--text-2xl)/1 var(--font-display);
+    letter-spacing: var(--tracking-h1);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+  .tagline { font-size: var(--text-sm); color: var(--color-muted); max-width: 24ch; }
+  h2 { font-family: var(--font-body); margin-bottom: var(--space-4); }
+  ul { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+  li a { font-size: var(--text-sm); color: var(--color-ink-soft); text-decoration: none; }
+  li a:hover { color: var(--color-ink); text-decoration: underline; text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+  @media (max-width: 48rem) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 30rem) { .grid { grid-template-columns: 1fr; } }
+</style>

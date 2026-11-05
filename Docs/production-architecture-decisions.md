@@ -9,7 +9,7 @@ directory describe the project's evolution, not necessarily its current deployme
 | --- | --- |
 | `apps/journalist-site` | Next.js console, Google sign-in, admin APIs and pipeline jobs |
 | `apps/reader-site` | Astro server application; public edition/directory APIs and interest signups |
-| MongoDB Atlas | Locations, source configuration, jobs, runs, admins, output channels and signups |
+| MongoDB Atlas | Locations, source configuration, jobs, runs, admins and signups |
 | Google Drive | Pipeline artifacts, published edition JSON, directory indexes and saved email previews |
 | Hosted model APIs | Configurable ordered fallback providers; Ollama is local-only |
 | Vercel Cron | Optional minute calls to the protected journalist `/api/pipeline/tick` route; currently disabled |

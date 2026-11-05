@@ -21,6 +21,10 @@ it("deploys only the supported apps and retains the private pipeline queue trigg
   expect(config).not.toHaveProperty("framework");
 });
 
+it("deploys only main; branch and pull-request previews are disabled", () => {
+  expect(config.git).toEqual({ deploymentEnabled: { "*": false, main: true } });
+});
+
 it.each([
   "/reader",
   "/reader/",
@@ -44,7 +48,9 @@ it.each([
   "/",
   "/login",
   "/health",
-  "/output-channel",
+  "/locations",
+  "/drive-diagnostics",
+  "/clear-data",
   "/api/auth/callback/google",
   "/api/admin/locations",
   "/api/pipeline/advance",

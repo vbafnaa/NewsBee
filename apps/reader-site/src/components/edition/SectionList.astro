@@ -1,0 +1,38 @@
+---
+// A topic section of a neighborhood's edition (?location=<id>&section=<topic>): every story
+// in it, Top News included, in edition rank order.
+import NeighborhoodPage from "./NeighborhoodPage.astro";
+import { neighborhoodLinks, type EditionPage, type NewsroomTab } from "../../lib/edition-view";
+
+interface Props { page: EditionPage; section: NewsroomTab }
+const { page, section } = Astro.props;
+const links = neighborhoodLinks(page);
+---
+<NeighborhoodPage page={page} title={`${section.label} in ${page.town} | Newsbee`} subPage>
+  <div class="page">
+    <a class="back nb-link" href={`${links.page}#${section.id}`}>← {page.town}</a>
+    <h1>{section.label}</h1>
+    <ol class="stories">
+      {section.stories.map((story) => (
+        <li>
+          <a class="story nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}>
+            <span class="nb-label">{story.date}</span>
+            <span class="nb-title title">{story.title}</span>
+            <span class="source">{story.sourceName}</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </div>
+</NeighborhoodPage>
+
+<style>
+  .page { display: flex; flex-direction: column; gap: var(--space-6); max-width: 48rem; }
+  .back { align-self: flex-start; font-size: var(--text-sm); font-weight: 600; }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  .stories { margin: 0; padding: 0; list-style: none; }
+  .stories li { border-bottom: 1px solid var(--color-line); }
+  .story { display: flex; flex-direction: column; gap: var(--space-1); padding-block: var(--space-6); }
+  .title { font: var(--weight-heading) var(--text-2xl)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); }
+  .source { font-size: var(--text-sm); color: var(--color-muted); }
+</style>

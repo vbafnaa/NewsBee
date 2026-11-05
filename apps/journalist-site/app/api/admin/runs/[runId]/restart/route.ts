@@ -18,7 +18,8 @@ export async function POST(request: Request, context: Context) {
     if (!["published", "failed", "cancelled"].includes(previous.status)) {
       throw new RunConflict("Cancel the active run before restarting it");
     }
-    const { run, started } = await startRun(deps, previous.location_id, { by: (await currentAdmin()) ?? "admin", kind: "manual" });
+    // A restart keeps the choices the run was started with.
+    const { run, started } = await startRun(deps, previous.location_id, { by: (await currentAdmin()) ?? "admin", kind: "manual" }, previous.options ?? { mode: "manual" });
     if (!started) throw new RunConflict("A run is already active for this location");
     kickPipeline(deps, request.url);
     return { run_id: run._id, restarted_from: previous._id, started: true };

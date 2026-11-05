@@ -2,6 +2,8 @@
 import type { ProviderConfig, Settings } from "../core/config";
 import { logger, type Logger } from "../core/log";
 import { type HttpTransport, fetchTransport, text } from "../core/http";
+import { logApiCall, modelService, paidRefusal } from "../trace/gateway";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export type ComponentStatus = "ok" | "degraded" | "unavailable" | "not_configured";
 export type ProviderHealth = { name: string; model: string | null; status: ComponentStatus | "failed"; detail: string };
@@ -44,8 +46,11 @@ export type StructuredOptions = { numCtx?: number; numPredict?: number; keepAliv
 export interface ModelRuntime {
   readonly provider: string;
   readonly model: string | null;
+  /** The model that served the latest call, when a fallback chain may have moved on from `model`. */
+  readonly servedModel?: string | null;
   health(): Promise<ComponentHealth>;
   generate(prompt: string): Promise<string>;
+  generateWithUsage?(prompt: string): Promise<StructuredGeneration>;
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions): Promise<StructuredGeneration>;
 }
 
@@ -101,10 +106,18 @@ export class OllamaRuntime implements ModelRuntime {
   }
 
   async generate(prompt: string) {
+    return (await this.generateWithUsage(prompt)).response;
+  }
+
+  async generateWithUsage(prompt: string): Promise<StructuredGeneration> {
     if (!this.model) throw new ModelUnavailableError("Select NEWSBEE_OLLAMA_MODEL before requesting inference");
     const data = await post(this.transport, `${this.url}/api/generate`, {}, { model: this.model, prompt, stream: false });
     if (typeof data.response !== "string") throw new Error("Ollama returned an invalid generation response");
-    return data.response;
+    return {
+      response: data.response, done: data.done !== false,
+      prompt_eval_count: typeof data.prompt_eval_count === "number" ? data.prompt_eval_count : null,
+      eval_count: typeof data.eval_count === "number" ? data.eval_count : null,
+    };
   }
 
   async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
@@ -203,11 +216,14 @@ export class GeminiRuntime implements ModelRuntime {
   }
 
   async generate(prompt: string) {
-    return GeminiRuntime.textOf(await this.call(prompt));
+    return (await this.generateWithUsage(prompt)).response;
   }
 
-  async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
-    const data = await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096));
+  async generateWithUsage(prompt: string) {
+    return this.generation(await this.call(prompt));
+  }
+
+  private generation(data: GeminiData) {
     const reason = data.candidates?.[0]?.finishReason ?? null;
     return {
       response: GeminiRuntime.textOf(data),
@@ -217,6 +233,11 @@ export class GeminiRuntime implements ModelRuntime {
       eval_count: data.usageMetadata?.candidatesTokenCount ?? null,
       thinking_eval_count: data.usageMetadata?.thoughtsTokenCount ?? null,
     };
+  }
+
+  async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
+    const data = await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096));
+    return this.generation(data);
   }
 }
 
@@ -291,11 +312,18 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   }
 
   async generate(prompt: string) {
-    return OpenAICompatibleRuntime.textOf(await this.call(prompt));
+    return (await this.generateWithUsage(prompt)).response;
+  }
+
+  async generateWithUsage(prompt: string) {
+    return this.generation(await this.call(prompt));
   }
 
   async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
-    const data = await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096));
+    return this.generation(await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096)));
+  }
+
+  private generation(data: ChatData) {
     const reason = data.choices?.[0]?.finish_reason ?? null;
     return {
       response: OpenAICompatibleRuntime.textOf(data),
@@ -314,6 +342,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
  */
 export class FallbackRuntime implements ModelRuntime {
   private readonly cooldownUntil = new Map<number, number>();
+  servedModel: string | null = null;
 
   constructor(
     private readonly runtimes: ModelRuntime[],
@@ -351,6 +380,7 @@ export class FallbackRuntime implements ModelRuntime {
     for (const { runtime, index } of [...available, ...cooling]) {
       try {
         const result = await call(runtime);
+        this.servedModel = runtime.model;
         this.cooldownUntil.delete(index);
         if (failures.length) this.log.warn("model_fallback_served", { operation, provider: runtime.provider, failed: failures });
         return result;
@@ -382,8 +412,15 @@ export function providerRuntime(config: ProviderConfig, transport: HttpTransport
   return new OpenAICompatibleRuntime(config, transport);
 }
 
+export type ModelUsageContext = { location_id: string; run_id?: string };
+const usageContext = new AsyncLocalStorage<ModelUsageContext>();
+
+export function withModelUsageContext<T>(context: ModelUsageContext, operation: () => T): T {
+  return usageContext.run(context, operation);
+}
+
 /** One provider call as recorded for usage reporting; never includes prompts or responses. */
-export type ModelCall = {
+export type ModelCall = Partial<ModelUsageContext> & {
   provider: string;
   model: string | null;
   role: string;
@@ -420,16 +457,23 @@ export class UsageRecordingRuntime implements ModelRuntime {
 
   private async record(call: Omit<ModelCall, "provider" | "model" | "role">) {
     try {
-      await this.usage.sink({ provider: this.provider, model: this.model, role: this.usage.role, ...call });
+      await this.usage.sink({ ...usageContext.getStore(), provider: this.provider, model: this.model, role: this.usage.role, ...call });
     } catch (error) {
       this.log.warn("model_usage_record_failed", { error: error instanceof Error ? error.message : String(error) });
     }
   }
 
   private async measure<T>(operation: ModelCall["operation"], run: () => Promise<T>, tokens: (result: T) => [number | null, number | null]) {
+    // A hosted provider the run hasn't ticked is skipped, so the fallback chain moves on.
+    const service = modelService(this.provider, this.usage.role);
+    if (service) {
+      const refused = await paidRefusal(service);
+      if (refused) throw new ModelUnavailableError(refused);
+    }
     const started = this.clock();
     try {
       const result = await run();
+      if (service) await logApiCall(service, true, "ok", this.usage.role);
       const [input, output] = tokens(result);
       await this.record({ operation, ok: true, status_code: null, rate_limited: false, input_tokens: input, output_tokens: output, duration_ms: this.clock() - started, error: null });
       return result;
@@ -450,16 +494,21 @@ export class UsageRecordingRuntime implements ModelRuntime {
     }
   }
 
-  generate(prompt: string) {
-    return this.measure("generate", () => this.inner.generate(prompt), () => [null, null]);
+  private tokenCounts(result: StructuredGeneration): [number | null, number | null] {
+    const valid = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+    const output = valid(result.eval_count), thinking = valid(result.thinking_eval_count);
+    return [valid(result.prompt_eval_count), output === null && thinking === null ? null : (output ?? 0) + (thinking ?? 0)];
+  }
+
+  async generate(prompt: string) {
+    const result = await this.measure("generate", () => this.inner.generateWithUsage
+      ? this.inner.generateWithUsage(prompt)
+      : this.inner.generate(prompt).then((response) => ({ response, done: true })), (value) => this.tokenCounts(value));
+    return result.response;
   }
 
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions) {
-    return this.measure("generate_structured", () => this.inner.generateStructured(prompt, schema, options), (result) => {
-      const output = result.eval_count ?? null;
-      const thinking = result.thinking_eval_count ?? null;
-      return [result.prompt_eval_count ?? null, output === null && thinking === null ? null : (output ?? 0) + (thinking ?? 0)];
-    });
+    return this.measure("generate_structured", () => this.inner.generateStructured(prompt, schema, options), (result) => this.tokenCounts(result));
   }
 }
 

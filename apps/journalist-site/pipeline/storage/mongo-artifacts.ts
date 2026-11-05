@@ -72,4 +72,14 @@ export class MongoArtifacts implements ArtifactStore {
       .toArray();
     return docs.map((doc) => ({ id: doc._id, name: doc.name }));
   }
+
+  async findFolder(parentId: string, name: string) {
+    const doc = await (await this.collection()).findOne({ _id: artifactId(parentId, name), folder: true }, { projection: { _id: 1 } });
+    return doc?._id ?? null;
+  }
+
+  async removeFile(parentId: string, name: string) {
+    const result = await (await this.collection()).deleteOne({ _id: artifactId(parentId, name), folder: false });
+    return result.deletedCount;
+  }
 }

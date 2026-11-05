@@ -1,38 +1,55 @@
-import { describe, expect, it, vi } from "vitest";
-import { itemsBySection, logRunSources, sourceCategory, textTable } from "../../orchestration/source-log";
-import { SOURCE_TYPES } from "../../connectors/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { logDiscoveredSources, logSourceCollected, logSourceMap, sectionCounts, textTable } from "../../orchestration/source-log";
+import { sourceResult } from "../../connectors/types";
+import type { SourceCandidate } from "../../sourcemap/store";
+import type { RunSourceSnapshot } from "../../orchestration/runs";
+
+function printed() {
+  const print = vi.spyOn(console, "log").mockImplementation(() => {});
+  return () => print.mock.calls.map((call) => String(call[0])).join("\n");
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+const snapshot = (overrides: Partial<RunSourceSnapshot>): RunSourceSnapshot => ({
+  source_id: "web:1", name: "Ballard High School", url: "https://school.example/", reader: "web", status: "active", section: "schools",
+  found_by: "osm", detail: "school inside Ballard", tier: null, topics: [], collected: true, skip_reason: null, ...overrides,
+});
 
 describe("source log", () => {
-  it("names a category for every source type", () => {
-    for (const type of SOURCE_TYPES) expect(sourceCategory(type)).not.toMatch(/^Other/);
-    expect(sourceCategory("unknown")).toBe("Other / unknown");
+  it("lines up columns and shortens long cells", () => {
+    expect(textTable(["A", "Bee"], [["one", "x".repeat(10)]], 5).split("\n")).toEqual(["A   | Bee", "----+------", "one | xxxx…"]);
   });
 
-  it("counts items by reader tab", () => {
-    expect(itemsBySection(["event", "event", "meeting_outcome", "state_news"])).toBe("Events 2, Council 1, Top News 1");
-    expect(itemsBySection([])).toBe("none");
+  it("counts sources by section in newsletter order", () => {
+    expect(sectionCounts([{ section: "schools" }, { section: "events" }, { section: "schools" }, { section: "unknown" }]))
+      .toBe("Events and things to do 1, Schools and youth 2, Other local news 1");
   });
 
-  it("aligns columns and shortens long cells", () => {
-    const table = textTable(["#", "Source"], [["1", "Library"], ["10", "x".repeat(100)]], 20);
-    const lines = table.split("\n");
-    expect(lines[0]).toBe("#  | Source");
-    expect(lines[2]).toBe("1  | Library");
-    expect(lines[3].endsWith("…")).toBe(true);
-    expect(lines[3].length).toBeLessThanOrEqual(25);
-  });
-
-  it("prints every queued source with its category", () => {
-    const print = vi.spyOn(console, "log").mockImplementation(() => {});
-    const location = { id: "ballard-seattle-wa", name: "Ballard, WA", state: "WA", systems: [] };
-    logRunSources(location, "run1", [
-      { source_id: "library:spl", name: "Seattle Public Library", type: "library" },
-      { source_id: "meetings", name: "Seattle City Council", type: "meetings" },
+  it("prints every source on the map with its section, how it was found and whether this run reads it", () => {
+    const output = printed();
+    logSourceMap("Ballard, WA", "run-1", [
+      snapshot({}),
+      snapshot({ source_id: "web:2", name: "Ballard Branch", section: "events", found_by: "library", reader: "library" }),
+      snapshot({ source_id: "web:3", name: "Old blog", section: "community", collected: false, status: "dormant", skip_reason: "dormant until 2026-11-20" }),
     ]);
-    const output = String(print.mock.calls[0][0]);
-    print.mockRestore();
-    expect(output).toContain("run run1 for Ballard, WA, 2 sources queued");
-    expect(output).toContain("Events / Library");
-    expect(output).toContain("Council / Public meetings");
+    const text = output();
+    expect(text).toContain("run run-1 for Ballard, WA, 2 of 3 sources on the map read");
+    expect(text.indexOf("Events and things to do")).toBeLessThan(text.indexOf("Schools and youth"));
+    expect(text).toContain("OpenStreetMap place inside the area");
+    expect(text).toContain("not read: dormant until 2026-11-20");
+    expect(text).toContain("Reading by section: Events and things to do 1, Schools and youth 1");
+  });
+
+  it("prints what a discovery method found and one line per collected source", () => {
+    const output = printed();
+    const candidate = { source_id: "web:1", name: "St. Luke's", url: "https://church.example/", reader: "web", params: {}, section: "community",
+      found_by: { method: "osm", detail: "place of worship inside Ballard" }, inside_area: true } as unknown as SourceCandidate;
+    logDiscoveredSources("Ballard, WA", "OpenStreetMap places inside the area", [candidate], 1);
+    logSourceCollected("Ballard, WA", "community", { source_id: "web:1", name: "St. Luke's", type: "web" }, sourceResult("web:1", "St. Luke's", "ingested", "1 feed"), 4, 2);
+    const text = output();
+    expect(text).toContain("Ballard, WA: OpenStreetMap places inside the area, 1 found, 1 new on the map");
+    expect(text).toContain("Community and neighbours | St. Luke's");
+    expect(text).toContain("[newsbee:source] Ballard, WA | Community and neighbours | St. Luke's | ingested | 4 items kept, 2 left out");
   });
 });

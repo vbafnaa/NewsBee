@@ -1,4 +1,5 @@
 ---
+import "../../../../shared/design-tokens.css";
 import SignupForm from "../components/SignupForm.astro";
 import { directoryTown, type Location } from "../lib/reader-data";
 
@@ -49,16 +50,15 @@ const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
   </body>
 </html>
 <style is:global>
-  @font-face { font-family: "Chomsky"; src: url("/fonts/Chomsky.otf") format("opentype"); font-display: swap; }
-  :root { --paper: #f5f0e4; --ink: #1c1a17; --muted: #5b554b; --rule: #2b2823; --accent: #7a1f1f; }
+  :root { --paper: var(--color-paper); --ink: var(--color-ink); --muted: var(--color-muted); --rule: var(--color-line); --accent: var(--color-bee); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: #d9d2c3; color: var(--ink); font: 17px/1.6 Georgia, "Times New Roman", serif; }
-  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); text-align: center; box-shadow: 0 4px 20px rgb(0 0 0 / 0.12); }
-  header { border-bottom: 4px double var(--rule); }
-  header p { color: var(--muted); font-style: italic; }
-  .brand { font: 4rem/1 "Chomsky", Georgia, serif; color: var(--ink); text-decoration: none; }
-  h1 { font-size: 1.6rem; line-height: 1.3; }
-  a { color: var(--accent); text-underline-offset: 0.2em; }
-  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: var(--text-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); text-align: center; }
+  header { border-bottom: 1px solid var(--rule); }
+  header p { color: var(--muted); }
+  .brand { font: var(--weight-heading) 3rem/1 var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
+  h1 { font: var(--weight-heading) var(--text-h3)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); text-wrap: balance; }
+  a { color: var(--ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
   @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; } }
 </style>

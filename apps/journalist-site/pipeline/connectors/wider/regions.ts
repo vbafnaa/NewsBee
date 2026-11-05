@@ -46,10 +46,10 @@ function validPoint(value: unknown): value is Point {
 }
 
 export function validateStateSources(value: unknown): Record<string, StateConfig> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("state-sources.json must map state codes to their sources");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("state sources must map state codes to their sources");
   const states = value as Record<string, StateConfig>;
   for (const [code, state] of Object.entries(states)) {
-    const where = `state-sources.json entry ${code}`;
+    const where = `state sources entry ${code}`;
     if (!STATE_CODE.test(code) || !state || typeof state !== "object" || !state.name) throw new Error(`${where} needs an uppercase state code and a name`);
     for (const newsroom of state.newsrooms ?? []) if (!newsroom.name || httpsLink(newsroom.feed) === null) throw new Error(`${where}: every newsroom needs a name and an HTTPS feed`);
     for (const feed of state.athletics ?? []) if (!feed.name || httpsLink(feed.feed) === null) throw new Error(`${where}: every athletics feed needs a name and an HTTPS feed`);

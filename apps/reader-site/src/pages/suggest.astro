@@ -1,0 +1,56 @@
+---
+import { directoryTown, SUGGESTION_SECTIONS } from "../lib/reader-data";
+export const prerender = false;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const id = Astro.url.searchParams.get("location");
+let town = null;
+let error = "";
+try {
+  town = id ? await directoryTown(id) : null;
+  if (!town) { Astro.response.status = 404; error = "Choose a community before suggesting a source."; }
+} catch (cause) {
+  console.error("Source suggestion page unavailable", cause);
+  Astro.response.status = 503; error = "Source suggestions are temporarily unavailable.";
+}
+---
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /><title>Suggest a source | Newsbee</title></head>
+<body><main><a href={base || "/"} class="brand">Newsbee</a><h1>Suggest a source</h1>
+  {error && <p role="alert">{error}</p>}
+  {town && <><p>Know a useful source for {town.name}? An editor checks every suggestion before it is added.</p>
+    <form id="suggest-form" data-base={base} data-location={town.id}>
+      <label>Name<input name="name" minlength="2" maxlength="120" required /></label>
+      <label>Link<input name="url" type="url" required placeholder="https://" /></label>
+      <label>Section<select name="section">{SUGGESTION_SECTIONS.map((section) => <option value={section}>{section.replaceAll("_", " ")}</option>)}</select></label>
+      <label>Why it matters (optional)<textarea name="why" maxlength="300"></textarea></label>
+      <button type="submit">Send to the editor</button>
+    </form><p id="suggest-status" role="status"></p></>}
+  <p><a href={`${base || "/"}${id ? `?location=${encodeURIComponent(id)}` : ""}`}>Back to the newsletter</a></p>
+</main><script>
+  const form = document.querySelector<HTMLFormElement>("#suggest-form");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = document.querySelector<HTMLElement>("#suggest-status")!;
+    const button = form.querySelector<HTMLButtonElement>("button")!;
+    button.disabled = true; status.textContent = "Sending…";
+    try {
+      const response = await fetch(`${form.dataset.base}/api/locations/${encodeURIComponent(form.dataset.location!)}/suggest`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(8000), body: JSON.stringify(Object.fromEntries(new FormData(form))),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail ?? `HTTP ${response.status}`);
+      form.reset(); status.textContent = "Thanks! An editor will review your suggestion.";
+    } catch (cause) { status.textContent = `Could not send: ${cause instanceof Error ? cause.message : String(cause)}`; }
+    finally { button.disabled = false; }
+  });
+</script></body></html>
+<style is:global>
+  body { margin: 0; background: #e9e3d8; color: #24211d; font: 17px/1.6 Georgia, serif; }
+  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: #f7f4ed; }
+  a { color: #7a1f1f; } .brand { font-size: 2rem; }
+  form, label { display: grid; gap: .5rem; } form { gap: 1rem; }
+  input, select, textarea, button { padding: .6rem; font: inherit; }
+  button { background: #7a1f1f; color: white; border: 0; cursor: pointer; }
+  :focus-visible { outline: 3px solid #7a1f1f; outline-offset: 3px; }
+  @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; } }
+</style>

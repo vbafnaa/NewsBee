@@ -4,20 +4,12 @@
  */
 import { createHash } from "node:crypto";
 import type { CollectedEvent } from "../connectors/types";
+import { NEWS_LINES } from "../editorial/kinds";
 
 export const MAX_OCCURRENCES_SHOWN = 4;
 const NOISE = /[^a-z0-9]+/g;
 const YEAR = /,\s*\d{4}(?=,|$)/g;
-export const NEWS_LINES: Record<string, string> = {
-  state_news: "Published {when} by {source}.",
-  earthquake: "Recorded {when}. Where: {source}.",
-  trending_topic: "Published {when} by {source}.",
-  social_trend: "Published {when} by {source}.",
-  safety_notice: "Reported {when}. Source: {source}.",
-  housing_market: "Data for {when}. Source: {source}.",
-  development: "Filed {when}. Source: {source}.",
-  school_sports: "Published {when} by {source}.",
-};
+export { NEWS_LINES } from "../editorial/kinds";
 
 export type Occurrence = {
   source_id: string;
@@ -102,7 +94,9 @@ export function collapse(events: SourceEvent[]): Story[] {
     const kind = (facts.kind as string | undefined) ?? "event";
     let key = storyKey(facts.title);
     if (kind !== "event") key = `${kind}:${facts.event_date}:${key}`;
-    if (facts.trend_context && ["trending_topic", "social_trend"].includes(kind)) {
+    // The assembly step groups copies of one story from different sources (editions/assemble.ts).
+    if (typeof facts.merge_group === "string" && facts.merge_group) key = facts.merge_group;
+    else if (facts.trend_context && ["trending_topic", "social_trend"].includes(kind)) {
       const reported = `${facts.event_date}:${facts.source_url}`;
       key = newsroomKeys.get(reported) ?? `reported:${reported}`;
     }

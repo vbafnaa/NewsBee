@@ -1,0 +1,9 @@
+---
+// Dev-only marker saying where a section's data came from when it isn't the expected source.
+import type { DataSource } from "../../lib/edition-view";
+
+interface Props { source: DataSource; }
+const { source } = Astro.props;
+---
+{import.meta.env.DEV && source === "saved" && <p class="nb-saved" style="white-space: nowrap">Saved copy, not live</p>}
+{import.meta.env.DEV && source === "fallback" && <p class="nb-saved" style="white-space: nowrap">Not in this edition, showing web sources</p>}

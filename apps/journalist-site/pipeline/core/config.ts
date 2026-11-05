@@ -37,19 +37,59 @@ export type Settings = {
   modelProviders: ProviderConfig[];
   /** Run the AI link finder alongside rule-based discovery in every connector. */
   aiLinkDiscovery: boolean;
+  /** Optional Tavily API key for site-restricted council source discovery. */
+  tavilySearchApiKey: string | null;
   /** Hazards, state news and trends near the town. */
   widerSources: boolean;
   pipelineDriveFolderId: string | null;
   cronSecret: string | null;
   /** Active runs older than this are failed with a diagnosis; null disables the deadline. */
   runTimeoutSeconds: number | null;
-  /** NEWSBEE_MAX_STORIES: model-written stories per edition; unset writes every story that passes the checks. */
-  maxStories?: number | null;
-  /** NEWSBEE_STORY_CANDIDATES_PER_SOURCE: items per source type sent to ranking and writing; unset sends them all. */
-  storyCandidatesPerSource?: number | null;
+  /** NEWSBEE_COLLECT_CONCURRENCY: jobs running at once. Default 3 in the cloud, 6 locally. */
+  collectConcurrency: number;
+  /** NEWSBEE_COLLECT_BUDGET_MINUTES: when collection moves on with what it has; null for no limit. */
+  collectBudgetSeconds: number | null;
+  /** NEWSBEE_NEWS_SEARCH: news search backends, in order ("gdelt", "llm"); empty turns news search off. */
+  newsSearch: Array<"gdelt" | "llm">;
+  /** NEWSBEE_LLM_DISCOVERY: Gemini suggests sources at discovery time (every suggestion is checked). */
+  llmDiscovery: boolean;
+  /** NEWSBEE_MODEL_DAILY_CALLS: model calls per day for detail extraction and discovery. */
+  modelDailyCalls: number;
+  /** NEWSBEE_GEMINI_LIGHT_MODEL: the light model for extraction and discovery (Flash-Lite). */
+  lightModel: string;
+  /** Keys for the paid integrations; a service with no key stays off whatever the run allows. */
+  integrations: Integrations;
 };
 
+export type Integrations = {
+  serpapiKey: string | null;
+  searchapiKey: string | null;
+  brightdataKey: string | null;
+  brightdataZone: string | null;
+  exaKey: string | null;
+  scrapingbeeKey: string | null;
+  typesafeKey: string | null;
+  typesafeBase: string;
+  openrouterKey: string | null;
+  jevModel: string;
+  attomKey: string | null;
+  jinaKey: string | null;
+};
+
+export const DEFAULT_MODEL_DAILY_CALLS = 800;
+export const DEFAULT_LIGHT_MODEL = "gemini-flash-lite-latest";
+
+function newsSearchValue(value: string | undefined): Array<"gdelt" | "llm"> {
+  const raw = blank(value);
+  if (raw === null) return ["gdelt"];
+  if (raw.toLowerCase() === "off") return [];
+  const names = [...new Set(raw.split(",").map((name) => name.trim().toLowerCase()).filter(Boolean))];
+  for (const name of names) if (name !== "gdelt" && name !== "llm") throw new Error("NEWSBEE_NEWS_SEARCH must be gdelt, llm, gdelt,llm or off");
+  return names as Array<"gdelt" | "llm">;
+}
+
 export const DEFAULT_RUN_TIMEOUT_MINUTES = 60;
+export const DEFAULT_COLLECT_BUDGET_MINUTES = 8;
 
 function flag(value: string | undefined, fallback: boolean) {
   if (value === undefined || value.trim() === "") return fallback;
@@ -65,14 +105,6 @@ function nonNegative(value: string | undefined, variable: string): number | null
   if (raw === null) return null;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${variable} must be a non-negative number`);
-  return parsed;
-}
-
-/** An optional whole-number cap; unset or 0 means no cap. */
-function optionalCap(value: string | undefined, variable: string): number | null {
-  const parsed = nonNegative(value, variable);
-  if (parsed === null || parsed === 0) return null;
-  if (!Number.isInteger(parsed)) throw new Error(`${variable} must be a whole number`);
   return parsed;
 }
 
@@ -111,12 +143,31 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     localDataDir: path.join(root, ".local", "stage2"),
     modelProviders: modelProviders(env, mode),
     aiLinkDiscovery: flag(env.NEWSBEE_AI_LINK_DISCOVERY, false),
+    tavilySearchApiKey: blank(env.NEWSBEE_TAVILY_API_KEY),
     widerSources: flag(env.NEWSBEE_WIDER_SOURCES, true),
     pipelineDriveFolderId: blank(env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID),
     cronSecret: blank(env.CRON_SECRET),
     runTimeoutSeconds: runTimeoutSeconds(env),
-    maxStories: optionalCap(env.NEWSBEE_MAX_STORIES, "NEWSBEE_MAX_STORIES"),
-    storyCandidatesPerSource: optionalCap(env.NEWSBEE_STORY_CANDIDATES_PER_SOURCE, "NEWSBEE_STORY_CANDIDATES_PER_SOURCE"),
+    collectConcurrency: Math.max(1, Math.floor(nonNegative(env.NEWSBEE_COLLECT_CONCURRENCY, "NEWSBEE_COLLECT_CONCURRENCY") ?? (mode === "cloud" ? 3 : 6))),
+    collectBudgetSeconds: Math.round((nonNegative(env.NEWSBEE_COLLECT_BUDGET_MINUTES, "NEWSBEE_COLLECT_BUDGET_MINUTES") ?? DEFAULT_COLLECT_BUDGET_MINUTES) * 60) || null,
+    newsSearch: newsSearchValue(env.NEWSBEE_NEWS_SEARCH),
+    llmDiscovery: flag(env.NEWSBEE_LLM_DISCOVERY, true),
+    modelDailyCalls: nonNegative(env.NEWSBEE_MODEL_DAILY_CALLS, "NEWSBEE_MODEL_DAILY_CALLS") ?? DEFAULT_MODEL_DAILY_CALLS,
+    lightModel: blank(env.NEWSBEE_GEMINI_LIGHT_MODEL) ?? DEFAULT_LIGHT_MODEL,
+    integrations: {
+      serpapiKey: blank(env.NEWSBEE_SERPAPI_API_KEY),
+      searchapiKey: blank(env.NEWSBEE_SEARCHAPI_API_KEY),
+      brightdataKey: blank(env.NEWSBEE_BRIGHTDATA_API_KEY),
+      brightdataZone: blank(env.NEWSBEE_BRIGHTDATA_ZONE),
+      exaKey: blank(env.NEWSBEE_EXA_API_KEY),
+      scrapingbeeKey: blank(env.NEWSBEE_SCRAPINGBEE_API_KEY),
+      typesafeKey: blank(env.TYPESAFE_API_KEY),
+      typesafeBase: (blank(env.TYPESAFE_API_BASE) ?? "https://api.typesafe.ai").replace(/\/$/, ""),
+      openrouterKey: blank(env.OPENROUTER_API_KEY),
+      jevModel: blank(env.NEWSBEE_JEV_MODEL) ?? "jev-1.13",
+      attomKey: blank(env.NEWSBEE_ATTOM_API_KEY),
+      jinaKey: blank(env.NEWSBEE_JINA_API_KEY),
+    },
   };
 }
 
@@ -197,12 +248,14 @@ export function rankingSettings(settings: Settings): Settings {
   return hosted.length ? { ...settings, modelProviders: hosted } : settings;
 }
 
-/** Items per source type sent to ranking and writing, at both shortlist stages; no cap unless configured. */
-export function rankingCandidateLimit(settings: Settings) {
-  return settings.storyCandidatesPerSource ?? Number.POSITIVE_INFINITY;
-}
-
-/** Model-written stories per edition; no cap unless NEWSBEE_MAX_STORIES is set. */
-export function maxStories(settings: Settings) {
-  return settings.maxStories ?? Number.POSITIVE_INFINITY;
+/** Light-model settings: the primary Gemini provider with the light model first, then the usual chain. */
+export function lightSettings(settings: Settings, env: NodeJS.ProcessEnv = process.env): Settings {
+  const gemini = settings.modelProviders.find((provider) => provider.kind === "gemini");
+  if (!gemini) return settings;
+  const lightUsage = usageConfig(env, "gemini_light");
+  return { ...settings, modelProviders: [{ ...gemini, name: "gemini_light", model: settings.lightModel, usage: {
+    ...lightUsage,
+    requestsPerMinute: lightUsage.requestsPerMinute ?? gemini.usage.requestsPerMinute,
+    requestsPerDay: lightUsage.requestsPerDay ?? gemini.usage.requestsPerDay,
+  } }, ...settings.modelProviders] };
 }

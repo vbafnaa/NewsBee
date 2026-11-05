@@ -5,8 +5,7 @@ import type { HttpTransport } from "../core/http";
 import { HttpStatusError, isRedirect } from "../core/http";
 import { COLLECTIONS } from "../storage/mongo";
 import { logger } from "../core/log";
-import { loadSourceConfig } from "../storage/source-configs";
-import { communityDirectory, communityName, matchingCommunities, type Community } from "../../../../shared/community-directory";
+import { communityName, matchingCommunities, onboardedCommunities, type Community } from "../../../../shared/community-directory";
 import { nameKey } from "./venues";
 import { GEOGRAPHIC_PLACES, withinArea, stateCode, type GeographicPlace } from "../../../../shared/geography";
 import type { GeographicDocument } from "./geocoder";
@@ -136,8 +135,10 @@ export function geographicSuggestion(place: GeographicPlace): PlaceSearch {
     branch_count: 0, system_count: 0, kind: "neighborhood", provider: "OpenStreetMap", area: place.area.method };
 }
 
+/** Communities onboarded so far; there is no catalogue in code, new ones come from the geocoder. */
 export async function loadCommunities(db: Db): Promise<Record<string, Community>> {
-  return communityDirectory(await loadSourceConfig(db, process.cwd(), "communities"));
+  const locations = await db.collection<{ _id: string; id?: string; community?: Community }>(COLLECTIONS.locations).find({ community: { $exists: true } }, { projection: { id: 1, community: 1 } }).toArray();
+  return onboardedCommunities(locations);
 }
 
 export async function searchPlaces(db: Db, query: string, state?: string, limit = SEARCH_LIMIT): Promise<PlaceSearch[]> {
@@ -157,6 +158,7 @@ export async function searchPlaces(db: Db, query: string, state?: string, limit 
   }).limit(SEARCH_LIMIT).toArray();
   out.push(...resolved.map(geographicSuggestion));
   for (const [id, community] of matchingCommunities(await loadCommunities(db), query, state)) {
+    if (out.some((place) => place.id === id)) continue;
     const { systems } = await systemsForPlace(db, community.parent_id, community.library_branches);
     out.push({ id, name: communityName(community), state: community.state, geoid: null,
       latitude: community.latitude, longitude: community.longitude, kind: "neighborhood", parent_id: community.parent_id,

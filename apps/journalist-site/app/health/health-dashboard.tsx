@@ -85,7 +85,7 @@ function TrendChart({ title, days, series, unit = "" }: { title: string; days: H
   </section>;
 }
 
-export default function HealthDashboard() {
+export default function HealthDashboard({ mode = "health" }: { mode?: "health" | "models" }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [history, setHistory] = useState<HealthHistory | null>(null);
   const [days, setDays] = useState<7 | 30>(7);
@@ -103,7 +103,7 @@ export default function HealthDashboard() {
       try {
         const [current, trends] = await Promise.all([
           adminApi<Snapshot>("health", { signal: controller.signal }),
-          adminApi<HealthHistory>(`health/history?days=${days}&location=${encodeURIComponent(location)}`, { signal: controller.signal }),
+          mode === "health" ? adminApi<HealthHistory>(`health/history?days=${days}&location=${encodeURIComponent(location)}`, { signal: controller.signal }) : Promise.resolve(null),
         ]);
         if (controller.signal.aborted) return;
         setSnapshot(current);
@@ -118,25 +118,25 @@ export default function HealthDashboard() {
     void load();
     const timer = window.setInterval(() => void load(), 15000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [days, location, refresh]);
+  }, [days, location, refresh, mode]);
 
   const rows = snapshot?.locations.filter((row) => !location || row.location_id === location) ?? [];
   const providers = snapshot?.model?.providers;
   const schedulerIdle = snapshot ? snapshot.queue.pending + snapshot.queue.running === 0 : true;
   return <>
     <div className="section-heading health-toolbar">
-      <div className="period-switch" aria-label="History window">
+      {mode === "health" && <><div className="period-switch" aria-label="History window">
         {([7, 30] as const).map((value) => <button key={value} className="secondary" aria-pressed={days === value} onClick={() => setDays(value)}>{value} days</button>)}
       </div>
       <label className="field"><span>Location</span><select value={location} onChange={(event) => setLocation(event.target.value)}>
         <option value="">All locations</option>{snapshot?.locations.map((row) => <option key={row.location_id} value={row.location_id}>{row.location_name}</option>)}
-      </select></label>
+      </select></label></>}
       <button className="secondary" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
     </div>
     {error && <p role="alert" className="alert">Health unavailable: {error}{updated ? ` Last successful update: ${time(updated)}. Displayed data may be stale.` : ""}</p>}
     {!snapshot && !error && <p role="status">Loading product health...</p>}
     {snapshot && <>
-      <div className="metric-grid">
+      {mode === "health" && <><div className="metric-grid">
         <section className={`metric-card tone-${snapshot.status}`}><span className="eyebrow">Services now</span><strong>{snapshot.status}</strong><p>Model and scheduler readiness</p></section>
         <section className={`metric-card tone-${schedulerIdle || snapshot.scheduler.status === "ok" && !snapshot.scheduler.issues.length ? "ok" : "warning"}`}><span className="eyebrow">Scheduler</span><strong>{schedulerIdle ? "idle" : snapshot.scheduler.issues.length ? "errors" : snapshot.scheduler.status}</strong><p>{snapshot.scheduler.seconds_since_tick === null ? "No tick recorded" : `Last tick ${snapshot.scheduler.seconds_since_tick}s ago`}{snapshot.run_timeout_seconds ? ` · in-progress stages time out after ${Math.round(snapshot.run_timeout_seconds / 60)} min (editor waits excluded)` : " · stage timeout disabled"}</p></section>
         <section className="metric-card"><span className="eyebrow">Job queue</span><strong>{snapshot.queue.running} running</strong><p>{snapshot.queue.pending} waiting / {snapshot.queue.failed} failed</p></section>
@@ -151,6 +151,7 @@ export default function HealthDashboard() {
           {snapshot.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} ({time(issue.at)})</li>)}
         </ul>
       </section>}
+      </>}
       <section className="panel">
         <div className="section-heading"><h2>Model providers</h2><span className={`status-badge tone-${snapshot.model?.status ?? "idle"}`}>{snapshot.model?.status ?? "not configured"}</span></div>
         <div className="provider-grid">{providers ? providers.map((provider) =>
@@ -158,10 +159,21 @@ export default function HealthDashboard() {
           <p>{snapshot.model?.detail ?? "No model configured"}</p>}</div>
         <p className="chart-caption">Live checks only. Historical provider uptime and queue depth were not recorded.</p>
       </section>
-      <ModelUsagePanel usage={snapshot.model_usage} />
+      {mode === "models" && <ModelUsagePanel usage={snapshot.model_usage} />}
+      {mode === "health" && <section className="panel">
+        <div className="section-heading"><div><h2>Sources needing attention</h2><p className="chart-caption">Failing: 3 or more collections in a row failed or were blocked. Quiet: 4 or more successful collections in a row found nothing.</p></div>
+          <span className={`status-badge tone-${snapshot.source_attention.length ? "warning" : "ok"}`}>{snapshot.source_attention.length ? `${snapshot.source_attention.length} source(s)` : "all healthy"}</span></div>
+        {snapshot.source_attention.length > 0 && <div className="table-wrap"><table>
+          <thead><tr><th>Location</th><th>Source</th><th>Flag</th><th>Last status</th><th>Last success</th><th>Last items</th></tr></thead>
+          <tbody>{snapshot.source_attention.map((item) => <tr key={item._id}>
+            <td>{item.location_id}</td><td>{item.source_id}</td><td>{item.flag} ({item.flag === "failing" ? item.consecutive_failures : item.consecutive_empty} runs)</td>
+            <td>{item.last_status} on {item.last_day}</td><td>{item.last_success_day ?? "never"}</td><td>{item.last_items_day ?? "never"}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>}
     </>}
-    {!history && !error && <p role="status">Loading trend history...</p>}
-    {history && <>
+    {mode === "health" && !history && !error && <p role="status">Loading trend history...</p>}
+    {mode === "health" && history && <>
       <div className="trend-grid">
         <TrendChart title="Run outcomes" days={history.series} series={[{ key: "completed_runs", label: "Published runs", tone: "positive" }, { key: "failed_runs", label: "Failed runs", tone: "negative" }]} />
         <TrendChart title="Published vs held stories" days={history.series} series={[{ key: "published_items", label: "Published", tone: "positive" }, { key: "held_items", label: "Held by validation", tone: "caution" }]} />
@@ -173,12 +185,12 @@ export default function HealthDashboard() {
         <tbody>{history.series.map((day) => <tr key={day.day}><td>{day.day}</td><td>{day.completed_runs} / {day.failed_runs}</td><td>{day.published_items} / {day.held_items}</td><td>{day.source_ready} / {day.source_unavailable} / {day.source_failed}</td><td>{day.average_duration_seconds === null ? "No runs" : Math.round(day.average_duration_seconds)}</td></tr>)}</tbody>
       </table></div></details>
     </>}
-    <section className="panel">
-      <div className="section-heading"><h2>Location health</h2><Link className="nav-button" href="/">Manage runs &amp; locations</Link></div>
+    {mode === "health" && <section className="panel">
+      <div className="section-heading"><h2>Location health</h2><Link className="nav-button" href="/locations">Manage locations &amp; runs</Link></div>
       <div className="location-grid">{rows.map((row) => <details className={`location-card tone-${row.level}`} key={row.location_id}>
         <summary><span>{row.location_name}</span><span className={`status-badge tone-${row.level}`}>{row.level}</span></summary>
         <p>Latest stage: {row.stage.replaceAll("_", " ")} / {row.published_items ?? "-"} published / {row.held ?? "-"} held</p>
-        {row.stage === "awaiting_authoring" && <p>Waiting for an editor to start authoring in Runs &amp; locations.</p>}
+        {row.stage === "awaiting_authoring" && <p>{row.candidate_count === 0 ? "Collection finished — no usable items. Review sources and retry collection in Location workspaces." : "Waiting for an editor to start authoring in Runs & locations."}</p>}
         {row.stage === "awaiting_finish" && <p>Waiting for an editor to write the front page and email preview, then publish.</p>}
         <p>Sources: {row.sources.completed} completed, {row.sources.failed} failed, {row.sources.pending} pending</p>
         <p>Started {time(row.started_at)}</p>
@@ -189,10 +201,10 @@ export default function HealthDashboard() {
         {row.empty_sources.map((source) => <p key={source.source_id}>{source.name}: {source.detail ?? "No events collected"}</p>)}
         {Object.entries(row.held_reasons).map(([reason, count]) => <p key={reason}>{count} held: {reason}</p>)}
         {row.model_errors.map((detail, index) => <p className="stage-error" key={index}>{detail}</p>)}
-        {row.run_id && <Link href={`/?run=${encodeURIComponent(row.run_id)}&location=${encodeURIComponent(row.location_id)}`}>Inspect run and stories</Link>}
+        {row.run_id && <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs&run=${encodeURIComponent(row.run_id)}`}>Inspect run and stories</Link>}
       </details>)}</div>
       {snapshot && !rows.length && <p>No locations in this view.</p>}
-    </section>
+    </section>}
     <p className="chart-caption">Updated {time(updated)}. Refreshes every 15 seconds. Charts include terminal runs by completion date, not active runs.</p>
   </>;
 }

@@ -181,3 +181,4 @@ export function addDays(iso: string, days: number) {
 export function todayIso(now: Date = new Date()) {
   return now.toISOString().slice(0, 10);
 }
+

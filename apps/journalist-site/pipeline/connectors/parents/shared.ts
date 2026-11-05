@@ -1,13 +1,13 @@
 /**
  * Shared plumbing for the parent-and-homeowner connectors (civiccalendar, homesafety, housing,
- * development, athletics): robots-checked fetches, status mapping and location relevance.
+ * development, athletics): fetches (robots-checked for website content), status mapping and location relevance.
  */
 import { HttpStatusError } from "../../core/http";
-import { WINDOW_DAYS } from "../../core/time";
-import { loadSourceConfig } from "../../storage/source-configs";
-import { addDays, FeedFormatError, MAX_FEED_BYTES, plainText } from "../common";
+import { rangesFor } from "../../core/time";
+import { stateSourcesFor } from "../../discovery/area";
+import { FeedFormatError, MAX_FEED_BYTES, plainText } from "../common";
 import { DiscoveryBlockedError } from "../fetcher";
-import { sourceResult, type CollectedEvent, type CollectedSource, type ConnectorContext, type SourceResult, type SourceTask } from "../types";
+import { sourceResult, type CollectedEvent, type CollectedSource, type ConnectorContext, type LookupWindow, type SourceResult, type SourceTask } from "../types";
 import { distanceKm, LOCAL_KM, NEARBY_KM, resolveRegion, validateStateSources, type Region } from "../wider/regions";
 
 export type Tier = "local" | "region" | "nearby";
@@ -20,7 +20,7 @@ export class SourceUnavailable extends Error {
 function errorText(error: unknown) { return error instanceof Error ? `${error.constructor.name}: ${error.message}` : String(error); }
 export function transient(error: unknown) { return error instanceof HttpStatusError && (error.status === 429 || error.status >= 500); }
 
-/** Robots-checked GET. 429/5xx are rethrown so the job queue retries; other failures become a status. */
+/** GET through the Fetcher (robots-checked unless it is a JSON API call). 429/5xx are rethrown so the job queue retries; other failures become a status. */
 export async function fetchBytes(context: ConnectorContext, url: string, accept: string, maxBytes = MAX_FEED_BYTES): Promise<Uint8Array> {
   return (await fetchResponse(context, url, accept, maxBytes)).body;
 }
@@ -51,6 +51,7 @@ export async function runCollector(task: SourceTask, context: ConnectorContext, 
   } catch (error) {
     if (transient(error)) throw error;
     if (error instanceof SourceUnavailable) { record.status = error.status; record.detail = error.message; return { result: record, events: [] }; }
+    if (error instanceof DiscoveryBlockedError) { record.status = "blocked"; record.detail = error.message; return { result: record, events: [] }; }
     record.status = "failed"; record.detail = errorText(error);
     context.log.error("parent_source_crashed", { source_id: task.source_id, error: record.detail });
     return { result: record, events: [] };
@@ -61,7 +62,7 @@ export function skip(record: SourceResult, reason: string, count = 1) {
 }
 
 export async function locationRegion(context: ConnectorContext): Promise<Region> {
-  return resolveRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
+  return resolveRegion(context.location, await stateSourcesFor(context));
 }
 export function hasPoint(region: Region): region is Region & { latitude: number; longitude: number } {
   return typeof region.latitude === "number" && typeof region.longitude === "number" && Number.isFinite(region.latitude) && Number.isFinite(region.longitude);
@@ -91,10 +92,14 @@ export function isoDay(value: unknown): string | null {
 /** Plain text for a name or address: plainText without the sentence period it adds. */
 export function label(value: unknown, limit = 120): string | null { return plainText(value, limit)?.replace(/(?<!\.)\.$/, "") || null; }
 
+/** Report what happened since the location's last edition, up to two weeks back. */
+export const REPORTING_WINDOW: LookupWindow = { back: { since: "last_edition", maxDays: 14 } };
+
 /**
- * First day of the week this edition reports on: always one edition window (WINDOW_DAYS) back,
- * so a rerun in the same week sees the same items as the run it replaces.
+ * First day this edition reports on: the last edition's day (capped at 14 days back), so
+ * nothing between editions is missed; the published-story ledger drops anything already
+ * printed. A rerun in the same week sees the same items as the run it replaces.
  */
 export function reportingSince(context: ConnectorContext): string {
-  return addDays(context.today, -WINDOW_DAYS);
+  return rangesFor(context, REPORTING_WINDOW).back?.[0] ?? context.today;
 }

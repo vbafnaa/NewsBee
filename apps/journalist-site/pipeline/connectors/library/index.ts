@@ -10,6 +10,7 @@ import { matchBranch } from "../../communities/venues";
 import * as biblio from "./bibliocommons";
 import { parseIcal, parseJsonLd, parseTrumba, jsonLdBlocks, findEvents } from "./parsers";
 import type { ConnectorContext, CachedLinks } from "../types";
+import * as libraryRanking from "../../ranking/library";
 
 export const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_CANDIDATE_PAGES = 3;
@@ -222,6 +223,17 @@ async function runSystem(system: LocationProfile["systems"][number], context: Co
   if (!system.website) return toCollected(system, { status: "unresolved_website", detail: "No official website recorded at onboarding", feed: null, pages_checked: [], events: [], skipped: {}, response: null, method: "rules" }, context);
   const sourceId = `library:${system.fscskey}`;
   const cache = await context.linkCache.get(context.location.id, sourceId);
+  if (context.readOnly) {
+    const needsMap = (detail: string): Outcome => ({ status: "needs_remap", detail, feed: null, pages_checked: [], events: [], skipped: {}, response: null, method: "cache" });
+    if (!cache) return toCollected(system, needsMap("No saved feed address: refresh the source map"), context);
+    try { return toCollected(system, await cachedRun(context, cache, system), context); }
+    catch (error) {
+      if (error instanceof HttpStatusError && retryable(error)) throw error;
+      if (error instanceof DiscoveryBlockedError) return toCollected(system, { ...needsMap(error.message), status: "blocked" }, context);
+      if (!(error instanceof Error)) throw error;
+      return toCollected(system, needsMap(`Saved feed address failed: refresh the source map. ${error.message}`), context);
+    }
+  }
   if (cache) {
     try {
       const cached = await cachedRun(context, cache, system);
@@ -255,6 +267,15 @@ async function runSystem(system: LocationProfile["systems"][number], context: Co
 
 export const libraryConnector: Connector = {
   type: "library",
+  meta: {
+    name: "Library events",
+    formats: "Trumba RSS, iCalendar, JSON-LD event pages and BiblioCommons",
+    manual: true,
+    coverage: { group: "local", label: "library listings" },
+    storyKinds: ["event"],
+  },
+  window: { ahead: { days: 7 } },
+  rank: libraryRanking.rank,
   sources(location: LocationProfile): SourceTask[] {
     return location.systems.map((system) => ({ source_id: `library:${system.fscskey}`, name: system.name, type: "library", params: { fscskey: system.fscskey } }));
   },

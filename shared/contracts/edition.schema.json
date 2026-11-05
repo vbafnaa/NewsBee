@@ -89,7 +89,19 @@
             "safety_notice",
             "housing_market",
             "development",
-            "school_sports"
+            "school_sports",
+          "game_result",
+          "home_sale",
+          "building_permit",
+            "weather_alert",
+            "court_case",
+            "local_news",
+            "business_opening",
+            "obituary",
+            "reader_story",
+            "safety_incident",
+            "news_report",
+            "public_record"
           ],
           "title": "Kind",
           "type": "string"
@@ -115,6 +127,56 @@
           "default": true,
           "title": "Local",
           "type": "boolean"
+        },
+        "section_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section Id",
+          "description": "Newsletter section: events, civic, schools, safety, real_estate, business, obituaries, community, weather, news"
+        },
+        "also_from": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Also From",
+          "type": "array",
+          "description": "Other sources that reported the same story"
+        },
+        "lead": {
+          "default": false,
+          "title": "Lead",
+          "type": "boolean"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image",
+          "description": "A source photo or editor-approved reader photo link, shown only with public image_credit"
+        },
+        "image_caption": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Editor-approved photo description, also used as alternative text"
+        },
+        "image_credit": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Public photo credit; the reader does not display uncredited images"
         }
       },
       "required": [
@@ -125,68 +187,6 @@
         "source_url"
       ],
       "title": "EditionItem",
-      "type": "object"
-    },
-    "SourceListing": {
-      "description": "One collected item published as source facts, without model writing.",
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        },
-        "event_date": {
-          "title": "Event Date",
-          "type": "string"
-        },
-        "schedule_text": {
-          "title": "Schedule Text",
-          "type": "string"
-        },
-        "venue": {
-          "title": "Venue",
-          "type": "string"
-        },
-        "source_url": {
-          "title": "Source Url",
-          "type": "string"
-        },
-        "source_name": {
-          "title": "Source Name",
-          "type": "string"
-        },
-        "kind": {
-          "title": "Kind",
-          "type": "string",
-          "description": "A story kind, such as event, meeting_outcome or state_news."
-        },
-        "summary": {
-          "title": "Summary",
-          "type": "string",
-          "description": "The source's own description, shortened; never model-written."
-        },
-        "local": {
-          "title": "Local",
-          "type": "boolean",
-          "description": "False for items from nearby towns or the wider region."
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "event_date",
-        "schedule_text",
-        "venue",
-        "source_url",
-        "source_name",
-        "kind",
-        "summary",
-        "local"
-      ],
-      "title": "SourceListing",
       "type": "object"
     }
   },
@@ -242,22 +242,6 @@
         "$ref": "#/$defs/CorrectionNotice"
       },
       "title": "Corrections",
-      "type": "array"
-    },
-    "calendar": {
-      "description": "Upcoming events and meetings only, from editions published before listings existed.",
-      "items": {
-        "type": "object"
-      },
-      "title": "Calendar",
-      "type": "array"
-    },
-    "listings": {
-      "description": "Every eligible item the sources returned, uncapped; absent from older editions.",
-      "items": {
-        "$ref": "#/$defs/SourceListing"
-      },
-      "title": "Listings",
       "type": "array"
     }
   },

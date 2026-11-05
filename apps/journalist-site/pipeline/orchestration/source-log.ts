@@ -1,40 +1,13 @@
 /**
  * Readable source tables in the server log (Vercel Logs, or the terminal locally), next to
- * the JSON log records. Every source is printed: when a location's sources are found, when a
- * run starts, as each source finishes, and once more when collection is complete.
+ * the JSON log records. Every source is printed with its newsletter section: as each
+ * discovery method finds sources, when a run plans its sources from the source map, and as
+ * each source finishes collecting.
  */
-import type { LocationProfile, SourceResult, SourceTask, SourceType } from "../connectors/types";
-import type { DiscoveredSource, SourceDiscovery } from "../communities/source-discovery";
-import { SECTIONS, sectionOf } from "../../../../shared/newsletter-layout";
-
-/** The reader category each source type mainly feeds. */
-export const SOURCE_CATEGORIES: Record<SourceType, string> = {
-  library: "Events / Library",
-  civiccalendar: "Events / City & parks calendars",
-  meetings: "Council / Public meetings",
-  statenews: "Top News / Community & state newsrooms",
-  trending: "Top News / Community reporting",
-  hazards: "Public Safety / Earthquakes",
-  homesafety: "Public Safety / Drinking water",
-  housing: "Real Estate & Development / Housing",
-  development: "Real Estate & Development / Permits",
-  athletics: "Schools / Athletics",
-  neighborhood: "Mixed / Neighborhood sites found automatically",
-};
-
-export function sourceCategory(type: string) {
-  return SOURCE_CATEGORIES[type as SourceType] ?? `Other / ${type}`;
-}
-
-/** Collected item counts by reader tab, e.g. "Events 30, Council 4". */
-export function itemsBySection(kinds: Array<string | undefined>) {
-  const counts = new Map<string, number>();
-  for (const kind of kinds) {
-    const label = SECTIONS.find((section) => section.id === sectionOf(kind))!.label;
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  return [...counts].map(([label, count]) => `${label} ${count}`).join(", ") || "none";
-}
+import type { SourceResult, SourceTask } from "../connectors/types";
+import { METHOD_LABELS, type DiscoveryMethod, type SourceCandidate } from "../sourcemap/store";
+import { SECTIONS, sectionLabel } from "../sourcemap/sections";
+import type { RunSourceSnapshot } from "./runs";
 
 /** A fixed-width text table; long cells are shortened so each row stays on one line. */
 export function textTable(headers: string[], rows: string[][], maxWidth = 70) {
@@ -49,73 +22,46 @@ function print(title: string, body: string) {
   console.log(`\n=== Newsbee sources: ${title} ===\n${body}\n`);
 }
 
-/** Sources a location will run, printed when it is onboarded or re-checked. */
-export function logLocationSources(location: LocationProfile, tasks: SourceTask[]) {
-  const rows = tasks.map((task, index) => [String(index + 1), sourceCategory(task.type), task.name, task.type, task.source_id]);
-  const branches = location.systems.flatMap((system) => system.branches.map((branch) => `${branch.name} (${system.name})`));
-  const government = location.government;
-  const details = [
-    `Library branches: ${branches.join("; ") || "none found"}`,
-    `Meetings: ${government?.platform ? `${government.platform} ${government.tenant ?? ""}`.trim() : "none found"}${government?.detail ? ` - ${government.detail}` : ""}`,
-    `Newsroom feeds: ${location.community?.newsrooms.map((room) => `${room.name} <${room.feed}>`).join("; ") || "none found"}`,
-    `Coverage terms: ${location.community?.coverage_terms.join(", ") || location.name}`,
-    `Gaps: ${[...(location.source_coverage?.gaps ?? []), ...(location.source_coverage?.discovery_gaps ?? [])].join("; ") || "none"}`,
-  ];
-  print(`${location.name} (${location.id}), ${tasks.length} sources found`, `${textTable(["#", "Category", "Source", "Type", "Id"], rows)}\n${details.join("\n")}`);
+/** In newsletter section order, then by name. */
+function bySection<T extends { section: string; name: string }>(sources: T[]) {
+  const order = (section: string) => { const index = SECTIONS.findIndex((entry) => entry.id === section); return index < 0 ? SECTIONS.length : index; };
+  return [...sources].sort((a, b) => order(a.section) - order(b.section) || a.name.localeCompare(b.name));
 }
 
-/** Sources queued for a run, printed when it starts. */
-export function logRunSources(location: LocationProfile, runId: string, tasks: SourceTask[]) {
-  const rows = tasks.map((task, index) => [String(index + 1), sourceCategory(task.type), task.name, task.params?.manual_link_id ? "manual link" : task.type, task.source_id]);
-  print(`run ${runId} for ${location.name}, ${tasks.length} sources queued`, textTable(["#", "Category", "Source", "Type", "Id"], rows));
+/** "Events and things to do 12, Schools and youth 4". */
+export function sectionCounts(sources: Array<{ section: string }>) {
+  const counts = new Map<string, number>(SECTIONS.map((section) => [section.label, 0]));
+  for (const source of sources) counts.set(sectionLabel(source.section), (counts.get(sectionLabel(source.section)) ?? 0) + 1);
+  return [...counts].filter(([, count]) => count).map(([label, count]) => `${label} ${count}`).join(", ") || "none";
+}
+
+function methodLabel(method: string) {
+  return METHOD_LABELS[method as DiscoveryMethod] ?? method;
+}
+
+/** Every source one discovery method found for a location. */
+export function logDiscoveredSources(locationName: string, label: string, candidates: SourceCandidate[], added: number) {
+  const rows = bySection(candidates).map((candidate, index) => [String(index + 1), sectionLabel(candidate.section), candidate.name, candidate.reader, candidate.url ?? candidate.feed_url ?? "", candidate.found_by.detail]);
+  const table = rows.length ? textTable(["#", "Section", "Source", "Reader", "URL", "How it was found"], rows) : "No sources found";
+  print(`${locationName}: ${label}, ${candidates.length} found, ${added} new on the map`, `${table}\nBy section: ${sectionCounts(candidates)}`);
+}
+
+/** Every source on the location's map when a run plans its collection, read or not. */
+export function logSourceMap(locationName: string, runId: string, sources: RunSourceSnapshot[]) {
+  const rows = bySection(sources).map((source, index) => [
+    String(index + 1), sectionLabel(source.section), source.name, methodLabel(source.found_by), source.reader,
+    source.collected ? "reading" : `not read: ${source.skip_reason ?? source.status}`, source.url ?? "",
+  ]);
+  const reading = sources.filter((source) => source.collected);
+  const table = rows.length ? textTable(["#", "Section", "Source", "Found by", "Reader", "This run", "URL"], rows) : "The source map is empty";
+  print(`run ${runId} for ${locationName}, ${reading.length} of ${sources.length} sources on the map read`, `${table}\nReading by section: ${sectionCounts(reading)}`);
 }
 
 /** One line as each source finishes collecting. */
-export function logSourceCollected(locationName: string, task: SourceTask, result: SourceResult, kinds: Array<string | undefined>, listed: number) {
+export function logSourceCollected(locationName: string, section: string | null, task: SourceTask, result: SourceResult, kept: number, leftOut: number) {
   const parts = [
-    locationName, sourceCategory(task.type), task.name, result.status,
-    `${kinds.length} items (${itemsBySection(kinds)}), ${listed} published as listings`,
+    locationName, sectionLabel(section), task.name, result.status, `${kept} items kept, ${leftOut} left out`,
     result.feed_url ?? result.website ?? "", result.detail ?? "",
   ].filter(Boolean);
   console.log(`[newsbee:source] ${parts.join(" | ")}`);
-}
-
-/** Every source with its outcome, printed once collection is complete. */
-export function logCollectionSummary(locationName: string, runId: string, rows: Array<{ task: SourceTask; result: SourceResult | undefined; items: number; listed: number; sections: string }>) {
-  const table = textTable(
-    ["Category", "Source", "Status", "Items", "Listings", "By section", "Feed or site"],
-    rows.map(({ task, result, items, listed, sections }) => [sourceCategory(task.type), task.name, result?.status ?? "not collected", String(items), String(listed), sections, result?.feed_url ?? result?.website ?? ""]),
-  );
-  const items = rows.reduce((sum, row) => sum + row.items, 0);
-  const listed = rows.reduce((sum, row) => sum + row.listed, 0);
-  print(`run ${runId} for ${locationName} collected, ${items} items, ${listed} listings`, table);
-}
-
-/** Every place and feed source discovery found, printed when a location's sources are (re)discovered. */
-export function logDiscovery(locationName: string, discovery: SourceDiscovery) {
-  const feeds = textTable(
-    ["#", "Category", "Organization", "Kind", "Scope", "Items", "Found via", "Feed"],
-    discovery.sources.map((source, index) => [String(index + 1), source.category, source.name, source.feed_kind, source.scope, String(source.items_at_discovery), source.found_via, source.feed_url]),
-  );
-  const withFeeds = new Set(discovery.sources.map((source) => source.site));
-  const places = textTable(
-    ["Category", "Place", "Has feed", "Website"],
-    discovery.places.map((place) => [place.category, place.name, withFeeds.has(place.website) ? "yes" : "no", place.website]),
-  );
-  print(`${locationName}, ${discovery.sources.length} feeds found automatically from ${discovery.places.length} places`,
-    `${feeds}
-
-Places checked:
-${places}${discovery.gaps.length ? `
-
-Gaps: ${discovery.gaps.join("; ")}` : ""}`);
-}
-
-/** One row per automatically found feed, printed after the neighborhood source collects. */
-export function logDiscoveredFeeds(locationName: string, discovery: SourceDiscovery, outcomes: Array<{ source: DiscoveredSource; status: string; items: number; detail: string }>) {
-  const table = textTable(
-    ["Category", "Organization", "Kind", "Status", "Items", "Feed", "Detail"],
-    outcomes.map(({ source, status, items, detail }) => [source.category, source.name, source.feed_kind, status, String(items), source.feed_url, detail]),
-  );
-  print(`${locationName} neighborhood feeds collected (discovered ${discovery.checked_at})`, table);
 }

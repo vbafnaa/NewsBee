@@ -1,6 +1,6 @@
 /** Google Drive adapter for ArtifactStore (service-account JWT auth, Drive v3 REST). */
-import { createSign } from "node:crypto";
-import type { ArtifactStore, StoredFile } from "./artifacts";
+import { createSign, randomUUID } from "node:crypto";
+import { artifactSegment, type ArtifactStore, type StoredFile } from "./artifacts";
 
 type DriveFile = { id: string; name?: string; mimeType?: string };
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -118,6 +118,39 @@ async function findFile(parentId: string, name: string, mimeType?: string) {
 export class DriveArtifacts implements ArtifactStore {
   readonly kind = "drive" as const;
 
+  async findFolder(parentId: string, name: string) {
+    artifactSegment(name);
+    const params = new URLSearchParams({
+      q: `'${quoted(checkId(parentId))}' in parents and name = '${quoted(name)}' and trashed = false and mimeType = '${FOLDER_MIME}'`,
+      fields: "files(id)", pageSize: "2", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+    });
+    const { files } = await driveRequest<{ files: DriveFile[] }>(`https://www.googleapis.com/drive/v3/files?${params}`);
+    if (files.length > 1 || files.some((file) => file.id === parentId)) {
+      throw new Error(`Ambiguous artifact folder: ${name}`);
+    }
+    return files[0]?.id ?? null;
+  }
+
+  async removeFile(parentId: string, name: string) {
+    artifactSegment(name);
+    const matches = (await this.list(parentId)).filter((file) => file.name === name);
+    for (const file of matches) {
+      const metadata = await driveRequest<{ name: string; mimeType: string; parents: string[] }>(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(file.id))}?fields=name,mimeType,parents&supportsAllDrives=true`,
+      );
+      if (metadata.name !== name || metadata.mimeType === FOLDER_MIME ||
+        metadata.parents?.length !== 1 || metadata.parents[0] !== parentId) {
+        throw new Error(`Refusing cleanup of moved, shared or non-file artifact: ${name}`);
+      }
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?supportsAllDrives=true`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
+      );
+      if (!response.ok && response.status !== 404) throw new Error(`Google Drive artifact cleanup failed (${response.status}): ${name}`);
+    }
+    return matches.length;
+  }
+
   async ensureFolder(parentId: string, name: string) {
     const found = await findFile(parentId, name, FOLDER_MIME);
     if (found) return found.id;
@@ -195,4 +228,55 @@ export class DriveArtifacts implements ArtifactStore {
     } while (pageToken);
     return files;
   }
+}
+
+/** Admin diagnostics use the same credentials and upload path as pipeline artifacts. */
+export function driveServiceAccountEmail() {
+  return serviceAccount().email;
+}
+
+export type DriveFolderDetails = {
+  id: string;
+  name?: string;
+  mimeType?: string;
+  driveId?: string;
+  webViewLink?: string;
+  capabilities?: { canAddChildren?: boolean };
+};
+
+export async function driveFolderDetails(folderId: string) {
+  const params = new URLSearchParams({
+    fields: "id,name,mimeType,driveId,webViewLink,capabilities(canAddChildren)",
+    supportsAllDrives: "true",
+  });
+  return driveRequest<DriveFolderDetails>(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(folderId))}?${params}`);
+}
+
+export async function testDriveUpload(folderId: string) {
+  checkId(folderId);
+  const name = `.newsbee-drive-test-${randomUUID()}.txt`;
+  let uploaded = false;
+  let fileId: string | undefined;
+  let error: string | null = null;
+  let cleanupError: string | null = null;
+  try {
+    fileId = await new DriveArtifacts().saveText(folderId, name, "Newsbee Drive write test\n", "text/plain");
+    uploaded = true;
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+  }
+  // saveText creates file metadata before uploading content, so clean up even after a 403.
+  try {
+    fileId ??= (await findFile(folderId, name))?.id;
+    if (fileId) {
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
+      );
+      if (!response.ok) throw new Error(`Google Drive test file cleanup failed (${response.status})`);
+    }
+  } catch (cause) {
+    cleanupError = cause instanceof Error ? cause.message : String(cause);
+  }
+  return { uploaded, error, cleanupError };
 }

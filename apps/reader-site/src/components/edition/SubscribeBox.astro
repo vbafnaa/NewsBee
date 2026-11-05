@@ -1,0 +1,37 @@
+---
+// The weekly-editions signup (SignupForm) for this neighborhood.
+import SignupForm from "../SignupForm.astro";
+interface Props { town: string; location: { id: string; name: string } }
+const { town, location } = Astro.props;
+---
+<section id="subscribe" class="subscribe" aria-labelledby="subscribe-heading">
+  <div class="copy">
+    <h2 id="subscribe-heading">This week in {town}, in your inbox.</h2>
+    <p class="sub">Neighborhood news, events, housing, transit, business and more, every Thursday.</p>
+  </div>
+  <div class="signup">
+    <SignupForm locationId={location.id} locationName={location.name} />
+  </div>
+</section>
+
+<style>
+  .subscribe {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-8);
+    /* The only boxed section on the page: paper fill, no stroke, rounded */
+    padding: var(--space-16) var(--space-12);
+    background: var(--color-paper);
+    border-radius: var(--radius-xl);
+  }
+  /* SignupForm's colors come from these names */
+  .signup { --accent: var(--color-bee); --ink: var(--color-ink); --muted: var(--color-muted); font-size: var(--text-sm); }
+  .signup :global(form) { margin: 0; max-width: none; }
+  .copy { display: flex; flex-direction: column; gap: var(--space-2); }
+  h2 { font-size: var(--text-h2); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); }
+  .sub { font-size: var(--text-sm); color: var(--color-ink-soft); }
+  @media (max-width: 48rem) {
+    .subscribe { grid-template-columns: 1fr; gap: var(--space-6); padding: var(--space-8) var(--space-5); }
+  }
+</style>

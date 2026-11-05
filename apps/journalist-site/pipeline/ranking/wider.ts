@@ -22,10 +22,12 @@ export function spread(stories: Story[], group: (story: Story) => Group): Story[
   }).sort((a, b) => compareKeys(a.key, b.key)).map(({ story }) => story);
 }
 
+/** Weather alerts (most severe first) lead earthquakes; quakes by magnitude, distance, reports. */
 export function hazards(stories: Story[]): Story[] {
+  const weather = (story: Story) => (story.facts.kind === "weather_alert" ? 0 : 1);
   return [...stories].sort((a, b) => compareKeys(
-    [tier(a), -signal(a, "magnitude"), signal(a, "distance_km"), -signal(a, "felt"), -dateOrdinal(a)],
-    [tier(b), -signal(b, "magnitude"), signal(b, "distance_km"), -signal(b, "felt"), -dateOrdinal(b)],
+    [tier(a), weather(a), -signal(a, "severity"), -signal(a, "magnitude"), signal(a, "distance_km"), -signal(a, "felt"), -dateOrdinal(a)],
+    [tier(b), weather(b), -signal(b, "severity"), -signal(b, "magnitude"), signal(b, "distance_km"), -signal(b, "felt"), -dateOrdinal(b)],
   ));
 }
 

@@ -1,0 +1,143 @@
+---
+import type { DataSource, EventDay } from "../../lib/edition-view";
+import SavedNote from "./SavedNote.astro";
+import SectionHeading from "./SectionHeading.astro";
+
+// dayHref: the events page for a day, which the "+N more" count links to.
+interface Props { town: string; days: EventDay[]; source: DataSource; dayHref?: (date: string) => string }
+const { town, days, source, dayHref } = Astro.props;
+// Per day: one featured event, two more below it, then a "+N more" count.
+const ALSO_SHOWN = 2;
+---
+<section id="events" class="events" aria-labelledby="events-heading">
+  <SectionHeading id="events-heading" label={`This week in ${town}`}><SavedNote source={source} /></SectionHeading>
+  <ol class="days">
+    {days.map((day) => {
+      const [featured, ...others] = day.events;
+      const shown = others.slice(0, ALSO_SHOWN);
+      const hidden = others.slice(ALSO_SHOWN);
+      return (
+        <li class="day">
+          <div class="day-head">
+            <span class="nb-label">{day.isToday ? "Today" : day.weekday}</span>
+            <span class="day-num">{day.dayOfMonth}</span>
+          </div>
+
+          {/* Always four parts per day (head, featured, list, more) so rows line up across days. */}
+          {!featured && <div class="featured"><p class="empty">Nothing listed yet.</p></div>}
+
+          {featured && (
+            <div class="featured">
+              <span class="time">{featured.time}</span>
+              {featured.href
+                ? <a class="featured-title nb-card-link" href={featured.href} data-story-id={featured.storyId ?? undefined}><span class="nb-title">{featured.title}</span></a>
+                : <span class="featured-title">{featured.title}</span>}
+              {featured.category && <span class="pill">{featured.category}</span>}
+            </div>
+          )}
+
+          {shown.length === 0 && <div aria-hidden="true"></div>}
+          {shown.length > 0 && (
+            <ul class="list">
+              {shown.map((event) => (
+                <li class="event">
+                  <span class="time">{event.time}</span>
+                  {event.href
+                    ? <a class="title nb-card-link" href={event.href} data-story-id={event.storyId ?? undefined}><span class="nb-title">{event.title}</span></a>
+                    : <span class="title">{event.title}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {hidden.length === 0 && <div aria-hidden="true"></div>}
+          {hidden.length > 0 && (dayHref
+            ? <a class="more nb-link" href={dayHref(day.date)}>+{hidden.length} more</a>
+            : <span class="more">+{hidden.length} more</span>)}
+        </li>
+      );
+    })}
+  </ol>
+</section>
+
+<style>
+  .events { display: flex; flex-direction: column; gap: var(--space-8); }
+  .days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* Each day spans four shared rows, so every featured event's divider sits on the same line. */
+  .day { display: grid; grid-row: span 4; grid-template-rows: subgrid; align-content: start; min-width: 0; }
+  .day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .day-num { font: 500 var(--text-3xl)/1 var(--font-display); letter-spacing: var(--tracking-h1); }
+
+  .time {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  /* Featured: the day's first event */
+  .featured {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    align-self: stretch;
+    gap: var(--space-2);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+  }
+  .featured-title {
+    font: 500 var(--text-lg)/var(--leading-h3) var(--font-display);
+    letter-spacing: var(--tracking-h3);
+    color: var(--color-ink);
+    overflow-wrap: anywhere;
+  }
+  .pill {
+    margin-top: var(--space-1);
+    padding: 2px var(--space-3);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-pill);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+  }
+
+  /* The two below, and the rest behind "+N more" */
+  .list { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  .event { display: flex; flex-direction: column; gap: var(--space-1); }
+  .title { font-size: var(--text-sm); line-height: 1.4; color: var(--color-ink); overflow-wrap: anywhere; }
+
+  .more {
+    align-self: start;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+  }
+
+  .empty { font-size: var(--text-sm); color: var(--color-muted); }
+
+  @media (max-width: 64rem) {
+    .days { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
+  }
+  @media (max-width: 40rem) {
+    .days { grid-template-columns: 1fr; }
+  }
+</style>
