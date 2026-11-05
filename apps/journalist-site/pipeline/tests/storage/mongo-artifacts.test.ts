@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { type Db, MongoClient } from "mongodb";
 import { MongoArtifacts } from "../../storage/mongo-artifacts";
-import { createChannelFolder } from "../../orchestration/publish";
+import { publishToReader } from "../../orchestration/publish";
+import { COLLECTIONS } from "../../storage/mongo";
 import { runFolder } from "../../storage/artifacts";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 
@@ -58,15 +59,25 @@ describe("MongoDB artifact store", () => {
     await expect(store.readText(folder)).rejects.toThrow("was not found");
   });
 
-  it("needs no Drive folder for run artifacts or new channels", async () => {
+  it("finds folders and removes one file by name, like the Drive store", async () => {
+    const folder = await store.ensureFolder("root", "editions");
+    expect(await store.findFolder("root", "editions")).toBe(folder);
+    expect(await store.findFolder("root", "missing")).toBeNull();
+    await store.saveJson(folder, "a.json", { version: 1 });
+    expect(await store.removeFile(folder, "a.json")).toBe(1);
+    expect(await store.removeFile(folder, "a.json")).toBe(0);
+    expect(await store.list(folder)).toEqual([]);
+  });
+
+  it("needs no Drive folder for run artifacts", async () => {
     await expect(runFolder(store, "editions", "seattle-wa")).resolves.toMatch(/^[0-9a-f]{32}$/);
-    await expect(createChannelFolder(store, null, "pilot")).resolves.toMatch(/^[0-9a-f]{32}$/);
   });
 
   it("lets the reader site read what the pipeline published", async () => {
-    const folder = await createChannelFolder(store, null, "reader-site");
-    await store.saveJson(folder, "locations.json", { locations: [location] });
-    await store.saveJson(folder, `${edition.id}.json`, edition);
+    const folder = "reader-folder-id";
+    await db.collection(COLLECTIONS.locations).insertOne({ _id: location.id as never, ...location, systems: [] });
+    await db.collection(COLLECTIONS.editions).insertOne({ location_id: location.id, status: "published" });
+    await publishToReader(db, store, edition, folder);
     await expect(readerData(folder)).resolves.toMatchObject({ locations: [location], editions: [edition] });
   });
 });

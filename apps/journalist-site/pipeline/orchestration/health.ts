@@ -10,8 +10,9 @@ import type { ComponentHealth, ModelRuntime } from "../model/runtime";
 import { modelUsageSummary } from "../model/usage";
 import { COLLECTIONS } from "../storage/mongo";
 import { diagnoseRuns, type RunDiagnostics } from "./diagnostics";
-import { runs, type PipelineRun, type RunSource } from "./runs";
+import { collectionCandidateCount, runs, type PipelineRun, type RunSource } from "./runs";
 import { schedulerState } from "./scheduler";
+import { SOURCE_HEALTH, type SourceHealth } from "./source-health";
 
 export { STALE_TICK_SECONDS } from "./scheduler";
 
@@ -29,6 +30,7 @@ export type LocationHealth = {
   sources: { total: number; completed: number; failed: number; pending: number };
   failed_sources: { source_id: string; name: string; error: string | null }[];
   empty_sources: { source_id: string; name: string; detail: string | null }[];
+  candidate_count: number;
   published_items: number | null;
   held: number | null;
   held_reasons: Record<string, number>;
@@ -84,6 +86,7 @@ export async function locationHealth(
     },
     failed_sources: sources.filter(sourceFailed).map((source) => ({ source_id: source.source_id, name: source.name, error: source.error ?? source.detail })),
     empty_sources: sources.filter((source) => source.status === "completed" && !sourceFailed(source) && source.event_count === 0).map((source) => ({ source_id: source.source_id, name: source.name, detail: source.detail })),
+    candidate_count: run ? await collectionCandidateCount(db, run._id) : 0,
     published_items: run?.published?.items ?? null,
     held: run?.published?.held ?? null,
     held_reasons: run?.published?.held_reasons ?? {},
@@ -129,6 +132,8 @@ export async function healthSummary(db: Db, model: ModelRuntime | null, settings
     queue,
     model: modelHealth ? { provider: model?.provider ?? null, name: model?.model ?? null, ...modelHealth } : null,
     model_usage: modelUsage,
+    /** Sources that keep failing (3+ runs) or keep returning nothing (4+ runs). */
+    source_attention: await db.collection<SourceHealth>(SOURCE_HEALTH).find({ flag: { $ne: "healthy" } }).sort({ flag: 1, location_id: 1, source_id: 1 }).limit(100).toArray(),
     totals: {
       locations: rows.length,
       ok: rows.filter((row) => row.level === "ok").length,

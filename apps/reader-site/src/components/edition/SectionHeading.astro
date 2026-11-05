@@ -1,0 +1,22 @@
+---
+// Section opener: uppercase label, then a hairline rule running to the right edge.
+interface Props { id: string; label: string; }
+const { id, label } = Astro.props;
+---
+<div class="section-head">
+  <h2 id={id}>{label}</h2>
+  <span class="rule" aria-hidden="true"></span>
+  <slot />
+</div>
+
+<style>
+  .section-head { display: flex; align-items: center; gap: var(--space-4); }
+  h2 {
+    font: 700 var(--text-sm)/1 var(--font-body);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink);
+    white-space: nowrap;
+  }
+  .rule { flex: 1; height: 1px; background: var(--color-line); }
+</style>

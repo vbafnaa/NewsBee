@@ -1,0 +1,118 @@
+---
+import NeighborhoodPage from "./NeighborhoodPage.astro";
+import ReportStory from "./ReportStory.astro";
+import { neighborhoodLinks, type Article, type EditionPage } from "../../lib/edition-view";
+
+interface Props { page: EditionPage; article: Article }
+const { page, article } = Astro.props;
+const links = neighborhoodLinks({ ...page, requestedEditionId: page.edition.id });
+const shareUrl = new URL(article.href, Astro.url.origin).href;
+const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).filter(Boolean);
+---
+<NeighborhoodPage page={page} title={`${article.headline} | Newsbee`} subPage articleStoryId={article.storyId}>
+  <article class="full-story" aria-labelledby="article-title" data-article>
+    <a class="back nb-link" href={links.page}>Back to {page.town}</a>
+    <header>
+      <p class="nb-label">{article.category} · {article.date} · {page.town}</p>
+      <h1 id="article-title">{article.headline}</h1>
+      <p class="byline">Newsbee · Your community, this week</p>
+    </header>
+    {article.image && <figure data-article-photo>
+      <img src={article.image} alt={article.imageCaption || article.headline} width="1600" height="1000" />
+      <figcaption>{article.imageCaption}{article.imageCaption ? " · " : ""}Photo: {article.imageCredit}</figcaption>
+    </figure>}
+    <div class="image-placeholder" data-photo-placeholder hidden={Boolean(article.image)} role="img" aria-label="No photo available for this story">
+      <span class="nb-label">Your community in focus</span>
+      <span>No photo available yet</span>
+    </div>
+    <div class="article-text">{paragraphs.map((text) => <p>{text}</p>)}</div>
+    {article.whenWhere && <p class="when-where">{article.whenWhere}</p>}
+    <div class="article-actions" data-print-hide>
+      <button class="nb-button nb-button-quiet" type="button" data-print-story>Print story</button>
+      <button class="nb-button nb-button-primary" type="button" data-share-story
+        data-url={shareUrl} data-title={article.headline} data-story-id={article.storyId ?? undefined}>Share story</button>
+      <ReportStory storyId={article.storyId} headline={article.headline} />
+      <p data-share-status role="status"></p>
+      <label data-share-fallback hidden>Story link <input type="url" readonly value={shareUrl} /></label>
+    </div>
+    <footer class="article-source">
+      <small>Source: {article.sourceName}.
+        {article.sourceUrl && <> <a class="nb-link" href={article.sourceUrl} target="_blank" rel="noopener noreferrer">Visit the original source</a> (opens in a new tab).</>}
+      </small>
+    </footer>
+  </article>
+</NeighborhoodPage>
+
+<script>
+  const photo = document.querySelector<HTMLImageElement>("[data-article-photo] img");
+  const photoUnavailable = () => {
+    const figure = photo?.closest("figure");
+    const placeholder = document.querySelector<HTMLElement>("[data-photo-placeholder]");
+    if (figure && placeholder) { figure.hidden = true; placeholder.hidden = false; }
+  };
+  photo?.addEventListener("error", photoUnavailable);
+  if (photo?.complete && !photo.naturalWidth) photoUnavailable();
+  document.querySelector("[data-print-story]")?.addEventListener("click", () => window.print());
+  const button = document.querySelector<HTMLButtonElement>("[data-share-story]");
+  const status = document.querySelector<HTMLElement>("[data-share-status]");
+  button?.addEventListener("click", async () => {
+    if (!status || !button.dataset.url) return;
+    button.disabled = true;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: button.dataset.title, url: button.dataset.url });
+        status.textContent = "Story shared.";
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(button.dataset.url);
+        status.textContent = "Story link copied.";
+      } else {
+        const fallback = document.querySelector<HTMLElement>("[data-share-fallback]");
+        if (fallback) { fallback.hidden = false; fallback.querySelector("input")?.select(); }
+        status.textContent = "Copy the story link below to share it.";
+        return;
+      }
+      const main = button.closest<HTMLElement>("main[data-edition-id]");
+      if (main && button.dataset.storyId) {
+        void fetch(`${main.dataset.apiUrl}/api/engagement`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+          body: JSON.stringify({ location_id: main.dataset.locationId, edition_id: main.dataset.editionId, story_id: button.dataset.storyId, action: "share" }),
+        }).catch((error) => console.warn("Share signal was not saved", error));
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      const fallback = document.querySelector<HTMLElement>("[data-share-fallback]");
+      if (fallback) fallback.hidden = false;
+      status.textContent = "Sharing was unavailable. Copy the story link below instead.";
+    } finally { button.disabled = false; }
+  });
+</script>
+
+<style>
+  .full-story { width: 100%; max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-6); overflow-wrap: anywhere; }
+  .back { align-self: flex-start; font-size: var(--text-sm); }
+  header { display: grid; gap: var(--space-4); }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  .byline, figcaption, .when-where, .article-source { color: var(--color-muted); font-size: var(--text-sm); }
+  figure { margin: 0; display: grid; gap: var(--space-2); }
+  figure img { width: 100%; height: auto; max-height: 32rem; object-fit: contain; }
+  .image-placeholder { aspect-ratio: 16 / 9; background: var(--color-cream); border: 1px solid var(--color-line); border-radius: var(--radius-lg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: var(--color-muted); text-align: center; }
+  .article-text { display: grid; gap: var(--space-5); font-size: var(--text-lg); line-height: 1.8; }
+  .article-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); border-top: 1px solid var(--color-line); padding-top: var(--space-5); }
+  .article-actions p, .article-actions label { flex-basis: 100%; font-size: var(--text-sm); }
+  [hidden] { display: none; }
+  input { width: 100%; padding: var(--space-2); font: inherit; }
+  .article-source { border-top: 1px solid var(--color-line); padding-top: var(--space-4); }
+  @media print {
+    :global(body > header), :global(body > footer), :global(.nb-skip), :global([data-edition-notes]), .back, [data-print-hide], .image-placeholder { display: none !important; }
+    :global(.notices) { margin-bottom: 1em; }
+    :global(main.nb-container) { padding: 0; display: block; }
+    :global(body) { background: white; color: black; font-size: 11pt; }
+    .full-story { max-width: none; display: block; }
+    h1 { font-size: 24pt; line-height: 1.2; margin-block: 0.4em; }
+    .article-text { display: block; font-size: 12pt; line-height: 1.6; }
+    .article-text p { margin-block: 1em; orphans: 3; widows: 3; }
+    figure { break-inside: avoid; margin-block: 1em; }
+    .article-source { margin-top: 1em; }
+    .article-source a::after { content: " (" attr(href) ")"; }
+  }
+</style>

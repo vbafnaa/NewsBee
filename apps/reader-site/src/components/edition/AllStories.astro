@@ -1,0 +1,29 @@
+---
+import NeighborhoodPage from "./NeighborhoodPage.astro";
+import { neighborhoodLinks, type EditionPage } from "../../lib/edition-view";
+interface Props { page: EditionPage }
+const { page } = Astro.props;
+const links = neighborhoodLinks(page);
+---
+<NeighborhoodPage page={page} title={`All stories in ${page.town} | Newsbee`} subPage>
+  <section class="all-stories" aria-labelledby="all-stories-title">
+    <a class="nb-link" href={links.page}>Back to {page.town}</a>
+    <h1 id="all-stories-title">All stories in this edition</h1>
+    <p>{page.articles.length} published stories, including news, alerts and events.</p>
+    <ol>
+      {page.articles.map((article) => <li>
+        <p class="nb-label">{article.category} · {article.date}</p>
+        <h2><a class="nb-card-link" href={article.href} data-story-id={article.storyId ?? undefined}><span class="nb-title">{article.headline}</span></a></h2>
+        <p class="preview">{article.text}</p>
+      </li>)}
+    </ol>
+  </section>
+</NeighborhoodPage>
+<style>
+  .all-stories { width: 100%; max-width: 48rem; margin-inline: auto; display: grid; gap: var(--space-5); }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); }
+  h2 { font-size: var(--text-h3); }
+  ol { margin: 0; padding: 0; list-style: none; }
+  li { display: grid; gap: var(--space-3); padding-block: var(--space-6); border-bottom: 1px solid var(--color-line); }
+  .preview { color: var(--color-muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+</style>

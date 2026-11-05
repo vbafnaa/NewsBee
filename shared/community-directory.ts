@@ -1,4 +1,3 @@
-import seed from "../config/communities.json";
 import type { GeographicPlace } from "./geography";
 
 export type Community = {
@@ -16,8 +15,6 @@ export type Community = {
   geography?: GeographicPlace;
   parent_kind?: "city" | "county" | null;
 };
-
-export const COMMUNITY_SEED = seed;
 
 export function communityDirectory(value: unknown): Record<string, Community> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("communities must map IDs to reviewed communities");
@@ -62,4 +59,9 @@ export function matchingCommunities(communities: Record<string, Community>, quer
         `${base} ${community.parent_name.toLowerCase()} ${community.state.toLowerCase()}`].some((candidate) => candidate.startsWith(name));
     }) &&
     parts.every((part) => community.state.toLowerCase().startsWith(part) || community.state_name.toLowerCase().startsWith(part) || community.parent_name.toLowerCase().startsWith(part)));
+}
+
+/** Communities already onboarded (stored on their location), keyed by location id. */
+export function onboardedCommunities(locations: Array<{ id?: string; _id?: unknown; community?: Community | null }>): Record<string, Community> {
+  return Object.fromEntries(locations.filter((location) => location.community).map((location) => [String(location.id ?? location._id), location.community as Community]));
 }

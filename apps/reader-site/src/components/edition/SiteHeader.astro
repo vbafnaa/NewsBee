@@ -1,0 +1,146 @@
+---
+// Two headers. At the top of the page: the full masthead (wordmark, date, actions) with the
+// section nav under it. Once that scrolls out of view, a single compact bar slides in:
+// N logo, community, topics, then the actions.
+import { TOPICS } from "../../../../../shared/topics";
+// submitHref: where "Submit an event" goes; the button is left out without one.
+// homeHref: where the wordmark and N logo go (the neighborhood picker); the top of the page without one.
+// pageHref: the neighborhood page the section links point into, when this is one of its sub-pages.
+interface Props { town: string; today: string; visible: string[]; submitHref?: string; homeHref?: string; pageHref?: string }
+const { town, today, visible, submitHref, homeHref = "#top", pageHref = "" } = Astro.props;
+// Links to Events and the topic sections on the page (short labels).
+const categories = [
+  { label: "Events", id: "events" },
+  ...TOPICS.map((topic) => ({ label: topic.short, id: topic.id })),
+].filter((item) => visible.includes(item.id))
+  .map((item) => ({ label: item.label, href: `${pageHref}#${item.id}` }));
+---
+<header class="masthead" id="masthead">
+  <div class="nb-container bar">
+    <span class="nb-label date">{today}</span>
+    <a class="wordmark" href={homeHref}>Newsbee</a>
+    <div class="actions">
+      {submitHref && <a class="nb-button nb-button-quiet" href={submitHref}>Submit an event</a>}
+      <a class="nb-button nb-button-primary" href={`${pageHref}#subscribe`}>Subscribe</a>
+    </div>
+  </div>
+  <nav class="subnav" aria-label="Sections">
+    <div class="nb-container subnav-row">
+      <span class="nb-label town">{town}</span>
+      <ul class="topics">
+        {categories.map((item) => <li><a href={item.href}>{item.label}</a></li>)}
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<div class="compact" id="compact-header" aria-hidden="true" inert>
+  <div class="nb-container compact-row">
+    <a class="logo" href={homeHref} aria-label={homeHref === "#top" ? "Newsbee, back to top" : "Newsbee, choose a neighborhood"}>N</a>
+    <span class="nb-label town">{town}</span>
+    <ul class="topics">
+      {categories.map((item) => <li><a href={item.href}>{item.label}</a></li>)}
+    </ul>
+    <div class="actions">
+      {submitHref && <a class="nb-button nb-button-quiet" href={submitHref}>Submit an event</a>}
+      <a class="nb-button nb-button-primary" href={`${pageHref}#subscribe`}>Subscribe</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Show the compact bar only while the full masthead is out of view.
+  const masthead = document.getElementById("masthead");
+  const compact = document.getElementById("compact-header");
+  if (masthead && compact && "IntersectionObserver" in window) {
+    new IntersectionObserver(([entry]) => {
+      const show = !entry.isIntersecting;
+      compact.classList.toggle("is-visible", show);
+      compact.toggleAttribute("inert", !show);
+      compact.setAttribute("aria-hidden", String(!show));
+    }).observe(masthead);
+  }
+</script>
+
+<style>
+  .masthead { border-bottom: 1px solid var(--color-line); background: var(--color-surface); }
+  /* Date left, wordmark centered, actions right */
+  .bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-4);
+    padding-block: var(--space-6);
+  }
+  .bar .actions { justify-self: end; }
+  .wordmark {
+    font: var(--weight-heading) var(--text-4xl)/1 var(--font-display);
+    letter-spacing: var(--tracking-h1);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+  .date { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+  .subnav { border-top: 1px solid var(--color-line); }
+  .subnav-row { display: flex; align-items: center; gap: var(--space-6); padding-block: var(--space-2); }
+  .town { color: var(--color-ink); flex-shrink: 0; }
+  .topics {
+    display: flex;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+    min-width: 0;
+  }
+  .topics a {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-ink-soft);
+    text-decoration: none;
+    white-space: nowrap;
+    border-radius: var(--radius-pill);
+    transition: background-color var(--transition);
+  }
+  .topics a:hover { background: var(--color-pill-gray); color: var(--color-ink); }
+
+  /* Compact bar, shown after scrolling */
+  .compact {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 10;
+    padding-top: env(safe-area-inset-top, 0px);
+    /* Fully opaque, with a soft shadow to lift it off the page */
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    transform: translateY(calc(-100% - 8px));
+    transition: transform var(--transition);
+  }
+  .compact.is-visible { transform: none; }
+  .compact-row { display: flex; align-items: center; gap: var(--space-4); padding-block: var(--space-4); }
+  .compact .topics { flex: 1; }
+  .logo {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--radius-lg);
+    background: var(--color-bee);
+    color: var(--color-ink);
+    font: var(--weight-heading) var(--text-xl)/1 var(--font-display);
+    text-decoration: none;
+  }
+  .logo:hover { background: var(--color-bee-deep); }
+
+  @media (prefers-reduced-motion: reduce) { .compact { transition: none; } }
+  @media (max-width: 48rem) {
+    /* Keep the date's column so the wordmark stays centered */
+    .date { visibility: hidden; }
+    .bar { padding-block: var(--space-4); }
+    .wordmark { font-size: var(--text-2xl); }
+    .actions .nb-button-quiet { display: none; }
+  }
+</style>

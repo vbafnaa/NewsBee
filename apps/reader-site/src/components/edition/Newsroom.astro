@@ -1,0 +1,75 @@
+---
+// One section per reader topic that has stories (shared/topics.ts: Housing & Development,
+// Transit, Business & Food, Policy, Groups & Communities, Culture), each opened by its own
+// label and divider: a lead story on the left, the rest listed on the right.
+import type { DataSource, NewsroomTab } from "../../lib/edition-view";
+import SavedNote from "./SavedNote.astro";
+import SectionHeading from "./SectionHeading.astro";
+
+// moreHref: a section's own page, linked when it has more stories than fit here.
+interface Props { tabs: NewsroomTab[]; source: DataSource; moreHref: (id: string) => string }
+const { tabs, source, moreHref } = Astro.props;
+const SIDE_STORIES = 3;
+---
+{tabs.map((tab) => {
+  const [lead, ...rest] = tab.stories;
+  return (
+    <section id={tab.id} class="category" aria-labelledby={`${tab.id}-heading`}>
+      <SectionHeading id={`${tab.id}-heading`} label={tab.label}><SavedNote source={tab.source ?? source} /></SectionHeading>
+      <div class="panel">
+        {lead && (
+          <article class="lead" data-match-title>
+            <span class="nb-label">{lead.date}</span>
+            <h3>
+              <a class="nb-card-link" href={lead.href} data-story-id={lead.storyId ?? undefined}><span class="nb-title">{lead.title}</span></a>
+            </h3>
+            <p class="dek">{lead.dek}</p>
+            <a class="nb-link source" href={lead.href} data-story-id={lead.storyId ?? undefined}>Read the full story</a>
+          </article>
+        )}
+        <div class="side">
+        <ol class="list">
+          {rest.slice(0, SIDE_STORIES).map((story) => (
+            <li>
+              <a class="item nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}>
+                <span class="nb-label">{story.date}</span>
+                <span class="nb-title item-title">{story.title}</span>
+                <span class="item-source">{story.sourceName}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+        {rest.length > SIDE_STORIES && <a class="more nb-link" href={moreHref(tab.id)}>More Stories on {tab.label}</a>}
+        </div>
+      </div>
+    </section>
+  );
+})}
+
+<style>
+  .category { display: flex; flex-direction: column; gap: var(--space-8); }
+  .panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-10); }
+  .lead { display: flex; flex-direction: column; gap: var(--space-3); align-self: start; }
+  .lead h3 { font-size: var(--text-h2); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); }
+  /* Summaries stop at three lines */
+  .dek {
+    color: var(--color-ink-soft);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .source { font-size: var(--text-sm); font-weight: 600; align-self: flex-start; }
+  .side { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+  .more { font-size: var(--text-sm); font-weight: 600; align-self: flex-start; }
+  .list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+  .list li { border-bottom: 1px solid var(--color-line); }
+  .list li:first-child .item { padding-top: 0; }
+  .item { display: flex; flex-direction: column; gap: var(--space-1); padding-block: var(--space-4); }
+  .item-title { font: var(--weight-heading) var(--text-lg)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); }
+  .item-source { font-size: var(--text-xs); color: var(--color-muted); }
+  @media (max-width: 48rem) {
+    .panel { grid-template-columns: 1fr; gap: var(--space-6); }
+  }
+</style>

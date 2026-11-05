@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "*": false,
+      "main": true
+    }
+  },
   "services": {
     "journalist-site": {
       "root": "apps/journalist-site",
@@ -7,7 +13,10 @@
       "functions": {
         "app/api/pipeline/queue/route.ts": {
           "experimentalTriggers": [
-            { "type": "queue/v2beta", "topic": "journalist-pipeline-jobs" }
+            {
+              "type": "queue/v2beta",
+              "topic": "journalist-pipeline-jobs"
+            }
           ]
         }
       }
@@ -18,8 +27,25 @@
     }
   },
   "rewrites": [
-    { "source": "/reader", "destination": { "service": "reader-site", "path": "/" } },
-    { "source": "/reader/:path*", "destination": { "service": "reader-site", "path": "/:path*" } },
-    { "source": "/(.*)", "destination": { "service": "journalist-site" } }
+    {
+      "source": "/reader",
+      "destination": {
+        "service": "reader-site",
+        "path": "/"
+      }
+    },
+    {
+      "source": "/reader/:path*",
+      "destination": {
+        "service": "reader-site",
+        "path": "/:path*"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "journalist-site"
+      }
+    }
   ]
 }

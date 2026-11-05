@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { adminApi as api } from "@/lib/admin-client";
 import LocationOnboarding from "./location-onboarding";
-import PublishingSettings from "./publishing-settings";
+import RunOptionsPanel from "./components/run-options-panel";
+import type { RunOptions } from "@/pipeline/core/run-values";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -20,6 +21,7 @@ type LocationHealth = {
   started_at: number | null;
   sources: { total: number; completed: number; failed: number; pending: number };
   failed_sources: { source_id: string; name: string; error: string | null }[];
+  candidate_count: number;
   published_items: number | null;
   held: number | null;
   held_reasons: Record<string, number>;
@@ -37,9 +39,9 @@ type Health = {
   locations: LocationHealth[];
 };
 type RunSource = { source_id: string; job_id: string | null; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
-type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[] };
+type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[]; rank?: number | null; why?: string | null };
 type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
-type Run = { _id: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null };
+type Run = { _id: string; kind?: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null; stage_transitions?: { status: string }[] };
 type RunDetail = {
   run: Run & { draft_id: string | null; window: [string, string]; sources: RunSource[]; error: string | null };
   health: LocationHealth;
@@ -50,18 +52,18 @@ type Withdrawal = { story_id: string; reason: string; created_at: number };
 
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 const message = (caught: unknown) => caught instanceof Error ? caught.message : String(caught);
-const PROCESSING = ["collecting", "authoring", "finishing", "publishing"];
+const PROCESSING = ["mapping", "collecting", "authoring", "finishing", "publishing"];
 const ACTIVE = [...PROCESSING, "awaiting_authoring", "awaiting_finish"];
 const CANCELLABLE = ACTIVE.filter((status) => status !== "publishing");
-const stageLabel = (status: string) => status === "awaiting_authoring" ? "Awaiting editor: start authoring"
+const stageLabel = (status: string, candidates?: number) => status === "awaiting_authoring" ? candidates === 0 ? "Collection finished — no usable items" : "Awaiting editor: start authoring"
   : status === "awaiting_finish" ? "Awaiting editor: write front page and email" : status.replaceAll("_", " ");
 const stageIndex = (status: string) => status === "published" ? 3
   : ["awaiting_finish", "finishing", "publishing"].includes(status) ? 2
     : ["awaiting_authoring", "authoring"].includes(status) ? 1 : status === "collecting" ? 0 : -1;
 const stalled = (diagnostics: Diagnostics | null | undefined) => Boolean(diagnostics?.issues.some((issue) => issue.severity === "failed"));
 /** Badge for a run: active runs that cannot advance show as stalled instead of a running stage. */
-function runBadge(status: string, diagnostics: Diagnostics | null | undefined, fallback: string) {
-  if (!PROCESSING.includes(status)) return { tone: ACTIVE.includes(status) ? "idle" : fallback, label: stageLabel(status) };
+function runBadge(status: string, diagnostics: Diagnostics | null | undefined, fallback: string, candidates?: number) {
+  if (!PROCESSING.includes(status)) return { tone: ACTIVE.includes(status) ? "idle" : fallback, label: stageLabel(status, candidates) };
   if (stalled(diagnostics)) return { tone: "failed", label: `stalled · ${status}` };
   if (diagnostics?.issues.some((issue) => issue.severity === "warning")) return { tone: "warning", label: `${status} · attention` };
   return { tone: "running", label: status };
@@ -94,7 +96,7 @@ function formatJobLog(content: string) {
   }).join("\n");
 }
 
-function JobLog({ job, source, initiallyOpen }: { job: Job; source?: RunSource; initiallyOpen: boolean }) {
+function JobLog({ job, source, initiallyOpen, retry, busy }: { job: Job; source?: RunSource; initiallyOpen: boolean; retry?: () => void; busy: boolean }) {
   const [expanded, setExpanded] = useState(initiallyOpen);
   const [content, setContent] = useState<string | null>(null);
   const [logError, setLogError] = useState("");
@@ -127,9 +129,12 @@ function JobLog({ job, source, initiallyOpen }: { job: Job; source?: RunSource; 
       <span className={`status-badge tone-${job.status === "running" || job.status === "pending" ? "running" : job.status}`}>{job.status}</span>
     </summary>
     <p className="chart-caption">{job.attempts} {job.attempts === 1 ? "attempt" : "attempts"}
-      {source && ` · ${source.result_status ?? source.status} · ${source.event_count} events · ${source.shortlisted} shortlisted`}
+      {source && ` · ${source.result_status ?? source.status} · ${source.event_count} items kept`}
     </p>
     {errors.length > 0 && <p className="stage-error">{errors.join("; ")}</p>}
+    {retry && <button type="button" className="secondary" disabled={busy} onClick={retry}>
+      {job.status === "cancelled" ? "Retry interrupted step" : "Retry failed step only"}
+    </button>}
     {job.log_error && <p className="alert">Log save failed: {job.log_error}</p>}
     {logError && <p className="alert" role="alert">{logError}</p>}
     {job.log_file ? content === null && !logError ? <p>Loading log…</p> : content ? <pre className="job-log-content">{formatJobLog(content)}</pre> : !logError && <p className="chart-caption">No log entries recorded.</p>
@@ -137,7 +142,7 @@ function JobLog({ job, source, initiallyOpen }: { job: Job; source?: RunSource; 
   </details>;
 }
 
-export default function Dashboard() {
+export default function Dashboard({ locationId }: { locationId?: string }) {
   const [health, setHealth] = useState<Health | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -146,13 +151,14 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [runOptions, setRunOptions] = useState<RunOptions | null>(null);
 
   const load = useCallback(async () => {
     try {
       const [healthData, locationData, runsData] = await Promise.all([
         api<Health>("health"),
         api<{ locations: Location[] }>("locations"),
-        api<{ runs: Run[] }>("runs?limit=30"),
+        api<{ runs: Run[] }>(locationId ? `runs?location=${encodeURIComponent(locationId)}&limit=30` : "runs?limit=30"),
       ]);
       setHealth(healthData);
       setLocations(locationData.locations);
@@ -161,7 +167,7 @@ export default function Dashboard() {
     } catch (caught) {
       setError(message(caught));
     }
-  }, []);
+  }, [locationId]);
 
   const openRun = useCallback(async (runId: string, locationId: string) => {
     try {
@@ -171,7 +177,7 @@ export default function Dashboard() {
       ]);
       setDetail(run);
       setWithdrawals(withdrawn.withdrawals);
-      window.history.replaceState(null, "", `/?run=${encodeURIComponent(runId)}&location=${encodeURIComponent(locationId)}`);
+      window.history.replaceState(window.history.state, "", `/locations/${encodeURIComponent(locationId)}?tab=runs&run=${encodeURIComponent(runId)}`);
     } catch (caught) {
       setError(message(caught));
     }
@@ -185,9 +191,25 @@ export default function Dashboard() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const runId = params.get("run"), locationId = params.get("location");
+    const runId = params.get("run");
     if (runId && locationId) void openRun(runId, locationId);
-  }, [openRun]);
+  }, [openRun, locationId]);
+
+  useEffect(() => {
+    if (!locationId) return;
+    const inspect = (event: Event) => {
+      const runId = (event as CustomEvent<{ runId: string }>).detail.runId;
+      void openRun(runId, locationId).then(() => document.getElementById("run-inspector")?.scrollIntoView({ block: "start" }));
+    };
+    window.addEventListener("newsbee:inspect-run", inspect);
+    return () => window.removeEventListener("newsbee:inspect-run", inspect);
+  }, [locationId, openRun]);
+
+  useEffect(() => {
+    if (detail && window.location.search.includes("run=")) {
+      document.getElementById("run-inspector")?.scrollIntoView({ block: "start" });
+    }
+  }, [detail?.run._id]);
 
   useEffect(() => {
     if (!detail || !ACTIVE.includes(detail.run.status)) return;
@@ -203,6 +225,7 @@ export default function Dashboard() {
       await action();
       setNotice(label);
       await load();
+      window.dispatchEvent(new Event("newsbee:runs-changed"));
       if (detail) await openRun(detail.run._id, detail.run.location_id);
     } catch (caught) {
       setError(message(caught));
@@ -211,11 +234,12 @@ export default function Dashboard() {
     }
   }
 
-  function stageAction(runId: string, status: string) {
+  function stageAction(runId: string, status: string, candidates: number) {
     const action = status === "awaiting_authoring" ? "authoring" : status === "awaiting_finish" ? "finish" : PROCESSING.includes(status) ? "resume" : null;
     if (!action) return null;
     const label = action === "authoring" ? "Start authoring" : action === "finish" ? "Write front page and email, then publish" : "Resume";
-    return <button className="secondary" disabled={busy}
+    return <button className="secondary" disabled={busy || (action === "authoring" && candidates === 0)}
+      title={action === "authoring" && candidates === 0 ? "No usable items collected. Review sources and retry collection." : undefined}
       onClick={() => void act(`${label}: processing kicked off.`, () => api(`runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" }))}>{label}</button>;
   }
 
@@ -224,14 +248,16 @@ export default function Dashboard() {
     void act(`Cancelled ${run.location_name}.`, () => api(`runs/${encodeURIComponent(run._id)}/cancel`, { method: "POST" }));
   }
 
-  async function restartSelected(run: Pick<Run, "_id" | "location_id" | "location_name">) {
+  async function restartSelected(run: Pick<Run, "_id" | "location_id" | "location_name">, retryCollection = false) {
     setBusy(true);
     setError("");
     setNotice("");
     try {
+      if (retryCollection) await api(`runs/${encodeURIComponent(run._id)}/cancel`, { method: "POST" });
       const result = await api<{ run_id: string }>(`runs/${encodeURIComponent(run._id)}/restart`, { method: "POST" });
       setNotice(`New run started for ${run.location_name}.`);
       await load();
+      window.dispatchEvent(new Event("newsbee:runs-changed"));
       await openRun(result.run_id, run.location_id);
     } catch (caught) {
       setError(message(caught));
@@ -250,6 +276,29 @@ export default function Dashboard() {
     }));
   }
 
+  function canRetryStep(job: Job) {
+    if (!detail || !["failed", "cancelled"].includes(job.status)) return false;
+    const stage = ["discover", "agent_round", "plan_sources", "collect_source"].includes(job.kind) ? "collecting" : job.kind === "author_finish" ? "finishing" : "authoring";
+    if (detail.run.status === "failed") {
+      const last = detail.run.stage_transitions?.filter((transition) => PROCESSING.includes(transition.status)).at(-1)?.status;
+      return (last === "publishing" ? "finishing" : last) === stage;
+    }
+    return detail.run.status === stage || (stage === "collecting" && detail.run.status === "awaiting_authoring");
+  }
+
+  function emptyCollection(run: Pick<Run, "_id" | "location_id" | "location_name">, status: string, candidates: number) {
+    if (status !== "awaiting_authoring" || candidates !== 0) return null;
+    const coverage = locations.find((location) => location.id === run.location_id)?.source_coverage;
+    return <div className="notice" role="status">
+      <strong>No usable items collected.</strong> Review source gaps before trying collection again. Authoring needs at least one retained item.
+      {coverage?.gaps.length ? <ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul> : null}
+      <div className="card-actions">
+        <a href={`/locations/${encodeURIComponent(run.location_id)}?tab=sources`}>Review sources</a>
+        <button className="secondary" disabled={busy} onClick={() => void restartSelected(run, true)}>Retry collection</button>
+      </div>
+    </div>;
+  }
+
   const defaultLogId = detail?.jobs.findLast((job) => !!job.log_file)?.id ?? detail?.jobs[0]?.id;
 
   return (
@@ -266,37 +315,39 @@ export default function Dashboard() {
         <ul>{health.scheduler.issues.map((issue) => <li key={issue.channel}>{issue.message} <span className="chart-caption">({time(issue.at)})</span></li>)}</ul>
       </div>}
 
-      <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
-        onAdd={(place) => act(`Added ${place.name}. Review its links on Connectors & links.`, () => api("locations", {
+       {!locationId && <LocationOnboarding busy={busy} enrolled={locations.map((location) => location.id)}
+         onAdd={(place) => act(`Added ${place.name}. Its sources are discovered on the first run.`, () => api("locations", {
           method: "POST", body: JSON.stringify({ place_id: place.id }),
-        }))} />
+        }))} />}
 
       <section className="panel">
         <div className="section-heading">
-          <div><p className="eyebrow">Edition pipeline</p><h2>Run orchestration</h2><p>Manually start collection, authoring, then front page and email preview publication. Email is not sent.</p></div>
-          <button disabled={busy || !locations.length}
-            onClick={() => void act("Started a run for every location.", () => api("ingestion", { method: "POST" }))}>
-            Start collection for all locations
-          </button>
+            <div><p className="eyebrow">Edition pipeline</p><h2>{locationId ? "Run orchestration" : "Locations & runs"}</h2><p>Choose the options once, then run. Refreshing the source map only updates a location&rsquo;s sources. Creating an edition reads that map, and autopilot takes it to print. The source map shows every choice each run made. Email is not sent.</p></div>
+           {!locationId && <button disabled={busy || !locations.length}
+             onClick={() => void act("Started an edition for every location with a source map.", () => api("ingestion", { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>
+             {runOptions?.mode === "manual" ? "Start collection for all locations" : "Create editions for all"}
+           </button>}
         </div>
-        <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/health">View visual health &amp; trends &rarr;</Link></div>
-        <div className="location-grid">
-          {health?.locations.map((row) => {
+        <RunOptionsPanel onChange={setRunOptions} />
+        <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/dashboard">Dashboard &rarr;</Link></div>
+         <div className="location-run-list">
+           {health?.locations.filter((row) => !locationId || row.location_id === locationId).map((row) => {
             const running = ACTIVE.includes(row.stage);
-            const badge = runBadge(row.stage, row.diagnostics, row.level);
+            const badge = runBadge(row.stage, row.diagnostics, row.level, row.candidate_count);
             const coverage = locations.find((location) => location.id === row.location_id)?.source_coverage;
             return <article className="run-card" key={row.location_id}>
-              <div className="section-heading"><h3>{row.location_name}</h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
+              <div className="section-heading"><h3><Link href={`/locations/${encodeURIComponent(row.location_id)}`}>{row.location_name}</Link></h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
               <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
-                {["Collect", "Author", "Front page & email"].map((step, index) => {
+                 {["Discover & collect", "Assemble, rank & write", "Front page & email"].map((step, index) => {
                   const stage = stageIndex(row.stage);
                   return <li key={step} className={stage > index ? "complete" : stage === index ? "current" : ""} aria-current={stage === index ? "step" : undefined}>{step}</li>;
                 })}
               </ol>
-              <div className="run-counts"><span><strong>{row.sources.completed}/{row.sources.total}</strong> sources completed</span><span><strong>{row.published_items ?? "-"}</strong> published</span><span><strong>{row.held ?? "-"}</strong> held</span></div>
+              <div className="run-counts"><span><strong>{row.sources.completed}/{row.sources.total}</strong> sources completed</span><span><strong>{row.candidate_count}</strong> candidates</span><span><strong>{row.published_items ?? "-"}</strong> published</span><span><strong>{row.held ?? "-"}</strong> held</span></div>
+              {row.run_id && emptyCollection({ _id: row.run_id, location_id: row.location_id, location_name: row.location_name }, row.stage, row.candidate_count)}
               <p className="chart-caption">Last started: {time(row.started_at)}</p>
               {coverage && <details className="location-settings"><summary>Location resolved / sources {coverage.status.replaceAll("_", " ")}</summary>
-                  <p>{coverage.area}</p><ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul><Link href="/sources">Review source coverage</Link>
+                   <p>{coverage.area}</p><ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul><a href={`/locations/${encodeURIComponent(row.location_id)}?tab=sources`}>Review the source map</a>
                 </details>}
               {running && <RunIssues diagnostics={row.diagnostics} compact />}
               {(row.error || row.failed_sources.length > 0 || row.model_errors.length > 0) && <p className="stage-error">
@@ -305,33 +356,37 @@ export default function Dashboard() {
               <div className="card-actions">
                   <button disabled={busy || running}
                     onClick={() => void act(`Started ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST" }))}>{running ? "Run open" : "Start pipeline (collection)"}</button>
-                  {row.run_id && stageAction(row.run_id, row.stage)}
-                  {row.run_id && <button className="secondary" onClick={() => void openRun(row.run_id!, row.location_id)}>Inspect run</button>}
+                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>{running ? "Run open" : runOptions?.mode === "manual" ? "Start collection" : "Create edition"}</button>
+                  <button className="secondary" disabled={busy || running}
+                    onClick={() => void act(`Refreshing the source map for ${row.location_name}.`, () =>
+                      api(`locations/${encodeURIComponent(row.location_id)}/map-run`, { method: "POST", body: JSON.stringify({ options: runOptions, rebuild: true }) }))}>Refresh source map</button>
+                  {row.run_id && <a className="button secondary" href={`/source-map?${new URLSearchParams({ location: row.location_id, mode: "edition", run: row.run_id })}`}>See the funnel</a>}
+                  {row.run_id && stageAction(row.run_id, row.stage, row.candidate_count)}
+                   {row.run_id && (locationId
+                     ? <button className="secondary" onClick={() => { void openRun(row.run_id!, row.location_id); window.dispatchEvent(new CustomEvent("newsbee:inspect-run", { detail: { runId: row.run_id } })); }}>Inspect run</button>
+                     : <Link className="button secondary" href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs&run=${encodeURIComponent(row.run_id)}`}>Inspect run</Link>)}
                   {row.run_id && CANCELLABLE.includes(row.stage) && <button className="secondary" disabled={busy} onClick={() => cancelSelected({ _id: row.run_id!, location_name: row.location_name })}>Cancel run</button>}
                   {row.run_id && !running && <button className="secondary" disabled={busy} onClick={() => void restartSelected({ _id: row.run_id!, location_id: row.location_id, location_name: row.location_name })}>Restart run</button>}
               </div>
               <details className="location-settings"><summary>Location actions</summary><div className="card-actions">
-                  <Link href="/sources">Inspect connectors &amp; links</Link>
-                  <button className="secondary" disabled={busy}
-                    onClick={() => window.confirm(`Remove ${row.location_name}?`) && void act(`Removed ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}`, { method: "DELETE" }))}>Remove</button>
+                    <a href={`/locations/${encodeURIComponent(row.location_id)}?tab=sources`}>Source map</a>
+                  <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=settings#remove-location`}>Remove location and files…</Link>
               </div></details>
             </article>;
           })}
-          {health && !health.locations.length && <p>No locations onboarded yet.</p>}
+           {health && !health.locations.length && !locationId && <p>No locations onboarded yet. Add one above to start its pipeline.</p>}
         </div>
       </section>
 
       {detail && (
-        <section className="panel">
+         <section className="panel" id="run-inspector">
           <div className="section-heading">
-            <h2>{detail.run.location_name} · {stageLabel(detail.run.status)} · {detail.run.window.join(" to ")}</h2>
+            <h2>{detail.run.location_name} · {stageLabel(detail.run.status, detail.health.candidate_count)} · {detail.run.window.join(" to ")}</h2>
             <div className="card-actions">
-              {stageAction(detail.run._id, detail.run.status)}
+              {stageAction(detail.run._id, detail.run.status, detail.health.candidate_count)}
               {CANCELLABLE.includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
               {["published", "failed", "cancelled"].includes(detail.run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === detail.run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(detail.run)}>Restart run</button>}
-              <button className="secondary" onClick={() => { setDetail(null); window.history.replaceState(null, "", "/"); }}>Close</button>
+               <button className="secondary" onClick={() => { setDetail(null); window.history.replaceState(window.history.state, "", `/locations/${encodeURIComponent(detail.run.location_id)}?tab=runs`); }}>Close</button>
             </div>
           </div>
           <ol className="pipeline-steps" aria-label="Run stages">
@@ -341,24 +396,28 @@ export default function Dashboard() {
               return <li key={step} className={stage > index ? "complete" : stage === index ? active ? "current" : detail.run.status === "published" ? "complete" : "stopped" : ""}>{step}</li>;
             })}
           </ol>
-          <p className="chart-caption">Started {time(detail.run.created_at)} · {detail.run.trigger.kind} by {detail.run.trigger.by} · Finished {time(detail.run.completed_at)} · Run ID {detail.run._id}</p>
+          <p className="chart-caption">{detail.run.kind === "map" ? "Source map run · " : ""}Started {time(detail.run.created_at)} · {detail.run.trigger.kind} by {detail.run.trigger.by} · Finished {time(detail.run.completed_at)} · Run ID {detail.run._id}</p>
           {detail.run.error && <p className="alert">{detail.run.error}</p>}
           {ACTIVE.includes(detail.run.status) && detail.health?.diagnostics && detail.health.diagnostics.issues.length > 0 && <>
             <h3>Why this run is {stalled(detail.health.diagnostics) ? "stalled" : "still running"}</h3>
             <RunIssues diagnostics={detail.health.diagnostics} />
           </>}
+          {emptyCollection(detail.run, detail.run.status, detail.health.candidate_count)}
           <h3>Run log</h3>
+          {detail.run.status === "failed" && <p>Open the failed job and choose <strong>Retry failed step only</strong> to keep completed jobs and authored work. Restart run starts a new collection.</p>}
           <div className="job-log-list">{detail.jobs.map((job) =>
             <JobLog key={job.id} job={job} source={detail.run.sources.find((source) => source.job_id === job.id)}
-              initiallyOpen={job.id === defaultLogId} />
+              initiallyOpen={job.id === defaultLogId} busy={busy}
+              retry={canRetryStep(job) ? () => void act("Retrying only the selected step; completed work is preserved.", () =>
+                api(`runs/${encodeURIComponent(detail.run._id)}/jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" })) : undefined} />
           )}</div>
           {!detail.jobs.length && <p>No work has been queued for this run.</p>}
           <h3>Stories</h3>
           <div className="table-wrap"><table>
-            <thead><tr><th>Title</th><th>Source</th><th>Tier</th><th>Outcome</th><th>Held because</th><th /></tr></thead>
+            <thead><tr><th>Rank</th><th>Title</th><th>Source</th><th>Tier</th><th>Why ranked</th><th>Outcome</th><th>Held because</th><th /></tr></thead>
             <tbody>{detail.stories.map((story) => (
               <tr key={story.story_id}>
-                <td>{story.title ?? story.story_id}</td><td>{story.source_id}</td><td>{story.tier}</td>
+                <td>{story.rank ?? "—"}</td><td>{story.title ?? story.story_id}</td><td>{story.source_id}</td><td>{story.tier}</td><td>{story.why ?? "—"}</td>
                 <td>{story.disposition}</td><td>{story.reasons.join("; ") || "—"}</td>
                 <td>{story.disposition !== "held" && detail.run.status === "published" &&
                   <button className="secondary" disabled={busy} onClick={() => withdrawStory(story)}>Withdraw</button>}</td>
@@ -378,28 +437,6 @@ export default function Dashboard() {
           ))}</ul>}
         </section>
       )}
-
-      <section className="panel">
-        <div className="section-heading"><div><p className="eyebrow">Pipeline history</p><h2>Recent runs</h2><p>Select an attempt to inspect its stages and per-job logs.</p></div></div>
-        <div className="table-wrap"><table>
-          <thead><tr><th>Location</th><th>Started</th><th>Trigger</th><th>Status</th><th>Result</th><th>Actions</th></tr></thead>
-          <tbody>{recent.map((run) => { const badge = runBadge(run.status, run.diagnostics, run.status); return <tr key={run._id} className={detail?.run._id === run._id ? "current" : ""}>
-            <td>{run.location_name}</td><td>{time(run.created_at)}</td><td>{run.trigger.kind} · {run.trigger.by}</td>
-            <td><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></td>
-            <td>{run.published ? `${run.published.items} published · ${run.published.held} held`
-              : ACTIVE.includes(run.status) ? run.diagnostics?.issues.find((issue) => issue.severity !== "info")?.message ?? "—"
-                : run.status === "failed" && run.error ? run.error : "—"}</td>
-            <td><div className="card-actions"><button className="secondary" onClick={() => void openRun(run._id, run.location_id)}>Inspect</button>
-              {stageAction(run._id, run.status)}
-              {CANCELLABLE.includes(run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(run)}>Cancel</button>}
-              {["published", "failed", "cancelled"].includes(run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(run)}>Restart</button>}
-            </div></td>
-          </tr>; })}</tbody>
-        </table></div>
-        {!recent.length && <p>No pipeline runs yet.</p>}
-      </section>
-
-      <PublishingSettings locationsKey={locations.map((location) => location.id).sort().join(",")} />
 
     </>
   );

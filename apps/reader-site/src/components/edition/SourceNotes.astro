@@ -1,0 +1,23 @@
+---
+import { neighborhoodLinks, type EditionPage } from "../../lib/edition-view";
+
+interface Props { page: EditionPage }
+const { page } = Astro.props;
+const links = neighborhoodLinks(page);
+---
+<details class="coverage" data-edition-notes>
+  <summary>Edition notes</summary>
+  <p>Source links are available at the end of each full story.</p>
+  <p><a id="suggest-source-link" class="nb-link" href={links.suggest}>Suggest a source for this community</a></p>
+  {page.edition.coverage.length > 0 && <div id="coverage-notes">
+    <h3>Coverage notes</h3>
+    <ul id="edition-coverage">{page.edition.coverage.map((note) => <li>{note}</li>)}</ul>
+  </div>}
+</details>
+
+<style>
+  .coverage { border-top: 1px solid var(--color-line); padding-top: var(--space-5); font-size: var(--text-sm); }
+  summary { cursor: pointer; font-weight: 600; }
+  #coverage-notes { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--color-line); }
+  h3 { font-size: var(--text-lg); }
+</style>

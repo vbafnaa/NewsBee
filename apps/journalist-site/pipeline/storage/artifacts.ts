@@ -4,7 +4,7 @@
  * same layout, so the reader site can read either. NEWSBEE_ARTIFACT_STORE=mongo uses
  * MongoDB in either mode, for deployments without a Google Shared drive.
  */
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadSettings } from "../core/config";
 import { DriveArtifacts } from "./drive";
@@ -22,16 +22,19 @@ export interface ArtifactStore {
   readJson<T>(fileId: string): Promise<T>;
   readText(fileId: string): Promise<string>;
   list(parentId: string): Promise<StoredFile[]>;
+  findFolder(parentId: string, name: string): Promise<string | null>;
+  removeFile(parentId: string, name: string): Promise<number>;
 }
 
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]{1,200}$/;
 
-function segment(value: string) {
+export function artifactSegment(value: string) {
   if (!SAFE_SEGMENT.test(value) || value === "." || value === "..") {
     throw new Error(`Unsafe artifact path segment: ${value}`);
   }
   return value;
 }
+const segment = artifactSegment;
 
 /** Ids are forward-slash paths relative to the root; every segment is validated. */
 export class LocalArtifacts implements ArtifactStore {
@@ -75,6 +78,40 @@ export class LocalArtifacts implements ArtifactStore {
       return entries.filter((entry) => entry.isFile()).map((entry) => ({ id: `${parentId}/${entry.name}`, name: entry.name }));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async findFolder(parentId: string, name: string) {
+    const id = `${parentId}/${segment(name)}`;
+    try {
+      await this.checkRegularPath(id, true);
+      return id;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  private async checkRegularPath(id: string, directory: boolean) {
+    const parts = id.split("/").map(segment);
+    for (let index = 0; index < parts.length; index += 1) {
+      const info = await lstat(path.join(this.root, ...parts.slice(0, index + 1)));
+      const wantDirectory = index < parts.length - 1 || directory;
+      if (info.isSymbolicLink() || (wantDirectory ? !info.isDirectory() : !info.isFile())) {
+        throw new Error(`Refusing cleanup of non-regular artifact path: ${id}`);
+      }
+    }
+  }
+
+  async removeFile(parentId: string, name: string) {
+    const id = `${parentId}/${segment(name)}`;
+    try {
+      await this.checkRegularPath(id, false);
+      await unlink(this.resolve(id));
+      return 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
       throw error;
     }
   }

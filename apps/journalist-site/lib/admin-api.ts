@@ -1,20 +1,25 @@
 import { after } from "next/server";
 import { logger } from "@/pipeline/core/log";
+import { RunOptionsError } from "@/pipeline/core/run-options";
 import { queueNextJob } from "./pipeline-queue";
 import { callNextJob } from "./job-chain";
 import { LocationBusy } from "@/pipeline/communities/locations";
 import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { RunConflict } from "@/pipeline/orchestration/runs";
+import { dispatchPlan } from "@/pipeline/orchestration/dispatch";
 import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 import { adminGuard } from "./admin-session";
 import { pipelineDeps } from "./pipeline";
+import { internalGuard } from "./internal-session";
+import { getDatabase } from "@/pipeline/storage/mongo";
 
 const log = logger("admin-api");
 
 function statusFor(error: unknown) {
   if (error instanceof LocationBusy || error instanceof RunConflict) return 409;
   if (error instanceof InvalidSourceLink) return 422;
+  if (error instanceof RunOptionsError) return 400;
   const message = error instanceof Error ? error.message : "";
   if (/^(Location is not onboarded|Census place is not available|No published|No active withdrawal|Unknown run)/.test(message)) return 404;
   if (/^(A public correction reason|Withdrawal already exists|Invalid )/.test(message)) return 400;
@@ -36,12 +41,37 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
   }
 }
 
+/** Password-only, read-only map data. Never builds model runtimes or grants admin access. */
+export async function internalRoute(request: Request, handler: (deps: Pick<OrchestratorDeps, "db">) => Promise<unknown>) {
+  let response: Response;
+  try {
+    if (!["GET", "HEAD"].includes(request.method)) {
+      response = Response.json({ detail: "Map data is read-only." }, { status: 405 });
+    } else {
+      const denied = await internalGuard();
+      if (denied) response = denied;
+      else {
+        const result = await handler({ db: await getDatabase() });
+        response = result instanceof Response ? result : Response.json(result);
+      }
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const status = statusFor(error);
+    if (status === 500) log.error("map_request_failed", { path: new URL(request.url).pathname, error: detail });
+    response = Response.json({ detail: status === 500 ? "Map data is temporarily unavailable." : detail }, { status });
+  }
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
+
 /** Queue cloud jobs; local development chains one job per HTTP invocation. */
 export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
       if (deps.settings.mode === "cloud") {
-        await queueNextJob();
+        const { send } = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
+        for (let index = 0; index < Math.max(1, send); index += 1) await queueNextJob();
       } else {
         await callNextJob(requestUrl);
       }

@@ -1,0 +1,114 @@
+---
+import "../../../../shared/design-tokens.css";
+import { approvedRemembrance, directoryTown, type Location } from "../lib/reader-data";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const locationId = Astro.url.searchParams.get("location");
+const noticeId = Astro.url.searchParams.get("notice");
+let town: Location | null = null;
+let notice: Awaited<ReturnType<typeof approvedRemembrance>> = null;
+let error = "";
+if (!locationId) { Astro.response.status = 400; error = "Choose a community first."; }
+else {
+  try {
+    town = await directoryTown(locationId);
+    if (!town) { Astro.response.status = 404; error = "This community could not be found."; }
+    else if (noticeId) {
+      notice = await approvedRemembrance(town.id, noticeId);
+      if (!notice) { Astro.response.status = 404; error = "This notice is not available."; }
+    }
+  } catch (cause) {
+    console.error("Remembrance page unavailable", cause);
+    Astro.response.status = 503; error = "This page is temporarily unavailable. Please try again later.";
+  }
+}
+const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{notice ? `In memory: ${notice.person_name} | Newsbee` : town ? `Share a remembrance in ${town.name} | Newsbee` : "Remembrances | Newsbee"}</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href={base}>Newsbee</a>
+        <p>Your community, this week</p>
+      </header>
+      {error && <p role="alert">{error}</p>}
+      {notice && (
+        <article aria-labelledby="notice-title">
+          <h1 id="notice-title">In memory: {notice.person_name}</h1>
+          <p class="notice-text">{notice.notice}</p>
+          {notice.link && <p><a href={notice.link} rel="noopener">More from the family</a></p>}
+          <p class="note">Shared by the family with {town?.name} neighbours.</p>
+        </article>
+      )}
+      {town && !noticeId && (
+        <section aria-labelledby="remember-title">
+          <h1 id="remember-title">Share a remembrance with {town.name}</h1>
+          <p>If someone in your family has died, you can share a short notice with neighbours. An editor will contact you to confirm it before anything is published.</p>
+          <form id="remember-form" data-api-url={base} data-location-id={town.id}>
+            <label>Their name<input name="person_name" maxlength="120" required /></label>
+            <label>The notice, as you would like it to appear<textarea name="notice" minlength="40" maxlength="1500" rows="8" required></textarea></label>
+            <label>A link to share (optional, e.g. a service page)<input name="link" type="url" placeholder="https://" maxlength="2000" /></label>
+            <label>Your name<input name="submitter_name" maxlength="120" autocomplete="name" required /></label>
+            <label>How you are related, or that you represent the family<input name="relationship" maxlength="80" required /></label>
+            <label>Your email (so an editor can confirm; never published)<input name="submitter_email" type="email" maxlength="254" autocomplete="email" required /></label>
+            <label class="consent"><input name="consent" type="checkbox" required /><span>I am family or authorised by the family, and I agree to Newsbee publishing this notice after an editor confirms it.</span></label>
+            <button type="submit">Send for review</button>
+          </form>
+          <p id="remember-status" role="status"></p>
+        </section>
+      )}
+      <p><a href={backUrl}>{town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+    </main>
+    <script>
+      const form = document.querySelector<HTMLFormElement>("#remember-form");
+      const status = document.querySelector<HTMLParagraphElement>("#remember-status");
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity() || !status) return;
+        const data = new FormData(form);
+        const button = form.querySelector("button")!;
+        button.disabled = true; status.textContent = "Sending your notice...";
+        try {
+          const response = await fetch(`${form.dataset.apiUrl}/api/locations/${encodeURIComponent(form.dataset.locationId ?? "")}/remembrance`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(8000),
+            body: JSON.stringify({ ...Object.fromEntries([...data.entries()].filter(([key]) => key !== "consent")), consent: data.get("consent") === "on" }),
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.detail ?? `HTTP ${response.status}`);
+          form.reset();
+          status.textContent = "Thank you. An editor will email you to confirm the notice before it is published.";
+        } catch (error) {
+          status.textContent = `Your notice could not be sent: ${error instanceof Error ? error.message : String(error)}`;
+        } finally { button.disabled = false; }
+      });
+    </script>
+  </body>
+</html>
+<style is:global>
+  :root { --paper: var(--color-paper); --ink: var(--color-ink); --muted: var(--color-muted); --rule: var(--color-line); --accent: var(--color-bee); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: var(--text-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); }
+  header { border-bottom: 1px solid var(--rule); text-align: center; }
+  header p, .note { color: var(--muted); }
+  .brand { font: var(--weight-heading) 3rem/1 var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
+  h1 { font: var(--weight-heading) var(--text-h3)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); text-wrap: balance; }
+  .notice-text { white-space: pre-wrap; }
+  form { display: grid; gap: 0.8rem; margin: 1.5rem 0; }
+  label { display: grid; gap: 0.25rem; font-size: 0.95rem; }
+  input, textarea, button { padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); min-width: 0; width: 100%; }
+  .consent { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; }
+  .consent input { width: auto; flex-shrink: 0; margin-top: 0.35rem; }
+  button { background: var(--accent); border-color: var(--color-bee-deep); color: var(--ink); font-weight: 600; cursor: pointer; transition: background-color var(--transition); }
+  button:hover:not(:disabled) { background: var(--color-bee-deep); }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  a { color: var(--ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; } }
+</style>

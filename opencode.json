@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "newsbee-tools": {
+      "type": "local",
+      "command": ["node", "apps/journalist-site/scripts/newsbee-tools-mcp.mjs"],
+      "enabled": true,
+      "timeout": 120000,
+      "environment": {
+        "NEWSBEE_AGENT_LOCATION": "{env:NEWSBEE_AGENT_LOCATION}"
+      }
+    },
+    "searchapi": {
+      "type": "remote",
+      "url": "https://www.searchapi.io/mcp",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "X-MCP-Token": "{env:MCP_TOKEN}"
+      }
+    }
+  }
+}

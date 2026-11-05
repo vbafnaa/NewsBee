@@ -15,6 +15,7 @@ jobs:
     outputs:
       journalist: ${{ steps.filter.outputs.journalist }}
       reader: ${{ steps.filter.outputs.reader }}
+      muse: ${{ steps.filter.outputs.muse }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -32,6 +33,9 @@ jobs:
               - 'apps/reader-site/**'
               - 'shared/**'
               - 'config/**'
+              - '.github/workflows/ci.yml'
+            muse:
+              - 'apps/muse-receiver/**'
               - '.github/workflows/ci.yml'
 
   journalist:
@@ -76,10 +80,30 @@ jobs:
       - run: npm run build
         working-directory: apps/reader-site
 
+  muse:
+    needs: changes
+    if: needs.changes.outputs.muse == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/muse-receiver/package-lock.json
+      - run: npm ci
+        working-directory: apps/muse-receiver
+      - run: npm run lint
+        working-directory: apps/muse-receiver
+      - run: npm test
+        working-directory: apps/muse-receiver
+      - run: npm run build
+        working-directory: apps/muse-receiver
+
   # The one check to require on main: it passes when every job that ran passed,
   # including PRs where path filters skipped a job.
   ci-ok:
-    needs: [journalist, reader]
+    needs: [journalist, reader, muse]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "searchapi": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://www.searchapi.io/mcp",
+        "--header",
+        "X-MCP-Token:${MCP_TOKEN}"
+      ]
+    }
+  }
+}

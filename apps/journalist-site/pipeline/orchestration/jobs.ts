@@ -1,8 +1,9 @@
 /**
  * MongoDB job queue: port of orchestration/jobs.py for serverless execution. Each job is one
  * bounded step (one connector source, one authoring step) that fits one function call.
- * Job and singleton worker leases are renewed during execution. Quota retries use
- * durable bounded backoff separately from ordinary failed attempts.
+ * Workers take a slot, so a set number of jobs run at once; job and slot leases are renewed
+ * during execution. Quota retries use durable bounded backoff separately from ordinary failed
+ * attempts.
  */
 import { randomUUID } from "node:crypto";
 import type { Db, Filter } from "mongodb";
@@ -10,8 +11,11 @@ import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { ModelRateLimitError } from "../model/runtime";
 
-export const JOB_KINDS = ["collect_source", "author_start", "author_story", "author_finish"] as const;
+export const JOB_KINDS = ["discover", "agent_round", "finish_map", "plan_sources", "collect_source", "author_start", "author_rank", "author_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
+/** These can overlap within a run. The rest build on each other, so a run does them one at a time. */
+const PARALLEL_KINDS: readonly JobKind[] = ["discover", "collect_source"];
+export function isParallelKind(kind: JobKind) { return PARALLEL_KINDS.includes(kind); }
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 export const MAX_ATTEMPTS = 3;
@@ -158,30 +162,49 @@ export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string, 
   );
 }
 
-export async function pendingJobs(db: Db, kind: JobKind, limit = 50, runId?: string) {
-  return jobs(db)
-    .find({ kind, status: "pending", available_at: { $lte: now() }, ...(runId ? { run_id: runId } : {}) })
-    .sort({ created_at: 1, _id: 1 })
-    .limit(limit)
-    .toArray();
+/** Queue many jobs in one write, in order. A job already queued is left alone. */
+export async function enqueueMany(db: Db, items: Array<{ _id: string; kind: JobKind; run_id: string; location_id: string; payload: Record<string, unknown>; dedupe_key: string }>) {
+  if (!items.length) return;
+  const created = now();
+  // Oldest is claimed first, so each job keeps its place by a thousandth of a second.
+  const docs: Job[] = items.map((item, index) => ({ ...item, durable_step: true, status: "pending", attempts: 0, created_at: created + index / 1000, available_at: created, started_at: null, completed_at: null, lease_until: null, claim_token: null, error: null, result: null, log_file: null, log_error: null }));
+  await jobs(db).insertMany(docs, { ordered: false }).catch((error: { code?: number }) => { if (error.code !== 11000) throw error; });
 }
 
-export async function nextPendingJob(db: Db, runId?: string) {
-  return jobs(db)
-    .findOne({ status: "pending", ...(runId ? { run_id: runId } : {}) }, { projection: { available_at: 1 }, sort: { available_at: 1 } })
-    .then((job) => job ? { available_at: job.available_at } : null);
+/** Take back what hasn't started, for a stage that is out of time. */
+export async function cancelPending(db: Db, runId: string, kind: JobKind, reason: string) {
+  const waiting = await jobs(db).find({ run_id: runId, kind, status: "pending" }).toArray();
+  if (waiting.length) await jobs(db).updateMany({ _id: { $in: waiting.map((job) => job._id) }, status: "pending" }, { $set: { status: "cancelled", completed_at: now(), lease_until: null, claim_token: null, error: reason } });
+  return waiting;
 }
 
-/** Keep a manually kicked chain alive through backoff and interrupted worker leases. */
-export async function nextJobWake(db: Db, runId: string) {
-  const [pending, running, worker] = await Promise.all([
-    nextPendingJob(db, runId),
-    jobs(db).findOne({ run_id: runId, status: "running" }, { sort: { lease_until: 1 } }),
-    db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOne({ _id: "pipeline-worker" }),
-  ]);
-  const times = [pending?.available_at, running?.lease_until].filter((value): value is number => typeof value === "number");
-  if (!times.length) return null;
-  return { available_at: Math.max(Math.min(...times), worker?.lease_until ?? 0) };
+export const JOB_LOGS = "job_logs";
+const JOB_LOG_DAYS = 14;
+/** The mark on a job whose log is still in MongoDB rather than a file. */
+export const MONGO_LOG = "mongo:";
+type JobLog = { _id: string; run_id: string; location_id: string; lines: string[]; archived?: boolean; expires_at: Date };
+function jobLogs(db: Db) { return db.collection<JobLog>(JOB_LOGS); }
+
+export async function ensureJobLogIndexes(db: Db) {
+  await jobLogs(db).createIndexes([{ key: { run_id: 1 } }, { key: { location_id: 1 } }, { key: { expires_at: 1 }, expireAfterSeconds: 0 }]);
+}
+
+/** A job's log lines go to MongoDB as it runs; a stage's lines are saved to one file when it ends. */
+export async function appendJobLog(db: Db, job: Job, lines: string[]) {
+  await jobLogs(db).updateOne({ _id: job._id }, { $push: { lines: { $each: lines } }, $set: { archived: false, expires_at: new Date(Date.now() + JOB_LOG_DAYS * 86400_000) }, $setOnInsert: { run_id: job.run_id, location_id: job.location_id } }, { upsert: true });
+}
+
+export async function readJobLog(db: Db, jobId: string) {
+  const log = await jobLogs(db).findOne({ _id: jobId });
+  return log ? log.lines.join("\n") : null;
+}
+
+export async function unarchivedLogs(db: Db, runId: string) {
+  return jobLogs(db).find({ run_id: runId, archived: { $ne: true } }).toArray();
+}
+
+export async function markLogsArchived(db: Db, ids: string[]) {
+  await jobLogs(db).updateMany({ _id: { $in: ids } }, { $set: { archived: true } });
 }
 
 export async function setJobLog(db: Db, jobId: string, file: string | null, error: string | null) {
@@ -191,30 +214,66 @@ export async function setJobLog(db: Db, jobId: string, file: string | null, erro
 export class LostLeaseError extends Error {}
 
 type WorkerLease = { _id: string; token: string; lease_until: number };
-export async function acquireWorker(db: Db) {
+const EXCLUSIVE_LEASE = "pipeline-worker";
+const SLOT_PREFIX = "worker-slot-";
+export type Lease = { id: string; token: string };
+
+async function acquireLease(db: Db, id: string): Promise<Lease | null> {
   const token = randomUUID();
   try {
     const lease = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOneAndUpdate(
-      { _id: "pipeline-worker", lease_until: { $lte: now() } },
+      { _id: id, lease_until: { $lte: now() } },
       { $set: { token, lease_until: now() + LEASE_SECONDS } },
       { upsert: true, returnDocument: "after" },
     );
-    return lease?.token === token ? token : null;
+    return lease?.token === token ? { id, token } : null;
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 11000) return null;
     throw error;
   }
 }
 
-export async function releaseWorker(db: Db, token: string) {
-  await db.collection<WorkerLease>(COLLECTIONS.heartbeat).deleteOne({ _id: "pipeline-worker", token });
+export async function releaseLease(db: Db, lease: Lease) {
+  await db.collection<WorkerLease>(COLLECTIONS.heartbeat).deleteOne({ _id: lease.id, token: lease.token });
 }
 
-export async function renewWorker(db: Db, token: string, job: Job) {
-  const lease = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).updateOne(
-    { _id: "pipeline-worker", token }, { $set: { lease_until: now() + LEASE_SECONDS } },
+export async function renewLease(db: Db, lease: Lease) {
+  const updated = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).updateOne(
+    { _id: lease.id, token: lease.token }, { $set: { lease_until: now() + LEASE_SECONDS } },
   );
-  if (!lease.matchedCount) throw new LostLeaseError("Lost pipeline worker lease");
+  if (!updated.matchedCount) throw new LostLeaseError(`Lost worker lease: ${lease.id}`);
+}
+
+/** One of the worker slots, or null when they're all busy or a location is being removed. */
+export async function acquireSlot(db: Db, slots: number): Promise<Lease | null> {
+  if (await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOne({ _id: EXCLUSIVE_LEASE, lease_until: { $gt: now() } })) return null;
+  for (let slot = 0; slot < slots; slot += 1) {
+    const lease = await acquireLease(db, `${SLOT_PREFIX}${slot}`);
+    if (lease) return lease;
+  }
+  return null;
+}
+
+/** A run's serial jobs share this, so they stay in order while other work overlaps. */
+export function acquireRunLease(db: Db, runId: string) { return acquireLease(db, `run-serial:${runId}`); }
+
+/** Everything stopped, for removing a location: no slot may be in use. */
+export async function acquireWorker(db: Db) {
+  const busy = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOne({ _id: { $regex: `^${SLOT_PREFIX}` }, lease_until: { $gt: now() } });
+  if (busy) return null;
+  return (await acquireLease(db, EXCLUSIVE_LEASE))?.token ?? null;
+}
+
+export async function releaseWorker(db: Db, token: string) {
+  await releaseLease(db, { id: EXCLUSIVE_LEASE, token });
+}
+
+export async function renewWorkerLease(db: Db, token: string) {
+  await renewLease(db, { id: EXCLUSIVE_LEASE, token });
+}
+
+export async function renewJob(db: Db, leases: Lease[], job: Job) {
+  for (const lease of leases) await renewLease(db, lease);
   const updated = await jobs(db).updateOne(
     { _id: job._id, claim_token: job.claim_token, status: "running" },
     { $set: { lease_until: now() + LEASE_SECONDS } },

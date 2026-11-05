@@ -36,7 +36,7 @@ function jobLabel(run: PipelineRun, job: Job) {
       ?? run.sources.find((item) => item.source_id === (job.payload?.task as { source_id?: string } | undefined)?.source_id);
     return source ? `source "${source.name}"` : "a source";
   }
-  return { author_start: "story ranking", author_story: "story writing", author_finish: "publishing" }[job.kind] ?? job.kind;
+  return ({ discover: `source discovery (${String(job.payload?.method ?? "")})`, agent_round: "the mapping agent", finish_map: "saving source addresses", plan_sources: "source planning", author_start: "assembling stories", author_rank: `ranking ${String(job.payload?.section ?? "a section")}`, author_story: "story writing", author_finish: "publishing" } as Record<string, string>)[job.kind] ?? job.kind;
 }
 
 const ACTIVE_JOB = (job: Job) => job.status === "pending" || job.status === "running";

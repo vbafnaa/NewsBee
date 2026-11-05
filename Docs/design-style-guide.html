@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Newsbee Style Guide</title>
+<style>
+/* Layout: one reading column (max 1100px, matching the site container); specimens sit on fixed Newsbee "paper" panels so they look the same in either viewer theme. */
+:root {
+  /* Newsbee brand tokens (from live CSS) — specimens use these in both themes */
+  --nb-paper: #fbfaf6; --nb-ink: #0a0a0a; --nb-ink-soft: #2a2a2a; --nb-muted: #5c5c5c;
+  --nb-line: #e5e5e5; --nb-bee: #fbe274; --nb-bee-deep: #e8c947; --nb-cream: #f7e9a9;
+  --nb-pill: #ece9e1; --nb-pill-deep: #e2ded4;
+  /* Page chrome tokens */
+  --bg: #fbfaf6; --surface: #ffffff; --fg: #0a0a0a; --fg-soft: #2a2a2a; --muted: #5c5c5c;
+  --line: #e5e5e5; --accent: #fbe274; --accent-ink: #0a0a0a; --tag: #ece9e1;
+  --font-display: "GT Super", Georgia, "Times New Roman", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15140f; --surface: #1d1c17; --fg: #f3f1ea; --fg-soft: #d9d6cc; --muted: #a29e93;
+  --line: #34322b; --accent: #fbe274; --accent-ink: #0a0a0a; --tag: #2b2a24; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15140f; --surface: #1d1c17; --fg: #f3f1ea; --fg-soft: #d9d6cc; --muted: #a29e93;
+  --line: #34322b; --accent: #fbe274; --accent-ink: #0a0a0a; --tag: #2b2a24; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 17px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased; padding: 40px 20px 80px; }
+.wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 72px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 13px; }
+.label { font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+header { display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 32px; }
+header h1 { font-size: clamp(2rem, 4.4vw, 3.25rem); line-height: 1.08; letter-spacing: -0.015em; }
+.internal { align-self: flex-start; background: var(--accent); color: var(--accent-ink); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 10px; border-radius: 3px; }
+.lede { max-width: 62ch; color: var(--fg-soft); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 14px; color: var(--muted); }
+nav { display: flex; flex-wrap: wrap; gap: 8px; }
+nav a { color: var(--fg); text-decoration: none; background: var(--tag); padding: 4px 12px; border-radius: 999px; font-size: 14px; }
+nav a:hover { text-decoration: underline; text-decoration-color: var(--accent); text-decoration-thickness: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+section { display: flex; flex-direction: column; gap: 28px; scroll-margin-top: 24px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; }
+.sec-head h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.008em; }
+.sec-head p { color: var(--muted); max-width: 62ch; font-size: 15.5px; }
+h3 { font-size: clamp(1.25rem, 2vw, 1.5rem); line-height: 1.2; letter-spacing: -0.003em; }
+.sub { display: flex; flex-direction: column; gap: 16px; }
+
+/* Swatches */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+.swatch { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+.chip { height: 96px; border-bottom: 1px solid var(--line); }
+.swatch-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.swatch-name { font-weight: 600; font-size: 15px; }
+.swatch-role { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+.alpha { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--nb-paper); }
+.alpha div { height: 72px; display: flex; align-items: flex-end; padding: 8px 10px; font-family: var(--font-mono); font-size: 12px; color: var(--nb-ink); }
+.support { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.ramp { display: flex; flex-direction: column; gap: 6px; }
+.ramp-bar { display: flex; height: 28px; border-radius: 4px; overflow: hidden; }
+.ramp-bar span { flex: 1; }
+.ramp-name { font-size: 13px; color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pass { background: var(--tag); padding: 1px 8px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+.pair { display: inline-block; padding: 2px 8px; border-radius: 3px; font-weight: 600; }
+
+/* Type specimens on fixed Newsbee paper */
+.specimen { background: var(--nb-paper); color: var(--nb-ink); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.spec-row { display: grid; grid-template-columns: 180px 1fr; gap: 20px; padding: 22px 24px; border-bottom: 1px solid var(--nb-line); align-items: baseline; }
+.spec-row:last-child { border-bottom: 0; }
+.spec-meta { font-family: var(--font-mono); font-size: 12px; color: var(--nb-muted); line-height: 1.5; }
+.spec-meta b { display: block; font-family: var(--font-body); font-size: 13px; color: var(--nb-ink); font-weight: 600; margin-bottom: 2px; }
+.spec-sample { min-width: 0; }
+.s-h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(2rem, 4.4vw, 3.25rem); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; }
+.s-h2 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.008em; text-wrap: balance; }
+.s-h3 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.25rem, 2vw, 1.5rem); line-height: 1.2; letter-spacing: -0.003em; }
+.s-body { font-size: 17px; line-height: 1.6; max-width: 62ch; }
+.s-kicker { font-size: 11.5px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--nb-ink); }
+.s-kicker mark { background: var(--nb-bee); color: var(--nb-ink); padding: 2px 6px; border-radius: 2px; }
+.s-meta { font-size: 13.5px; color: var(--nb-muted); }
+.s-pill { display: inline-block; background: var(--nb-pill); color: var(--nb-ink-soft); font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; }
+.s-link { color: var(--nb-ink); text-decoration: underline; text-decoration-color: var(--nb-bee-deep); text-decoration-thickness: 3px; text-underline-offset: 3px; }
+.stacks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.stack { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.stack .big { font-size: 40px; line-height: 1; }
+.stack code { color: var(--muted); word-break: break-word; }
+.weights { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 18px; }
+
+/* Spacing */
+.scale { display: flex; flex-direction: column; gap: 8px; }
+.step { display: grid; grid-template-columns: 56px 64px 1fr; gap: 12px; align-items: center; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.step .bar { height: 14px; background: var(--accent); border-radius: 2px; max-width: 100%; }
+.step .k { font-family: var(--font-mono); font-size: 12.5px; }
+.step .px { color: var(--muted); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 16px; }
+.tile { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--muted); }
+.tile .box { height: 80px; background: var(--nb-pill); border: 1px solid var(--nb-pill-deep); }
+.shadows { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; background: var(--nb-paper); padding: 24px; border-radius: 10px; border: 1px solid var(--line); }
+.shadows .box { height: 88px; background: #ffffff; border-radius: 8px; display: flex; align-items: flex-end; padding: 10px; font-family: var(--font-mono); font-size: 11.5px; color: var(--nb-muted); }
+.widths { display: flex; flex-direction: column; gap: 10px; }
+.wbar { background: var(--tag); border-radius: 3px; padding: 6px 10px; font-size: 13px; max-width: 100%; font-variant-numeric: tabular-nums; }
+
+.notes { display: flex; flex-direction: column; gap: 12px; padding: 0; margin: 0; list-style: none; }
+.notes li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; }
+.notes b { font-weight: 600; }
+.notes span { color: var(--muted); font-size: 15px; }
+footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 20px; }
+
+@media (max-width: 640px) {
+  .spec-row { grid-template-columns: 1fr; gap: 10px; padding: 18px; }
+  .alpha { grid-template-columns: repeat(5, 1fr); }
+  .alpha div { font-size: 10.5px; padding: 6px; }
+  .step { grid-template-columns: 44px 52px 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <span class="internal">Internal, not for the product site</span>
+    <h1>Newsbee Style Guide</h1>
+    <p class="lede">The fonts, colors and spacing used on bainbridgenewsbee.com, collected in one place for the team. Every value here was taken from the site's live stylesheet.</p>
+    <div class="meta">
+      <span>Source: <code>/assets/index-DW4LHR3x.css</code></span>
+      <span>Built with Tailwind CSS v4</span>
+      <span>Captured Oct 26, 2026</span>
+      <span>Tokens in code: <code>shared/design-tokens.css</code></span>
+    </div>
+    <nav aria-label="Sections">
+      <a href="#colors">Colors</a><a href="#type">Type</a><a href="#spacing">Spacing</a><a href="#notes">Cleanup notes</a>
+    </nav>
+  </header>
+
+  <!-- COLORS -->
+  <section id="colors">
+    <div class="sec-head">
+      <span class="label">Colors</span>
+      <h2>Warm paper, black ink, one yellow</h2>
+      <p>The neutrals are slightly warm, like newsprint. Bee yellow is the only brand color, used for highlights, underlines and soft tints.</p>
+    </div>
+
+    <div class="sub">
+      <h3>Brand colors</h3>
+      <div class="swatches">
+        <div class="swatch"><div class="chip" style="background:#fbfaf6"></div><div class="swatch-body"><span class="swatch-name">paper</span><code>#fbfaf6</code><span class="swatch-role">Page background</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#0a0a0a"></div><div class="swatch-body"><span class="swatch-name">ink</span><code>#0a0a0a</code><span class="swatch-role">Main text and headlines</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#2a2a2a"></div><div class="swatch-body"><span class="swatch-name">ink-soft</span><code>#2a2a2a</code><span class="swatch-role">Secondary text</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#5c5c5c"></div><div class="swatch-body"><span class="swatch-name">muted</span><code>#5c5c5c</code><span class="swatch-role">Dates, bylines, captions</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#e5e5e5"></div><div class="swatch-body"><span class="swatch-name">line</span><code>#e5e5e5</code><span class="swatch-role">Borders and dividers</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#fbe274"></div><div class="swatch-body"><span class="swatch-name">bee</span><code>#fbe274</code><span class="swatch-role">Brand accent: highlights, tints, badges</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#e8c947"></div><div class="swatch-body"><span class="swatch-name">bee-deep</span><code>#e8c947</code><span class="swatch-role">Stronger accent, hover states, underlines</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#f7e9a9"></div><div class="swatch-body"><span class="swatch-name">cream</span><code>#f7e9a9</code><span class="swatch-role">Soft yellow backgrounds</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#ece9e1"></div><div class="swatch-body"><span class="swatch-name">pill-gray</span><code>#ece9e1</code><span class="swatch-role">Tag and label backgrounds</span></div></div>
+        <div class="swatch"><div class="chip" style="background:#e2ded4"></div><div class="swatch-body"><span class="swatch-name">pill-gray-deep</span><code>#e2ded4</code><span class="swatch-role">Tag hover and active state</span></div></div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Bee tints on paper</h3>
+      <div class="alpha" aria-label="Bee yellow at increasing opacity over paper">
+        <div style="background:#fbe2741a">10%</div>
+        <div style="background:#fbe27426">15%</div>
+        <div style="background:#fbe27440">25%</div>
+        <div style="background:#fbe27466">40%</div>
+        <div style="background:#fbe274">100%</div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Text contrast</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Pair</th><th>Ratio</th><th>Use</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pair" style="background:#fbfaf6;color:#0a0a0a;border:1px solid #e5e5e5">ink on paper</span></td><td class="num">19.0 : 1</td><td><span class="pass">AAA</span> Body text and headlines</td></tr>
+          <tr><td><span class="pair" style="background:#fbfaf6;color:#2a2a2a;border:1px solid #e5e5e5">ink-soft on paper</span></td><td class="num">13.8 : 1</td><td><span class="pass">AAA</span> Secondary text</td></tr>
+          <tr><td><span class="pair" style="background:#fbfaf6;color:#5c5c5c;border:1px solid #e5e5e5">muted on paper</span></td><td class="num">6.4 : 1</td><td><span class="pass">AA</span> Captions and metadata</td></tr>
+          <tr><td><span class="pair" style="background:#fbe274;color:#0a0a0a">ink on bee</span></td><td class="num">15.3 : 1</td><td><span class="pass">AAA</span> Badges and highlighted labels</td></tr>
+          <tr><td><span class="pair" style="background:#fbfaf6;color:#fbe274;border:1px solid #e5e5e5">bee on paper</span></td><td class="num">1.3 : 1</td><td>Fails. Never use bee yellow for text; use it as a background or underline.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="sub">
+      <h3>Supporting colors</h3>
+      <p style="color:var(--muted);font-size:15px;max-width:62ch">Tailwind's standard colors, used for category tags and status labels. Only the shades below appear in the stylesheet.</p>
+      <div class="support">
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(97.1% .013 17.38)"></span><span style="background:oklch(88.5% .062 18.334)"></span><span style="background:oklch(63.7% .237 25.331)"></span><span style="background:oklch(50.5% .213 27.518)"></span><span style="background:oklch(44.4% .177 26.899)"></span></div><span class="ramp-name">red 50–800</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(96.2% .059 95.617)"></span><span style="background:oklch(66.6% .179 58.318)"></span><span style="background:oklch(55.5% .163 48.998)"></span><span style="background:oklch(47.3% .137 46.201)"></span></div><span class="ramp-name">amber 100–800</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(98.7% .026 102.212)"></span><span style="background:oklch(85.2% .199 91.936)"></span><span style="background:oklch(79.5% .184 86.047)"></span><span style="background:oklch(55.4% .135 66.442)"></span><span style="background:oklch(47.6% .114 61.907)"></span></div><span class="ramp-name">yellow 50–800</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(98.2% .018 155.826)"></span><span style="background:oklch(92.5% .084 155.995)"></span><span style="background:oklch(62.7% .194 149.214)"></span><span style="background:oklch(52.7% .154 150.069)"></span><span style="background:oklch(39.3% .095 152.535)"></span></div><span class="ramp-name">green 50–900</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(95% .052 163.051)"></span><span style="background:oklch(59.6% .145 163.225)"></span><span style="background:oklch(50.8% .118 165.612)"></span><span style="background:oklch(43.2% .095 166.913)"></span></div><span class="ramp-name">emerald 100–800</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(93.2% .032 255.585)"></span><span style="background:oklch(88.2% .059 254.128)"></span><span style="background:oklch(54.6% .245 262.881)"></span><span style="background:oklch(48.8% .243 264.376)"></span><span style="background:oklch(37.9% .146 265.522)"></span></div><span class="ramp-name">blue 100–900</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(94.6% .033 307.174)"></span><span style="background:oklch(55.8% .288 302.321)"></span><span style="background:oklch(43.8% .218 303.724)"></span></div><span class="ramp-name">purple 100–800</span></div>
+        <div class="ramp"><div class="ramp-bar"><span style="background:oklch(98.5% .002 247.839)"></span><span style="background:oklch(92.8% .006 264.531)"></span><span style="background:oklch(70.7% .022 261.325)"></span><span style="background:oklch(55.1% .027 264.364)"></span><span style="background:oklch(37.3% .034 259.733)"></span></div><span class="ramp-name">gray 50–700</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPE -->
+  <section id="type">
+    <div class="sec-head">
+      <span class="label">Type</span>
+      <h2>A serif for headlines, the system font for reading</h2>
+      <p>Headlines use GT Super, a licensed font hosted on the site. This page can't load it, so the samples below show Georgia, the site's own fallback. On the live site the headlines look a little sharper and more condensed.</p>
+    </div>
+
+    <div class="stacks">
+      <div class="stack"><span class="label">Display</span><span class="big" style="font-family:var(--font-display)">Aa</span><strong>GT Super Text Medium</strong><code>"GT Super", Georgia, "Times New Roman", serif</code></div>
+      <div class="stack"><span class="label">Body and interface</span><span class="big" style="font-family:var(--font-body)">Aa</span><strong>System sans-serif</strong><code>-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif</code></div>
+      <div class="stack"><span class="label">Mono</span><span class="big" style="font-family:var(--font-mono)">Aa</span><strong>System monospace</strong><code>ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas…</code></div>
+    </div>
+
+    <div class="specimen">
+      <div class="spec-row"><div class="spec-meta"><b>Headline · h1</b>clamp(2rem, 4.4vw, 3.25rem)<br>lh 1.08 · −0.015em · 600</div>
+        <div class="spec-sample s-h1">Council approves Winslow Way crosswalk upgrades</div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Section · h2</b>clamp(1.5rem, 3vw, 2rem)<br>lh 1.15 · −0.008em · 600</div>
+        <div class="spec-sample s-h2">This week on Bainbridge Island</div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Story title · h3</b>clamp(1.25rem, 2vw, 1.5rem)<br>lh 1.2 · −0.003em · 600</div>
+        <div class="spec-sample s-h3">Ferry riders face weekend schedule changes at Seattle terminal</div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Body</b>17px · lh 1.6 · 400<br>max 62ch</div>
+        <div class="spec-sample s-body">The city council voted 6–1 on Tuesday to fund new crosswalk lighting along Winslow Way, after residents raised concerns about evening visibility near the ferry terminal. Work is expected to start in the spring. <a class="s-link" href="#type">Read the agenda item</a>.</div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Section label</b>11.5px · 600 · uppercase<br>tracking 0.06–0.22em</div>
+        <div class="spec-sample"><span class="s-kicker">City Council</span> &nbsp; <span class="s-kicker"><mark>New</mark></span></div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Byline and date</b>13.5px · muted</div>
+        <div class="spec-sample s-meta">By the Newsbee team · Thursday, Oct 22 · 4 min read</div></div>
+      <div class="spec-row"><div class="spec-meta"><b>Tag</b>12.5px · 500 · pill-gray</div>
+        <div class="spec-sample" style="display:flex;gap:8px;flex-wrap:wrap"><span class="s-pill">Police log</span><span class="s-pill">Obituaries</span><span class="s-pill">Events</span></div></div>
+    </div>
+
+    <div class="sub">
+      <h3>Weights in use</h3>
+      <div class="weights">
+        <span style="font-weight:400">Regular 400</span><span style="font-weight:500">Medium 500</span><span style="font-weight:600">Semibold 600</span><span style="font-weight:700">Bold 700</span>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Tailwind size scale</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Token</th><th>Size</th><th>Line height</th><th>Sample</th></tr></thead>
+        <tbody>
+          <tr><td><code>text-xs</code></td><td class="num">12px</td><td class="num">1.33</td><td style="font-size:12px">Island news, every Thursday</td></tr>
+          <tr><td><code>text-sm</code></td><td class="num">14px</td><td class="num">1.43</td><td style="font-size:14px">Island news, every Thursday</td></tr>
+          <tr><td><code>text-base</code></td><td class="num">16px</td><td class="num">1.5</td><td style="font-size:16px">Island news, every Thursday</td></tr>
+          <tr><td><code>text-lg</code></td><td class="num">18px</td><td class="num">1.56</td><td style="font-size:18px">Island news, every Thursday</td></tr>
+          <tr><td><code>text-xl</code></td><td class="num">20px</td><td class="num">1.4</td><td style="font-size:20px">Island news, every Thursday</td></tr>
+          <tr><td><code>text-2xl</code></td><td class="num">24px</td><td class="num">1.33</td><td style="font-size:24px;font-family:var(--font-display)">Island news</td></tr>
+          <tr><td><code>text-3xl</code></td><td class="num">30px</td><td class="num">1.2</td><td style="font-size:30px;font-family:var(--font-display)">Island news</td></tr>
+          <tr><td><code>text-4xl</code></td><td class="num">36px</td><td class="num">1.11</td><td style="font-size:36px;font-family:var(--font-display)">Island news</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- SPACING -->
+  <section id="spacing">
+    <div class="sec-head">
+      <span class="label">Spacing and layout</span>
+      <h2>A 4px grid with generous section breaks</h2>
+      <p>Spacing uses Tailwind's 4px unit. Small steps space out text inside cards; large steps (64–128px) separate sections of the page.</p>
+    </div>
+
+    <div class="sub">
+      <h3>Spacing scale</h3>
+      <div class="scale">
+        <div class="step"><span class="k">1</span><span class="px">4px</span><span class="bar" style="width:4px"></span></div>
+        <div class="step"><span class="k">1.5</span><span class="px">6px</span><span class="bar" style="width:6px"></span></div>
+        <div class="step"><span class="k">2</span><span class="px">8px</span><span class="bar" style="width:8px"></span></div>
+        <div class="step"><span class="k">3</span><span class="px">12px</span><span class="bar" style="width:12px"></span></div>
+        <div class="step"><span class="k">4</span><span class="px">16px</span><span class="bar" style="width:16px"></span></div>
+        <div class="step"><span class="k">5</span><span class="px">20px</span><span class="bar" style="width:20px"></span></div>
+        <div class="step"><span class="k">6</span><span class="px">24px</span><span class="bar" style="width:24px"></span></div>
+        <div class="step"><span class="k">8</span><span class="px">32px</span><span class="bar" style="width:32px"></span></div>
+        <div class="step"><span class="k">10</span><span class="px">40px</span><span class="bar" style="width:40px"></span></div>
+        <div class="step"><span class="k">12</span><span class="px">48px</span><span class="bar" style="width:48px"></span></div>
+        <div class="step"><span class="k">16</span><span class="px">64px</span><span class="bar" style="width:64px"></span></div>
+        <div class="step"><span class="k">20</span><span class="px">80px</span><span class="bar" style="width:80px"></span></div>
+        <div class="step"><span class="k">24</span><span class="px">96px</span><span class="bar" style="width:96px"></span></div>
+        <div class="step"><span class="k">32</span><span class="px">128px</span><span class="bar" style="width:128px"></span></div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Corner radius</h3>
+      <div class="tiles">
+        <div class="tile"><div class="box" style="border-radius:2px"></div>2px</div>
+        <div class="tile"><div class="box" style="border-radius:3px"></div>3px</div>
+        <div class="tile"><div class="box" style="border-radius:4px"></div>4px · sm</div>
+        <div class="tile"><div class="box" style="border-radius:8px"></div>8px · lg</div>
+        <div class="tile"><div class="box" style="border-radius:10px"></div>10px</div>
+        <div class="tile"><div class="box" style="border-radius:12px"></div>12px · xl</div>
+        <div class="tile"><div class="box" style="border-radius:16px"></div>16px · 2xl</div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Shadows</h3>
+      <div class="shadows">
+        <div class="box" style="box-shadow:0 1px 4px rgba(0,0,0,.08)">0 1px 4px / 8%</div>
+        <div class="box" style="box-shadow:0 4px 16px rgba(31,28,20,.05)">0 4px 16px / warm 5%</div>
+        <div class="box" style="box-shadow:0 6px 18px rgba(0,0,0,.06)">0 6px 18px / 6%</div>
+        <div class="box" style="box-shadow:0 8px 24px rgba(0,0,0,.08)">0 8px 24px / 8%</div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Content widths</h3>
+      <div class="widths">
+        <div class="wbar" style="width:100%">Page container · 1100px</div>
+        <div class="wbar" style="width:65%">Long reading column · 58–62ch</div>
+        <div class="wbar" style="width:46%">Short text blocks · 40–46ch</div>
+        <div class="wbar" style="width:34%">Captions · 34ch</div>
+      </div>
+    </div>
+
+    <div class="sub">
+      <h3>Breakpoints and other values</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Name</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>sm</code></td><td class="num">640px</td><td>Tailwind default</td></tr>
+          <tr><td><code>md</code></td><td class="num">768px</td><td>Tailwind default</td></tr>
+          <tr><td><code>lg</code></td><td class="num">1024px</td><td>Tailwind default</td></tr>
+          <tr><td><code>xl</code></td><td class="num">1280px</td><td>Tailwind default</td></tr>
+          <tr><td><code>2xl</code></td><td class="num">1536px</td><td>Tailwind default</td></tr>
+          <tr><td>Image ratios</td><td class="num">16:10 · 4:3 · 4:5</td><td>Lead images, cards, portraits</td></tr>
+          <tr><td>Transitions</td><td class="num">150ms</td><td>Turned off when the viewer asks for reduced motion</td></tr>
+          <tr><td>Header</td><td class="num">blur 8px</td><td>Semi-transparent paper over the page</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- NOTES -->
+  <section id="notes">
+    <div class="sec-head">
+      <span class="label">Cleanup notes</span>
+      <h2>Where the system drifts</h2>
+      <p>These came up while pulling values from the stylesheet. None of them are visible bugs, but fixing them would make the system easier to maintain.</p>
+    </div>
+    <ul class="notes">
+      <li><b>About 35 one-off font sizes</b><span>Sizes such as 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5 and 16.5px sit alongside Tailwind's scale. Most could be folded into 6–8 named sizes.</span></li>
+      <li><b>About 20 one-off line heights</b><span>Values from 1.05 to 1.72. Three or four (tight, snug, normal, relaxed) would cover most cases.</span></li>
+      <li><b>Letter spacing on labels varies</b><span>Uppercase labels use anything from 0.06em to 0.22em. One or two values would keep them consistent.</span></li>
+      <li><b>Some spacing is off the 4px grid</b><span>A few gaps and margins use 3, 5, 9, 13, 15, 18, 22 and 34px.</span></li>
+      <li><b>Headline weight doesn't match the font file</b><span>Headings ask for weight 600, but only GT Super Medium (500) is loaded, so browsers either fake the bold or fall back to 500.</span></li>
+    </ul>
+  </section>
+
+  <footer>Internal reference for the Newsbee team. Not linked from bainbridgenewsbee.com. Both apps in this repo (journalist-site and reader-site) import their values from <code>shared/design-tokens.css</code>; change that file and this page together. Values reflect the stylesheet as of Oct 26, 2026 and may drift as the site changes.</footer>
+</div>
+</body>
+</html>

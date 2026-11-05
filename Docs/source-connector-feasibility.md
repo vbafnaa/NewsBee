@@ -112,7 +112,7 @@ flowchart LR
 
 - **Discovery:** reuse `communities/wikidata.py` for the city website. Detect tenants from
   homepage and meeting-page links, fall back to guessing slugs from the domain, and allow a
-  reviewed override file (as `config/library-websites.json` does today).
+  editor source link in the journalist portal (sources are never configured in code).
 - **Facts:** map each platform to the existing `EventFacts` (body and title, date, schedule,
   location, agenda link). Keep cancelled meetings flagged so they are never written as
   happening.
@@ -133,7 +133,7 @@ flowchart LR
 
 When a town has little local news, editions widen to its county and to reviewed places
 within 50 km; statewide stories are dropped as too far from community news. Four connectors
-are onboarded, configured per state in `config/state-sources.json`. All are free, keyless,
+are onboarded, discovered at run time (Wikidata, Census) and cached in `discovered_sources`. All are free, keyless,
 public and robots.txt-permitted. See the README for the ranking rules and guardrails.
 
 Relevance guardrails: weather and earthquake news must name the town, community or its
@@ -332,7 +332,7 @@ minors. School district sites and MaxPreps aren't used.
 | CHSAA (CO) | No `robots.txt` (404) | ⚠️ Terms review needed |
 | MaxPreps | `robots.txt` blocks `/school/` and `/team/`; terms prohibit scraping | ❌ Blocked |
 
-- **Discovery:** a reviewed per-state config (as `config/state-sources.json` does for state
+- **Discovery:** run-time discovery of the state association on Wikidata (as for state
   newsrooms) gives the association feed. Schools are matched to the location from NCES
   public school names, without their websites.
 - **Facts:** state tournament advancement and results for schools in the location ("Edmonds-
@@ -359,7 +359,7 @@ Changes from the design, all forced by probes:
 | `homesafety` | | Statewide query, 180-day lookback, community systems filtered client-side, up to 25 system lookups | Envirofacts path joins and a `PWS_TYPE_CODE` filter both returned 0 rows, and data lags by about 2 months. Contact names, emails, phones and addresses are never read into facts. Links go to the system's Envirofacts violation page. |
 | `housing` | Census, Zillow and FHFA, shared monthly ingest | Census Building Permits Survey only, fetched per location | Three small files per location (latest month, year to date, same month last year), so a shared ingest isn't needed yet. Rows are summed when a place spans counties. Year-to-date files have 24 count columns, not 12. |
 | `development` | Reviewed override for dataset IDs | Socrata catalog only; columns mapped by name and type | Seattle's `Building Permits` dataset mapped without an override. Only mapped columns are requested (`$select`), so contractor and applicant columns are never downloaded. Single-family addresses are withheld. |
-| `athletics` | Schools matched through NCES | Place names in the headline | The NCES ArcGIS host answers `robots.txt` with 403. Feeds live in `config/state-sources.json` under `athletics` (WA: WIAA), and only the headline is read: summaries can name students and are never republished. |
+| `athletics` | Schools matched through NCES | Place names in the headline | The NCES ArcGIS host answers `robots.txt` with 403. Association feeds are discovered on Wikidata at run time (WA: WIAA) or added by an editor, and only the headline is read: summaries can name students and are never republished. |
 
 Live checks on 2026-10-21: Redmond's calendar had 12 categories (3 skipped as meetings), the
 Seattle permit query returned 400 permits in 30 days (about 100 kept as new construction,

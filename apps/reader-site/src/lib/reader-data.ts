@@ -1,10 +1,12 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
-import { COMMUNITY_SEED, communityDirectory, communityName, matchingCommunities } from "../../../../shared/community-directory";
+import { communityName, matchingCommunities, onboardedCommunities, type Community } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
+import { readerDriveFolderId } from "../../../../shared/reader-folder";
 import { ARTIFACTS_COLLECTION, usesMongoArtifacts } from "../../../../shared/artifact-store";
 import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
+import { recordReaderSignup } from "./signup-storage";
 
 export type EditionItem = {
   story_id?: string | null;
@@ -14,10 +16,13 @@ export type EditionItem = {
   event_date: string;
   source_url: string | null;
   rank?: number | null;
-  kind?: string;
+  kind?: "event" | "meeting_preview" | "meeting_outcome" | "state_news" | "earthquake" | "trending_topic" | "social_trend" | "safety_notice" | "housing_market" | "development" | "school_sports" | "game_result" | "home_sale" | "building_permit" | "weather_alert" | "court_case" | "local_news" | "business_opening" | "obituary" | "reader_story" | "safety_incident" | "news_report" | "public_record";
   source_name?: string;
   section?: string | null;
   local?: boolean;
+  image?: string | null;
+  image_caption?: string | null;
+  image_credit?: string | null;
 };
 
 export type Edition = {
@@ -86,19 +91,9 @@ async function readerMongoClient() {
   return { client: await mongo.promise, databaseName, mongo };
 }
 
-export async function readerChannelSettings() {
-  const { client, databaseName } = await readerMongoClient();
-  const channelId = process.env.NEWSBEE_OUTPUT_CHANNEL_ID ?? "reader-site";
-  const channel = await client.db(databaseName)
-    .collection<{ _id: string; enabled: boolean; drive_folder_id: string }>("output_channels")
-    .findOne({ _id: channelId }, { projection: { _id: 1, enabled: 1, drive_folder_id: 1 } });
-  if (!channel) throw new Error(`Reader channel ${channelId} is missing from the output_channels collection`);
-  if (typeof channel.enabled !== "boolean" ||
-    typeof channel.drive_folder_id !== "string" ||
-    !/^[A-Za-z0-9_-]{10,200}$/.test(channel.drive_folder_id)) {
-    throw new Error("The reader output channel configuration is malformed");
-  }
-  return { enabled: channel.enabled, driveFolderId: channel.drive_folder_id };
+/** The reader folder the pipeline publishes to (no output channels). */
+export function readerFolderId() {
+  return readerDriveFolderId();
 }
 
 function base64Url(bytes: Uint8Array) {
@@ -217,7 +212,8 @@ function parseEdition(value: unknown): Edition | null {
     if (!isRecord(item) || typeof item.headline !== "string" ||
       typeof item.blurb !== "string" || typeof item.when_where !== "string" ||
       typeof item.event_date !== "string" ||
-      !(typeof item.source_url === "string" || item.source_url === null)) return null;
+      !(typeof item.source_url === "string" || item.source_url === null) ||
+      ["image", "image_caption", "image_credit"].some((key) => item[key] !== undefined && item[key] !== null && typeof item[key] !== "string")) return null;
   }
   return value as Edition;
 }
@@ -250,7 +246,7 @@ function driveFolder(folderId: string): FolderReader {
   };
 }
 
-/** Local mode: the pipeline's local Drive stand-in, one sub-folder per output channel. */
+/** Local mode: the pipeline's local Drive stand-in; the reader folder is a sub-folder of it. */
 export function localDriveRoot() {
   return process.env.NEWSBEE_LOCAL_DRIVE_DIR ?? resolve(process.cwd(), "..", "..", ".local", "stage2", "drive");
 }
@@ -273,10 +269,13 @@ function localFolder(folderId: string): FolderReader {
   };
 }
 
-/** NEWSBEE_ARTIFACT_STORE=mongo: a channel folder is a namespace in the pipeline's artifacts collection. */
+/** NEWSBEE_ARTIFACT_STORE=mongo: the reader folder is a namespace in the pipeline's artifacts collection. */
 function mongoFolder(folderId: string): FolderReader {
   type ArtifactDoc = { _id: string; parent_id: string; name: string; folder: boolean; content?: string };
-  const collection = async () => (await readerDatabase()).collection<ArtifactDoc>(ARTIFACTS_COLLECTION);
+  const collection = async () => {
+    const { client, databaseName } = await readerMongoClient();
+    return client.db(databaseName).collection<ArtifactDoc>(ARTIFACTS_COLLECTION);
+  };
   return {
     async list() {
       const docs = await (await collection())
@@ -302,7 +301,7 @@ async function loadDriveData(folderId: string) {
 
   const jsonFiles = files.filter((file) => file.name.endsWith(".json"));
   const directoryFile = jsonFiles.find((file) => file.name === "locations.json");
-  if (!directoryFile) throw new Error("Channel folder must contain locations.json");
+  if (!directoryFile) throw new Error("Reader folder must contain locations.json");
 
   const loadFile = (file: DriveFile) => folder.read(file);
   const directoryData = await loadFile(directoryFile);
@@ -322,13 +321,13 @@ async function loadDriveData(folderId: string) {
   }));
 
   const ids = new Set((locations as Location[]).map((location) => location.id));
-  // Old artifacts remain archived after a location is deselected from this channel.
+  // Editions of removed locations stay archived in the folder but are not served.
   return { locations: locations as Location[], editions: editions.filter((edition) => ids.has(edition.location_id)) };
 }
 
 export async function readerData(folderId?: string) {
   const state = cache();
-  const selectedFolderId = folderId ?? (await readerChannelSettings()).driveFolderId;
+  const selectedFolderId = folderId ?? readerFolderId();
   if (state.data?.folderId === selectedFolderId && state.data.expiresAt > Date.now()) {
     return state.data;
   }
@@ -381,11 +380,11 @@ export async function discoverReaderCommunities(query: string, db?: Db): Promise
 type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };
 
 async function readerCommunities(db: Db) {
-  const config = await db.collection<{ _id: string; data: unknown }>("source_configs").findOne({ _id: "communities" });
-  return communityDirectory(config ? config.data : COMMUNITY_SEED);
+  const locations = await db.collection<{ _id: string; id?: string; community?: Community }>("locations").find({ community: { $exists: true } }, { projection: { id: 1, community: 1 } }).toArray();
+  return onboardedCommunities(locations);
 }
 
-/** Readers search Census places, optional overrides and saved geographic communities. */
+/** Readers search Census places, onboarded communities and saved geographic communities. */
 export async function searchTownDirectory(query: string, db?: Db): Promise<Location[]> {
   const [cityPart, statePart = ""] = query.split(",", 2);
   const city = cityPart.trim().toLowerCase();
@@ -404,7 +403,7 @@ export async function searchTownDirectory(query: string, db?: Db): Promise<Locat
     name_lower: { $regex: `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` }, ...(state ? { state } : {}),
     ...(query.split(",").length > 2 ? { parent_name: { $regex: `^${query.split(",").slice(1, -1).join(",").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } } : {}),
   }).limit(10).toArray();
-  communities.push(...geographic.map((place) => ({ id: place.id, name: place.label })));
+  communities.push(...geographic.filter((place) => !communities.some((community) => community.id === place.id)).map((place) => ({ id: place.id, name: place.label })));
   const communityIds = new Set(communities.map((community) => community.id));
   return [...communities, ...places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }))]
     .sort((a, b) => Number(a.name.split(",")[0].toLowerCase() !== city) - Number(b.name.split(",")[0].toLowerCase() !== city)
@@ -423,30 +422,88 @@ export async function directoryTown(id: string, db?: Db): Promise<Location | nul
 }
 
 export async function saveInterestSignup(location: Location, email: string, launchNotification = false) {
-  const { client, databaseName, mongo } = await readerMongoClient();
-  const collection = client.db(databaseName).collection("reader_interest_signups");
-  if (!mongo.indexPromise) {
-    mongo.indexPromise = collection.createIndex(
-      { location_id: 1, email: 1 },
-      { unique: true, name: "location_email_unique" },
-    ).catch((error: unknown) => {
-      mongo.indexPromise = undefined;
-      throw error;
-    });
-  }
-  await mongo.indexPromise;
-  await collection.updateOne(
-    { location_id: location.id, email },
-    {
-      $setOnInsert: { location_id: location.id, email, created_at: new Date() },
-      $set: {
-        location_name: location.name,
-        consent_version: launchNotification ? "weekly-editions-v1" : "weekly-editions-v2",
-        consented_at: new Date(),
-        weekly_editions: true,
-        launch_notification: launchNotification,
-      },
-    },
-    { upsert: true },
+  await recordReaderSignup(await readerDatabase(), location, email, launchNotification);
+}
+
+export async function saveRemembrance(location: Location, input: import("../../../../shared/remembrance").RemembranceInput) {
+  const { REMEMBRANCE_COLLECTION } = await import("../../../../shared/remembrance");
+  const { client, databaseName } = await readerMongoClient();
+  const { randomUUID } = await import("node:crypto");
+  const submission = { _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, status: "pending" as const, submitted_at: new Date().toISOString() };
+  await client.db(databaseName).collection(REMEMBRANCE_COLLECTION).insertOne(submission as never);
+  return submission._id;
+}
+
+/** An editor-approved notice for its public page; pending and rejected notices are never shown. */
+export async function approvedRemembrance(locationId: string, id: string) {
+  const { REMEMBRANCE_COLLECTION } = await import("../../../../shared/remembrance");
+  const { client, databaseName } = await readerMongoClient();
+  const found = await client.db(databaseName).collection(REMEMBRANCE_COLLECTION).findOne({ _id: id as never, location_id: locationId, status: "approved" });
+  return found ? { person_name: String(found.person_name), notice: String(found.notice), link: typeof found.link === "string" ? found.link : null } : null;
+}
+
+export async function saveReaderStory(location: Location, input: import("../../../../shared/reader-stories").ReaderStoryInput, image: import("../../../../shared/reader-stories").ReaderStoryImage | null = null) {
+  const { READER_STORIES_COLLECTION } = await import("../../../../shared/reader-stories");
+  const { client, databaseName } = await readerMongoClient();
+  const { randomUUID } = await import("node:crypto");
+  const story = { _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, image, status: "pending" as const, submitted_at: new Date().toISOString() };
+  await client.db(databaseName).collection(READER_STORIES_COLLECTION).insertOne(story as never);
+  return story._id;
+}
+
+/** An editor-approved neighbour story for its public page; pending and rejected stories are never shown. */
+export async function approvedReaderStory(locationId: string, id: string) {
+  const { READER_STORIES_COLLECTION, creditLine } = await import("../../../../shared/reader-stories");
+  const { client, databaseName } = await readerMongoClient();
+  const found = await client.db(databaseName).collection(READER_STORIES_COLLECTION).findOne(
+    { _id: id as never, location_id: locationId, status: "approved" }, { projection: { "image.data": 0 } },
   );
+  if (!found) return null;
+  return { headline: String(found.headline), story: String(found.story), link: typeof found.link === "string" ? found.link : null,
+    image: found.image ? { caption: String(found.image.caption), credit: String(found.image.credit) } : null,
+    event_date: typeof found.event_date === "string" ? found.event_date : null, credit: creditLine({ credit: found.credit === "name" ? "name" : "anonymous", submitter_name: String(found.submitter_name ?? "") }) };
+}
+
+export async function approvedStoryImage(locationId: string, id: string) {
+  const { READER_STORIES_COLLECTION } = await import("../../../../shared/reader-stories");
+  const db = await readerDatabase();
+  const found = await db.collection<import("../../../../shared/reader-stories").ReaderStory>(READER_STORIES_COLLECTION)
+    .findOne({ _id: id, location_id: locationId, status: "approved" }, { projection: { image: 1 } });
+  return found?.image ?? null;
+}
+
+/** One anonymous engagement event (see api/engagement.ts); read by the pipeline's ranking. */
+export async function saveEngagement(event: { location_id: string; edition_id: string; action: "view" | "open" | "share"; story_ids: string[] }) {
+  const { client, databaseName } = await readerMongoClient();
+  const at = new Date();
+  await client.db(databaseName).collection("reader_engagement").insertOne({ ...event, at, day: at.toISOString().slice(0, 10) });
+}
+
+export const SUGGESTION_SECTIONS = ["events", "civic", "schools", "sports", "safety", "real_estate", "business", "obituaries", "community", "weather", "news"] as const;
+export function validateSuggestion(input: unknown): { input: { name: string; url: string; section: string; why: string | null } } | { error: string } {
+  if (!input || typeof input !== "object") return { error: "Send the source's name and link" };
+  const value = input as Record<string, unknown>;
+  const name = typeof value.name === "string" ? value.name.trim() : "";
+  if (name.length < 2 || name.length > 120) return { error: "Enter a name of 2-120 characters" };
+  let url: URL;
+  try { url = new URL(String(value.url ?? "").trim()); } catch { return { error: "Enter a valid link" }; }
+  if (url.protocol !== "https:" || url.username || url.password) return { error: "Enter a public https:// link" };
+  const section = SUGGESTION_SECTIONS.includes(value.section as never) ? String(value.section) : "community";
+  const why = typeof value.why === "string" && value.why.trim() ? value.why.trim().slice(0, 300) : null;
+  return { input: { name, url: url.toString(), section, why } };
+}
+export async function pendingSuggestions(locationId: string) {
+  const { client, databaseName } = await readerMongoClient();
+  return client.db(databaseName).collection("source_suggestions").countDocuments({ location_id: locationId, status: "pending" });
+}
+export async function saveSourceSuggestion(location: Location, input: { name: string; url: string; section: string; why: string | null }) {
+  const { client, databaseName } = await readerMongoClient();
+  const { randomUUID } = await import("node:crypto");
+  await client.db(databaseName).collection("source_suggestions").insertOne({ _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, status: "pending", submitted_at: new Date().toISOString() } as never);
+}
+
+export async function saveStoryReport(location: Location, input: { edition_id: string | null; story_id: string | null; headline: string | null; message: string }) {
+  const { client, databaseName } = await readerMongoClient();
+  const { randomUUID } = await import("node:crypto");
+  await client.db(databaseName).collection("story_reports").insertOne({ _id: randomUUID(), location_id: location.id, ...input, status: "open", submitted_at: new Date().toISOString() } as never);
 }

@@ -1,7 +1,7 @@
 import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { getLocation } from "@/pipeline/communities/locations";
 import { MongoLinkCache } from "@/pipeline/storage/link-cache";
-import { addManualLink, manualLinks } from "@/pipeline/connectors/manual-links";
+import { addSourceLink, manualLinks } from "@/pipeline/connectors/manual-links";
 import { logger } from "@/pipeline/core/log";
 
 type Context = { params: Promise<{ locationId: string }> };
@@ -26,6 +26,6 @@ export async function DELETE(request: Request, context: Context) {
 export async function POST(request: Request, context: Context) {
   const { locationId } = await context.params;
   return adminRoute(request, async ({ db, settings, transport }) => ({
-    link: await addManualLink(db, settings, locationId, await jsonBody<unknown>(request), transport),
+    link: await addSourceLink(db, settings, locationId, await jsonBody<unknown>(request), transport),
   }));
 }

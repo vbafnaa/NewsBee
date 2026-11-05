@@ -126,6 +126,59 @@ describe("Drive service-account configuration", () => {
       .rejects.toThrow("a My Drive folder shared with the account is not sufficient");
   });
 
+  it("reports the configured identity and whether the pipeline folder is on a Shared Drive", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockImplementation(async (input) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      return Response.json({ id: "pipeline-folder-123", name: "Pipeline", driveId: "shared-drive-123",
+        capabilities: { canAddChildren: true } });
+    });
+    const { driveFolderDetails, driveServiceAccountEmail } = await import("../../storage/drive");
+    expect(driveServiceAccountEmail()).toBe(email);
+    expect(await driveFolderDetails("pipeline-folder-123")).toMatchObject({
+      name: "Pipeline", driveId: "shared-drive-123", capabilities: { canAddChildren: true },
+    });
+    const [url] = fetchMock.mock.calls.find(([input]) =>
+      typeof input === "string" && input.includes("/drive/v3/files/pipeline-folder-123?"))!;
+    expect(new URL(url).searchParams.get("supportsAllDrives")).toBe("true");
+  });
+
+  it("removes test-file metadata after a quota-related upload failure", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    let listed = 0;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      if (typeof input === "string" && input.includes("/upload/")) return Response.json(
+        { error: { message: "Service Accounts do not have storage quota." } }, { status: 403 });
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (init?.method === "POST") return Response.json({ id: "test-file-id" });
+      listed++;
+      return Response.json({ files: listed === 1 ? [] : [{ id: "test-file-id" }] });
+    });
+    const { testDriveUpload } = await import("../../storage/drive");
+    const result = await testDriveUpload("pipeline-folder-123");
+    expect(result).toMatchObject({ uploaded: false, cleanupError: null });
+    expect(result.error).toContain("Service Accounts do not have storage quota");
+    expect(fetchMock.mock.calls).toContainEqual([
+      "https://www.googleapis.com/drive/v3/files/test-file-id?supportsAllDrives=true",
+      expect.objectContaining({ method: "DELETE" }),
+    ]);
+  });
+
+  it("removes a successful diagnostic upload too", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (init?.method === "POST") return Response.json({ id: "test-file-id" });
+      if (typeof input === "string" && input.includes("/upload/")) return Response.json({ id: "test-file-id" });
+      return Response.json({ files: [] });
+    });
+    const { testDriveUpload } = await import("../../storage/drive");
+    expect(await testDriveUpload("pipeline-folder-123")).toEqual({ uploaded: true, error: null, cleanupError: null });
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true);
+  });
+
   it.each(["key.json", `GOOGLE_SERVICE_ACCOUNT_JSON=${json}`, "{broken", JSON.stringify("{broken")])(
     "reports malformed JSON without exposing its value",
     async (value) => {
@@ -256,5 +309,57 @@ describe("Drive service-account configuration", () => {
     fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
       .mockResolvedValueOnce(new Response("insufficientFilePermissions", { status: 403 }));
     await expect(list()).rejects.toThrow("Google Drive request failed (403): insufficientFilePermissions");
+  });
+
+  it("finds cleanup folders without creating them and refuses ambiguous folder names", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ files: [] }))
+      .mockResolvedValueOnce(Response.json({ files: [{ id: "folder-one-id" }, { id: "folder-two-id" }] }));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const drive = new DriveArtifacts();
+    expect(await drive.findFolder("pipeline-folder-123", "editions")).toBeNull();
+    await expect(drive.findFolder("pipeline-folder-123", "editions")).rejects.toThrow("Ambiguous artifact folder");
+    expect(fetchMock.mock.calls.slice(1).every(([, init]) => !init?.method)).toBe(true);
+  });
+
+  it("deletes only an exact regular filename under its sole verified parent, including duplicate files", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (String(input).includes("fields=name")) return Response.json({ name: "edition.json", mimeType: "application/json", parents: ["reader-folder-123"] });
+      return Response.json({ files: [{ id: "owned-file-one", name: "edition.json" }, { id: "owned-file-two", name: "edition.json" }, { id: "shared-directory", name: "locations.json" }] });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    expect(await new DriveArtifacts().removeFile("reader-folder-123", "edition.json")).toBe(2);
+    const deleted = fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
+    expect(deleted).toHaveLength(2);
+    expect(deleted.every(([url]) => String(url).includes("owned-file-") && new URL(String(url)).searchParams.get("supportsAllDrives") === "true")).toBe(true);
+  });
+
+  it.each([
+    { name: "edition.json", mimeType: "application/vnd.google-apps.folder", parents: ["reader-folder-123"] },
+    { name: "edition.json", mimeType: "application/json", parents: ["other-folder-123"] },
+    { name: "edition.json", mimeType: "application/json", parents: ["reader-folder-123", "shared-folder-123"] },
+    { name: "locations.json", mimeType: "application/json", parents: ["reader-folder-123"] },
+  ])("refuses cleanup when the file has moved, is shared, renamed or is a folder: %j", async (metadata) => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ files: [{ id: "owned-file-one", name: "edition.json" }] }))
+      .mockResolvedValueOnce(Response.json(metadata));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    await expect(new DriveArtifacts().removeFile("reader-folder-123", "edition.json")).rejects.toThrow("Refusing cleanup");
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+  });
+
+  it("surfaces deletion permission errors instead of claiming files were removed", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "test-access-token" }))
+      .mockResolvedValueOnce(Response.json({ files: [{ id: "owned-file-one", name: "edition.json" }] }))
+      .mockResolvedValueOnce(Response.json({ name: "edition.json", mimeType: "application/json", parents: ["reader-folder-123"] }))
+      .mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+    const { DriveArtifacts } = await import("../../storage/drive");
+    await expect(new DriveArtifacts().removeFile("reader-folder-123", "edition.json")).rejects.toThrow("artifact cleanup failed (403)");
   });
 });

@@ -1,15 +1,19 @@
 import { createHash } from "node:crypto";
 import { FeedFormatError, addDays } from "../common";
-import type { CollectedEvent, CollectedSource, Connector, GovernmentSource, LocationProfile, SourceResult, SourceTask } from "../types";
+import type { CollectedEvent, CollectedSource, Connector, ConnectorContext, GovernmentSource, LocationProfile, LookupWindow, SourceResult, SourceTask } from "../types";
+import { rangesFor } from "../../core/time";
 import { HttpStatusError } from "../../core/http";
 import { Fetcher, DiscoveryBlockedError } from "../fetcher";
 import { sourceResult } from "../types";
 import type { DiscoveryResult } from "./discovery";
-import { discoverGovernmentWithMethod, overrides, sourceId, USER_AGENT, PAST_DAYS } from "./discovery";
+import { discoverGovernmentWithMethod, sourceId, USER_AGENT, PAST_DAYS, MAX_MEETINGS } from "./discovery";
+import { MANAGED_SOURCE_DETAIL } from "../../communities/locations";
 import * as civicclerk from "./civicclerk";
 import * as legistar from "./legistar";
 import { outcome, preview, type Meeting, type MeetingFacts } from "./meetings";
 import { communityEvidence } from "../community";
+import { collectCouncilDocuments } from "./documents";
+import * as meetingsRanking from "../../ranking/meetings";
 
 const NO_PLATFORM = new Set(["unresolved_website", "no_platform", "blocked", "failed"]);
 type PlatformData = { events: MeetingFacts[]; skipped: Record<string, number>; content: Uint8Array; url: string };
@@ -51,8 +55,8 @@ function compareStart(a: { year: number; month: number; day: number; hour?: numb
   const right = `${day(b)}T${String(b.hour ?? 0).padStart(2, "0")}:${String(b.minute ?? 0).padStart(2, "0")}`;
   return left < right ? -1 : left > right ? 1 : 0;
 }
-async function collectLegistar(fetcher: Fetcher, tenant: string, location: LocationProfile, today: string, window: [string, string]): Promise<PlatformData> {
-  const first = addDays(today, -PAST_DAYS), last = window[1], upcomingFrom = window[0];
+async function collectLegistar(fetcher: Fetcher, tenant: string, location: LocationProfile, today: string, window: [string, string], pastFrom: string): Promise<PlatformData> {
+  const first = pastFrom, last = window[1], upcomingFrom = window[0];
   const url = legistar.eventsUrl(tenant, first, last);
   const content = await bytesFetcher(fetcher)(url);
   const dated = legistar.parseEvents(content).map((event) => ({ start: legistar.start(event), event }));
@@ -60,8 +64,11 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, location: Locat
   const recent = dated.filter(({ start }) => day(start) >= first && day(start) < today).sort((a, b) => compareStart(b.start, a.start));
   const skipped: Record<string, number> = { outside_window: dated.length - upcoming.length - recent.length };
   const facts: MeetingFacts[] = [];
+  let fetched = 0;
   for (const { start, event } of [...upcoming, ...recent]) {
     if (legistar.isCancelled(event)) { skipped.cancelled = (skipped.cancelled ?? 0) + 1; continue; }
+    if (fetched >= MAX_MEETINGS) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
+    fetched += 1;
     const meeting = scopeMeeting(await legistar.meeting(tenant, event, bytesFetcher(fetcher)), location);
     if (location.community && !meeting.items.length) { skipped.outside_community = (skipped.outside_community ?? 0) + 1; continue; }
     const place = jurisdiction(location);
@@ -81,11 +88,14 @@ async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: Loc
   const skipped: Record<string, number> = {};
   const facts: MeetingFacts[] = [];
   const inc = (key: string) => { skipped[key] = (skipped[key] ?? 0) + 1; };
+  let fetched = 0;
   for (const event of events.sort((a, b) => compareStart(civicclerk.start(a), civicclerk.start(b)))) {
     const start = civicclerk.start(event);
     if (day(start) < first || day(start) > last) { inc("outside_window"); continue; }
     if (typeof event.eventName === "string" && /cancel/i.test(event.eventName)) { inc("cancelled"); continue; }
     if (!civicclerk.usable(event)) { inc("agenda_not_posted"); continue; }
+    if (fetched >= MAX_MEETINGS) { inc("over_limit"); continue; }
+    fetched++;
     const meeting = scopeMeeting(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), location);
     if (location.community && !meeting.items.length) { inc("outside_community"); continue; }
     const made = preview(meeting, jurisdiction(location));
@@ -112,11 +122,11 @@ function ordinaryFailure(government: GovernmentSource, location: LocationProfile
   const message = error instanceof Error ? error.message : String(error);
   return { result: sourceResult(sourceId(government), sourceName(location), status, `${errorName(error)}: ${message}`, { website: government.website, feed_kind: government.platform, pages_checked: government.pages_checked ?? [] }), events: [] };
 }
-async function attempt(government: GovernmentSource, location: LocationProfile, fetcher: Fetcher, today: string, window: [string, string]): Promise<Attempt> {
+async function attempt(government: GovernmentSource, location: LocationProfile, fetcher: Fetcher, today: string, window: [string, string], pastFrom = addDays(today, -PAST_DAYS)): Promise<Attempt> {
   if (!usablePlatform(government)) return { result: initialResult(location, government), events: [] };
   try {
     const data = government.platform === "legistar"
-      ? await collectLegistar(fetcher, government.tenant, location, today, window)
+      ? await collectLegistar(fetcher, government.tenant, location, today, window, pastFrom)
       : await collectCivicclerk(fetcher, government.tenant, location, window);
     return { result: sourceResultFromData(government, location, data), events: data.events };
   } catch (error) {
@@ -131,8 +141,9 @@ function tenantFromCached(entry: { kind: string; url: string }): string | null {
   return null;
 }
 async function rediscover(context: Parameters<Connector["collect"]>[1]): Promise<DiscoveryResult> {
-  const configuredSources = await overrides(context.settings.root, context.db);
-  const configured = configuredSources[context.location.id] ?? configuredSources[context.location.community?.parent_id ?? ""] ?? null;
+  // An editor-set platform (Sources in the journalist portal) wins over discovery.
+  const government = context.location.government;
+  const configured = government?.detail === MANAGED_SOURCE_DETAIL && government.platform && government.tenant ? { platform: government.platform, tenant: government.tenant } : null;
   return discoverGovernmentWithMethod(context.transport, context.location, configured, { model: context.model, log: context.log });
 }
 async function cacheEntry(context: Parameters<Connector["collect"]>[1], task: SourceTask, government: GovernmentSource, method: "rules" | "ai") {
@@ -159,12 +170,30 @@ function attachMethod(attempted: Attempt, method: "cache" | "rules" | "ai") {
 
 /** Query a supplied, supported platform without rediscovering or changing the location's primary source. */
 export async function collectMeetingLink(context: Parameters<Connector["collect"]>[1], government: GovernmentSource) {
-  const result = await attempt(government, context.location, new Fetcher(context.transport, USER_AGENT), context.today, context.window);
+  const result = await attempt(government, context.location, new Fetcher(context.transport, USER_AGENT), context.today, context.window, pastFrom(context));
   return { result: result.result, events: result.events };
 }
 
+/**
+ * Recent outcomes since the last edition (up to 14 days), upcoming meetings for the next 7.
+ * Council documents keep their own 35-day minutes lookback (DOCUMENT_PAST_DAYS) because
+ * minutes are often posted weeks after a meeting; the published-story ledger stops repeats.
+ */
+const MEETINGS_WINDOW: LookupWindow = { back: { since: "last_edition", maxDays: 14 }, ahead: { days: 7 } };
+/** First day of recent meeting outcomes for this run. */
+function pastFrom(context: ConnectorContext) { return rangesFor(context, MEETINGS_WINDOW).back?.[0] ?? context.today; }
+
 export const meetingsConnector: Connector = {
   type: "meetings",
+  meta: {
+    name: "Government meetings",
+    formats: "Legistar and CivicClerk tenant APIs; official city council HTML/PDF agendas and minutes",
+    manual: true,
+    coverage: { group: "local", label: "public meetings" },
+    storyKinds: ["meeting_preview", "meeting_outcome"],
+  },
+  window: MEETINGS_WINDOW,
+  rank: meetingsRanking.rank,
   sources(location: LocationProfile) {
     const government = location.government;
     return [{ source_id: sourceId(government), name: sourceName(location), type: "meetings", params: government ? { government } : {} }];
@@ -175,15 +204,22 @@ export const meetingsConnector: Connector = {
     let government: GovernmentSource = original ?? { status: "pending", platform: null, tenant: null, website: null, wikidata_id: null, pages_checked: [], detail: "Government source discovery pending" };
     let method: "cache" | "rules" | "ai" = "rules";
     const cached = await context.linkCache.get(context.location.id, task.source_id);
+    if (!usablePlatform(government) && cached?.kind === "council_documents" && (government.website || cached.page)) {
+      return collectCouncilDocuments(context, task, government.website ?? cached.page!);
+    }
     if (cached) {
       const restored = cacheGovernment(government, cached);
       if (restored) { government = restored; method = "cache"; }
       else await context.linkCache.invalidate(context.location.id, task.source_id);
     }
     if (!usablePlatform(government) && ["no_platform", "unresolved_website"].includes(government.status)) {
+      if (government.website) return collectCouncilDocuments(context, task, government.website);
       const skipped = initialResult(context.location, government);
       context.log.info("government_meetings_result", { source_id: skipped.source_id, status: skipped.status, meetings: 0, skipped: {}, detail: skipped.detail });
       return { result: skipped, events: [] };
+    }
+    if (!usablePlatform(government) && context.readOnly) {
+      return { result: sourceResult(task.source_id, task.name, "needs_remap", "No saved meeting address: refresh the source map"), events: [] };
     }
     if (!usablePlatform(government)) {
       await context.linkCache.invalidate(context.location.id, task.source_id);
@@ -193,6 +229,7 @@ export const meetingsConnector: Connector = {
         method = discovered.discovery_method ?? "rules";
         await cacheEntry(context, task, government, method === "ai" ? "ai" : "rules");
       } else {
+        if (discovered.website) return collectCouncilDocuments(context, task, discovered.website);
         context.log.warn("government_discovery_unavailable", { location_id: context.location.id, status: discovered.status, detail: discovered.detail });
         const skipped = initialResult(context.location, discovered);
         skipped.source_id = sourceId(discovered);
@@ -201,12 +238,16 @@ export const meetingsConnector: Connector = {
         return { result: skipped, events: [] };
       }
     }
-    let first = await attempt(government, context.location, fetcher, context.today, context.window);
+    let first = await attempt(government, context.location, fetcher, context.today, context.window, pastFrom(context));
     first = attachMethod(first, method);
     if (first.events.length > 0) {
-      await cacheEntry(context, task, government, method === "cache" ? (cached?.method ?? "rules") : method);
+      await cacheEntry(context, task, government, method === "ai" || (method === "cache" && cached?.method === "ai") ? "ai" : "rules");
       context.log.info("government_meetings_result", { source_id: first.result.source_id, status: first.result.status, meetings: first.events.length, skipped: first.result.skipped_unusable, detail: first.result.detail });
       return { result: first.result, events: first.events as CollectedEvent[] };
+    }
+    if (context.readOnly) {
+      if (first.result.status === "failed") { first.result.status = "needs_remap"; first.result.detail = `Saved meeting address failed: refresh the source map. ${first.result.detail}`; }
+      return { result: first.result, events: [] };
     }
     await context.linkCache.invalidate(context.location.id, task.source_id);
     let discovered: DiscoveryResult;
@@ -217,6 +258,7 @@ export const meetingsConnector: Connector = {
       return { result: first.result, events: [] };
     }
     if (!usablePlatform(discovered)) {
+      if (discovered.website) return collectCouncilDocuments(context, task, discovered.website);
       const result = first.result.status === "failed" || first.result.status === "blocked" ? first.result : initialResult(context.location, discovered);
       result.link_discovery = { method: discovered.discovery_method ?? "rules" };
       context.log.info("government_meetings_result", { source_id: result.source_id, status: result.status, meetings: 0, skipped: result.skipped_unusable, detail: result.detail });
@@ -224,7 +266,7 @@ export const meetingsConnector: Connector = {
     }
     const retryMethod = discovered.discovery_method ?? "rules";
     await cacheEntry(context, task, discovered, retryMethod);
-    const retried = attachMethod(await attempt(discovered, context.location, fetcher, context.today, context.window), retryMethod);
+    const retried = attachMethod(await attempt(discovered, context.location, fetcher, context.today, context.window, pastFrom(context)), retryMethod);
     if (retried.events.length === 0) await context.linkCache.invalidate(context.location.id, task.source_id);
     else await cacheEntry(context, task, discovered, retryMethod);
     context.log.info("government_meetings_result", { source_id: retried.result.source_id, status: retried.result.status, meetings: retried.events.length, skipped: retried.result.skipped_unusable, detail: retried.result.detail });
@@ -232,4 +274,4 @@ export const meetingsConnector: Connector = {
   },
 };
 
-export { discoverGovernment, overrides, sourceId } from './discovery';
+export { discoverGovernment, sourceId } from './discovery';

@@ -3,10 +3,8 @@ import type { HttpTransport } from "../core/http";
 import type { Settings } from "../core/config";
 import type { GovernmentSource, LocationProfile, LibrarySystem } from "../connectors/types";
 import { COLLECTIONS } from "../storage/mongo";
-import { loadSourceConfig } from "../storage/source-configs";
 import { logger } from "../core/log";
 import { ACTIVE_RUN_STATUSES } from "../orchestration/runs";
-import { channels, ensureReaderChannel } from "../orchestration/publish";
 const log = logger("communities.locations");
 import { loadCommunities, placeId, systemsForPlace, systemsInArea, type Place } from "./directory";
 import { communityName } from "../../../../shared/community-directory";
@@ -22,50 +20,40 @@ type LocationRef = { _id?: string; location_id: string; status?: string; [key: s
 
 export const MANAGED_SOURCE_DETAIL = "Managed in Journalist site";
 export const DISABLED_GOVERNMENT_DETAIL = "Disabled in Journalist site";
-export type WebsiteOverride = { name: string; website: string };
 export type OnboardOptions = {
   discoveryGaps?: string[];
   settings?: Pick<Settings, "root">;
-  overrides?: Record<string, WebsiteOverride>;
   discoverGovernment?: (profile: LocationProfile) => Promise<GovernmentSource>;
   discoverNews?: typeof discoverCommunityNews;
 };
 
-export function websiteOverrides(data: Record<string, unknown>): Record<string, WebsiteOverride> {
-  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("library-websites.json must map FSCS keys to {name, website}");
-  const result: Record<string, WebsiteOverride> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`library-websites.json entry ${key} needs a name and an https:// website`);
-    const entry = value as Record<string, unknown>;
-    const website = typeof entry.website === "string" ? entry.website : "";
-    const origin = httpsOrigin(website);
-    if (typeof entry.name !== "string" || !entry.name || !website.startsWith("https://") || !origin) throw new Error(`library-websites.json entry ${key} needs a name and an https:// website`);
-    result[key] = { name: entry.name, website: origin };
-  }
-  return result;
-}
-function overrideLookup(system: LibrarySystem, entry: WebsiteOverride) {
-  if (entry.name.toLowerCase() !== system.name.toLowerCase()) throw new Error(`library-websites.json entry ${system.fscskey} is named ${JSON.stringify(entry.name)}, but the directory lists ${JSON.stringify(system.name)}`);
-  return { status: "override", website: entry.website, wikidata_id: null, detail: "Website from config/library-websites.json" };
-}
-
-export async function getLocation(db: Db, id: string): Promise<LocationProfile> {
+export async function getLocation(db: Db, id: string, allowRemoval = false): Promise<LocationProfile> {
   const profile = await db.collection<LocationDocument>(COLLECTIONS.locations).findOne({ _id: id });
   if (!profile) throw new Error(`Location is not onboarded: ${id}`);
-  const { _id: _ignored, ...result } = profile;
+  return profileFromDocument(db, profile, allowRemoval);
+}
+
+async function profileFromDocument(db: Db, profile: LocationDocument, allowRemoval: boolean): Promise<LocationProfile> {
+  if (profile.removal && !allowRemoval) throw new LocationBusy(`${profile.id} is being removed; retry cleanup in Location details`);
+  const { _id: _ignored, removal, ...result } = profile;
+  if (removal) result.removal_pending = true;
   if (result.community) {
-    const manual = await db.collection(COLLECTIONS.manualLinks).find({ location_id: id }).project<{ connector: string }>({ connector: 1 }).toArray();
+    const manual = await db.collection(COLLECTIONS.manualLinks).find({ location_id: profile.id }).project<{ connector: string }>({ connector: 1 }).toArray();
     result.source_coverage = sourceCoverage(result, result.source_coverage?.discovery_gaps, manual.map((link) => link.connector));
   }
   return result as LocationProfile;
 }
 
 export async function listLocations(db: Db): Promise<LocationProfile[]> {
-  const docs = await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).find({}).sort({ name: 1 }).toArray();
-  return Promise.all(docs.map(async ({ _id: _ignored, ...profile }) => profile.community ? getLocation(db, profile.id) : profile));
+  const docs = await db.collection<LocationDocument>(COLLECTIONS.locations).find({}).sort({ name: 1 }).toArray();
+  return Promise.all(docs.map((profile) => profileFromDocument(db, profile, true)));
 }
 
 export async function onboardLocation(db: Db, transport: HttpTransport, placeIdentity: string, options: OnboardOptions = {}): Promise<LocationProfile> {
+  const initial = await db.collection<LocationDocument>(COLLECTIONS.locations).findOne({ _id: placeIdentity });
+  if (initial?.removal) {
+    throw new LocationBusy(`${placeIdentity} has pending removal; finish cleanup before onboarding again`);
+  }
   const catalog = await loadCommunities(db);
   const geographic = await db.collection<GeographicDocument>(GEOGRAPHIC_PLACES).findOne({ _id: placeIdentity });
   const reviewed = geographic ? Object.values(catalog).find((entry) => entry.name.toLowerCase() === geographic.name.toLowerCase()
@@ -107,15 +95,12 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     community.library_branches = systems.flatMap((system) => system.branches.map((branch) => branch.name));
     gaps.push(...discovered.gaps);
   }
-  const overrideData = options.overrides ?? await loadSourceConfig(db, options.settings?.root ?? process.cwd(), "library-websites");
-  const overrides = websiteOverrides(overrideData as Record<string, unknown>);
   for (const system of profile.systems) {
-    const entry = overrides[system.fscskey];
     let lookup;
     try {
-      lookup = entry ? overrideLookup(system, entry) : await lookupWebsite(transport, system.name, system.latitude == null ? null : Number(system.latitude), system.longitude == null ? null : Number(system.longitude));
+      lookup = await lookupWebsite(transport, system.name, system.latitude == null ? null : Number(system.latitude), system.longitude == null ? null : Number(system.longitude));
     } catch (error) {
-      if (!geographic || entry) throw error;
+      if (!geographic) throw error;
       const detail = `Library website discovery unavailable: ${error instanceof Error ? error.message : String(error)}`;
       log.warn("library_discovery_unavailable", { location_id: placeIdentity, detail });
       gaps.push(detail);
@@ -155,10 +140,14 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     if (oldGovernment?.detail === MANAGED_SOURCE_DETAIL || oldGovernment?.detail === DISABLED_GOVERNMENT_DETAIL) profile.government = oldGovernment;
   }
   if (profile.community) profile.source_coverage = sourceCoverage(profile, gaps);
-  if (!existing) await ensureReaderChannel(db);
-  const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: placeIdentity }, { ...profile, _id: placeIdentity }, { upsert: true });
-  if (saved.upsertedCount) {
-    await channels(db).updateOne({ _id: "reader-site" }, { $addToSet: { selected_location_ids: placeIdentity } });
+  try {
+    const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne(
+      { _id: placeIdentity, removal: { $exists: false } }, { ...profile, _id: placeIdentity }, { upsert: !initial },
+    );
+    if (initial && !saved.matchedCount) throw new LocationBusy(`${placeIdentity} changed during onboarding; reload its cleanup state`);
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) throw new LocationBusy(`${placeIdentity} changed during onboarding; reload its cleanup state`);
+    throw error;
   }
   log.info("location_onboarded", { location_id: placeIdentity, systems: profile.systems.length });
   return profile;
@@ -183,7 +172,8 @@ export async function updateSources(db: Db, id: string, websites: Record<string,
     pages_checked: [], detail: DISABLED_GOVERNMENT_DETAIL,
   };
   if (profile.community) profile.source_coverage = sourceCoverage(profile, profile.source_coverage?.discovery_gaps);
-  await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: id }, { ...profile, _id: id }, { upsert: false });
+  const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: id, removal: { $exists: false } }, { ...profile, _id: id }, { upsert: false });
+  if (!saved.matchedCount) throw new LocationBusy(`${id} changed while saving sources; reload its cleanup state`);
   log.info("location_sources_updated", { location_id: id });
   return profile;
 }
@@ -195,21 +185,25 @@ const LOCATION_COLLECTIONS = [
   ["source_results", COLLECTIONS.sourceResults], ["source_shortlists", COLLECTIONS.shortlists],
   ["editions", COLLECTIONS.editions], ["edition_entries", COLLECTIONS.editionEntries],
   ["story_cache", COLLECTIONS.storyCache], ["withdrawals", COLLECTIONS.withdrawals],
-  ["discovered_sources", COLLECTIONS.discoveredSources],
+  ["source_map", "source_map"], ["discovery_state", "discovery_state"], ["collected_items", "collected_items"],
+  ["edition_maps", "edition_maps"], ["news_publishers", "news_publishers"], ["source_suggestions", "source_suggestions"],
 ] as const;
 
-export async function removeLocation(db: Db, id: string): Promise<Record<string, number>> {
-  await getLocation(db, id);
+export async function assertLocationIdle(db: Db, id: string) {
   const running = await db.collection<LocationRef>(COLLECTIONS.jobs).countDocuments({ location_id: id, status: "running" });
   if (running) throw new LocationBusy(`${id} has a running job; wait for it to finish`);
   const active = await db.collection(COLLECTIONS.runs).countDocuments({ location_id: id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (active) throw new LocationBusy(`${id} has an active run; cancel it before removal`);
+}
+
+export async function removeLocationRecords(db: Db, id: string, editionIds: string[]): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
   for (const [name, collectionName] of LOCATION_COLLECTIONS) {
-    const result = await db.collection<LocationRef>(collectionName).deleteMany({ location_id: id });
+    const filter = collectionName === COLLECTIONS.editionEntries
+      ? { $or: [{ location_id: id }, { location_id: { $exists: false }, edition_id: { $in: editionIds } }] }
+      : { location_id: id };
+    const result = await db.collection<LocationRef>(collectionName).deleteMany(filter);
     counts[name] = result.deletedCount;
   }
-  counts.locations = (await db.collection<LocationDocument>(COLLECTIONS.locations).deleteOne({ _id: id })).deletedCount;
-  log.info("location_removed", { location_id: id, counts });
   return counts;
 }

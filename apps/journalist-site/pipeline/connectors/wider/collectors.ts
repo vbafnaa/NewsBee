@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { COLLECTIONS } from "../../storage/mongo";
-import { loadSourceConfig } from "../../storage/source-configs";
+import { stateSourcesFor } from "../../discovery/area";
 import { HttpStatusError } from "../../core/http";
 import { FeedFormatError, MAX_FEED_BYTES } from "../common";
 import { DiscoveryBlockedError } from "../fetcher";
@@ -12,10 +12,15 @@ import { trendContext, discoverReports, reportedDescription, type TrendContext }
 import { communityWikiTopics, reportingSearches } from "./trend-discovery";
 import { reportingScore } from "../../ranking/wider";
 import { communityEvidence } from "../community";
+import { localEvidence, localityFor, type Locality, type LocalityEvidence } from "../locality";
+import * as widerRanking from "../../ranking/wider";
+import { rangesFor } from "../../core/time";
+import { collectWeather } from "./weather";
+import { itemCap } from "../../core/run-options";
 
 const ACCEPT_JSON = "application/json";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
-const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MIN_DISTANT_MAGNITUDE = 4;
+const PAST_DAYS = 14, RADIUS_KM = NEARBY_KM, QUERY_MAGNITUDE = 2.5, MIN_MAGNITUDE = 3, MIN_FELT = 10, MIN_DISTANT_MAGNITUDE = 4, MAX_ITEMS = 5;
 const OFFSET = /^\s*\d+(?:\.\d+)?\s*km\s+[NSEW]{1,3}\s+of\s+/i;
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const dateDelta = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
@@ -38,21 +43,44 @@ function quakeRelevant(q: { magnitude: number; felt: number; distance_km: number
 
 export const hazardsConnector: Connector = {
   type: "hazards",
+  meta: {
+    name: "Weather & earthquakes",
+    formats: "National Weather Service alerts and USGS earthquake feeds",
+    manual: false,
+    coverage: { group: "wider", label: "weather and earthquake alerts" },
+    storyKinds: ["earthquake", "weather_alert"],
+  },
+  window: { back: { since: "last_edition", maxDays: PAST_DAYS } },
+  rank: widerRanking.hazards,
   sources(location: LocationProfile, settings) {
-    return settings.widerSources ? [{ source_id: "hazards:usgs", name: "USGS earthquakes nearby", type: "hazards" }] : [];
+    return settings.widerSources ? [
+      { source_id: "hazards:nws", name: "National Weather Service alerts", type: "hazards" },
+      { source_id: "hazards:usgs", name: "USGS earthquakes nearby", type: "hazards" },
+    ] : [];
   },
   async collect(task, context) {
-    try { return await collectHazards(task, context); } catch (error) { return emptyFailure(task, context, error); }
+    try {
+      if (task.source_id === "hazards:nws") {
+        const place = resolveRegion(context.location, await stateSourcesFor(context));
+        if (place.latitude === null || place.longitude === null) return { result: sourceResult(task.source_id, task.name, "no_feed", "Location has no coordinates"), events: [] };
+        return await collectWeather(task, context, place.latitude, place.longitude, place.town);
+      }
+      return await collectHazards(task, context);
+    } catch (error) {
+      if (error instanceof DiscoveryBlockedError) return { result: sourceResult(task.source_id, task.name, "blocked", errMessage(error)), events: [] };
+      if (isHttpError(error) && ((error as HttpStatusError).status === 429 || (error as HttpStatusError).status >= 500)) throw error;
+      return emptyFailure(task, context, error);
+    }
   },
 };
 
 async function collectHazards(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
-  const place = resolveRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
+  const place = resolveRegion(context.location, await stateSourcesFor(context));
   const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "usgs" });
   if (place.latitude === null || place.longitude === null || !Number.isFinite(place.latitude) || !Number.isFinite(place.longitude)) {
     record.status = "no_feed"; record.detail = "Location has no coordinates"; return { result: record, events: [] };
   }
-  const start = dateDelta(context.today, -PAST_DAYS);
+  const start = rangesFor(context, hazardsConnector.window).back?.[0] ?? dateDelta(context.today, -PAST_DAYS);
   const url = usgsQueryUrl(place.latitude, place.longitude, start, RADIUS_KM, QUERY_MAGNITUDE);
   record.feed_url = url;
   let content: Uint8Array;
@@ -75,10 +103,10 @@ async function collectHazards(task: SourceTask, context: ConnectorContext): Prom
     groups.set(key, [...(groups.get(key) ?? []), quake]);
   }
   const grouped = [...groups.values()].map((group) => group.sort((a, b) => b.magnitude - a.magnitude || a.distance_km - b.distance_km || b.felt - a.felt));
-  const events = grouped.map((quakes) => quakes.length === 1 ? quakeFacts(quakes[0], place.town) : mergedQuakeFacts(quakes, place.town));
+  const events = grouped.slice(0, itemCap(MAX_ITEMS)).map((quakes) => quakes.length === 1 ? quakeFacts(quakes[0], place.town) : mergedQuakeFacts(quakes, place.town));
   const merged = kept.length - groups.size;
   if (merged) skipped.merged_same_place = merged;
-  record.detail = `${all.length} earthquakes of magnitude ${QUERY_MAGNITUDE}+ within ${RADIUS_KM} km in ${PAST_DAYS} days; ${kept.length} noticeable in ${events.length} stories`;
+  record.detail = `${all.length} earthquakes of magnitude ${QUERY_MAGNITUDE}+ within ${RADIUS_KM} km since ${start}; ${kept.length} noticeable in ${events.length} stories`;
   record.response_sha256 = sha256(content); record.event_count = events.length;
   record.skipped_unusable = Object.fromEntries(Object.entries(skipped).filter(([, count]) => count));
   context.log.info("hazards_result", { source_id: task.source_id, quakes: all.length, kept: events.length });
@@ -113,98 +141,9 @@ function mergedQuakeFacts(quakes: ReturnType<typeof parseUsgs>, town: string): C
     kind: "earthquake", tier: quakeTier(closest), section: "Earthquakes nearby", signals: { magnitude: strongest.magnitude, distance_km: closest, felt, depth_km: strongest.depth_km, count: quakes.length } });
 }
 
-const NEWS_LOOKBACK_DAYS = 14;
-export const stateNewsConnector: Connector = {
-  type: "statenews",
-  sources(location, settings) { return settings.widerSources ? [{ source_id: "statenews", name: location.community ? "Community and state newsrooms" : "State newsrooms", type: "statenews" }] : []; },
-  async collect(task, context) {
-    try { return await collectStateNews(task, context); } catch (error) { return emptyFailure(task, context, error); }
-  },
-};
-
-async function collectStateNews(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
-  const states = validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources"));
-  const place = resolveRegion(context.location, states);
-  const manualFeed = task.params?.manual_feed;
-  if (typeof manualFeed === "string") place.newsrooms = [{ name: task.name, feed: manualFeed }];
-  const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "rss" });
-  if (!place.configured || place.newsrooms.length === 0) { record.status = "no_feed"; record.detail = `No reviewed newsrooms for ${place.state_code}`; return { result: record, events: [] }; }
-  const run = async (newsrooms: Array<{ name: string; feed: string }>) => {
-    const facts: CollectedEvent[] = [], skipped: Record<string, number> = {}, failures: Record<string, number> = {};
-    const digest = createHash("sha256"); let success = 0;
-    for (const newsroom of newsrooms) {
-      let content: Uint8Array;
-      let items: ReturnType<typeof parseNewsFeed>;
-      try { [, content] = await context.fetcher.get(newsroom.feed, MAX_FEED_BYTES, ACCEPT_FEED); items = parseNewsFeed(content); }
-      catch (error) {
-        const kind = errName(error) === "DiscoveryBlockedError" ? "blocked" : "failed";
-        failures[kind] = (failures[kind] ?? 0) + 1;
-        record.pages_checked.push(`${newsroom.feed} (${kind === "blocked" ? errMessage(error) : errName(error)})`);
-        continue;
-      }
-      success++; record.pages_checked.push(newsroom.feed); digest.update(content);
-      for (const item of items!) {
-        const day = item.published_day;
-        if (day < dateDelta(context.today, -NEWS_LOOKBACK_DAYS) || day > context.today) {
-          skipped.outside_news_window = (skipped.outside_news_window ?? 0) + 1; continue;
-        }
-        if (sensitive(item.title, item.summary)) { skipped.sensitive_topic = (skipped.sensitive_topic ?? 0) + 1; continue; }
-        if (sponsoredItem(item)) { skipped.sponsored = (skipped.sponsored ?? 0) + 1; continue; }
-        const tier = itemTier(place, item.title, item.summary, true, item.coordinates);
-        if (!tier) { skipped.not_near_town = (skipped.not_near_town ?? 0) + 1; continue; }
-        if (distantHazard(tier, item.title, item.summary)) { skipped.hazard_not_local = (skipped.hazard_not_local ?? 0) + 1; continue; }
-        facts.push(createNewsFacts({ source_event_id: sha256(item.id).slice(0, 16), title: item.title, event_date: day, schedule_text: publishedText(day), venue: newsroom.name,
-          source_url: item.link, description: item.summary, kind: "state_news", tier, section: section(place, tier), signals: { publisher: newsroom.name },
-          ...(context.location.community ? { community_relevance: communityEvidence(context.location, [item.title, item.summary], item.coordinates) } : {}) }));
-      }
-    }
-    const ok = newsrooms.length - Object.values(failures).reduce((a, b) => a + b, 0);
-    const status = ok === 0 ? (failures.blocked && !failures.failed ? "blocked" : "failed") : "ingested";
-    const tiers = { local: 0, region: 0, nearby: 0 };
-    for (const fact of facts) tiers[fact.tier as keyof typeof tiers]++;
-    record.status = status;
-    record.detail = place.community_terms
-      ? `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items have ${place.town} community, selected-venue or geographic evidence`
-      : `${ok}/${newsrooms.length} newsrooms read; ${facts.length} items near ${place.town} (${tiers.local} name the town, ${tiers.region} the county, ${tiers.nearby} a nearby place)`;
-    record.response_sha256 = ok ? digest.digest("hex") : null; record.event_count = facts.length;
-    record.skipped_unusable = skipped;
-    context.log.info("state_news_result", { source_id: task.source_id, status, items: facts.length, tiers, skipped });
-    return { result: { ...record, pages_checked: [...record.pages_checked] }, events: facts } as CollectedSource;
-  };
-  const rules = await run(place.newsrooms);
-  if (typeof manualFeed === "string" || !context.model || !context.settings.aiLinkDiscovery) return rules;
-  const cached = await context.linkCache.get(context.location.id, task.source_id);
-  if (cached) {
-    record.pages_checked = [];
-    const cachedRun = await run([{ name: cached.kind, feed: cached.url }]);
-    if (cachedRun.events.length > 0) {
-      const best = moreEvents(rules, cachedRun);
-      if (best.events.length > rules.events.length) best.result.link_discovery = { method: "cache" };
-      return best;
-    }
-    await context.linkCache.invalidate(context.location.id, task.source_id);
-    record.pages_checked = [];
-  }
-  const pages = place.newsrooms.flatMap((room) => [room.page, room.website].filter((url): url is string => typeof url === "string" && url.startsWith("https://")).map((url) => ({ room, url })));
-  if (!context.model || !context.settings.aiLinkDiscovery || pages.length === 0) return rules;
-  const selected: Array<{ name: string; feed: string }> = [];
-  for (const { room, url } of pages) {
-    try {
-      const [, html] = await context.fetcher.getText(url, MAX_FEED_BYTES, "text/html,application/xhtml+xml");
-      const links = pageLinks(html, url);
-      const linksChosen = await chooseLinks(context.model, "official state newsroom RSS or Atom feeds", url, links, context.log);
-      selected.push(...linksChosen.map((feed) => ({ name: room.name, feed })));
-    } catch (error) { context.log.warn("state_news_ai_page_failed", { page: url, error }); }
-  }
-  if (selected.length === 0) return rules;
-  record.pages_checked = [];
-  const ai = await run(selected);
-  if (ai.events.length > 0) await context.linkCache.put({ source_id: task.source_id, location_id: context.location.id, kind: selected[0].name, url: selected[0].feed, page: pages[0]?.url ?? null, method: "ai" });
-  return moreEvents(rules, ai);
-}
-
 const TOP_DAYS = 3, TOP_LOOKBACK = 6, MAX_MOST_READ = 8, MIN_RATIO = 2, MIN_RATIO_MOST_READ = 1.5, MIN_VIEWS = 1000;
 const EXCLUDED_PREFIXES = ["List_of", "Lists_of", "Deaths_in", "Timeline_of", "Index_of"];
+const WIKI_MAX_ITEMS = 5;
 type WikiTopic = { article: string; about: string | null; origin: "watchlist" | "most_read"; recent_daily_views: number; baseline_daily_views: number; ratio: number; latest_day: string | null; best_rank?: number; social_mentions?: number | null };
 type WikiData = { topics: WikiTopic[]; top_days: string[]; errors: string[]; failed: boolean };
 async function cacheState<T>(context: ConnectorContext, kind: string, state: string, day: string, build: () => Promise<T & { failed?: boolean }>): Promise<T & { failed?: boolean }> {
@@ -304,16 +243,16 @@ async function wikiLocal(context: ConnectorContext, place: Region, today: string
 }
 
 async function collectWikipedia(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
-  const place = resolveTrendRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
+  const place = resolveTrendRegion(context.location, await stateSourcesFor(context, { topics: true }));
   const record = sourceResult(task.source_id, task.name, "ingested", "", { feed_kind: "wikimedia_pageviews", website: "https://wikimedia.org/api/rest_v1/" });
-  if (!place.configured) { record.status = "no_feed"; record.detail = `No reviewed watchlist for ${place.state_code}`; return { result: record, events: [] }; }
+  if (!place.configured) { record.status = "no_feed"; record.detail = `${place.state_code} is not a supported US state`; return { result: record, events: [] }; }
   const data = await cacheState(context, "wikipedia-local-v3", sha256(JSON.stringify([place, context.location.systems])).slice(0, 16), context.today, () => wikiLocal(context, place, context.today));
   if (data.failed) { record.status = "failed"; record.detail = data.errors.slice(0, 5).join("; "); return { result: record, events: [] }; }
   const trending = data.topics.filter(qualifies).sort((a, b) => b.ratio - a.ratio);
   const near = trending.filter((topic) => topicTier(topic, place));
   const events: CollectedEvent[] = [];
   let noContext = 0, distantHazards = 0;
-  for (const topic of near) {
+  for (const topic of near.slice(0, itemCap(WIKI_MAX_ITEMS))) {
     const phrase = place.community_location ? reportingSearches(place).find((search) => mentions(wikiLabel(topic.article), search.topic))?.topic ?? place.town : wikiLabel(topic.article);
     const report = await verifiedTrend(context, phrase, place, wikiArticleUrl(topic.article));
     if (!report) noContext++;
@@ -331,6 +270,15 @@ async function collectWikipedia(task: SourceTask, context: ConnectorContext): Pr
 
 export const trendingConnector: Connector = {
   type: "trending",
+  meta: {
+    name: "Locally reported stories",
+    formats: "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+    manual: false,
+    coverage: { group: "wider", label: "local topics trending online" },
+    storyKinds: ["trending_topic", "social_trend"],
+  },
+  window: { back: { days: 7 } },
+  rank: widerRanking.trending,
   sources(_location, settings) { return settings.widerSources ? [
     { source_id: "trending:wikipedia", name: "Wikipedia-discovered local reporting", type: "trending" },
     { source_id: "trending:bluesky", name: "Community reporting links", type: "trending" },
@@ -341,13 +289,14 @@ export const trendingConnector: Connector = {
   },
 };
 
+const TREND_MAX_ITEMS = 5;
 async function collectBluesky(task: SourceTask, context: ConnectorContext): Promise<CollectedSource> {
-  const place = resolveTrendRegion(context.location, validateStateSources(await loadSourceConfig(context.db, context.settings.root, "state-sources")));
+  const place = resolveTrendRegion(context.location, await stateSourcesFor(context));
   const record = sourceResult(task.source_id, task.name, "ingested", "", {
     feed_kind: place.community_location ? "community_reporting" : "bluesky_local_reporting",
     website: place.community_location ? context.location.community?.geography?.website ?? null : "https://bsky.app/",
   });
-  if (!place.configured) { record.status = "no_feed"; record.detail = `No reviewed aliases for ${place.state_code}`; return { result: record, events: [] }; }
+  if (!place.configured) { record.status = "no_feed"; record.detail = `${place.state_code} is not a supported US state`; return { result: record, events: [] }; }
   const facts: CollectedEvent[] = [];
   const searches = reportingSearches(place);
   const feeds = place.community_location?.community?.newsrooms.map((room) => room.feed) ?? [];
@@ -373,7 +322,7 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
     counts.set(key, count + 1);
     return { fact, count, index };
   }).sort((a, b) => Number(a.fact.tier !== "local") - Number(b.fact.tier !== "local") || a.count - b.count || a.index - b.index)
-    .map(({ fact }) => fact);
+    .slice(0, itemCap(TREND_MAX_ITEMS)).map(({ fact }) => fact);
   record.detail = `${events.length} recent linked news reports ${place.community_location ? `with evidence for ${place.town}` : `about ${place.town} or places within 15 miles`}; popularity counts and national trends are not news`;
   record.search_queries = searches.map((search) => search.query);
   record.publisher_feeds = [...new Set(feeds)].slice(0, 3);

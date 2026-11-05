@@ -46,11 +46,11 @@ export const COLLECTIONS = {
   shortlists: "source_shortlists",
   editions: "editions",
   editionEntries: "edition_entries",
+  publishedStories: "published_stories",
   storyCache: "story_cache",
   withdrawals: "withdrawals",
   wideCache: "wider_source_cache",
-  outputChannels: "output_channels",
   heartbeat: "pipeline_heartbeat",
   modelUsage: "model_usage",
-  discoveredSources: "discovered_sources",
+  readerDataClears: "reader_data_clears",
 } as const;

@@ -1,0 +1,49 @@
+---
+interface Props { storyId?: string | null; headline: string }
+const { storyId, headline } = Astro.props;
+---
+{storyId && <button class="report-story" type="button" data-report-story={storyId} data-headline={headline} aria-live="polite">Report a problem</button>}
+
+<script>
+  document.addEventListener("click", async (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>("button[data-report-story]");
+    const main = button?.closest<HTMLElement>("main[data-edition-id]");
+    if (!button || !main || button.disabled) return;
+    const message = window.prompt(`What is wrong with "${button.dataset.headline}"? An editor will read this.`);
+    if (message === null) return;
+    if (message.trim().length < 5 || message.trim().length > 2000) {
+      button.textContent = "Tell us what is wrong in 5-2000 characters";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Sending...";
+    try {
+      const response = await fetch(`${main.dataset.apiUrl}/api/locations/${encodeURIComponent(main.dataset.locationId!)}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(8000),
+        body: JSON.stringify({
+          edition_id: main.dataset.editionId,
+          story_id: button.dataset.reportStory,
+          headline: button.dataset.headline,
+          message: message.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.detail ?? `HTTP ${response.status}`);
+      }
+      button.textContent = "Thanks, an editor will look";
+    } catch (error) {
+      console.error("Story report could not be sent", error);
+      button.textContent = `Could not send: ${error instanceof Error ? error.message : String(error)}. Try again.`;
+      button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .report-story { align-self: flex-start; border: 0; padding: 0; background: none; color: var(--color-muted); font: inherit; font-size: var(--text-xs); text-align: left; text-decoration: underline; cursor: pointer; }
+  .report-story:disabled { cursor: default; }
+</style>

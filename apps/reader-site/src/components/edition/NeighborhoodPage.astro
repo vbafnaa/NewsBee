@@ -1,0 +1,67 @@
+---
+// The frame of a neighborhood's pages: header, footer and the main column between them.
+// subPage: a section or events page, whose section links point back into the main page.
+// Reading signals: previews count edition views; opening a full article counts a story open.
+import EditionLayout from "./EditionLayout.astro";
+import SiteHeader from "./SiteHeader.astro";
+import SiteFooter from "./SiteFooter.astro";
+import SourceNotes from "./SourceNotes.astro";
+import { neighborhoodLinks, pacificDate, type EditionPage } from "../../lib/edition-view";
+
+interface Props { page: EditionPage; title: string; subPage?: boolean; articleStoryId?: string | null }
+const { page, title, subPage = false, articleStoryId } = Astro.props;
+const links = neighborhoodLinks(page);
+const pageHref = subPage ? links.page : "";
+const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
+---
+<EditionLayout title={title}>
+  <SiteHeader town={page.town} today={page.today} visible={page.visible} homeHref={links.home} pageHref={pageHref} />
+  <main id="main" class="nb-container" data-api-url={links.home} data-location-id={page.location.id}
+    data-edition-id={page.edition.id} data-track-view={String(!subPage)} data-article-story-id={articleStoryId ?? undefined}>
+    {(past || page.edition.corrections.length > 0) && (
+      <div class="notices" role="status">
+        {past && <p>Past edition: these listings may no longer be current.</p>}
+        {page.edition.corrections.map((correction) => (
+          <p>Correction ({new Date(correction.created_at * 1000).toLocaleDateString("en-US")}): {correction.reason}</p>
+        ))}
+      </div>
+    )}
+    <slot />
+    {!articleStoryId && <SourceNotes page={page} />}
+  </main>
+  <SiteFooter place={page.location.name.replace(/,\s*[A-Z]{2}$/, "")} visible={page.visible} homeHref={links.home} pageHref={pageHref}
+    neighborhoods={page.neighborhoods.map((neighborhood) => ({
+      label: neighborhood.name.split(",")[0].trim(),
+      href: neighborhood.id === page.location.id ? (subPage ? links.page : "#top") : `${links.home}?location=${encodeURIComponent(neighborhood.id)}`,
+    }))}
+    more={{
+      heading: "Get involved",
+      links: [
+        { label: "Sign up for weekly editions", href: links.subscribe },
+        { label: "Share your story", href: links.share },
+        { label: "Share a remembrance", href: links.remember },
+        { label: "Find another neighborhood", href: links.home },
+      ],
+    }} />
+</EditionLayout>
+
+<script>
+  const main = document.querySelector<HTMLElement>("main[data-edition-id]");
+  const send = (action: "view" | "open", stories: string | string[]) => {
+    if (!main) return;
+    const { apiUrl, locationId, editionId } = main.dataset;
+    const body = { location_id: locationId, edition_id: editionId, action, ...(Array.isArray(stories) ? { story_ids: stories } : { story_id: stories }) };
+    try {
+      void fetch(`${apiUrl}/api/engagement`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
+    } catch { /* Reading signals are best effort. */ }
+  };
+  if (main?.dataset.trackView === "true") {
+    const shown = [...new Set([...main.querySelectorAll<HTMLElement>("[data-story-id]")].map((link) => link.dataset.storyId!))];
+    send("view", shown);
+  }
+  if (main?.dataset.articleStoryId) send("open", main.dataset.articleStoryId);
+</script>
+
+<style>
+  .notices { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); background: var(--color-cream); border-radius: var(--radius-lg); font-size: var(--text-sm); }
+</style>

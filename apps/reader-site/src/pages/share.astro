@@ -1,0 +1,152 @@
+---
+import "../../../../shared/design-tokens.css";
+import { approvedReaderStory, directoryTown, type Location } from "../lib/reader-data";
+import { STORY_MAX, STORY_MIN, HEADLINE_MAX, STORY_IMAGE_MAX_BYTES } from "../../../../shared/reader-stories";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const locationId = Astro.url.searchParams.get("location");
+const storyId = Astro.url.searchParams.get("story");
+let town: Location | null = null;
+let shared: Awaited<ReturnType<typeof approvedReaderStory>> = null;
+let error = "";
+if (!locationId) { Astro.response.status = 400; error = "Choose a community first."; }
+else {
+  try {
+    town = await directoryTown(locationId);
+    if (!town) { Astro.response.status = 404; error = "This community could not be found."; }
+    else if (storyId) {
+      shared = await approvedReaderStory(town.id, storyId);
+      if (!shared) { Astro.response.status = 404; error = "This story is not available."; }
+    }
+  } catch (cause) {
+    console.error("Share page unavailable", cause);
+    Astro.response.status = 503; error = "This page is temporarily unavailable. Please try again later.";
+  }
+}
+const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
+const today = new Date().toISOString().slice(0, 10);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{shared ? `${shared.headline} | Newsbee` : town ? `Share your story with ${town.name} | Newsbee` : "Share your story | Newsbee"}</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href={base}>Newsbee</a>
+        <p>Your community, this week</p>
+      </header>
+      {error && <p role="alert">{error}</p>}
+      {shared && (
+        <article aria-labelledby="story-title">
+          <h1 id="story-title">{shared.headline}</h1>
+          <p class="notice-text">{shared.story}</p>
+          {shared.image && <figure>
+            <img src={`${base}/api/locations/${encodeURIComponent(town!.id)}/stories/${encodeURIComponent(storyId!)}/image`} alt={shared.image.caption} />
+            <figcaption>{shared.image.caption} · Photo: {shared.image.credit}</figcaption>
+          </figure>}
+          {shared.link && <p><a href={shared.link} rel="noopener">More details</a></p>}
+          <p class="note">Shared by {shared.credit}{shared.event_date ? ` · ${shared.event_date}` : ""}.</p>
+        </article>
+      )}
+      {town && !storyId && (
+        <section aria-labelledby="share-title">
+          <h1 id="share-title">Share your story with {town.name}</h1>
+          <p>Know something your neighbours should hear about? A new shop, a lost-and-found win, a block party, a local hero, a problem that needs fixing? Tell us. An editor reads every story and may email you to check details before it appears in the weekly edition.</p>
+          <form id="share-form" enctype="multipart/form-data" data-api-url={base} data-location-id={town.id} data-image-max={STORY_IMAGE_MAX_BYTES}>
+            <label>Headline<input name="headline" minlength="8" maxlength={HEADLINE_MAX} required placeholder="Corner bakery wins state pie contest" /></label>
+            <label>What is it about?
+              <select name="topic" required>
+                <option value="news">Neighbourhood news</option><option value="event">An upcoming event</option><option value="business">A local business</option>
+                <option value="schools">Schools and kids</option><option value="people">People and good deeds</option><option value="other">Something else</option>
+              </select>
+            </label>
+            <label>Your story: who, what, where and why it matters<textarea name="story" minlength={STORY_MIN} maxlength={STORY_MAX} rows="9" required></textarea></label>
+            <label>Date it happens (optional, for upcoming events)<input name="event_date" type="date" min={today} /></label>
+            <label>A link with more details (optional)<input name="link" type="url" placeholder="https://" maxlength="2000" /></label>
+            <fieldset class="credit">
+              <legend>Photo (optional)</legend>
+              <p class="note">JPEG, PNG or WebP, up to 2 MB. Photos are reviewed with your story before publication. Location and camera metadata are removed.</p>
+              <label>Choose a photo<input name="image" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+              <label>Describe the photo<input name="image_caption" maxlength="240" /></label>
+              <label>Public photo credit<input name="image_credit" maxlength="120" placeholder="Name to publish with the photo" /></label>
+              <label class="consent"><input name="image_consent" type="checkbox" /><span>I own this photo or have permission for Newsbee to publish it, including permission from identifiable people pictured. The caption and photo credit may be published.</span></label>
+            </fieldset>
+            <label>Your name<input name="submitter_name" maxlength="120" autocomplete="name" required /></label>
+            <label>Your email (for the editor only, never published)<input name="submitter_email" type="email" maxlength="254" autocomplete="email" required /></label>
+            <fieldset class="credit"><legend>How should we credit you?</legend>
+              <label class="consent"><input type="radio" name="credit" value="name" checked /><span>By my first name</span></label>
+              <label class="consent"><input type="radio" name="credit" value="anonymous" /><span>As &ldquo;a neighbour&rdquo;</span></label>
+            </fieldset>
+            <label class="consent"><input name="consent" type="checkbox" required /><span>This is accurate to the best of my knowledge, it doesn&rsquo;t share anyone&rsquo;s private information without their permission, and Newsbee may edit and publish it after an editor reviews it.</span></label>
+            <button type="submit">Send to the editor</button>
+          </form>
+          <p id="share-status" role="status"></p>
+        </section>
+      )}
+      <p><a href={backUrl}>{town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+    </main>
+    <script>
+      const form = document.querySelector<HTMLFormElement>("#share-form");
+      const status = document.querySelector<HTMLParagraphElement>("#share-status");
+      const photo = form?.querySelector<HTMLInputElement>('[name="image"]');
+      photo?.addEventListener("change", () => {
+        const selected = Boolean(photo.files?.length);
+        for (const name of ["image_caption", "image_credit", "image_consent"]) {
+          const field = form?.querySelector<HTMLInputElement>(`[name="${name}"]`);
+          if (field) field.required = selected;
+        }
+        photo.setCustomValidity(photo.files?.[0] && photo.files[0].size > Number(form?.dataset.imageMax) ? "Choose a photo no larger than 2 MB." : "");
+      });
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity() || !status) return;
+        const data = new FormData(form);
+        const button = form.querySelector("button")!;
+        button.disabled = true; status.textContent = "Sending your story...";
+        try {
+          const response = await fetch(`${form.dataset.apiUrl}/api/locations/${encodeURIComponent(form.dataset.locationId ?? "")}/stories`, {
+            method: "POST", signal: AbortSignal.timeout(30000), body: data,
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.detail ?? `HTTP ${response.status}`);
+          form.reset();
+          photo?.dispatchEvent(new Event("change"));
+          status.textContent = "Thanks! An editor will read your story and may email you before it appears in an upcoming edition.";
+        } catch (error) {
+          status.textContent = `Your story could not be sent: ${error instanceof Error ? error.message : String(error)}`;
+        } finally { button.disabled = false; }
+      });
+    </script>
+  </body>
+</html>
+<style is:global>
+  :root { --paper: var(--color-paper); --ink: var(--color-ink); --muted: var(--color-muted); --rule: var(--color-line); --accent: var(--color-bee); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: var(--text-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); }
+  header { border-bottom: 1px solid var(--rule); text-align: center; }
+  header p, .note { color: var(--muted); }
+  .brand { font: var(--weight-heading) 3rem/1 var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
+  h1 { font: var(--weight-heading) var(--text-h3)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); text-wrap: balance; }
+  .notice-text { white-space: pre-wrap; }
+  figure { margin: 1rem 0; }
+  figure img { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: 0.85rem; }
+  form { display: grid; gap: 0.8rem; margin: 1.5rem 0; }
+  label { display: grid; gap: 0.25rem; font-size: 0.95rem; }
+  input, textarea, button { padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); min-width: 0; width: 100%; }
+  .consent { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; }
+  .consent input { width: auto; flex-shrink: 0; margin-top: 0.35rem; }
+  select { padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); }
+  fieldset.credit { border: 1px solid var(--color-line); border-radius: var(--radius-sm); display: grid; gap: 0.4rem; padding: 0.6rem; }
+  button { background: var(--accent); border-color: var(--color-bee-deep); color: var(--ink); font-weight: 600; cursor: pointer; transition: background-color var(--transition); }
+  button:hover:not(:disabled) { background: var(--color-bee-deep); }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  a { color: var(--ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; } }
+</style>

@@ -31,6 +31,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# Muse receiver's persistent local development data
+/apps/muse-receiver/data/
+
 # Frontend dependencies and generated output
 node_modules/
 dist/

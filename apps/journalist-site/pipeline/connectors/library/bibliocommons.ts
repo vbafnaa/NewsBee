@@ -1,9 +1,9 @@
 import { cancelledTitle, checkCount, FeedFormatError, plainText, scheduleText, type EventFacts, type LocalMoment } from "../common";
+import { itemCap } from "../../core/run-options";
 
 export const GATEWAY = "https://gateway.bibliocommons.com/v2/libraries/{slug}";
 export const PAGE_LIMIT = 100;
-/** Pagination guard only: 50 pages of 100 events per run is far beyond a week of branch events. */
-export const MAX_PAGES = 50;
+export const MAX_PAGES = 5;
 export const REQUEST_INTERVAL_SECONDS = 1;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SLUG_PATTERNS = [
@@ -83,7 +83,7 @@ export async function fetchEvents(
   const detail = `bibliocommons feed (${Object.keys(venues).length} of ${Object.keys(every).length} locations in town)`;
   if (!Object.keys(venues).length) return { events: [] as EventFacts[], skipped: {} as Record<string, number>, response: new Uint8Array(), detail };
   const events: EventFacts[] = [], skipped: Record<string, number> = {}, raw: Uint8Array[] = [];
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
+  for (let page = 1; page <= itemCap(MAX_PAGES); page += 1) {
     await sleep(REQUEST_INTERVAL_SECONDS * 1000);
     const url = `${base}/events/search?startDate=${window[0]}&endDate=${window[1]}&locations=${Object.keys(venues).sort().join(",")}&limit=${PAGE_LIMIT}&page=${page}`;
     const content = await get(url); raw.push(content);

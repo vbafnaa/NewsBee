@@ -1,0 +1,25 @@
+---
+// Invitation to send the editors a story (pages/share.astro).
+interface Props { href: string }
+const { href } = Astro.props;
+---
+<section class="share" aria-labelledby="share-heading">
+  <h2 id="share-heading">Got a story for your neighbours?</h2>
+  <p>A new shop, a block party, a local hero, a pothole that won&rsquo;t quit. Tell us and an editor may run it in next week&rsquo;s edition.</p>
+  <a class="nb-button nb-button-primary" href={href}>Share your story</a>
+</section>
+
+<style>
+  .share {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    padding-block: var(--space-10);
+    border-block: 1px solid var(--color-line);
+    text-align: center;
+  }
+  h2 { font-size: var(--text-h2); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); }
+  p { max-width: 36rem; color: var(--color-ink-soft); }
+  .nb-button { margin-top: var(--space-2); }
+</style>

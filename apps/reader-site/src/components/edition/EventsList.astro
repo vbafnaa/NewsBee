@@ -1,0 +1,136 @@
+---
+// A neighborhood's events for the edition's week (?location=<id>&section=events): a day picker,
+// then every event that day. day picks the day (the main page's "+N more" links); otherwise
+// today, or the first day with events. The picker works without JavaScript (each day is a
+// link); with it, days switch in place.
+import NeighborhoodPage from "./NeighborhoodPage.astro";
+import { neighborhoodLinks, pacificDate, type EditionPage } from "../../lib/edition-view";
+
+interface Props { page: EditionPage; requested: string | null }
+const { page, requested } = Astro.props;
+const links = neighborhoodLinks(page);
+
+const days = page.eventDays;
+const today = pacificDate(new Date());
+const selected = days.find((day) => day.date === requested)?.date
+  ?? days.find((day) => day.date === today)?.date
+  ?? days.find((day) => day.events.length > 0)?.date
+  ?? days[0]?.date;
+const longDay = (date: string) => new Date(`${date}T12:00:00Z`)
+  .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+const MAX_DOTS = 4;
+---
+<NeighborhoodPage page={page} title={`Events in ${page.town} | Newsbee`} subPage>
+  <div class="page">
+    <a class="back nb-link" href={`${links.page}#events`}>← {page.town}</a>
+    <h1>Events in {page.town}</h1>
+
+    <nav class="picker" aria-label="Days">
+      {days.map((day) => (
+        <a class:list={["day", { today: day.isToday }]} href={links.events(day.date)} data-day={day.date}
+          aria-current={day.date === selected ? "date" : undefined}
+          aria-label={`${longDay(day.date)}, ${day.events.length} ${day.events.length === 1 ? "event" : "events"}`}>
+          <span class="weekday">{day.weekday}</span>
+          <span class="num">{day.dayOfMonth}</span>
+          <span class="dots" aria-hidden="true">{"•".repeat(Math.min(day.events.length, MAX_DOTS))}</span>
+        </a>
+      ))}
+    </nav>
+
+    {days.map((day) => (
+      <section class="listing" data-day={day.date} hidden={day.date !== selected} aria-labelledby={`day-${day.date}`}>
+        <div class="listing-head">
+          <h2 id={`day-${day.date}`}>{longDay(day.date)}</h2>
+          <span class="rule" aria-hidden="true"></span>
+        </div>
+        {day.events.length === 0 && <p class="empty">Nothing listed yet.</p>}
+        <ol class="events">
+          {day.events.map((event) => (
+            <li class="event">
+              <span class="meta">{[event.time, event.where].filter(Boolean).join(" · ")}</span>
+              {event.href
+                ? <a class="title nb-card-link" href={event.href} data-story-id={event.storyId ?? undefined}><span class="nb-title">{event.title}</span></a>
+                : <span class="title">{event.title}</span>}
+              {event.dek && <p class="dek">{event.dek}</p>}
+              {event.category && <span class="nb-pill">{event.category}</span>}
+            </li>
+          ))}
+        </ol>
+      </section>
+    ))}
+  </div>
+</NeighborhoodPage>
+
+<script>
+  // Switch days in place and keep the address shareable.
+  const picker = document.querySelector<HTMLElement>(".picker");
+  picker?.addEventListener("click", (event) => {
+    const link = (event.target as Element).closest<HTMLAnchorElement>("a[data-day]");
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    event.preventDefault();
+    const day = link.dataset.day!;
+    for (const other of picker.querySelectorAll("a[data-day]")) other.removeAttribute("aria-current");
+    link.setAttribute("aria-current", "date");
+    for (const listing of document.querySelectorAll<HTMLElement>(".listing")) listing.hidden = listing.dataset.day !== day;
+    history.replaceState(null, "", link.href);
+  });
+</script>
+
+<style>
+  .page { display: flex; flex-direction: column; gap: var(--space-6); }
+  .back { align-self: flex-start; font-size: var(--text-sm); font-weight: 600; }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+
+  /* Seven day tiles: today filled, the chosen day outlined */
+  .picker { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-3); }
+  .day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-4) var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xl);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    text-decoration: none;
+    transition: border-color var(--transition), background-color var(--transition);
+  }
+  .day:hover { border-color: var(--color-line-strong); }
+  .day.today { background: var(--color-bee); border-color: var(--color-bee); }
+  .day[aria-current] { border: 2px solid var(--color-ink); padding: calc(var(--space-4) - 1px) calc(var(--space-2) - 1px) calc(var(--space-3) - 1px); }
+  .weekday { font: 600 var(--text-xs)/1 var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+  .num { font: var(--weight-heading) var(--text-3xl)/1 var(--font-display); }
+  .dots { min-height: 1em; font-size: var(--text-xs); line-height: 1; letter-spacing: 0.15em; color: var(--color-muted); }
+
+  .listing { display: flex; flex-direction: column; gap: var(--space-5); padding-top: var(--space-6); }
+  .listing[hidden] { display: none; }
+  .listing-head { display: flex; align-items: center; gap: var(--space-4); }
+  h2 { font-size: var(--text-h2); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); white-space: nowrap; }
+  .rule { flex: 1; height: 1px; background: var(--color-line); }
+  .empty { color: var(--color-muted); }
+
+  /* One card per event, paper on the white page */
+  .events { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  .event {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-6) var(--space-8);
+    background: var(--color-paper);
+    border-radius: var(--radius-xl);
+  }
+  .meta { font: var(--text-sm)/1.2 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-ink-soft); }
+  .title { font: var(--weight-heading) var(--text-2xl)/var(--leading-h3) var(--font-display); color: var(--color-ink); }
+  .dek { color: var(--color-ink-soft); max-width: 60ch; }
+
+  @media (max-width: 48rem) {
+    .picker { gap: var(--space-1); }
+    .day { padding-inline: 0; }
+    .day[aria-current] { padding-inline: 0; }
+    .num { font-size: var(--text-xl); }
+    .event { padding: var(--space-5); }
+    h2 { white-space: normal; }
+  }
+</style>

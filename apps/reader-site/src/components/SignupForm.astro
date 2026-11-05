@@ -11,13 +11,13 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   data-location-name={locationName} data-launch-notification={String(launchNotification)}>
   <label for="signup-email">Your email</label>
   <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" aria-describedby="signup-note" required />
+  <button type="submit">Sign up for weekly editions</button>
   <label class="signup-consent">
     <input id="signup-consent" name="consent" type="checkbox" required />
     <span>I agree to receive weekly Newsbee editions by email for <strong id="signup-location">{locationName}</strong>{launchNotification
       ? ", including a launch notification when coverage becomes available."
       : "."}</span>
   </label>
-  <button type="submit">Sign up for weekly editions</button>
   <p id="signup-note" class="signup-note">We save your email, selected community, and consent.
     Email delivery is not active yet; this signup is for future editions.</p>
 </form>
@@ -65,9 +65,10 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
 </script>
 <style>
   form { display: grid; gap: 0.65rem; max-width: 28rem; margin: 1.5rem auto; }
-  #signup-email, button { padding: 0.7rem; font: inherit; border: 1px solid var(--rule); }
-  #signup-email { min-width: 0; width: 100%; background: #fffaf0; color: var(--ink); }
-  button { background: var(--accent); color: var(--paper); cursor: pointer; }
+  #signup-email, button { padding: 0.7rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); }
+  #signup-email { min-width: 0; width: 100%; background: var(--color-surface); color: var(--ink); }
+  button { background: var(--accent); border-color: var(--color-bee-deep); color: var(--ink); font-weight: 600; cursor: pointer; transition: background-color var(--transition); }
+  button:hover:not(:disabled) { background: var(--color-bee-deep); }
   button:disabled { opacity: 0.6; cursor: wait; }
   .signup-consent { display: flex; align-items: flex-start; gap: 0.6rem; text-align: left; font-size: 0.85rem; }
   #signup-consent { flex-shrink: 0; margin-top: 0.35rem; }

@@ -42,3 +42,48 @@ export function ingestWindow(today: string): [string, string] {
   const first = addDays(today, 1);
   return [first, addDays(first, WINDOW_DAYS - 1)];
 }
+
+/**
+ * First day of the edition period a run on `today` belongs to. Runs within one edition
+ * window of each other (a rerun or restart in the same week) share a period: they may print
+ * the same stories, and they look back to the edition before that period.
+ */
+export function editionPeriodStart(today: string) {
+  return addDays(today, -(WINDOW_DAYS - 1));
+}
+
+/** Concrete date ranges for a connector's lookup window, both inclusive YYYY-MM-DD. */
+export type LookupRanges = { back: [string, string] | null; ahead: [string, string] | null };
+
+type Window = {
+  back?: { days: number } | { since: "last_edition"; maxDays: number };
+  ahead?: { days: number };
+};
+
+/**
+ * Turn a connector's lookup window into date ranges. Looking back ends today; "since last
+ * edition" starts on the day the location's last published edition was based on (the
+ * published-story ledger drops anything that edition already printed), capped at maxDays
+ * so a skipped week is caught up. A location's first edition looks back one edition window
+ * (WINDOW_DAYS). Looking ahead starts tomorrow.
+ */
+export function lookupRanges(window: Window, today: string, lastEditionDay: string | null = null): LookupRanges {
+  let back: [string, string] | null = null;
+  if (window.back && "days" in window.back) back = [addDays(today, -window.back.days), today];
+  else if (window.back) {
+    const earliest = addDays(today, -window.back.maxDays);
+    const firstEdition = addDays(today, -Math.min(WINDOW_DAYS, window.back.maxDays));
+    const since = !lastEditionDay ? firstEdition : lastEditionDay > earliest ? lastEditionDay : earliest;
+    back = [since < today ? since : today, today];
+  }
+  const ahead: [string, string] | null = window.ahead ? [addDays(today, 1), addDays(today, window.ahead.days)] : null;
+  return { back, ahead };
+}
+
+/**
+ * A connector's lookup ranges in this context: the orchestrator's, or (outside a run) its
+ * window measured from today as for a location's first edition.
+ */
+export function rangesFor(context: { today: string; range?: LookupRanges }, window: Window): LookupRanges {
+  return context.range ?? lookupRanges(window, context.today, null);
+}
