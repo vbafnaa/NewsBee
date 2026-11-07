@@ -1,0 +1,710 @@
+{
+  "exported_at": "2026-11-07T00:52:35.652Z",
+  "database": "isolated local wedgwood_comparison",
+  "commit": "eacb76e",
+  "summary": {
+    "locations": 1,
+    "pipeline_runs": 5,
+    "runs": [
+      {
+        "id": "7ed77593-d9c8-4be7-b35e-5e0bb75e1e48",
+        "kind": "edition",
+        "status": "awaiting_authoring",
+        "sources": 57,
+        "error": null
+      },
+      {
+        "id": "9cf376a7-303c-45ae-a9b8-5c1c86892b0b",
+        "kind": "edition",
+        "status": "cancelled",
+        "sources": 29,
+        "error": "Cancelled by local-admin@localhost"
+      },
+      {
+        "id": "f3541a5c-5b52-483b-8f58-fe23f0f45f5b",
+        "kind": "map",
+        "status": "mapped",
+        "sources": 0,
+        "error": null
+      },
+      {
+        "id": "f0f092e9-e03b-4e1e-9c28-262ca5c06043",
+        "kind": "edition",
+        "status": "cancelled",
+        "sources": 22,
+        "error": "Cancelled by local-admin@localhost"
+      },
+      {
+        "id": "de205296-bceb-485f-9534-860024d17b57",
+        "kind": "map",
+        "status": "mapped",
+        "sources": 0,
+        "error": null
+      }
+    ],
+    "pipeline_jobs": 131,
+    "jobs": [
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "plan_sources",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "plan_sources",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "finish_map",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "plan_sources",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "finish_map",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      }
+    ],
+    "source_map": 63,
+    "discovery_state": 9,
+    "source_results": 108,
+    "source_shortlists": 0,
+    "collected_items": 3653,
+    "run_decisions": 108
+  }
+}

@@ -1,0 +1,102 @@
+# Community and neighbours. See README.md for how to edit a rule.
+category: community
+label: Community and neighbours
+target: true
+topic: community
+
+goal:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: community.goal.also_cover_transport, set: also_cover, order: 1, text: transport and street projects }
+      - { id: community.goal.also_cover_parks, set: also_cover, order: 4, text: "parks, libraries and community centres" }
+      - { id: community.goal.also_cover_groups, set: also_cover, order: 5, text: neighbourhood groups and PTAs }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: community.prefer.representatives, text: "The council member for the district, the community council, and the PTA." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: community.prefer.osm_community_centre, set: osm_kinds, order: 5, text: Community centres with a website., osm: { kind: community_centre, tag: amenity, priority: 1 } }
+      - { id: community.prefer.osm_social_centre, set: osm_kinds, order: 7, text: Social centres with a website., osm: { kind: social_centre, tag: amenity, priority: 2 } }
+      - { id: community.prefer.osm_social_facility, set: osm_kinds, order: 8, text: Social facilities with a website., osm: { kind: social_facility, tag: amenity, priority: 6 } }
+      - { id: community.prefer.osm_place_of_worship, set: osm_kinds, order: 14, text: Places of worship with a website., osm: { kind: place_of_worship, tag: amenity, priority: 7 } }
+      - { id: community.prefer.osm_association, set: osm_kinds, order: 17, text: Associations with a website., osm: { kind: association, tag: office, priority: 6 } }
+      - { id: community.prefer.osm_ngo, set: osm_kinds, order: 18, text: Nonprofits with a website., osm: { kind: ngo, tag: office, priority: 6 } }
+      - { id: community.prefer.osm_charity, set: osm_kinds, order: 19, text: Charities with a website., osm: { kind: charity, tag: office, priority: 6 } }
+      - { id: community.prefer.osm_foundation, set: osm_kinds, order: 20, text: Foundations with a website., osm: { kind: foundation, tag: office, priority: 6 } }
+      - id: community.prefer.address_neighbourhood
+        set: usual_addresses
+        order: 3
+        text: A neighbourhood group at its usual address. The page must say what it is and name the place.
+        reason: A guess proves nothing, so the page must say what it is and name the place, then pass every check a search result would.
+        address: { label: neighbourhood }
+        regex: 'community (?:council|club|association)|neighbou?rhood (?:association|council)|neighbou?rs'
+        flags: i
+        values: ['{place}communitycouncil.org', '{place}council.org', '{place}neighbors.org', '{place}neighborhood.org', '{place}community.org', '{place}communityclub.org']
+
+reject: []
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: community.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as local news., value: local_news }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: community.general.community_groups, stage: general, order: 3, pattern: 'site:.org "{place}" ("community council" OR "neighborhood association") meeting' }
+      - { id: community.stage1.community_groups, stage: stage1, source_type: Neighbourhood groups, pattern: 'site:.org "{place}" ("community council" OR "neighborhood association") meeting' }
+      - { id: community.stage1.volunteering, stage: stage1, source_type: Volunteering, pattern: '"{place}" volunteer (opportunities OR "volunteer center" OR "food bank")' }
+      - { id: community.stage1.nonprofits, stage: stage1, source_type: Nonprofits, pattern: '"{place}" nonprofit (community OR foundation)' }
+      - { id: community.stage1.service_clubs, stage: stage1, source_type: Service clubs, pattern: '"{city}" (rotary OR kiwanis OR "lions club") meeting' }
+      - { id: community.stage1.city_volunteering, stage: stage1, source_type: Volunteering, pattern: 'site:{city_domain} (volunteer OR "neighborhood" OR "community groups")' }
+      - { id: community.general.street_projects, stage: general, order: 6, source_type: Street projects, pattern: 'site:{city_domain} (transportation OR "capital projects" OR "current projects") "{place}"' }
+      - { id: community.general.transit_alerts, stage: general, order: 7, source_type: Transit, pattern: '"{city}" (transit OR metro) "service advisories"' }
+      - { id: community.general.parks, stage: general, order: 8, source_type: Parks, pattern: 'site:{city_domain} parks "{place}"' }
+      - { id: community.stage2.group_sweep, stage: stage2, source_type: Neighbourhood groups, pattern: '"{place}" ("community council" OR "neighborhood association" OR volunteer) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: community.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: neighborhood association volunteer }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: community.page.site_links
+        set: site_links
+        order: 9
+        text: "Links to volunteering, neighbourhoods, projects, parks and libraries."
+        regex: '\b(volunteers?|volunteering|get involved|neighbou?rhoods?|community (?:groups|organi[sz]ations|councils?|centers?|services|resources)|non-?profits?|projects?|capital improvements?|transportation|service advisor(?:y|ies)|parks?|librar(?:y|ies))\b'
+        flags: i
+      - id: community.page.group_links
+        set: group_links
+        order: 2
+        text: Community groups a public body links out to.
+        regex: '\b(united way|volunteer|community (?:council|association|club|foundation)|neighbou?rhood (?:association|council)|food bank|rotary|kiwanis|lions club|historical society)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: community.page.item_keywords
+        set: item_keywords
+        order: 10
+        text: Words that put a story in this section.
+        regex: 'neighbou?r|community council|association|volunteer|good deed|local hero|club\b'
+        flags: i
+      - { id: community.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [reader_story] }
+      - { id: community.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [reader_story] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: community.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+
+examples: []

@@ -42,6 +42,7 @@ export function defaultRunOptions(env: NodeJS.ProcessEnv = process.env): RunOpti
   const budgets = Object.fromEntries(list(env.NEWSBEE_PAID_BUDGETS).map((item) => { const [id, calls] = item.split(":"); return [id, Number(calls)]; }));
   const allowed = within<PaidService>(env.NEWSBEE_PAID_ALLOW, PAID_SERVICE_IDS, "NEWSBEE_PAID_ALLOW");
   return {
+    purpose: "test",
     mode: choice(env.NEWSBEE_RUN_MODE, ["autopilot", "manual"] as const, "autopilot", "NEWSBEE_RUN_MODE"),
     flow: choice(env.NEWSBEE_PIPELINE_FLOW, ["current", "agentic"] as const, "current", "NEWSBEE_PIPELINE_FLOW"),
     map_flow: choice(env.NEWSBEE_MAP_FLOW ?? env.NEWSBEE_PIPELINE_FLOW, ["current", "agentic"] as const, "current", "NEWSBEE_MAP_FLOW"),
@@ -78,6 +79,9 @@ export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = proce
       paid[id as PaidService] = budget;
     }
     options = {
+      purpose: choice(choices.purpose, ["test", "training", "final"] as const, "test", "Run purpose"),
+      rebuild: choices.rebuild === true,
+      ...(typeof choices.admin_approval_id === "string" ? { admin_approval_id: choices.admin_approval_id } : {}),
       mode: choice(choices.mode, ["autopilot", "manual"] as const, base.mode, "Run mode"),
       flow: choice(choices.flow, ["current", "agentic"] as const, base.flow, "Flow"),
       map_flow: choice(choices.map_flow, ["current", "agentic"] as const, base.map_flow ?? base.flow, "Source map method"),
@@ -107,6 +111,8 @@ export const LEGACY_OPTIONS: RunOptions = {
 };
 
 export type RunContext = {
+  sponsorId?: string;
+  credentialVersion?: number;
   db: Db;
   runId: string;
   locationId: string;

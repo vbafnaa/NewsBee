@@ -21,7 +21,7 @@ import pLimit from "p-limit";
 import { addDays, httpsLink, MAX_FEED_BYTES, plainText } from "../common";
 import { DiscoveryBlockedError } from "../fetcher";
 import { advertisedFeeds } from "../feeds";
-import { parseIcal, parseJsonLd } from "../library/parsers";
+import { parseIcal, parseJsonLd, parseTrumba } from "../library/parsers";
 import { parseNewsFeed, publishedText, sha256, sponsoredItem } from "../wider/adapters";
 import { runCollector, transient } from "../parents/shared";
 import type { CollectedEvent, Connector, ConnectorContext, DroppedItem, SourceResult, SourceTask } from "../types";
@@ -33,7 +33,7 @@ import { recordDecision } from "../../trace/decisions";
 import { WEB_WINDOW, effectiveWindow } from "../../sourcemap/windows";
 import { saveText, type Details } from "../../editions/details";
 import { jinaRead } from "./jina";
-import { articleMeta, calendarLinks, FEED_GUESSES, mainText, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
+import { articleMeta, calendarLinks, trumbaFeeds, FEED_GUESSES, mainText, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
 
 /** Agent extractions per site per run: each is a model call, and a site's undated pages can be many. */
 const MAX_EXTRACTIONS = 2;
@@ -139,13 +139,21 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     }
     return true;
   };
-  const readCalendar = (body: Uint8Array, url: string) => {
+  const readCalendar = (body: Uint8Array, url: string, trumba = false) => {
     let events;
-    try { events = (looksLikeIcal(body) ? parseIcal(body) : parseJsonLd(body)).events; } catch { return false; }
+    try {
+      const parsed = trumba ? parseTrumba(body) : looksLikeIcal(body) ? parseIcal(body, { allowMissingVenue: true }) : parseJsonLd(body);
+      events = parsed.events;
+      for (const [reason, count] of Object.entries(parsed.skipped)) record.skipped_unusable[reason] = (record.skipped_unusable[reason] ?? 0) + count;
+    } catch (error) { record.pages_checked.push(`${url}: calendar parse failed: ${String(error)}`); return false; }
     for (const event of events) {
       const id = sha256(`${url}:${event.source_event_id}`).slice(0, 16);
+      const branch = new URL(site).pathname.match(/^\/hours-and-locations\/[^/]+-branch/)?.[0];
+      if (trumba && branch && (!event.venue_url || new URL(event.venue_url).hostname !== new URL(site).hostname || new URL(event.venue_url).pathname.replace(/\/$/, "") !== branch)) {
+        drop(id, event.title, event.source_url, "different_or_unknown_branch", event.event_date); continue;
+      }
       if (event.event_date < from || event.event_date > until) { drop(id, event.title, event.source_url, "outside_window", event.event_date); continue; }
-      add({ ...event, source_event_id: id, venue: event.venue || task.name, kind: "event", source_name: task.name,
+      add({ ...event, source_event_id: id, venue: event.venue, kind: "event", source_name: task.name,
         ...(local ? { tier: "local", locality: { method: "local_site", matches: [site] } } : { needs_locality: true }),
         section_hint: params.section ?? null, details: { places: [event.venue].filter(Boolean), when: event.schedule_text, links: [event.source_url] } } as CollectedEvent);
     }
@@ -158,7 +166,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     const html = decode(page.body);
     const action = rightsAction(pageRights(page.headers, html));
     if (action === "skip") { drop(sha256(url).slice(0, 16), url, url, "page opts out of reuse"); return; }
-    if (/application\/ld\+json/i.test(html) && /"(?:Event|[A-Za-z]+Event)"/.test(html) && readCalendar(page.body, page.url)) return;
+    if (/application\/ld\+json/i.test(html) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(html) && readCalendar(page.body, page.url)) return;
     let article: PageArticle | null = articleMeta(html);
     let body = mainText(html);
     const undated = () => !article || !article.date;
@@ -210,6 +218,19 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     record.detail = "Site opts out of reuse (noindex, noai or a mining reservation)";
     return [];
   }
+  let calendarRead = false;
+  // Explicit calendars precede guesses so a small request budget still reaches dated events.
+  for (const url of [...trumbaFeeds(homeHtml), ...calendarLinks(homeHtml, home.url)].slice(0, 2)) {
+    const calendar = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
+    if (!calendar || rightsAction(pageRights(calendar.headers, "")) === "skip") continue;
+    const trumba = new URL(url).hostname === "www.trumba.com";
+    if (readCalendar(calendar.body, calendar.url, trumba)) {
+      calendarRead = true;
+      record.calendar_feeds = [...((record.calendar_feeds as string[] | undefined) ?? []), calendar.url];
+      record.feed_url = calendar.url;
+      record.feed_kind = trumba ? "trumba_rss" : "ical";
+    }
+  }
   const feeds = [params.feed_url, ...advertisedFeeds(homeHtml, home.url)].map((url) => httpsLink(url)).filter((url): url is string => Boolean(url));
   let feedRead = false;
   for (const url of [...new Set(feeds)].slice(0, 2)) {
@@ -222,11 +243,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
       if (guess && readFeed(guess.body)) { feedRead = true; record.feed_url = guess.url; break; }
     }
   } else if (looksLikeFeed(home.body)) feedRead = readFeed(home.body);
-  for (const url of calendarLinks(homeHtml, home.url).slice(0, 1)) {
-    const calendar = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
-    if (calendar) readCalendar(calendar.body, calendar.url);
-  }
-  if (/application\/ld\+json/i.test(homeHtml)) readCalendar(home.body, home.url);
+  if (/application\/ld\+json/i.test(homeHtml) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(homeHtml)) readCalendar(home.body, home.url);
 
   // 2. Recent pages from the sitemap, then story-like links from the homepage.
   const pages: Array<[string, string]> = [];
@@ -267,7 +284,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   await Promise.all(reading);
 
   if (record.out_of_time) record.status = "partial";
-  record.detail = `${budget.used} requests: ${feedRead ? "feed" : "no feed"}, ${read} pages; ${items.length} items kept, ${dropped.length} left out${siteRights === "link-only" ? "; headline and link only (site's rule)" : ""}${record.out_of_time ? "; stopped at its time budget" : ""}`;
+  record.detail = `${budget.used} requests: ${calendarRead ? "calendar" : feedRead ? "feed" : "no feed"}, ${read} pages; ${items.length} items kept, ${dropped.length} left out${siteRights === "link-only" ? "; headline and link only (site's rule)" : ""}${record.out_of_time ? "; stopped at its time budget" : ""}`;
   return items;
 }
 

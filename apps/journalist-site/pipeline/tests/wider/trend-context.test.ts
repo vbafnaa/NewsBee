@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertPublicReportingUrl, parseTrendReport, reportingLinks } from "../../connectors/wider/trend-context";
+import { assertPublicReportingUrl, parseTrendReport, reportingLinks, discoverReports, communityFeeds } from "../../connectors/wider/trend-context";
 import { resolveTrendRegion } from "../../connectors/wider/regions";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async (hostname: string) => [{ address: hostname === "internal.example" ? "127.0.0.1" : "93.184.216.34" }]) }));
@@ -49,4 +49,35 @@ describe("sourced trend context", () => {
     }
     await expect(assertPublicReportingUrl("https://news.example/report")).resolves.toBeUndefined();
   });
+});
+
+
+it("retains failed linked URLs and recovers through an advertised community feed", async () => {
+  const bytes = (s: string) => new TextEncoder().encode(s);
+  const transport = vi.fn(async ({ url }: { url: string }) => {
+    if (url.endsWith("/robots.txt")) return { url, status: 200, headers: {}, body: bytes("User-agent: *\nAllow: /") };
+    if (url.includes("broken.example")) throw new Error("linked article timed out");
+    const body = url.endsWith("/feed") ? `<rss><channel><item><guid>report</guid><title>Auburn bridge repairs close two lanes</title><link>https://news.example/story</link><pubDate>Sun, 18 Oct 2026 12:00:00 GMT</pubDate></item></channel></rss>` : article;
+    return { url, status: 200, headers: {}, body: bytes(body) };
+  });
+  const ctx = { today: "2026-10-19", transport, fetcher: { get: async () => ["api", bytes(JSON.stringify({ posts: [{ record: { createdAt: "2026-10-18" }, embed: { external: { uri: "https://broken.example/report" } } }] }))] }, log: { warn: vi.fn(), info: vi.fn() } } as unknown as import("../../connectors/types").ConnectorContext;
+  await expect(discoverReports(ctx, place, [{ topic: "Auburn", query: "Auburn" }])).rejects.toThrow("https://broken.example/report");
+  const result = await discoverReports(ctx, place, [{ topic: "Auburn", query: "Auburn" }], ["https://news.example/feed"]);
+  expect(result.reports).toHaveLength(1);
+  expect(result.errors.join(" ")).toContain("linked article timed out");
+}, 10000);
+
+it("discovers advertised feeds from active community sources and deduplicates hosts", async () => {
+  const query = vi.fn(() => ({ limit: () => ({ toArray: async () => [{ url: "https://community.example/about" }, { url: "https://community.example/" }] }) }));
+  const transport = vi.fn(async ({ url }: { url: string }) => ({ url, status: 200, headers: {}, body: new TextEncoder().encode(url.endsWith("robots.txt") ? "User-agent: *\nAllow: /" : '<link rel="alternate" type="application/rss+xml" href="/feed">') }));
+  const ctx = { location: { id: "test" }, db: { collection: () => ({ find: query }) }, transport } as unknown as import("../../connectors/types").ConnectorContext;
+  expect((await communityFeeds(ctx)).feeds).toEqual(["https://community.example/feed"]);
+  expect(query.mock.calls[0]).toMatchObject([{ location_id: "test", status: { $in: ["active", "pinned"] }, reader: "web", section: "community" }]);
+  expect(transport.mock.calls.filter(([request]) => !request.url.endsWith("robots.txt"))).toHaveLength(1);
+}, 10000);
+
+it("accepts explicit WordPress publication times without requiring OpenGraph metadata", () => {
+  const html = article.replace('<meta property="article:published_time" content="2026-10-18T12:00:00Z">', '<time class="entry-date published" datetime="2026-10-18T12:00:00Z"></time>').replace('<meta property="og:site_name" content="Regional News">', '');
+  expect(parse(html)).toMatchObject({ publisher: "news.example", published_at: "2026-10-18T12:00:00Z" });
+  expect(parse(html.replace('entry-date published', 'updated'))).toBeNull();
 });

@@ -1,3 +1,4 @@
+import { communityFeeds } from "./trend-context";
 import { createHash } from "node:crypto";
 import { COLLECTIONS } from "../../storage/mongo";
 import { stateSourcesFor } from "../../discovery/area";
@@ -299,8 +300,9 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   if (!place.configured) { record.status = "no_feed"; record.detail = `${place.state_code} is not a supported US state`; return { result: record, events: [] }; }
   const facts: CollectedEvent[] = [];
   const searches = reportingSearches(place);
-  const feeds = place.community_location?.community?.newsrooms.map((room) => room.feed) ?? [];
-  const { reports, errors } = await discoverReports(context, place, searches, feeds);
+  const fallback = place.community_location ? await communityFeeds(context) : { feeds: [], errors: [] };
+  const feeds = [...(place.community_location?.community?.newsrooms.map((room) => room.feed) ?? []), ...fallback.feeds];
+  const { reports, errors, rejected } = await discoverReports(context, place, searches, feeds);
   let distantHazards = 0;
   for (const report of reports) {
     const tier = trendTier(place, report.headline, report.excerpt)!;
@@ -326,8 +328,10 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   record.detail = `${events.length} recent linked news reports ${place.community_location ? `with evidence for ${place.town}` : `about ${place.town} or places within 15 miles`}; popularity counts and national trends are not news`;
   record.search_queries = searches.map((search) => search.query);
   record.publisher_feeds = [...new Set(feeds)].slice(0, 3);
-  record.discovery_errors = errors;
-  if (!events.length) record.status = "no_context";
+  record.discovery_errors = [...fallback.errors, ...errors];
+  if (events.length && (fallback.errors.length || errors.length)) record.status = "partial";
+  record.rejected_reports = rejected;
+  if (!events.length) record.status = errors.length ? "partial" : "no_context";
   record.event_count = events.length;
   record.skipped_unusable = Object.fromEntries(Object.entries({ no_story_context: events.length ? 0 : 1, hazard_not_local: distantHazards }).filter(([, count]) => count));
   context.log.info("bluesky_local_reporting_result", { source_id: task.source_id, kept: events.length, radius_miles: place.community_location ? null : 15 });

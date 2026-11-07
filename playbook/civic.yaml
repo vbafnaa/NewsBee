@@ -1,0 +1,154 @@
+# Council and government. See README.md for how to edit a rule.
+category: civic
+label: Council and government
+target: true
+topic: government
+
+goal:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: civic.goal.also_cover, set: also_cover, order: 0, text: city council and civic records }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: civic.prefer.records, text: Original civic records. }
+      - { id: civic.prefer.inside_a_good_site, text: "One city website can hold an agenda centre, a calendar, news, notices and a document library. Each is a source of its own." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: civic.prefer.osm_townhall, set: osm_kinds, order: 0, text: Town halls with a website., osm: { kind: townhall, tag: amenity, priority: 0 } }
+      - { id: civic.prefer.osm_courthouse, set: osm_kinds, order: 3, text: Courthouses with a website., osm: { kind: courthouse, tag: amenity, priority: 1 } }
+      - { id: civic.prefer.osm_government, set: osm_kinds, order: 16, text: Government offices with a website., osm: { kind: government, tag: office, priority: 0 } }
+      - id: civic.prefer.opendata_311
+        set: opendata_topics
+        order: 5
+        text: Open-data 311 and code enforcement datasets.
+        opendata: { topic: "311", query: 311 service requests, state_level: false }
+        regex: '\b311\b|service request|code (enforcement|violation|complaint)'
+        flags: i
+      - { id: civic.prefer.county_sections, text: "What a county adds for a place: its sheriff, its assessor and its commissioners' meetings.", values: [civic, safety, real_estate] }
+      - { id: civic.prefer.linked_group_sections, text: The groups worth following from a government's site., values: [business, community] }
+      - { id: civic.prefer.meeting_tenants_city, text: "Usual account names for a city on meeting platforms, from the city's name and state.", values: ['{city}', '{city}{state}', 'cityof{city}', 'cityof{city}{state}'] }
+      - { id: civic.prefer.meeting_tenants_county, text: "Usual account names for a county on meeting platforms.", values: ['{county}', '{county}{state}', '{bare}county{state}', '{bare}co'] }
+      - { id: civic.prefer.portal_names_city, text: Web address parts that mark a city's open-data portal., values: ['{city}', 'cityof{city}', '{city}{state}', '{city}gov'] }
+      - { id: civic.prefer.portal_names_county, text: Web address parts that mark a county's open-data portal., values: ['{county}', '{county}{state}'] }
+      - { id: civic.prefer.portal_hosts, text: "Conventional open-data addresses, tried by name.", reason: "The catalogue no longer lists its domains, so portals are found from searches for the city, county and state, plus the conventional data.<name>.gov hostnames.", values: ['data.{name}.gov', 'data.cityof{name}.gov'] }
+
+reject:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/city-site.ts
+    rules:
+      - id: civic.reject.not_government
+        text: "Page titles that show a site isn't the city's own."
+        reason: The address on a location can point at a chamber of commerce or a tourism site, and every site query from it would then miss the city.
+        regex: 'chamber of commerce|visitors? (?:bureau|guide)|tourism|real estate|\bvisit\b'
+        flags: i
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: civic.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as a public record., value: public_record }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: civic.general.city_records, stage: general, order: 0, pattern: 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")' }
+      - { id: civic.general.representative, stage: general, order: 5, pattern: 'site:{city_domain} (councilmember OR "town hall") "{place}"' }
+      - { id: civic.stage1.agendas, stage: stage1, source_type: Council records, pattern: 'site:{city_domain} (agenda OR minutes) ("city council" OR "town council" OR "county commissioners")' }
+      - { id: civic.stage1.hearing_notices, stage: stage1, source_type: Public notices, pattern: 'site:{city_domain} ("public hearing" OR "hearing notice" OR "legal notice")' }
+      - { id: civic.stage1.boards, stage: stage1, source_type: Boards, pattern: 'site:{city_domain} ("boards and commissions" OR "planning commission")' }
+      - { id: civic.stage1.meeting_platforms, stage: stage1, source_type: Meeting portals, pattern: '"{city}" "{state}" "city council" agenda (legistar OR civicclerk OR primegov OR granicus)' }
+      - { id: civic.stage1.city_records, stage: stage1, source_type: Council records, pattern: 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")' }
+      - { id: civic.stage1.representative, stage: stage1, source_type: Representatives, pattern: 'site:{city_domain} (councilmember OR "town hall") "{place}"' }
+      - { id: civic.general.other_agencies, stage: general, order: 11, source_type: Other agencies, pattern: 'site:.gov "{place}" "{state}" (permit OR notice)' }
+      - { id: civic.stage2.record_sweep, stage: stage2, source_type: Council records, pattern: 'site:{city_domain} (agenda OR "public hearing" OR ordinance) after:{after}' }
+      - { id: civic.stage2.place_sweep, stage: stage2, source_type: Council records, pattern: '"{place}" ("city council" OR "town council") (voted OR approved OR hearing) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: civic.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: city council agendas minutes }
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/city-site.ts
+    rules:
+      - { id: civic.lookup.city_site, stage: lookup, text: "The one search used when no candidate is clearly the city's own site.", pattern: '"City of {town}" "{state}" official website "city council"' }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: civic.page.site_links_meetings
+        set: site_links
+        order: 0
+        text: Links to agendas, minutes and public meetings.
+        regex: '\b(agendas?|minutes|agenda center|public meetings?|council meetings?|meeting (?:portal|videos?|archive))\b'
+        flags: i
+      - id: civic.page.site_links_notices
+        set: site_links
+        order: 1
+        text: Links to hearings, notices, boards and commissions.
+        regex: '\b(public hearings?|hearing (?:examiner|notices?)|public notices?|legal notices?|boards?,? (?:and|&|&amp;) commissions?|advisory (?:boards?|committees?)|planning commission)\b'
+        flags: i
+      - id: civic.page.site_links_council
+        set: site_links
+        order: 2
+        text: Links to the council and its members.
+        regex: '\b(city council|town council|county council|county commissioners?|board of (?:county )?commissioners|councilmembers?|town hall|legislation)\b'
+        flags: i
+      - id: civic.page.meeting_platforms
+        text: Hosted meeting portals a public body links out to.
+        reason: Most build their pages by script.
+        regex: '(?:^|\.)(?:legistar\.com|civicclerk\.com|primegov\.com|granicus\.com|iqm2\.com|novusagenda\.com|municodemeetings\.com|escribemeetings\.com|civicweb\.net|boarddocs\.com|eboardsolutions\.com|highbond\.com|boardbook\.org|agendaonline\.net|destinyhosted\.com)$'
+        flags: i
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/city-site.ts
+    rules:
+      - { id: civic.page.signal_council, set: government_signals, order: 0, text: "A government page mentions its council or board.", regex: 'city council|town council|board of (?:selectmen|aldermen)', flags: i }
+      - { id: civic.page.signal_mayor, set: government_signals, order: 1, text: "A government page mentions its mayor or manager.", regex: '\bmayor\b|city manager|town manager', flags: i }
+      - { id: civic.page.signal_agendas, set: government_signals, order: 2, text: A government page mentions agendas or minutes., regex: '\bagendas?\b|\bminutes\b', flags: i }
+      - { id: civic.page.signal_departments, set: government_signals, order: 3, text: A government page mentions departments., regex: 'departments?\b', flags: i }
+      - { id: civic.page.signal_hall, set: government_signals, order: 4, text: A government page mentions its hall., regex: 'city hall|town hall|municipal', flags: i }
+      - { id: civic.page.signal_official, set: government_signals, order: 5, text: A government page calls itself official., regex: 'official website', flags: i }
+      - { id: civic.page.signal_permits, set: government_signals, order: 6, text: A government page mentions permits., regex: '\bpermits?\b', flags: i }
+      - { id: civic.page.official_host, text: "Web addresses that look official.", regex: '\.gov$|\.us$|(^|\.)(cityof|townof|ci\.)', flags: i }
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: civic.page.item_keywords
+        set: item_keywords
+        order: 7
+        text: Words that put a story in this section.
+        regex: 'council|commission|\bboard\b|ordinance|\bcity\b|county|\blevy\b|budget|\bvote|election|hearing|mayor|legislat|agenda|public comment|311|code enforcement'
+        flags: i
+      - { id: civic.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [meeting_preview, meeting_outcome, state_news, public_record] }
+      - { id: civic.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [meeting_preview, meeting_outcome] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: civic.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 4 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: civic.stop.county_pages, text: Pages kept from a county's site., value: 6 }
+      - { id: civic.stop.county_hub_pages, text: Hub pages read on a county's site., value: 3 }
+      - { id: civic.stop.min_tenant_chars, text: Shortest name tried as a meeting platform account., value: 4 }
+      - { id: civic.stop.min_city_portal_chars, text: Shortest city name matched to a portal., value: 4 }
+      - { id: civic.stop.min_county_portal_chars, text: Shortest county name matched to a portal., value: 6 }
+      - { id: civic.stop.state_portal_labels, text: Most address parts in a state portal's name., value: 2 }
+      - { id: civic.stop.portals, text: Open-data portals read., value: 4 }
+      - { id: civic.stop.dataset_recent_days, text: A catalogue dataset must have been updated within this many days., value: 60 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/city-site.ts
+    rules:
+      - { id: civic.stop.min_signals, text: Government signals a page needs before it counts as the city's site., value: 3 }
+      - { id: civic.stop.official_host_bonus, text: Points added for an official-looking address., value: 3 }
+      - { id: civic.stop.confident_score, text: "A score this high means no search is needed.", value: 6 }
+      - { id: civic.stop.city_site_results, text: Search results checked when looking for the city's site., value: 4 }
+
+examples: []

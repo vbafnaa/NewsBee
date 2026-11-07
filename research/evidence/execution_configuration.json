@@ -1,0 +1,17 @@
+{
+  "M1": {
+    "id": "de205296-bceb-485f-9534-860024d17b57",
+    "ollama_model": "qwen3:4b",
+    "result": "model unavailable; mapping completed with method failure"
+  },
+  "C1": {
+    "id": "f0f092e9-e03b-4e1e-9c28-262ca5c06043",
+    "ollama_model": "qwen2.5-coder:latest",
+    "map_version": 1,
+    "stop": "awaiting_authoring"
+  },
+  "paid_allowance": {},
+  "human_registry_seeded": false,
+  "production_modified": false,
+  "published": false
+}

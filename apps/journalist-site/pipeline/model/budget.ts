@@ -12,6 +12,8 @@ import type { Settings } from "../core/config";
 import { fetchTransport, type HttpTransport } from "../core/http";
 import { COLLECTIONS } from "../storage/mongo";
 import { logApiCall, paidRefusal } from "../trace/gateway";
+import { runContext } from "../core/run-options";
+import { safeError } from "../core/redaction";
 
 export const CAPPED_ROLES = ["extraction", "discovery"];
 
@@ -24,7 +26,7 @@ function startOfDay(now = Date.now()) {
 export async function callsToday(db: Db) {
   const since = startOfDay();
   const rows = await db.collection(COLLECTIONS.modelUsage).aggregate<{ _id: string; calls: number }>([
-    { $match: { created_at: { $gte: since } } },
+    { $match: { created_at: { $gte: since }, ...(runContext()?.sponsorId ? { sponsor_id: runContext()!.sponsorId } : {}) } },
     { $group: { _id: "$role", calls: { $sum: 1 } } },
   ]).toArray();
   const byRole = Object.fromEntries(rows.map((row) => [row._id ?? "other", row.calls]));
@@ -79,10 +81,17 @@ export async function groundedSearch(settings: Settings, prompt: string, transpo
 /** Records a grounded call in model usage, so it counts against the daily cap. */
 export function usageRecorder(db: Db, settings: Settings, role: string) {
   return async (ok: boolean, error: string | null) => {
+    const context = runContext();
     await db.collection(COLLECTIONS.modelUsage).insertOne({
+      run_id: context?.runId, location_id: context?.locationId, sponsor_id: context?.sponsorId, credential_version: context?.credentialVersion,
       provider: "gemini", model: settings.lightModel, role, operation: "generate", ok, status_code: null, rate_limited: false,
-      input_tokens: null, output_tokens: null, duration_ms: 0, error, created_at: Date.now() / 1000, expires_at: new Date(Date.now() + 35 * 86400_000),
+      input_tokens: null, output_tokens: null, duration_ms: 0, error: error ? safeError(error) : null, created_at: Date.now() / 1000, expires_at: new Date(Date.now() + 35 * 86400_000),
     }).catch(() => undefined);
+    if (context?.sponsorId) await db.collection("journalist_funding_audit").insertOne({
+      run_id: context.runId, sponsor_id: context.sponsorId, credential_version: context.credentialVersion,
+      approval_id: null, funding: "personal", provider: "gemini", model: settings.lightModel, role,
+      ok, reason: null, at: Date.now() / 1000,
+    });
   };
 }
 

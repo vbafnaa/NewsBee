@@ -1,0 +1,17 @@
+{
+  "tests": {
+    "discovery": 22,
+    "typescript": "passed",
+    "diff_check": "passed"
+  },
+  "evaluation": "Standalone POST /api/admin/discovery, method=osm, location=osm-r13915552-wa; not a new full edition run",
+  "registry_input": false,
+  "sha256": {
+    "apps/journalist-site/pipeline/connectors/overpass.ts": "c5d4ded541a96df2e03dbecae70cb15406abebad93b1d1d5317a9084e70c5004",
+    "apps/journalist-site/pipeline/connectors/locality.ts": "d7a7006ff74227fd5885215f0253c67cb3f2c07d1471b2d513568bd96989e93d",
+    "apps/journalist-site/pipeline/discovery/methods.ts": "e2d81730c99f9e575c6e5b4d9df86d597cc39c0a10d3061159f3eb4a48d8747e",
+    "apps/journalist-site/pipeline/discovery/institutions.ts": "39d2c38970cb6c5df4569bc7ef0a13ded78b2f76b75d3c00e3fc1ea1f7eb588c",
+    "apps/journalist-site/pipeline/core/run-values.ts": "40313f1deb7af400b55dc527d573edeee443d4b567f6f1806893472d188620d2",
+    "apps/journalist-site/pipeline/tests/discovery/overpass.test.ts": "352b2dee69c844f0272b005e72ac7971a4740beebbd6907de5034417719771bd"
+  }
+}

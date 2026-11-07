@@ -37,6 +37,7 @@ export const COLLECTIONS = {
   places: "census_places",
   directorySetup: "directory_setup",
   libraryOutlets: "library_outlets",
+  schoolDistricts: "school_districts",
   locations: "locations",
   linkCache: "connector_link_cache",
   manualLinks: "location_source_links",

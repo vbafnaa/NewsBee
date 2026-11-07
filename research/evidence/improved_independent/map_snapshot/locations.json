@@ -1,0 +1,87 @@
+[
+  {
+    "_id": "osm-r13915552-wa",
+    "id": "osm-r13915552-wa",
+    "name": "Wedgwood, Seattle, WA",
+    "state": "WA",
+    "census_geoid": null,
+    "latitude": 47.690221,
+    "longitude": -122.2905745,
+    "directory_edition": "IMLS PLS FY2022",
+    "systems": [],
+    "government": {
+      "status": "detected",
+      "platform": "legistar",
+      "tenant": "seattle",
+      "website": "https://seattle.gov/",
+      "wikidata_id": "Q5083",
+      "pages_checked": [
+        "https://seattle.gov/",
+        "https://wilson.seattle.gov/2026/11/04/mayor-wilson-celebrates-support-for-transit-measure-and-election-momentum-government-must-fight-for-working-people/",
+        "https://seattle.gov/council"
+      ],
+      "detail": "legistar tenant seattle found under a name guessed from the town"
+    },
+    "community": {
+      "name": "Wedgwood",
+      "state": "WA",
+      "state_name": "Washington",
+      "parent_id": "seattle-wa",
+      "parent_name": "Seattle",
+      "parent_kind": "city",
+      "latitude": 47.690221,
+      "longitude": -122.2905745,
+      "aliases": [],
+      "coverage_terms": [
+        "Wedgwood"
+      ],
+      "library_branches": [],
+      "newsrooms": [],
+      "geography": {
+        "_id": "osm-r13915552-wa",
+        "id": "osm-r13915552-wa",
+        "name": "Wedgwood",
+        "label": "Wedgwood, Seattle, WA",
+        "state": "WA",
+        "state_name": "Washington",
+        "kind": "suburb",
+        "parent_name": "Seattle",
+        "parent_kind": "city",
+        "latitude": 47.690221,
+        "longitude": -122.2905745,
+        "area": {
+          "method": "approximate_bbox",
+          "bbox": [
+            -122.30808,
+            47.6830397,
+            -122.2797623,
+            47.6975789
+          ]
+        },
+        "provider": "photon",
+        "osm_type": "R",
+        "osm_id": 13915552,
+        "website": null,
+        "attribution": "© OpenStreetMap contributors",
+        "name_lower": "wedgwood",
+        "fetched_at": 1794009536069
+      }
+    },
+    "source_coverage": {
+      "status": "partial",
+      "area": "Approximate provider bounding box (not a boundary)",
+      "gaps": [
+        "No community website could be resolved for automatic RSS/Atom discovery.",
+        "Approximate provider bounding box (not a boundary). Review branch selection before publication.",
+        "No library branches were identified in this community's coverage area.",
+        "No community RSS/Atom feed was found. State feeds still require explicit community relevance; add a validated publisher link in Sources."
+      ],
+      "discovery_gaps": [
+        "No community website could be resolved for automatic RSS/Atom discovery."
+      ],
+      "checked_at": "2026-11-06T23:59:36.464Z"
+    },
+    "source_map_at": 1794012452.395,
+    "source_map_version": 2
+  }
+]

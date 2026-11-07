@@ -7,31 +7,24 @@
 import type { HttpTransport } from "../core/http";
 import type { Db } from "mongodb";
 import { httpsLink } from "../connectors/common";
-import { locationCenter, OVERPASS, TOWN_RADIUS_KM } from "../connectors/locality";
-import { publicApiGet } from "../connectors/public-api";
+import { locationCenter, TOWN_RADIUS_KM } from "../connectors/locality";
+import { queryOverpass, OVERPASS_ENDPOINTS, QUERY_SECONDS } from "../connectors/overpass";
 import type { LocationProfile } from "../connectors/types";
+import { fill, limit, table, template } from "../playbook";
 import { distanceKm, withinArea, type Point } from "../../../../shared/geography";
 import { cachedDiscovery } from "./cache";
 
 /** Public Overpass instances tried when the main one is busy. */
-export const OVERPASS_MIRRORS = ["https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+export const OVERPASS_MIRRORS = OVERPASS_ENDPOINTS.slice(1);
 const TTL_DAYS = 30;
-const CAP = 40;
+const CAP = limit("general.stop.institutions");
 /** Funeral homes and high schools serve a wider area than a neighbourhood. */
-const SERVING_KM = 10;
-/** A busy Overpass must not use up a job's time: failing is cached and retried within the hour. */
-const TIMEOUT_MS = 30_000;
-
+const SERVING_KM = limit("general.stop.serving_km");
 export type Institution = { name: string; kind: string; website: string | null; inside: boolean };
-const PRIORITY: Record<string, number> = { school: 0, library: 1, community_centre: 2, police: 3, fire_station: 4, funeral_directors: 5, townhall: 6, club: 7, sports_centre: 8, arts_centre: 9, theatre: 10, park: 11 };
+const PRIORITY = table<number>("general.prefer.institution_priority");
 
 export async function overpassJson(transport: HttpTransport, query: string) {
-  let lastError: unknown = null;
-  for (const endpoint of [OVERPASS, ...OVERPASS_MIRRORS]) {
-    try { return JSON.parse(new TextDecoder().decode(await publicApiGet(transport, `${endpoint}?data=${encodeURIComponent(query)}`, "application/json", 4 * 1024 * 1024, TIMEOUT_MS))) as { elements?: Array<{ tags?: Record<string, string>; lat?: number; lon?: number; center?: { lat: number; lon: number } }> }; }
-    catch (error) { lastError = error; }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Overpass is unavailable");
+  return (await queryOverpass(transport, query)).data;
 }
 
 function websiteOf(tags: Record<string, string>) {
@@ -45,7 +38,7 @@ export async function localInstitutions(context: { db: Db; transport: HttpTransp
     if (!center) return { items: [], detail: "Location has no coordinates" };
     const reach = Math.round(Math.max(area?.radius_km ?? 0, SERVING_KM, TOWN_RADIUS_KM) * 1000);
     const around = `(around:${reach},${center[1]},${center[0]})`;
-    const query = `[out:json][timeout:25];(nwr${around}["name"]["amenity"~"^(school|library|community_centre|police|fire_station|townhall|arts_centre|theatre)$"];nwr${around}["name"]["shop"="funeral_directors"];nwr${around}["name"]["club"="sport"];nwr${around}["name"]["leisure"~"^(sports_centre|park)$"]["website"];);out tags center 600;`;
+    const query = `[out:json][timeout:${QUERY_SECONDS}];${fill(template("general.prefer.institution_query"), { around })}out tags center 600;`;
     const found: Array<Institution & { km: number }> = [];
     for (const element of (await overpassJson(context.transport, query)).elements ?? []) {
       const tags = element.tags ?? {};

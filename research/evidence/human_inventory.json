@@ -1,0 +1,940 @@
+[
+  {
+    "Category": "Government and council; Community organizations; Events; Businesses",
+    "Source": "WCC news / Wedgwood Community Council",
+    "URL": "https://www.wedgwoodcc.org/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Website | Chris Fu: Registry fieldwork/access notes: Website and email updates noted. Automated extraction not tested. Verification: Notes report October 2026 posts. Reviewed in notes, not rechecked here. Scraper untested. Newsletter editor unconfirmed.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Follow neighborhood council posts, meeting pages and linked original announcements; preserve separate meeting and news endpoints.",
+    "Evidence": "registry row 34: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://www.wedgwoodcc.org/; registry row 127: Chris Fu; category=Neighborhood orgs; community=Wedgwood; URL=https://www.wedgwoodcc.org/",
+    "registry_rows": [
+      34,
+      127
+    ],
+    "cohort": "core",
+    "notes": [
+      "Notes report October 2026 posts. Reviewed in notes, not rechecked here. Scraper untested. Newsletter editor unconfirmed."
+    ]
+  },
+  {
+    "Category": "Government and council; Community organizations; Events",
+    "Source": "WCC meetings",
+    "URL": "https://www.wedgwoodcc.org/about/meetings/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Website (",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Follow neighborhood council posts, meeting pages and linked original announcements; preserve separate meeting and news endpoints.",
+    "Evidence": "registry row 35: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://www.wedgwoodcc.org/about/meetings/",
+    "registry_rows": [
+      35
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Schools; Events",
+    "Source": "Wedgwood Elementary calendar",
+    "URL": "https://wedgwoodes.seattleschools.org/calendar/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: School calendar",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Traverse school and PTA calendars/newsletters separately; resolve advertised calendar subscriptions and dated issue links; retain public neighborhood-relevant items.",
+    "Evidence": "registry row 36: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://wedgwoodes.seattleschools.org/calendar/",
+    "registry_rows": [
+      36
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Schools; Events",
+    "Source": "Wedgwood PTA newsletter",
+    "URL": "https://www.wedgwoodpta.org/newsletter",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: PTA newsletter",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Traverse school and PTA calendars/newsletters separately; resolve advertised calendar subscriptions and dated issue links; retain public neighborhood-relevant items.",
+    "Evidence": "registry row 37: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://www.wedgwoodpta.org/newsletter",
+    "registry_rows": [
+      37
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Schools; Events",
+    "Source": "Wedgwood PTA",
+    "URL": "https://www.wedgwoodpta.org/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: PTA website | Chris Fu: Registry fieldwork/access notes: Website/newsletter links supplied by global rows 37\u201338. Extraction not tested here. Verification: Named as a starting source. Detailed evidence absent from this page. URL taken from team sheet, not checked live.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Traverse school and PTA calendars/newsletters separately; resolve advertised calendar subscriptions and dated issue links; retain public neighborhood-relevant items.",
+    "Evidence": "registry row 38: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://www.wedgwoodpta.org/; registry row 132: Chris Fu; category=Schools and families; community=Wedgwood; URL=https://www.wedgwoodpta.org/",
+    "registry_rows": [
+      38,
+      132
+    ],
+    "cohort": "core",
+    "notes": [
+      "Named as a starting source. Detailed evidence absent from this page. URL taken from team sheet, not checked live."
+    ]
+  },
+  {
+    "Category": "Events",
+    "Source": "Northeast Library events / Seattle Public Library \u2014 Northeast Branch events",
+    "URL": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Library calendar | Chris Fu: Registry fieldwork/access notes: Official branch calendar. Feed/API and Newsbee extraction not verified. Verification: Branch visited and calendar reviewed per notes. Event dates/locality require item-level checks. Scraper untested.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Select Northeast Branch explicitly as a reviewed nearby service source; follow its branch calendar and preserve venue filters rather than selecting all Seattle events.",
+    "Evidence": "registry row 39: Shruthika Balasubramanian; category=Events; community=NE Seattle; URL=https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events; registry row 128: Chris Fu; category=Parks, libraries, venues; community=NE Seattle; relevant to Wedgwood; URL=https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+    "registry_rows": [
+      39,
+      128
+    ],
+    "cohort": "core",
+    "notes": [
+      "Branch visited and calendar reviewed per notes. Event dates/locality require item-level checks. Scraper untested."
+    ]
+  },
+  {
+    "Category": "Government and council; Events",
+    "Source": "Dahl Playfield",
+    "URL": "https://seattle.gov/parks/parks/dahl-playfield",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Parks website",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Preserve individual park/project pages; extract dated project changes and closures, not just the Seattle government homepage.",
+    "Evidence": "registry row 40: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://seattle.gov/parks/parks/dahl-playfield",
+    "registry_rows": [
+      40
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Government and council; Events",
+    "Source": "Dahl restroom project",
+    "URL": "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Project page",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Preserve individual park/project pages; extract dated project changes and closures, not just the Seattle government homepage.",
+    "Evidence": "registry row 41: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+    "registry_rows": [
+      41
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Government and council; Events",
+    "Source": "New Wedgwood park",
+    "URL": "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Project page",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Preserve individual park/project pages; extract dated project changes and closures, not just the Seattle government homepage.",
+    "Evidence": "registry row 42: Shruthika Balasubramanian; category=Events; community=Wedgwood; URL=https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+    "registry_rows": [
+      42
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Home sales",
+    "Source": "KC home sales / King County eSales residential search",
+    "URL": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Sales search (test) | Neha Dubhashi: Original discovery route not recorded; recorded access method: Official date/area search; prefer approved bulk extract over repeated form scraping",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 43: Shruthika Balasubramanian; category=Home sales; community=King County  Wedgwood; URL=https://info.kingcounty.gov/assessor/esales/Residential.aspx; registry row 115: Neha Dubhashi; category=Home sales; community=Beacon Hill via assessor areas/parcels, not ZIP alone; URL=https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+    "registry_rows": [
+      43,
+      115
+    ],
+    "cohort": "core",
+    "notes": [
+      "2026-11-01: Official form supports sale dates, property types, area and parcel criteria"
+    ]
+  },
+  {
+    "Category": "Home sales",
+    "Source": "KC property lookup",
+    "URL": "https://kingcounty.gov/en/dept/assessor",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Property search (test)",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 44: Shruthika Balasubramanian; category=Home sales; community=King County  Wedgwood; URL=https://kingcounty.gov/en/dept/assessor",
+    "registry_rows": [
+      44
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Home sales",
+    "Source": "KC open GIS data",
+    "URL": "https://gis-kingcounty.opendata.arcgis.com/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Data portal",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 45: Shruthika Balasubramanian; category=Home sales; community=King County, Wedgwood; URL=https://gis-kingcounty.opendata.arcgis.com/",
+    "registry_rows": [
+      45
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD crime maps",
+    "URL": "https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Crime map (test)",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 46: Shruthika Balasubramanian; category=Crime; community=Seattle, Wedgwood; URL=https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+    "registry_rows": [
+      46
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD incident reports / SPD Significant Incident Reports",
+    "URL": "https://spdblotter.seattle.gov/significant-incident-reports/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Police blog | Neha Dubhashi: Original discovery route not recorded; recorded access method: Read official HTML reports; approved bounded parser; deduplicate against SPD Blotter",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 47: Shruthika Balasubramanian; category=Crime; community=Seattle, Wedgwood; URL=https://spdblotter.seattle.gov/significant-incident-reports/; registry row 89: Neha Dubhashi; category=Crime; community=Seattle; filter Beacon Hill incident locations; URL=https://spdblotter.seattle.gov/significant-incident-reports/",
+    "registry_rows": [
+      47,
+      89
+    ],
+    "cohort": "core",
+    "notes": [
+      "2026-11-01: Official report archive opened; automation not tested"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD open data",
+    "URL": "https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Open data",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 48: Shruthika Balasubramanian; category=Crime; community=Seattle, Wedgwood; URL=https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+    "registry_rows": [
+      48
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD crime dashboard / Crime Dashboard",
+    "URL": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Sahana Narendran",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: dashboard | Sahana Narendran: Original discovery route not recorded; recorded access method: Pick neighborhoods in ballards",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 49: Shruthika Balasubramanian; category=Crime; community=Seattle, Wedgwood; URL=https://www.seattle.gov/police/information-and-data/data/crime-dashboard; registry row 79: Sahana Narendran; category=Crime, police, justice; community=Seattle; filter Ballard sector; URL=https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+    "registry_rows": [
+      49,
+      79
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Sports",
+    "Source": "Roosevelt sports",
+    "URL": "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: School website",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve local school/team identity; follow team schedule/results feeds; match teams serving Wedgwood and retain venue and game date.",
+    "Evidence": "registry row 50: Shruthika Balasubramanian; category=Sports; community=NE Seattle; URL=https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+    "registry_rows": [
+      50
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Sports",
+    "Source": "Nathan Hale sports",
+    "URL": "https://halehs.seattleschools.org/student-life/athletics/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: School website",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve local school/team identity; follow team schedule/results feeds; match teams serving Wedgwood and retain venue and game date.",
+    "Evidence": "registry row 51: Shruthika Balasubramanian; category=Sports; community=NE Seattle; URL=https://halehs.seattleschools.org/student-life/athletics/",
+    "registry_rows": [
+      51
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Sports",
+    "Source": "Seattle schools athletics",
+    "URL": "https://www.seattleschools.org/departments/athletics/contacts/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: School website",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve local school/team identity; follow team schedule/results feeds; match teams serving Wedgwood and retain venue and game date.",
+    "Evidence": "registry row 52: Shruthika Balasubramanian; category=Sports; community=Seattle schools; URL=https://www.seattleschools.org/departments/athletics/contacts/",
+    "registry_rows": [
+      52
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Sports",
+    "Source": "Roosevelt boosters",
+    "URL": "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Boosters website",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve local school/team identity; follow team schedule/results feeds; match teams serving Wedgwood and retain venue and game date.",
+    "Evidence": "registry row 53: Shruthika Balasubramanian; category=Sports; community=NE Seattle; URL=https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+    "registry_rows": [
+      53
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "Cascade Memorial",
+    "URL": "https://cascadememorial.com/obituaries/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Obituary site",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 54: Shruthika Balasubramanian; category=Death notices; community=Seattle, Wedgwood; URL=https://cascadememorial.com/obituaries/",
+    "registry_rows": [
+      54
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "Elemental obituaries / Elemental Cremation and Burial obituaries",
+    "URL": "https://www.elementalnw.com/obituaries/",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Obituary site | Neha Dubhashi: Original discovery route not recorded; recorded access method: Request permission and provider export; search public listing only as allowed",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 55: Shruthika Balasubramanian; category=Death notices; community=Seattle, Wedgwood; URL=https://www.elementalnw.com/obituaries/; registry row 95: Neha Dubhashi; category=Death notices; community=Greater Seattle; explicit Beacon Hill affiliation required; URL=https://www.elementalnw.com/obituaries/",
+    "registry_rows": [
+      55,
+      95
+    ],
+    "cohort": "core",
+    "notes": [
+      "2026-11-01: Official obituary search/listing opened; site has separate terms"
+    ]
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "WA death records",
+    "URL": "https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record",
+    "Human Found": "Yes \u2014 Shruthika Balasubramanian",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Shruthika Balasubramanian: Original discovery route not recorded; recorded access method: Restricted - :( skip?",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Keep as restricted reference, not an automated news-feed target; prefer public family-authorized notices.",
+    "Evidence": "registry row 56: Shruthika Balasubramanian; category=Death notices; community=Washington state; URL=https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record",
+    "registry_rows": [
+      56
+    ],
+    "cohort": "core",
+    "notes": []
+  },
+  {
+    "Category": "Government and council; Events",
+    "Source": "SDOT current projects",
+    "URL": "https://seattle.gov/transportation/projects-and-programs/current-projects",
+    "Human Found": "Yes \u2014 Sahana Narendran",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Search specifically for Ballard (manual: cntr+f; automated; search params)",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Preserve individual park/project pages; extract dated project changes and closures, not just the Seattle government homepage.",
+    "Evidence": "registry row 69: Sahana Narendran; category=Transportation, streets; community=Seattle; several Ballard-specific projects; URL=https://seattle.gov/transportation/projects-and-programs/current-projects",
+    "registry_rows": [
+      69
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": []
+  },
+  {
+    "Category": "Government and council",
+    "Source": "King County Metro service alerts",
+    "URL": "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+    "Human Found": "Yes \u2014 Sahana Narendran",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Input Ballard specific routes and track",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Follow the original issuer and dated detail pages; verify locality and the run date window.",
+    "Evidence": "registry row 71: Sahana Narendran; category=Transportation, streets; community=King County; filter Ballard routes; URL=https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+    "registry_rows": [
+      71
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": []
+  },
+  {
+    "Category": "Businesses",
+    "Source": "WA LCB New License Actions",
+    "URL": "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+    "Human Found": "Yes \u2014 Sahana Narendran",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Search specifically for Ballard (manual: cntr+f; automated; search params)",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Filter license/inspection records by local business address and update date; verify an opening/closure separately from a licensing action.",
+    "Evidence": "registry row 72: Sahana Narendran; category=Business openings and closings; community=Washington state; filter Ballard addresses; URL=https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+    "registry_rows": [
+      72
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": []
+  },
+  {
+    "Category": "Businesses",
+    "Source": "King County Food Establishment Inspection Data",
+    "URL": "https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+    "Human Found": "Yes \u2014 Sahana Narendran",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Search for Ballard specific zipcodes",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Filter license/inspection records by local business address and update date; verify an opening/closure separately from a licensing action.",
+    "Evidence": "registry row 73: Sahana Narendran; category=Food and health; community=King County; filter Ballard addresses; URL=https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+    "registry_rows": [
+      73
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": []
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD Crime Data: 2008-Present (data.seattle.gov) / SPD Crime Data: 2008-Present",
+    "URL": "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+    "Human Found": "Yes \u2014 Sahana Narendran, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Search for Ballard (manual search bar) | Neha Dubhashi: Original discovery route not recorded; recorded access method: Socrata API/CSV; verify schema; filter incident locations to Beacon Hill",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 78: Sahana Narendran; category=Crime, police, justice; community=Seattle; filter Ballard beats; URL=https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5; registry row 86: Neha Dubhashi; category=Crime; community=Seattle; spatially filter Beacon Hill; URL=https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+    "registry_rows": [
+      78,
+      86
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official dataset catalog located; neighborhood query not executed"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "Arrest Dashboard / Crisis Contact / SPD Arrest Data",
+    "URL": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+    "Human Found": "Yes \u2014 Sahana Narendran, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: Pick neighborhoods in ballards | Sahana Narendran: Original discovery route not recorded; recorded access method: Pick neighborhoods in ballards | Neha Dubhashi: Original discovery route not recorded; recorded access method: Socrata API/CSV after field review; use geography where supplied",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 80: Sahana Narendran; category=Crime, police, justice; community=Seattle; filter Ballard; URL=https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview; registry row 81: Sahana Narendran; category=Crime, police, justice; community=Seattle; filter Ballard; URL=https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview; registry row 87: Neha Dubhashi; category=Crime; community=Seattle; filter incidents linked to Beacon Hill; URL=https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w",
+    "registry_rows": [
+      80,
+      81,
+      87
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official dataset page located; API/schema not tested"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "Seattle Fire Real-Time 911",
+    "URL": "https://web.seattle.gov/sfd/realtime911/",
+    "Human Found": "Yes \u2014 Sahana Narendran, Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Sahana Narendran: Original discovery route not recorded; recorded access method: From memory; URL confirmed 10/31/26 | Neha Dubhashi: Original discovery route not recorded; recorded access method: Official dispatch table; prefer documented data export if available",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 82: Sahana Narendran; category=Crime, police, justice; community=Seattle; filter Ballard; URL=https://web.seattle.gov/sfd/realtime911/; registry row 90: Neha Dubhashi; category=Crime; community=Seattle; filter Beacon Hill addresses; URL=https://web.seattle.gov/sfd/realtime911/",
+    "registry_rows": [
+      82,
+      90
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official page documents dispatch information and refresh behavior"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "SPD Blotter RSS",
+    "URL": "https://spdblotter.seattle.gov/feed/",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Verified RSS; filter locality and event date; corroborate police claims",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 88: Neha Dubhashi; category=Crime; community=Seattle; retain explicit Beacon Hill incidents; URL=https://spdblotter.seattle.gov/feed/",
+    "registry_rows": [
+      88
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: HTTP 200 RSS with 10 items; robots allowed request"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "King County Prosecuting Attorney official updates",
+    "URL": "https://kingcounty.gov/en/legacy/depts/prosecutor",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Follow official newsroom/media links; request approved feed/export",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 91: Neha Dubhashi; category=Crime; community=King County; retain Beacon Hill-linked cases; URL=https://kingcounty.gov/en/legacy/depts/prosecutor",
+    "registry_rows": [
+      91
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official office entry page located; supported machine feed not confirmed"
+    ]
+  },
+  {
+    "Category": "Crime and safety",
+    "Source": "U.S. Attorney Western District of Washington",
+    "URL": "https://www.justice.gov/usao-wdwa/pr",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Use RSS linked by official news page; locality and case matching",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve documented dataset or feed endpoint; filter dates and record coordinates/addresses to Wedgwood; retain uncertain-location reasons.",
+    "Evidence": "registry row 92: Neha Dubhashi; category=Crime; community=Western WA; retain explicit Beacon Hill case connection; URL=https://www.justice.gov/usao-wdwa/pr",
+    "registry_rows": [
+      92
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official newsroom opened and RSS link found; feed request not tested in this pass"
+    ]
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "BONNEY WATSON obituaries",
+    "URL": "https://bonneywatson.com/obituaries/",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Request provider-approved feed/export or limited permitted HTML collection",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 94: Neha Dubhashi; category=Death notices; community=Puget Sound; explicit Beacon Hill affiliation required; URL=https://bonneywatson.com/obituaries/",
+    "registry_rows": [
+      94
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official searchable obituary listing opened"
+    ]
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "Emmick Family Funeral and Cremation Services",
+    "URL": "https://www.emmickfunerals.com/obituaries",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Ask for approved obituary feed/export; no private-family or guestbook data",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 96: Neha Dubhashi; category=Death notices; community=Seattle region; Beacon Hill connection must be confirmed; URL=https://www.emmickfunerals.com/obituaries",
+    "registry_rows": [
+      96
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official recent-obituary page opened"
+    ]
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "Washelli / Dignity Memorial",
+    "URL": "https://www.dignitymemorial.com/funeral-homes/washelli",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Request licensed/provider-approved supply; do not assume site scraping permitted",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 97: Neha Dubhashi; category=Death notices; community=Seattle region; Beacon Hill connection must be confirmed; URL=https://www.dignitymemorial.com/funeral-homes/washelli",
+    "registry_rows": [
+      97
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official Washelli service page includes obituary discovery; no feed verified"
+    ]
+  },
+  {
+    "Category": "Obituaries",
+    "Source": "The Seattle Times obituary portal",
+    "URL": "https://obituaries.seattletimes.com/",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Publisher-approved syndication/export only; manual link discovery pending agreement",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use permitted public notices with explicit Wedgwood residence/community ties; proximity of funeral home is insufficient.",
+    "Evidence": "registry row 99: Neha Dubhashi; category=Death notices; community=Seattle region; search explicit Beacon Hill references; URL=https://obituaries.seattletimes.com/",
+    "registry_rows": [
+      99
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Automated page check failed; no feed or rights verified"
+    ]
+  },
+  {
+    "Category": "Home sales",
+    "Source": "King County Assessor sales extracts",
+    "URL": "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Official bulk sales extract after terms review; join parcel/address data and Beacon Hill boundary",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 114: Neha Dubhashi; category=Home sales; community=King County; spatially select Beacon Hill parcels; URL=https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+    "registry_rows": [
+      114
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official download page reviewed; acknowledgement required before data access; sale table catalog documents weekly updates"
+    ]
+  },
+  {
+    "Category": "Home sales",
+    "Source": "King County eReal Property",
+    "URL": "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Official parcel lookup for verification; request bulk source for systematic collection",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 116: Neha Dubhashi; category=Home sales; community=King County; Beacon Hill parcels; URL=https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+    "registry_rows": [
+      116
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official parcel-search page opened; per-property automation not tested"
+    ]
+  },
+  {
+    "Category": "Home sales",
+    "Source": "King County Recorder's Office",
+    "URL": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Official records search; request approved index/export for systematic collection",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 117: Neha Dubhashi; category=Home sales; community=King County; Beacon Hill-linked parcel documents; URL=https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+    "registry_rows": [
+      117
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official page describes searchable recorded documents; no API verified"
+    ]
+  },
+  {
+    "Category": "Home sales",
+    "Source": "King County GIS parcel data",
+    "URL": "https://gisdata.kingcounty.gov/",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Use documented public GIS download/API after layer/license review; spatial join sales",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use assessor sales extracts joined to parcel geometry; filter sale dates and Wedgwood boundary, not ZIP alone; distinguish permits and listings from sales.",
+    "Evidence": "registry row 118: Neha Dubhashi; category=Home sales; community=Beacon Hill boundary and adjacent parcels; URL=https://gisdata.kingcounty.gov/",
+    "registry_rows": [
+      118
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: Official GIS catalog located; sales-table metadata supplies parcel join keys"
+    ]
+  },
+  {
+    "Category": "Sports",
+    "Source": "WIAA official news",
+    "URL": "https://www.wiaa.com/feed/",
+    "Human Found": "Yes \u2014 Neha Dubhashi",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Neha Dubhashi: Original discovery route not recorded; recorded access method: Verified RSS; retain relevant school/team headlines; no student names",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Resolve local school/team identity; follow team schedule/results feeds; match teams serving Wedgwood and retain venue and game date.",
+    "Evidence": "registry row 126: Neha Dubhashi; category=Sports; community=Washington; exact Cleveland/Franklin team matching required; URL=https://www.wiaa.com/feed/",
+    "registry_rows": [
+      126
+    ],
+    "cohort": "shared jurisdiction / conditional regional",
+    "notes": [
+      "2026-11-01: HTTP 200 RSS containing 12 items; robots URL returned 404 rather than a rule file"
+    ]
+  },
+  {
+    "Category": "Events; Community organizations",
+    "Source": "Northeast Branch bulletin boards and community-posting binder",
+    "URL": "https://www.spl.org/hours-and-locations/northeast-branch",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Chris inspected and photographed postings. Proposed: manual capture and organizer confirmation. Verification: Boards and binder inspected. Photos referenced but not reviewed in this mapping. Some notices expired or outside Wedgwood.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Organizer submission or staff-assisted intake of physical postings, followed by date/location verification; branch homepage is not the bulletin-board content.",
+    "Evidence": "registry row 129: Chris Fu; category=Community postings; community=NE Seattle; filter for Wedgwood relevance; URL=https://www.spl.org/hours-and-locations/northeast-branch",
+    "registry_rows": [
+      129
+    ],
+    "cohort": "core",
+    "notes": [
+      "Boards and binder inspected. Photos referenced but not reviewed in this mapping. Some notices expired or outside Wedgwood."
+    ]
+  },
+  {
+    "Category": "Events; Community organizations",
+    "Source": "Seattle REconomy / NE Seattle Tool Library",
+    "URL": "https://seattlereconomy.org/events/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Organizer-maintained calendar and physical flyer noted. Extraction untested. Verification: Notes describe an active calendar and a free repair-night flyer. Do not generalize that all events are free.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Read organizer calendar and linked event details; distinguish NE Seattle from Shoreline venues; retain cancellations, fees and recurring session IDs.",
+    "Evidence": "registry row 130: Chris Fu; category=Events; community=NE Seattle; select events useful to Wedgwood residents; URL=https://seattlereconomy.org/events/",
+    "registry_rows": [
+      130
+    ],
+    "cohort": "core",
+    "notes": [
+      "Notes describe an active calendar and a free repair-night flyer. Do not generalize that all events are free."
+    ]
+  },
+  {
+    "Category": "Events; Community organizations",
+    "Source": "Lifetime Learning Center",
+    "URL": "https://www.lifetimelearningcenter.org/classschedule",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Published class schedule. Extraction method not tested. Verification: Fall 2026 schedule reviewed per notes. Current enrollment, fees and extraction not verified.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Parse the term schedule into dated sessions with audience, venue, cost and registration links; retain term-level freshness.",
+    "Evidence": "registry row 131: Chris Fu; category=Classes and older adults; community=North Seattle; nearby programs for Wedgwood residents; URL=https://www.lifetimelearningcenter.org/classschedule",
+    "registry_rows": [
+      131
+    ],
+    "cohort": "core",
+    "notes": [
+      "Fall 2026 schedule reviewed per notes. Current enrollment, fees and extraction not verified."
+    ]
+  },
+  {
+    "Category": "Schools; Events",
+    "Source": "Eckstein (school source; endpoint unconfirmed)",
+    "URL": "https://ecksteinms.seattleschools.org/news/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Not verified. Identify the intended school/organization page. Verification: Mention only. Exact source URL, content coverage and extraction not verified.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Traverse school and PTA calendars/newsletters separately; resolve advertised calendar subscriptions and dated issue links; retain public neighborhood-relevant items.",
+    "Evidence": "registry row 133: Chris Fu; category=Schools and families; community=NE Seattle; Wedgwood relevance to verify; URL=https://ecksteinms.seattleschools.org/news/",
+    "registry_rows": [
+      133
+    ],
+    "cohort": "core",
+    "notes": [
+      "Mention only. Exact source URL, content coverage and extraction not verified."
+    ]
+  },
+  {
+    "Category": "Community organizations; Historical sources",
+    "Source": "Northeast Branch scrapbooks / historical neighborhood newspapers",
+    "URL": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-amenities-and-equipment",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Chris examined and photographed clippings. Proposed: manual archival research and source verification. Verification: Clippings examined per notes. Examples include Freda Pond and an overdue book. Originals/photos not checked in this mapping.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Manual archive indexing with publication date and provenance; do not treat historical clippings as current news.",
+    "Evidence": "registry row 134: Chris Fu; category=Local history; community=Northeast Seattle; verify each story's Wedgwood connection; URL=https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-amenities-and-equipment",
+    "registry_rows": [
+      134
+    ],
+    "cohort": "core",
+    "notes": [
+      "Clippings examined per notes. Examples include Freda Pond and an overdue book. Originals/photos not checked in this mapping."
+    ]
+  },
+  {
+    "Category": "Community organizations; Historical sources",
+    "Source": "Ravenna Blog",
+    "URL": "https://ravennablog.com/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Archive/manual review. Current feed or scraper not tested. Verification: Notes identify latest visible homepage post as June 26, 2020. Earlier '4 months ago' statement is superseded; no live recheck.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Check freshness first; retain stale blog as background rather than forcing current-news ingestion.",
+    "Evidence": "registry row 135: Chris Fu; category=Historical local reporting; community=Ravenna / NE Seattle; filter Wedgwood relevance; URL=https://ravennablog.com/",
+    "registry_rows": [
+      135
+    ],
+    "cohort": "core",
+    "notes": [
+      "Notes identify latest visible homepage post as June 26, 2020. Earlier '4 months ago' statement is superseded; no live recheck."
+    ]
+  },
+  {
+    "Category": "Community organizations; Resident discussions",
+    "Source": "Nextdoor \u2014 Wedgwood",
+    "URL": "https://nextdoor.com/neighborhood/wedgwood--seattle--wa/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Public neighborhood page only was reviewed. Feed access and collection method not verified. Verification: Public page accessible per notes. No feed, API, scraping capability or publishing permission established.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Use an authorized access route or voluntary reader submissions; public landing-page discovery does not establish access to member discussions.",
+    "Evidence": "registry row 136: Chris Fu; category=Resident discussions; community=Wedgwood; URL=https://nextdoor.com/neighborhood/wedgwood--seattle--wa/",
+    "registry_rows": [
+      136
+    ],
+    "cohort": "core",
+    "notes": [
+      "Public page accessible per notes. No feed, API, scraping capability or publishing permission established."
+    ]
+  },
+  {
+    "Category": "Government and council; Community organizations; Events",
+    "Source": "Northeast District Council",
+    "URL": "https://northeastdistrictcouncil.wordpress.com/about/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Mentioned by library staff. Source and current publishing channel need locating. Verification: Mention only. Current status, URL, coverage and available content not verified.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Follow neighborhood council posts, meeting pages and linked original announcements; preserve separate meeting and news endpoints.",
+    "Evidence": "registry row 137: Chris Fu; category=Neighborhood orgs; community=Northeast Seattle; coverage to verify; URL=https://northeastdistrictcouncil.wordpress.com/about/",
+    "registry_rows": [
+      137
+    ],
+    "cohort": "core",
+    "notes": [
+      "Mention only. Current status, URL, coverage and available content not verified."
+    ]
+  },
+  {
+    "Category": "Regional news (conditional)",
+    "Source": "The Seattle Medium",
+    "URL": "https://seattlemedium.com/",
+    "Human Found": "Yes \u2014 Chris Fu",
+    "Machine Found Source": "Cannot determine from available evidence",
+    "Machine Found Stories": "Pending local run",
+    "Human Discovery Method": "Chris Fu: Registry fieldwork/access notes: Print newspaper mentioned during visit; notes describe online coverage and print subscriptions. Verification: Notes report continuing weekly print and online coverage. Publisher site and sample stories not independently checked here.",
+    "Gap Reason": "No causal conclusion until run-specific results are joined.",
+    "Recommended Fix": "Follow the original issuer and dated detail pages; verify locality and the run date window.",
+    "Evidence": "registry row 138: Chris Fu; category=Regional news; community=Seattle region; direct Wedgwood relevance not established; URL=https://seattlemedium.com/",
+    "registry_rows": [
+      138
+    ],
+    "cohort": "core",
+    "notes": [
+      "Notes report continuing weekly print and online coverage. Publisher site and sample stories not independently checked here."
+    ]
+  }
+]

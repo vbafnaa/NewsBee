@@ -7,7 +7,7 @@ export default async function ModelUsagePage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="model-usage" title="Model usage"
-    description="Understand which models power each community: calls, reported tokens, estimated cost and pipeline roles.">
+    description="Model calls, reported tokens and estimated costs by community.">
     <ModelUsageDashboard />
   </AdminShell>;
 }

@@ -1,0 +1,1027 @@
+[
+  {
+    "_id": "f0f092e9-e03b-4e1e-9c28-262ca5c06043",
+    "planned": true,
+    "discovery": [],
+    "options": {
+      "mode": "manual",
+      "flow": "current",
+      "map_flow": "current",
+      "guardrails": "strict",
+      "guardrails_off": [],
+      "access": "respect",
+      "access_ignore": [],
+      "count_history": false,
+      "paid": {},
+      "external_off": [],
+      "search_provider": "serpapi",
+      "classifier": "off",
+      "topics": [
+        "crime",
+        "deaths",
+        "events",
+        "home_sales",
+        "sports"
+      ],
+      "story_limit": null
+    },
+    "kind": "edition",
+    "location_id": "osm-r13915552-wa",
+    "location_name": "Wedgwood, Seattle, WA",
+    "trigger": {
+      "by": "local-admin@localhost",
+      "kind": "manual"
+    },
+    "status": "awaiting_authoring",
+    "today": "2026-11-06",
+    "window": [
+      "2026-11-07",
+      "2026-11-13"
+    ],
+    "last_edition_day": null,
+    "sources": [
+      {
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "type": "opendata",
+        "job_id": "f5564c98-7974-462c-aa13-1291dab5a272",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "17 rows since 2026-10-30; 2 items kept, 15 left out",
+        "event_count": 2,
+        "shortlisted": 2,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "type": "web",
+        "job_id": "4cda3452-b49c-4b0b-825f-effb0ce40052",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "type": "trending",
+        "job_id": "01c8688f-5e46-49c2-9aa6-18f6ba7a6b7f",
+        "status": "completed",
+        "result_status": "failed",
+        "detail": "Error: All linked reporting unavailable",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "type": "web",
+        "job_id": "ffe56466-56fb-452a-87ac-c3105b2f04b7",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 15 items kept, 4 left out",
+        "event_count": 15,
+        "shortlisted": 15,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "type": "homesafety",
+        "job_id": "ab43c23a-22e6-4205-992d-1938e01ff3f3",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "7 health-based violations in WA since 2026-05-10; 4 community water systems, 4 checked, 0 serving Wedgwood or within 50 km",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "type": "remembrance",
+        "job_id": "3525de74-9885-46a0-9926-7f31d6fd3c06",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 approved family notices for Wedgwood; 0 approved since 2026-10-30",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "type": "opendata",
+        "job_id": "12009dcd-0951-4e3c-901d-cecf62804bf7",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "411 rows since 2026-10-30; 0 items kept, 411 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "type": "web",
+        "job_id": "40468f1e-b69a-40ef-8f94-25b443d31998",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 9 items kept, 6 left out",
+        "event_count": 9,
+        "shortlisted": 9,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "type": "web",
+        "job_id": "7296c0b0-823e-4da2-b632-c0d83ce323ef",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "type": "meetings",
+        "job_id": "5b360e74-61e5-4c86-95e8-9bcd0a9874d6",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "legistar API: 0 upcoming agendas, 0 recent outcomes",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": {
+          "method": "rules"
+        },
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "type": "hazards",
+        "job_id": "2cb881cb-c280-40b2-94bc-85d802a69f29",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 active Weather Service alerts for Wedgwood; 0 kept",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "type": "newssearch",
+        "job_id": "8cb8da58-c306-47d7-92c1-0c2872e6ab6c",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "gdelt: 0 results for \"Wedgwood\" \"Seattle\"; 0 to check against the article, 0 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "type": "web",
+        "job_id": "64d3a18f-a29e-4337-b62e-d18b584f73c2",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 10 items kept, 5 left out",
+        "event_count": 10,
+        "shortlisted": 10,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "type": "meetings",
+        "job_id": "f98f9571-4700-4147-ad69-e703d3b33dd5",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "legistar API: 0 upcoming agendas, 0 recent outcomes",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": {
+          "method": "rules"
+        },
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "type": "opendata",
+        "job_id": "687167af-258f-466b-befa-7fc2aef242a9",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "367 rows since 2026-10-30; 1 items kept, 367 left out",
+        "event_count": 1,
+        "shortlisted": 1,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "type": "web",
+        "job_id": "4ae5a41d-f92d-454b-8825-1ed3db1c639f",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "5 requests: feed, 2 pages; 12 items kept, 0 left out",
+        "event_count": 12,
+        "shortlisted": 12,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "type": "community",
+        "job_id": "eb8f29c6-a7b7-4316-80b0-527e38aed47e",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 approved neighbour stories for Wedgwood; 0 current",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "type": "web",
+        "job_id": "11669027-df22-43bf-af7b-3c9431861315",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 12 items kept, 3 left out",
+        "event_count": 12,
+        "shortlisted": 12,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "type": "justice",
+        "job_id": "5a58d378-e114-49d0-afea-144bccac3a27",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 announcements since 2026-10-30; 0 name Seattle or its area (0 kept)",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "type": "hazards",
+        "job_id": "5a514a16-51cc-49d5-9328-4c3a07b1d553",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 earthquakes of magnitude 2.5+ within 50 km since 2026-10-30; 0 noticeable in 0 stories",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "type": "web",
+        "job_id": "5cbcf3a0-ccc0-416b-b254-35dffc4f4e43",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "8 requests: feed, 5 pages; 0 items kept, 17 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "type": "trending",
+        "job_id": "a09cf7d4-cbb9-4117-963e-eb10bb99e04d",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "5 topics measured for Wedgwood, 0 recent locally reported stories; 0 omitted without local story context",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      }
+    ],
+    "collection_tasks": [
+      {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "76t5-zqzr",
+          "topic": "permits",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:76t5-zqzr"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "params": {
+          "url": "https://seattle.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "civic",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:12a97f513c66"
+        }
+      },
+      {
+        "type": "trending",
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:bluesky"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "params": {
+          "url": "https://crosscut.com/",
+          "feed_url": "https://www.cascadepbs.org/rss/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:58f6a880f189"
+        }
+      },
+      {
+        "type": "homesafety",
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:homesafety:sdwis"
+        }
+      },
+      {
+        "type": "remembrance",
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:remembrance:family"
+        }
+      },
+      {
+        "type": "opendata",
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "params": {
+          "domain": "data.kingcounty.gov",
+          "dataset": "r878-4sxa",
+          "topic": "inspections",
+          "filter": "city",
+          "agency": "Public Health - Seattle & King County",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:data.kingcounty.gov:r878-4sxa"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "params": {
+          "url": "https://iexaminer.org/",
+          "feed_url": "https://iexaminer.org/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:ca81bb9cb08e"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "params": {
+          "url": "https://kingcounty.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "civic",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:224872219f21"
+        }
+      },
+      {
+        "type": "meetings",
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "params": {
+          "government": {
+            "status": "override",
+            "platform": "legistar",
+            "tenant": "kingcounty",
+            "website": "https://kingcounty.legistar.com/",
+            "wikidata_id": null,
+            "pages_checked": [
+              "https://kingcounty.legistar.com/"
+            ],
+            "detail": "legistar account 'kingcounty' matched by name"
+          },
+          "fixed": true,
+          "level": "county",
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:kingcounty"
+        }
+      },
+      {
+        "type": "hazards",
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:nws"
+        }
+      },
+      {
+        "type": "newssearch",
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "params": {
+          "backend": "gdelt",
+          "source_map_id": "osm-r13915552-wa:newssearch:gdelt"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "params": {
+          "url": "https://seattlemedium.com/",
+          "feed_url": "https://seattlemedium.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:43502f8de4c1"
+        }
+      },
+      {
+        "type": "meetings",
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "params": {
+          "government": {
+            "status": "detected",
+            "platform": "legistar",
+            "tenant": "seattle",
+            "website": "https://seattle.gov/",
+            "wikidata_id": "Q5083",
+            "pages_checked": [
+              "https://seattle.gov/",
+              "https://wilson.seattle.gov/2026/11/04/mayor-wilson-celebrates-support-for-transit-measure-and-election-momentum-government-must-fight-for-working-people/",
+              "https://seattle.gov/council"
+            ],
+            "detail": "legistar tenant seattle found under a name guessed from the town"
+          },
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:seattle"
+        }
+      },
+      {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "kzjm-xkqj",
+          "topic": "fire",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:kzjm-xkqj"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "params": {
+          "url": "https://www.seattleweekly.com/",
+          "feed_url": "https://www.seattleweekly.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:496de024da04"
+        }
+      },
+      {
+        "type": "community",
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:community:neighbours"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "params": {
+          "url": "https://www.thestranger.com/",
+          "feed_url": "https://www.thestranger.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:24db13dae541"
+        }
+      },
+      {
+        "type": "justice",
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:justice:doj"
+        }
+      },
+      {
+        "type": "hazards",
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:usgs"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "params": {
+          "url": "https://www.wiaa.com/",
+          "feed_url": "https://www.wiaa.com/feed/",
+          "kind": "school_sports",
+          "section": "schools",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:a0b0f07c95e3"
+        }
+      },
+      {
+        "type": "trending",
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:wikipedia"
+        }
+      }
+    ],
+    "draft_id": null,
+    "edition_id": null,
+    "published": null,
+    "error": null,
+    "created_at": 1794009720.283,
+    "updated_at": 1794009771.593,
+    "authoring_started_at": null,
+    "stage_started_at": 1794009720.283,
+    "stage_transitions": [
+      {
+        "status": "collecting",
+        "by": "local-admin@localhost",
+        "at": 1794009720.283
+      },
+      {
+        "status": "awaiting_authoring",
+        "by": "worker",
+        "at": 1794009771.593
+      }
+    ],
+    "completed_at": null,
+    "map_version": 1,
+    "source_snapshot": [
+      {
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "url": "https://data.kingcounty.gov/d/r878-4sxa",
+        "reader": "opendata",
+        "status": "active",
+        "section": "business",
+        "found_by": "opendata",
+        "detail": "food inspections on the county portal data.kingcounty.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "url": null,
+        "reader": "meetings",
+        "status": "active",
+        "section": "civic",
+        "found_by": "national",
+        "detail": "Legistar and CivicClerk tenant APIs; official city council HTML/PDF agendas and minutes",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "url": "https://kingcounty.legistar.com/",
+        "reader": "meetings",
+        "status": "active",
+        "section": "civic",
+        "found_by": "meetings",
+        "detail": "legistar account 'kingcounty' matched by name; confirm it is King County",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "url": "https://seattle.gov/",
+        "reader": "web",
+        "status": "active",
+        "section": "civic",
+        "found_by": "government",
+        "detail": "The city's official website",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "url": "https://kingcounty.gov/",
+        "reader": "web",
+        "status": "active",
+        "section": "civic",
+        "found_by": "government",
+        "detail": "The county's official website (OpenStreetMap)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "url": null,
+        "reader": "community",
+        "status": "active",
+        "section": "community",
+        "found_by": "national",
+        "detail": "Stories readers submit on the reader site, published only after an editor approves them",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "url": null,
+        "reader": "newssearch",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "GDELT news search for the place (Gemini grounded search optional); headlines and links, each checked against the article before use",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "url": null,
+        "reader": "trending",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "url": null,
+        "reader": "trending",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "url": "https://www.seattleweekly.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q861430)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "url": "https://www.thestranger.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q3522886)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "url": "https://crosscut.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q5188530)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "url": "https://iexaminer.org/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q6050327)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "url": "https://seattlemedium.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q7442135)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "url": null,
+        "reader": "remembrance",
+        "status": "active",
+        "section": "obituaries",
+        "found_by": "national",
+        "detail": "Family-submitted death notices approved by an editor, and editor-added funeral-home feeds with a recorded republication permission",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "url": "https://cos-data.seattle.gov/d/76t5-zqzr",
+        "reader": "opendata",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "opendata",
+        "detail": "building permits on the city portal cos-data.seattle.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "url": null,
+        "reader": "justice",
+        "status": "active",
+        "section": "safety",
+        "found_by": "national",
+        "detail": "U.S. Department of Justice press releases for the state's U.S. Attorney's Offices, and editor-added county prosecutor or attorney general feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "url": "https://cos-data.seattle.gov/d/kzjm-xkqj",
+        "reader": "opendata",
+        "status": "active",
+        "section": "safety",
+        "found_by": "opendata",
+        "detail": "fire 911 on the city portal cos-data.seattle.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "url": "https://www.wiaa.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "athletics",
+        "detail": "Wikidata http://www.wikidata.org/entity/Q7971987",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "url": null,
+        "reader": "hazards",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "National Weather Service alerts and USGS earthquake feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "url": null,
+        "reader": "hazards",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "National Weather Service alerts and USGS earthquake feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "url": null,
+        "reader": "homesafety",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "EPA Safe Drinking Water health-based violations for community water systems serving the county",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      }
+    ],
+    "collect_started_at": 1794009720.903
+  },
+  {
+    "_id": "de205296-bceb-485f-9534-860024d17b57",
+    "planned": false,
+    "discovery": [
+      "national",
+      "government",
+      "osm",
+      "meetings",
+      "opendata",
+      "newsrooms",
+      "athletics",
+      "publishers",
+      "llm"
+    ],
+    "options": {
+      "mode": "manual",
+      "flow": "current",
+      "map_flow": "current",
+      "guardrails": "strict",
+      "guardrails_off": [],
+      "access": "respect",
+      "access_ignore": [],
+      "count_history": false,
+      "paid": {},
+      "external_off": [],
+      "search_provider": "serpapi",
+      "classifier": "off",
+      "topics": [
+        "crime",
+        "deaths",
+        "events",
+        "home_sales",
+        "sports"
+      ],
+      "story_limit": null
+    },
+    "kind": "map",
+    "location_id": "osm-r13915552-wa",
+    "location_name": "Wedgwood, Seattle, WA",
+    "trigger": {
+      "by": "local-admin@localhost",
+      "kind": "manual"
+    },
+    "status": "mapped",
+    "today": "2026-11-06",
+    "window": [
+      "2026-11-07",
+      "2026-11-13"
+    ],
+    "last_edition_day": null,
+    "sources": [],
+    "collection_tasks": [],
+    "draft_id": null,
+    "edition_id": null,
+    "published": null,
+    "error": null,
+    "created_at": 1794009591.112,
+    "updated_at": 1794009683.314,
+    "authoring_started_at": null,
+    "stage_started_at": 1794009591.112,
+    "stage_transitions": [
+      {
+        "status": "mapping",
+        "by": "local-admin@localhost",
+        "at": 1794009591.112
+      },
+      {
+        "status": "mapped",
+        "by": "worker",
+        "at": 1794009683.314
+      }
+    ],
+    "completed_at": 1794009683.314
+  }
+]

@@ -1,0 +1,88 @@
+# Obituaries and milestones. See README.md for how to edit a rule.
+category: obituaries
+label: Obituaries and milestones
+target: true
+topic: deaths
+
+goal:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: obituaries.goal.death_notices, text: "Find sources that publish death notices for this place." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: obituaries.prefer.funeral_homes, text: Funeral homes. }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: obituaries.prefer.osm_funeral_directors, set: osm_kinds, order: 22, text: Funeral homes with a website., osm: { kind: funeral_directors, tag: shop, priority: 7, story_kind: obituary } }
+
+reject:
+  - consumers: [manual, agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: obituaries.reject.search_exclusions, set: search_exclusions, text: Sites left out of this category's searches., reason: "Sites to leave out, aggregators and platforms we never read.", values: [legacy.com] }
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: obituaries.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as an obituary., value: obituary }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: obituaries.stage1.funeral_homes, stage: stage1, source_type: Funeral homes, pattern: '"{place}" "{state}" ("funeral home" OR mortuary OR cremation) (obituaries OR "recent services")' }
+      - { id: obituaries.stage1.city_funeral_homes, stage: stage1, source_type: Funeral homes, pattern: '"{parent}" "{state}" ("funeral home" OR mortuary OR cremation) obituaries' }
+      - { id: obituaries.stage1.obituaries, stage: stage1, source_type: Obituary pages, pattern: 'inurl:obituaries "{place}" "{state}"' }
+      - { id: obituaries.stage1.institution, stage: stage1, source_type: Funeral homes, for_each: { list: institutions, kinds: [funeral_directors], limit: 2 }, pattern: '"{name}" "{state}" obituaries' }
+      - { id: obituaries.stage2.funeral_sweep, stage: stage2, source_type: Funeral homes, for_each: { list: funeral_hosts, limit: 2 }, pattern: 'site:{host} (obituary OR "in loving memory") after:{after}' }
+      - { id: obituaries.stage2.place_sweep, stage: stage2, source_type: Obituary pages, pattern: '"{place}" "{state}" obituary after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: obituaries.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: obituaries funeral }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: obituaries.page.site_links
+        set: site_links
+        order: 4
+        text: Links to obituary and memorial pages.
+        regex: '\b(obituar(?:y|ies)|memorials?|tributes|recent services)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: obituaries.page.item_keywords
+        set: item_keywords
+        order: 1
+        text: Words that put a story in this section.
+        regex: 'obituar|passed away|celebration of life|memorial service|in loving memory|\bfuneral\b|\bdied\b|\bwedding anniversary\b|\bturns 100\b'
+        flags: i
+      - { id: obituaries.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [obituary] }
+      - { id: obituaries.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [obituary] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: obituaries.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 1 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: obituaries.stop.funeral_homes, text: Funeral homes read per run., value: 4 }
+      - { id: obituaries.stop.funeral_hub_pages, text: Hub pages read on a funeral home's site., value: 1 }
+      - { id: obituaries.stop.funeral_pages, text: Pages kept from a funeral home's site., value: 1 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: obituaries.example.funeral_home, verdict: accepted, text: "A funeral home serving the area, even if it doesn't name a neighbourhood: each notice is checked for a local connection." }

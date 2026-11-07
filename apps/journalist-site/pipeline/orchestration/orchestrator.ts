@@ -48,7 +48,7 @@ import { getLocation, listLocations } from "../communities/locations";
 import { finishAuthoring, authorNextStory, rankSection, startAuthoring } from "../editions/authoring";
 import { collectedItems, type CollectedItem } from "../editions/assemble";
 import { writeEditionMap } from "../editions/edition-map";
-import { collectableSources, hostOf, recordSourceRun, sourceMap, taskFor } from "../sourcemap/store";
+import { categoryCoverage, collectableSources, hostOf, recordSourceRun, sourceMap, taskFor } from "../sourcemap/store";
 import { dueMethods, runMethod } from "../discovery/run";
 import { METHODS } from "../discovery/methods";
 import type { ModelRuntime } from "../model/runtime";
@@ -61,8 +61,14 @@ import { publishToReader } from "./publish";
 import { recordPublished } from "../editions/ledger";
 import { expireOverdueRuns } from "./diagnostics";
 import { ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, collectionCandidateCount, RunConflict, failRun, getRun, markNotReached, newRun, lastEditionDay, planRun, runs, setRun, stageKinds, awaitAuthoringWhenReady, updateSource, workableRuns, type PipelineRun } from "./runs";
+import type { Principal } from "../accounts/identity";
+import { assertGlobalAdmission, assertSponsor, authorizePaidAction, blockExecution, consumeApproval, prepareBinding } from "../accounts/execution";
+import { ExecutionBlocked } from "../core/execution-errors";
+import { safeError } from "../core/redaction";
 
 export type OrchestratorDeps = {
+  principal?: Principal;
+  runtimeForRun?: (run: PipelineRun) => Promise<OrchestratorDeps>;
   db: Db;
   store: ArtifactStore;
   settings: Settings;
@@ -107,6 +113,7 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   const existing = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (existing) {
+    if (deps.principal) await authorizePaidAction(deps.db, existing._id, deps.principal);
     if (existing.status === "collecting") await resumeRun(deps, existing._id, trigger.by);
     return { run: existing, started: false };
   }
@@ -117,6 +124,7 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
   const window = ingestWindow(today);
   await migrateManualLinks(deps.db, location.id);
   const run = newRun(location, trigger, today, window, [], await lastEditionDay(deps.db, location.id, today), [], options);
+  if (deps.principal) run.execution = await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "edition", choices);
   run.map_version = location.source_map_version ?? null;
   const inserted = await insertRun(deps, run, locationId);
   if (inserted) return { run: inserted, started: false };
@@ -128,16 +136,21 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
 /** Refresh a location's source map: the methods that are due, or all of them on a rebuild. Never starts an edition. */
 export async function startMapRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"], choices?: unknown, rebuild = false) {
   const location = await getLocation(deps.db, locationId);
-  const chosen = resolveRunOptions(choices);
+  const mapChoices = { ...(choices && typeof choices === "object" ? choices : {}), rebuild };
+  const chosen = resolveRunOptions(mapChoices);
   const options = { ...chosen, flow: chosen.map_flow ?? chosen.flow };
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   const existing = await runs(deps.db).findOne({ location_id: location.id, status: { $in: ACTIVE_RUN_STATUSES } });
-  if (existing) return { run: existing, started: false };
+  if (existing) {
+    if (deps.principal) await authorizePaidAction(deps.db, existing._id, deps.principal);
+    return { run: existing, started: false };
+  }
   const today = localToday(location.state);
   // The dork method belongs to the agentic flow. Results are cached by query, so a repeat doesn't pay twice.
   const due = rebuild ? METHODS.map((definition) => definition.method) : await dueMethods(deps.db, location.id);
   const methods = [...new Set([...due, ...(options.flow === "agentic" ? ["dork"] : [])])].filter((method) => method !== "dork" || options.flow === "agentic");
   const run: PipelineRun = { ...newRun(location, trigger, today, ingestWindow(today), [], null, methods, options), kind: "map", status: "mapping" };
+  if (deps.principal) run.execution = await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "map", mapChoices);
   run.stage_transitions = [{ status: "mapping", by: trigger.by, at: run.created_at }];
   const inserted = await insertRun(deps, run, locationId);
   if (inserted) return { run: inserted, started: false };
@@ -148,16 +161,18 @@ export async function startMapRun(deps: OrchestratorDeps, locationId: string, tr
 
 /** Save a new run; returns the run already open for the location, if one got there first. */
 async function insertRun(deps: OrchestratorDeps, run: PipelineRun, locationId: string) {
+  await assertGlobalAdmission(deps.db);
+  run.admission = "newsroom";
   try {
     await runs(deps.db).insertOne(run);
   } catch (error) {
     if ((error as { code?: number }).code === 11000) {
-      const raced = await runs(deps.db).findOne({ location_id: run.location_id, status: { $in: ACTIVE_RUN_STATUSES } });
-      if (raced) return raced;
+      throw new RunConflict("Another unfinished run was admitted first. Reload the newsroom and wait for its completion.");
     }
     throw error;
   }
   try {
+    await consumeApproval(deps.db, run);
     // Removal may have started while this request was preparing the run.
     await getLocation(deps.db, locationId);
   } catch (error) {
@@ -203,16 +218,8 @@ async function archiveStageLogs(deps: OrchestratorDeps, runId: string, stage: st
 }
 
 export async function startAll(deps: OrchestratorDeps, by: string, choices?: unknown) {
-  const started = [];
-  for (const location of await listLocations(deps.db)) {
-    // One location with no map yet doesn't stop the others.
-    try { started.push(await startRun(deps, location.id, { by, kind: "all" }, choices)); }
-    catch (error) {
-      if (!(error instanceof RunConflict)) throw error;
-      log.warn("edition_not_started", { location_id: location.id, reason: error.message });
-    }
-  }
-  return started;
+  void deps; void by; void choices;
+  throw new RunConflict("Batch runs are disabled: the newsroom admits one unfinished source-map or edition run. Start a single location.");
 }
 
 /** The autopilot actor's name in stage transitions. */
@@ -236,6 +243,7 @@ export type ManualStage = "authoring" | "finish";
 
 /** A compare-and-set gate; repeated stage clicks resume without recreating completed work. */
 export async function triggerStage(deps: OrchestratorDeps, runId: string, stage: ManualStage, by: string) {
+  if (deps.principal) await assertSponsor(deps.db, runId, deps.principal);
   const existing = await getRun(deps.db, runId);
   if (!existing) throw new Error(`Unknown run: ${runId}`);
   await getLocation(deps.db, existing.location_id);
@@ -262,6 +270,7 @@ export async function triggerStage(deps: OrchestratorDeps, runId: string, stage:
 
 /** Repair interrupted enqueue boundaries using persisted tasks and completed step results. */
 export async function resumeRun(deps: OrchestratorDeps, runId: string, by: string) {
+  if (deps.principal) await assertSponsor(deps.db, runId, deps.principal);
   const run = await getRun(deps.db, runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   await getLocation(deps.db, run.location_id);
@@ -407,9 +416,11 @@ async function finishMap(deps: OrchestratorDeps, job: Job) {
   }
   await deps.db.collection(COLLECTIONS.locations).updateOne({ _id: location.id as never }, { $set: { source_map_at: now() }, $inc: { source_map_version: 1 } });
   const at = now();
-  await runs(deps.db).updateOne({ _id: run._id, status: "mapping" }, { $set: { status: "mapped", completed_at: at, updated_at: at }, $push: { stage_transitions: { status: "mapped", by: "worker", at } } });
+  const categories = await categoryCoverage(deps.db, location.id);
+  for (const row of categories.filter((category) => category.empty)) await recordDecision({ stage: "topic", actor: "rule", subject: `category:${row.category}`, decision: "empty", reason: `No source found for ${row.label}${row.built_in ? ` beyond ${row.built_in} national readers` : ""}` });
+  await runs(deps.db).updateOne({ _id: run._id, status: "mapping" }, { $set: { status: "mapped", completed_at: at, updated_at: at, category_coverage: categories }, $push: { stage_transitions: { status: "mapped", by: "worker", at } } });
   await archiveStageLogs(deps, run._id, "mapping");
-  log.info("run_mapped", { run_id: run._id, location_id: run.location_id, addresses: tasks.length });
+  log.info("run_mapped", { run_id: run._id, location_id: run.location_id, addresses: tasks.length, empty_categories: categories.filter((row) => row.empty).map((row) => row.category) });
   return { more: false, checked: index - step };
 }
 
@@ -630,7 +641,8 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
 export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !stageKinds(run).includes(job.kind)) return { skipped: true };
-  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, options: run.options ?? LEGACY_OPTIONS }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id }, () => {
+  if (deps.runtimeForRun) deps = await deps.runtimeForRun(run);
+  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, sponsorId: run.execution?.sponsorId, credentialVersion: run.execution?.credentialVersion, options: run.options ?? LEGACY_OPTIONS }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion }, () => {
     switch (job.kind) {
       case "discover": return discoverJob(deps, job);
       case "agent_round": return agentRoundJob(deps, job);
@@ -756,13 +768,22 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
           logger("job").info("job_cancelled", { kind: job.kind, job_id: job._id, run_id: job.run_id });
           return;
         }
-        const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        if (error instanceof ExecutionBlocked) {
+          await blockExecution(deps.db, job.run_id, safeError(error));
+          await deps.db.collection<Job>(COLLECTIONS.jobs).updateOne(
+            { _id: job._id, claim_token: job.claim_token },
+            { $set: { status: "pending", lease_until: null, claim_token: null, error: safeError(error) }, $inc: { attempts: -1 } },
+          );
+          log.warn("run_credentials_paused", { run_id: job.run_id, reason: safeError(error) });
+          return;
+        }
+        const detail = safeError(error);
         log.error("job_execution_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
         const outcome = await fail(deps.db, job, error, !(error instanceof PermanentJobError));
         if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
           await cancelRunJobs(deps.db, job.run_id);
         }
-        if (outcome === "failed") await finalFailure(deps, job, error instanceof Error ? error.message : String(error));
+        if (outcome === "failed") await finalFailure(deps, job, safeError(error));
       }
     });
   } catch (error) {

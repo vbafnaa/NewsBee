@@ -7,7 +7,7 @@ export default async function DashboardPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="dashboard" title="Newsroom overview"
-    description="Start with the health of every community. Open a location to review inputs, prepare its next edition and follow it through publication.">
+    description="Community activity and items needing attention.">
     <DashboardHome />
   </AdminShell>;
 }

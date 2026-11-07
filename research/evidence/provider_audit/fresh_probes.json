@@ -1,0 +1,21 @@
+{
+  "checked_at_utc": "2026-11-07T02:30:39Z",
+  "gdelt": {
+    "http_status": 429,
+    "seconds": 16.376902,
+    "retries": 0
+  },
+  "bluesky": {
+    "http_status": 200,
+    "seconds": 0.147102,
+    "posts_returned": 5
+  },
+  "tests_passed": 61,
+  "test_files": [
+    "model/providers",
+    "connectors/registry",
+    "wider/trend-context",
+    "deployment/services"
+  ],
+  "note": "Fresh direct API probes. Other reader assessments use saved live run 5030d2a8-2801-424f-bd67-61e16600f525; not represented as new runs. No production credentials inspected, no provider enabled, no source code modified during this audit."
+}

@@ -7,7 +7,7 @@ export default async function HealthPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="health" title="System health"
-    description="Global scheduler, job queue, source and location health, with historical production trends.">
+    description="Scheduler, queue and production health.">
     <HealthDashboard />
   </AdminShell>;
 }

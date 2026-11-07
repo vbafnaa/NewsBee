@@ -19,6 +19,10 @@ describe("reader topics", () => {
     expect(news("Ballard housing market, September 2026: What 24 closed sales say")).toBe("housing");
   });
 
+  it("files school athletics under sports, not schools", () => {
+    expect(news("Ballard High names new athletic director")).toBe("sports");
+  });
+
   it("uses the source's own topic for permits, licences and meeting outcomes", () => {
     expect(topicOf({ kind: "development", title: "Permit issued for new construction in Ballard" })).toBe("housing");
     expect(topicOf({ kind: "business_opening", title: "Ballard Pickleball Club applies for snack bar licence" })).toBe("business");

@@ -5,6 +5,90 @@ runs locally with stand-ins, or on Vercel with MongoDB Atlas, Google Drive and G
 
 ## Run locally
 
+### Accounts and encrypted API settings
+
+Set server-only `NEWSBEE_OWNER_EMAIL` to the verified Google account that owns this
+workspace. The owner is bootstrapped by that exact normalized email, never by
+account age or insertion order. **Users** (`/administrators`) lets only the owner
+add, reenable or disable editors; the owner cannot be disabled. Enabled membership
+is rechecked on every authenticated request and execution check. Location removal
+and reader-data clearing are owner-only. Internal maps retain their separate
+password gate and read-only access.
+
+**Account & API settings** (`/account`) stores each user's write-only API keys in
+`journalist_credentials`, encrypted with AES-256-GCM. Provision server-only
+`NEWSBEE_CREDENTIAL_KEYS` as a JSON object mapping key IDs to base64-encoded random
+32-byte keys, and `NEWSBEE_CREDENTIAL_ACTIVE_KEY` as the active ID. Generate key
+material with a cryptographically secure generator in your secret manager;
+never commit it or put it in a `NEXT_PUBLIC_*` variable. For rotation, retain old
+IDs for reads, add a new ID and select it as active. Replacing a profile encrypts
+it under the active key. Back up the keyring securely: losing an old key requires
+revoking and reentering the affected profiles.
+
+GET `/api/account/settings` returns only masked metadata, profile version and
+configured capabilities (not external validation). PUT accepts
+`{source:"personal",config:{modelProviders:[...],integrations:{...},tavilySearchApiKey,
+lightModel,modelDailyCalls}}`; omitted fields preserve saved values, omitted/blank
+secret values preserve keys, and explicit `null` removes a key. Provider rows
+follow `ProviderConfig` in `pipeline/core/config.ts`, using unique names. A
+supplied provider list replaces that list; an empty list removes all providers.
+DELETE explicitly revokes the whole profile. Replacements and revocations
+atomically increment the profile version, invalidating unfinished runs bound to
+the previous version. Validation is structural only and never calls providers.
+
+Browsing and configuration work without personal API keys. Personal profiles
+start with every optional integration off and never overlay deployment model,
+search or integration credentials. The exact configured `NEWSBEE_OWNER_EMAIL`
+account automatically uses existing deployment credentials when no stored profile
+exists: effective `source:"environment"`, `version:0`, `automatic:true`, without
+writing a credential row, entering keys or saving a profile. Editors never receive
+this implicit default. An explicit personal profile or revocation tombstone always
+takes precedence, even if its model keys are missing. The local sign-in bypass requires explicit `NEWSBEE_MODE=local`,
+localhost, no `VERCEL`, and a nonproduction runtime.
+
+Changing the effective credential source is an unsaved form change: click **Save
+personal profile** or **Save deployment defaults** and wait for confirmation.
+Saving an explicit deployment selection is optional for an automatic owner;
+it creates version 1 and pauses any unfinished version-0 work until explicit
+reconnection. Revoking automatic defaults also creates a version-1 tombstone:
+the lack of personal keys never resurrects deployment access. Later replacements
+increment the stored version normally. Reloading resolves the effective source.
+Selecting deployment defaults does not provision models, keys or budgets.
+The effective capability summary reflects the selected deployment's
+actual model/key pairs and paid-search keys, without returning secrets or probing
+providers. Missing or invalid deployment configuration remains blocked with a
+specific configuration message. Direct owner deployment-funded work may use test,
+training or final purpose. Admin-backup settings are separate and only fund
+specifically approved editor final plans, never test/training work.
+
+If the source selector is absent, the account is an editor: only the exact
+`NEWSBEE_OWNER_EMAIL` account may select deployment credentials. Correct missing or
+mismatched owner configuration in the deployment's secret manager; do not promote
+the oldest user or infer ownership from a stored role. No keys are required for
+login, browsing or settings reads.
+
+New edition/map buttons check their respective selected options. **Restart run**
+checks that historical run's saved options and kind, creates a new own-sponsored
+run, and does not reuse an old Admin approval. Historical unbound runs never gain
+paid retry/resume rights from a new profile; unfinished legacy work still requires
+explicit owner claim or cancellation. Paused and editor-waiting work still holds
+the global slot. The execution notice reports profile, sponsor, approval and slot
+blockers rather than silently enabling spend. Disabled pipeline actions expose
+their own model/search/budget, plan, sponsor or slot reason on hover and keyboard
+focus, including readiness loading/errors. Edition, map and historical-restart
+requirements are not conflated.
+
+For isolated UI checks, `node scripts/account-ui-fixture.mjs --deployment-defaults`
+seeds fake deployment model/search configuration, signed owner/editor sessions and
+an in-memory database. Omit the flag to check missing deployment configuration.
+External fetches are blocked and pipeline start/reconnect/spend endpoints are mocked;
+never use real deployment secrets or this fixture as evidence of real paid execution.
+Use `FIXTURE_APP_PORT` and `FIXTURE_PREVIEW_PORT` to choose unused ports (defaults:
+3007 and 3010). Sessions share cookies on the same hostname across ports; coordinate
+identity changes with anyone using another local preview.
+Add `--workspace-review` for a fictional completed final run with personal/Admin
+funding records. The fixture-only internal-map password is `fixture-maps-only`.
+
 Follow [Run locally](../../README.md#run-locally) in the root README: Node 24 and npm 11, a
 model (an API key in `apps/journalist-site/.env.local`, or a running Ollama with
 `qwen3:4b` pulled), then `npm run local` from this directory after `npm ci` here and in
@@ -18,7 +102,15 @@ local folder (`.local/stage2/drive`), Google sign-in is skipped on localhost, an
 your own database instead, or `NEWSBEE_LOCAL_TICK_SECONDS` to change the tick.
 
 On **Location workspaces** (`/locations`), search for a town, select a suggestion and click **Add
-location**. Open its workspace, choose the run options, then use **Pipeline & logs → Run end to end**.
+location**. Open **Pipeline & logs**, choose the purpose and mode, then **Create edition**
+(**Start collection** in manual mode). **Refresh source map** appears first and only
+updates sources; this display order does not introduce an execution dependency.
+Collection/edition settings and paid-service budgets are in labeled disclosures,
+with current choices summarized while closed. Expand them to review or change a
+new run's options. Optional inline Admin-backup forms also start closed; their
+summaries show pending, approved/blocked or stale requests. Funding eligibility stays visible on run cards; actual call
+details live in the run inspector. Reference windows, optional integration keys,
+reviewed approvals and usage metric definitions are expandable as well.
 The run discovers sources, collects them, writes and publishes with no further clicks. With
 **Manual** run mode it stops after collection (**Start authoring**) and after writing (**Write
 front page and email, then publish**), and the local poller never crosses those stops.
@@ -60,25 +152,45 @@ items; source summary counters alone do not enable authoring.
   its first search to its printed edition, in five phases (Find, Collect, Filter, Select, Print),
   for either flow. Selecting a stage lists what came in, what was left out and why, with filters
   for topic and who decided, and **Trail** shows one item's full path. The page also shows the
-  run's options, cost per service, topic coverage, the agent's plans and what strict rules would
+  run's options, cost per service, sources by category, topic coverage, the agent's plans and what strict rules would
   have stopped, and a live run updates as it goes. **Compare runs** puts two runs side by side.
-  **Source network** is the global inventory and location filter. Source editing (pin, pause,
-  reject, windows, manual links and discovery refresh) is in the admin-only location
-  workspace's **Location details** tab. Full item traces and overrides remain in the
-  workspace's run item explorer while retained.
+  **Source network** is the global inventory and location filter. Its table shows each source's
+  **Initial Status** (what the pipeline gave it, with the live status beneath once they differ;
+  a link-only source shows **Non-scrapable** with the reason it isn't read, unless it is rejected,
+  paused or dormant. This is display only: `link_only` still decides what is collected, and
+  accepting such a source keeps it link-only),
+  **Decision** (Accept, Reject or blank) and **Reasoning**. Anyone with the map password can read
+  these; a signed-in journalist can also change them, here or under **Location details**.
+  Accept makes a source active (a pinned one stays pinned) and it then stays active however quiet
+  it gets; Reject stops collection; clearing restores the initial status. Reasoning is a fixed list that
+  depends on the Decision (`pipeline/sourcemap/reasons.ts`); changing or clearing the Decision
+  clears it. Other asks for an explanation, saved when you leave the box, and shows as incomplete
+  without one. Free text from before the list stays as a read-only **Earlier note**. Later map runs
+  never undo a label, and every change is also appended to `source_reviews` with the code, its
+  label and any Other text, which keeps its history even if source records or the location are removed.
+  Other source editing (pin, pause, windows, manual links and discovery refresh) is in the
+  admin-only location workspace's **Location details** tab. Rejecting happens only through
+  Decision, and a rejected source can't be re-added until its Decision changes. Full item traces
+  and overrides remain in the workspace's run item explorer while retained.
 - **Interest and usage map** (`/interest-usage`): separate reads, subscription and launch
   interest metrics; interactive zoom/pan by mouse, touch or keyboard, geographic heat grid,
   overlapping-community chooser, exact counts, UTC date filters and location drill-down,
   including requested locations not yet onboarded. The interactive map needs no activation
   flag; see [map controls and development sample preview](../../Docs/deployment.md#preprod-only-interactive-usage-map).
-- **Clear reader data** (`/clear-data`, administrators only): permanently deletes impressions,
-  clicks and shares (`reader_engagement`) and launch-interest signups (`reader_interest_signups`)
-  for one location or all of them, after showing counts and asking for a typed confirmation.
-  Interest-only records are deleted, including their email and consent. Records that also hold a
-  subscription, or an older signup of ambiguous intent, stay and lose only `interest_signup_at`
-  and `launch_notification`. Nothing else is changed. Each clear is logged in `reader_data_clears`
-  with who, when, the scope and the counts, and the page lists the last ten. Afterwards the
-  usage map drops those reads and interest signups, and future runs rank without that evidence;
+- **Clear reader data** (`/clear-data`, owner only): choose impressions, clicks, shares
+  (`reader_engagement`), launch-interest signups, subscriptions or legacy signups
+  (`reader_interest_signups`), for one location or all of them. Only engagement is selected
+  by default; signup emails are never cleared implicitly. Counts, selected/kept categories and
+  a typed scope confirmation precede deletion. Mixed signup rows keep their email, shared
+  consent and unselected registrations; selecting every remaining intent deletes the row.
+  Subscription and legacy counts include registrations removed from retained mixed rows,
+  not just deleted email records. Nothing else is changed. The API requires a nonempty,
+  explicit `data_types` array using `impressions`, `clicks`, `shares`, `interest`,
+  `subscriptions` or `legacy_signups`; missing/unknown categories fail without deleting.
+  Each clear is logged in `reader_data_clears` with who, when, scope, selected categories
+  and actual counts, including partial failures, and the page lists the last ten. Older audit
+  entries retain their historical engagement-plus-interest meaning. Afterwards the
+  usage map drops only the selected evidence, and future runs rank without deleted engagement;
   published editions and the per-item ranking explanations of past runs stay as they were.
 - **Inbox** (`/inbox`): held stories (with the rule that held them), reader source
   suggestions (approve checks the site and pins it on the map), problem reports from
@@ -102,6 +214,131 @@ same-origin requests; persistent throttling allows ten unlock attempts per 15-mi
 window. See [deployment](../../Docs/deployment.md) for bucket scope, database
 permissions and the usage-history limits. Public editions retain source links only, with
 no map or editorial ranking details.
+
+### Sponsored execution and the newsroom slot
+
+Approved users may browse without keys. **Account & API settings** shows structural
+capability status; it does not send provider probes. Run controls explain missing
+model, paid-search and enabled optional-integration credentials. Database, Google
+sign-in, artifact storage, Drive and publishing remain centrally managed.
+The owner's automatic or explicit deployment-default profile is owner-funded work, never an
+implicit editor default. Optional paid services need the sponsor's own saved key
+when selected; they remain off otherwise.
+
+Each map/edition run persists stable sponsor and initiating principal IDs, credential
+source/version, purpose and immutable plan hash. Queue credentials authorize transport,
+not spending. Workers claim a job before resolving its sponsor's providers; writing,
+ranking, extraction, discovery and agent runtimes share that identity. Every outgoing
+transport call rechecks enabled membership, current credentials, active run and approval.
+Already-sent requests cannot be recalled. Replacing/revoking credentials or disabling
+an account pauses unfinished sponsored work; reenabling access alone never reconnects it.
+The sponsor must explicitly **Reconnect this run**, or obtain a fresh targeted approval
+for an existing final run. Other editors can view shared results and do ordinary
+editorial work, but cannot retry, resume, rewrite, recollect or reassemble using its keys.
+A restart is a fresh current-user-sponsored run and never copies an approval.
+
+Mongo enforces **one unfinished map OR edition run across the whole newsroom**.
+The `one_unfinished_newsroom_run` unique partial index on `pipeline_runs.admission`
+reserves `"newsroom"` while mapping, collecting, authoring, finishing, publishing or
+waiting for an editor. Pending jobs and credential pauses retain the slot. Mapped,
+published, failed and cancelled runs release it; within-run worker parallelism remains.
+New-run/batch/restart conflicts fail visibly, not as a second queued location. Batch
+starts are disabled. Reassembly of a failed run reacquires the same indexed slot
+before modifying its draft. The UI links to the blocking location and its controls.
+
+### Final-run Admin LLM backup
+
+In a location's **Pipeline & logs**, configure the settings and run options once,
+select **Final**, enable the OpenAI-compatible budget, then request owner backup
+beside the edition or source-map controls. The request uses those same options,
+location, pipeline, budgets and credential version; there is no second configuration
+wizard. Agentic search and selected optional integrations must still have the
+sponsor's credentials and budgets. Pending, approved, rejected, revoked and stale
+requests appear inline. An approved start is enabled only for the original requester
+when the current configured plan/version still matches and the global slot is free.
+Starting sends the saved approved plan, not a widened set of current options.
+Existing final runs request targeted reconnect approval inline in their execution
+notice using their fixed original plan and the current credential version.
+
+**Approval inbox** (`/approvals`) is an owner-only quick-review page with pending
+requests first, sponsor, credential source/version, immutable plan and budgets,
+and approve/reject/revoke controls. It has no request wizard or pipeline start
+controls. Editors cannot navigate to this inbox, but retain API access to create
+requests and read only their own statuses from the pipeline. Owner approval never
+automatically starts or reconnects a run. Stale credential/plan/Admin-configuration
+scope is shown explicitly and cannot be approved or started; request fresh approval.
+Requests and approvals do not reserve the newsroom slot or run any paid work. Starting an approved plan
+rechecks global admission atomically; the single-use approval is bound to that run.
+Test/training runs and provider checks never acquire this backup. A model name
+without a personal key is not enough for unapproved work.
+
+Provision server-only `NEWSBEE_ADMIN_LLM_BASE_URL` (HTTPS),
+`NEWSBEE_ADMIN_LLM_MODEL` and `NEWSBEE_ADMIN_LLM_API_KEY`. For compatibility these
+fall back only to the owner's fixed `NEWSBEE_LLM_OPENAI_BASE_URL`, `..._MODEL`
+and `..._API_KEY`; the default fixed endpoint is `https://api.openai.com/v1`.
+No editor-selected endpoint/model can receive an Admin key. Personal providers are
+tried first; approved backup is eligible only when personal credentials are absent
+or a provider fails. Provider safety refusals do not trigger another model.
+Normal call budgets and editorial output validation still apply.
+
+Set/bump `NEWSBEE_ADMIN_LLM_VERSION` whenever the Admin authorization policy
+changes. Endpoint/model/key/version changes invalidate prior approvals; key rotation
+is detected by a one-way fingerprint without returning the key. Admin backup
+never includes search, scraping, classification or property-service keys. Revoking
+approval pauses the connected unfinished run; reconnecting without backup explicitly
+drops that permission. Replacing personal keys requires fresh approval if backup is
+still wanted, and cannot silently widen the approved plan. Per-attempt
+`journalist_funding_audit` records personal/Admin funding, model, sponsor/version,
+run, approval, outcome and safe fallback reason; run details display this audit.
+No prompts, keys, raw provider errors or credential-bearing URLs belong in logs.
+
+### Rollout and recovery (preprod before production)
+
+Provision **separate** owner identity, credential encryption keyring and optional Admin
+backup configuration in each environment's server-side secret manager. Do not copy
+preprod keys into production or expose any of them to browser configuration.
+The app's Mongo identity needs read/write access to `journalist_admins`,
+`journalist_credentials`, `journalist_run_approvals`, `journalist_execution_audit`,
+`journalist_funding_audit` and existing pipeline collections, plus create/list/drop
+index permissions for startup migrations. No other user needs direct credential
+collection or encryption-key access. Back up encrypted profiles and keyring separately.
+
+Existing approved emails retain access as editors unless they exactly match
+`NEWSBEE_OWNER_EMAIL`; stable principal IDs are assigned idempotently. There is no
+first-user/oldest-account owner inference. Bootstrap that exact owner, whose absent
+profile automatically resolves deployment defaults; personal overrides are optional.
+Then use **Users** to add editors. Effective credentials recheck enabled membership
+and exact owner designation for readiness, bindings, claimed jobs, every provider
+call, approvals and one-off discovery. Losing the designation removes implicit
+environment funding; old environment bindings fail closed until explicit recovery.
+Keep old encryption key IDs available until all profiles have been reencrypted through
+replacement; removing an unreadable key intentionally blocks spending, not funding
+from deployment credentials.
+
+Unbound legacy unfinished runs are paused, never assigned funding from trigger text.
+The owner may explicitly claim the remaining run with their configured profile or
+cancel it. Historical multiple unfinished runs are retained and visibly paused:
+inspect them, explicitly cancel excess attempts, then claim/reconnect the survivor.
+Do not delete the global admission index to bypass the gate. If publication was
+interrupted, reconcile centrally published artifacts before any manual recovery;
+normal cancellation remains unavailable once publication begins. Credential/approval
+failures pause jobs without consuming retry attempts, preventing retry storms.
+Rollback must first stop/drain workers and resolve active bindings; old code does not
+understand these funding/admission guarantees and must not resume new-format jobs.
+
+### Isolated account-flow acceptance
+
+After `npm ci` in journalist-site and reader-site, run
+`node scripts/account-ui-fixture.mjs` from journalist-site and open
+`http://127.0.0.1:3010/fixture/session?as=owner` (also `editor` or `other`).
+This starts the real Next UI with a fresh isolated Mongo and signed fixture sessions.
+It does not add a login bypass to deployed routes. Users, encrypted settings and
+approval request/decision APIs are real; the localhost proxy mocks pipeline starts,
+paid run actions and reconnects, writing UI state but **never jobs**. External fetch
+is blocked in the fixture Next process. Use only dummy keys; never production data.
+`/fixture/reset` clears only fixture runs/approvals. Stop the fixture when done.
+Mock provider/worker regression tests independently exercise actual admission,
+sponsor checks, approved fallback, per-call disable/revoke, replacement and reconnect.
 
 **Run orchestration** shows recent attempts with their stages, stories and expandable per-job
 logs (including source outcomes and errors). **Cancel run** stops queued jobs and marks a
@@ -232,12 +469,14 @@ tasks. A failed method keeps what it found before and retries after an hour.
 
 | Method | Finds | Refresh |
 | --- | --- | --- |
-| `government` | The city's and county's official websites (location profile; county via OpenStreetMap Nominatim) and their CivicPlus feeds (news, calendar, agendas, alerts); Agenda Center as a link | 30 days |
-| `osm` | Websites of town halls, libraries, community centres, schools, colleges, arts venues, theatres, museums, markets, associations, places of worship, funeral homes and parks inside the area (Overpass, with mirrors; at most 2 per host, 40 per location) | 30 days |
+| `government` | The city's checked website (location profile, OpenStreetMap, its Wikidata item) and the county's (OpenStreetMap Nominatim), their CivicPlus feeds (news, calendar, agendas, alerts) and Agenda Center as a link. Reads hub pages for category pages (agendas, hearings, boards, police and fire, permits, business, parks, events, volunteering), each put through the same checks as a search result, plus linked meeting portals and the chambers and community groups they list | 30 days |
+| `osm` | Websites of town halls, police and fire stations, courts, libraries, community centres, schools, colleges, arts venues, theatres, museums, markets, newspapers, nonprofits, associations, places of worship, funeral homes and parks inside the area, at most 15 per section (Overpass, with mirrors; at most 2 per host, 40 per location) | 30 days |
 | `meetings` | Legistar, CivicClerk and PrimeGov accounts for the city and county, by name | 30 days |
 | `opendata` | Socrata portals for the city, county and state (found by catalogue search and `data.<name>.gov`) and their police, fire, permit, inspection, licence and 311 datasets with a date column and a location or city column | 14 days |
 | `newsrooms` | Wikidata outlets published within 25 km with a current feed | 14 days |
 | `athletics` | The state's school athletic association (Wikidata) | 30 days |
+| `schools` | The school districts covering the place (Census geocoder, then the NCES directory for their websites), their board meetings, calendars, news and hosted board portals, and local schools' PTA, PTSA or PTO pages | 30 days |
+| `groups` | Chambers, downtown, visitor and neighbourhood groups at their usual addresses, kept only if the page says what it is, names the place and passes every check; funeral homes' obituary pages | 30 days |
 | `publishers` | Outlets news search found covering the place 2+ times (`news_publishers`) | 7 days |
 | `llm` | Gemini Flash-Lite suggestions (Google Search grounding when the key allows it); every URL is fetched before it is kept; inside the area only when the site names the place | 30 days |
 | `national` | NWS, USGS, EPA, Census, Justice Department, Wikipedia, Bluesky, library systems, the city's meetings, news search, reader stories, family notices | 7 days |
@@ -306,8 +545,8 @@ the editorial checks. Turn caps back on for one run on the kick-off panel, or fo
 | Items rated, candidates and stories printed per section | 30, 20, 10 | `limits()` in `pipeline/core/run-options.ts` |
 | Items per source per section; city-wide items per edition | 5; 3 | `limits()` |
 | Website reads per site: requests, pages, items | 10, 5, 25 | `limits()` |
-| New web sources per host; agentic proposals per host | 2; 12 | `limits()`, `PROPOSED_PER_HOST` in `pipeline/sourcemap/store.ts` |
-| OpenStreetMap places per location; per host | 40; 2 | `OSM_CAP` in `pipeline/discovery/methods.ts` |
+| New web sources per host; proposals per host; section pages per host | 2; 12; 24 | `limits()`, `PROPOSED_PER_HOST` and `SECTION_PAGES_PER_HOST` in `pipeline/sourcemap/store.ts` |
+| OpenStreetMap places per location; per section; per host | 60; 15; 2 | `general.stop.osm_cap`, `osm_section_cap`, `osm_per_host` in the playbook, through `itemCap()` |
 | Items per reader: home safety, justice, neighbours, open data, property, remembrance, earthquakes, Wikipedia, trends | 5, 6, 6, 25, 40, 8, 5, 5, 5 | `MAX_ITEMS` in each connector, through `itemCap()` |
 | Pages per paged API: Justice Department, BiblioCommons | 20, 5 | `MAX_PAGES` in each connector, through `itemCap()` |
 | Stories per run | Off unless set | **Story limit** on the kick-off panel |
@@ -323,6 +562,12 @@ These stay on whatever the caps setting, because they keep a run safe or inside 
 | Feed probes per site at discovery; meeting document pages; agenda items in a meeting summary | 4; 3; 5 | `discovery/feeds.ts`, `connectors/meetings/documents.ts`, `connectors/meetings/meetings.ts` |
 | Items per source on the public edition map | 60 | `MAX_ITEMS_PER_SOURCE` in `pipeline/editions/edition-map.ts` |
 | Sites never fetched: social platforms, plus publishers whose terms forbid automated or AI use (Seattle Times, KUOW, MyNorthwest) | | `DO_NOT_SCRAPE` in `pipeline/connectors/fetcher.ts` |
+| Discovery's other limits: pages read per site and section, school districts and schools, funeral homes, open-data portals, publishers, Gemini suggestions, institutions, agent rounds | | The `*.stop.*` rules in the playbook |
+
+The playbook (`playbook/` at the repository root; `playbook/rules-overview.html` lists every rule) holds discovery's
+rules and limits. Only the OpenStreetMap limits above follow the caps setting; the rest stay on, because several
+are thresholds rather than counts. To raise one, change its value in the playbook, run `npm run playbook` in
+`apps/journalist-site` and commit the result: a production build fails while the compiled copy is out of date.
 
 ### Source log
 
@@ -428,7 +673,7 @@ Each source stops starting new requests after 60 s and keeps what it has (`parti
      website (`discovery/city-site.ts`), local institutions from OpenStreetMap
      (`discovery/institutions.ts`), then the other sections of each good site. They then plan
      queries for the thinnest topics, using `site:` only on confirmed sites and throwing away any
-     query not tied to the community, and the model judges what passed the rules. The prompt loads `skills/map-sources/SKILL.md`. Each round is one job,
+     query not tied to the community, and the model judges what passed the rules. The prompt loads `skills/map-sources/SKILL.md`, compiled into the playbook bundle with its generated category section. Each round is one job,
      so the queue is its checkpoint, and each stops starting new work after 200 seconds. They stop
      after six rounds, or when leads run out and two rounds find no new primary source. The agent
      has no database access, and page text is data. A topic with no evidence ends as "not found"
@@ -750,3 +995,7 @@ Optional recovery only processes an editor-started stage; it cannot cross an edi
 Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
 `journalist_admins` (lowercase); the **Administrators** page adds more. Each location's sources live in
 `source_map`; editor additions are validated and pinned there.
+
+## Scraping rules
+
+Query patterns, page words, section and tier rules, limits and each search service's operators live in the top-level `playbook/` folder, not in code. `pipeline/playbook/index.ts` reads them from `pipeline/playbook/compiled.json`, which is imported, so it is in every bundle. After editing a rule, run `npm run playbook`: it validates the files and rebuilds the compiled rules, the generated section of `skills/map-sources/SKILL.md` and `playbook/rules-overview.html`. `npm run build` runs the same check first and stops if anything is invalid or out of date. Each run stores the rules' content hash as `playbook_version`. `pipeline/tests/playbook/` holds snapshots taken before the rules moved: a change to a rule fails them on purpose. See [playbook/README.md](../../playbook/README.md).

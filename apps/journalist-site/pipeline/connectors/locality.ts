@@ -114,7 +114,7 @@ export function parseSites(value: unknown, area: Area | null, center: Point): Lo
   }
   return [...sites.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
-function areaBox(area: Area | null, center: Point): [number, number, number, number] {
+export function areaBox(area: Area | null, center: Point): [number, number, number, number] {
   if (area?.method === "approximate_bbox" && area.bbox) return area.bbox;
   if (area?.method === "boundary" && area.boundary) {
     const rings = area.boundary.type === "Polygon" ? [area.boundary.coordinates[0]] : area.boundary.coordinates.map((polygon) => polygon[0]);

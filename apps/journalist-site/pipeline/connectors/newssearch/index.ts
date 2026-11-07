@@ -14,28 +14,31 @@
  */
 import type { Db } from "mongodb";
 import { addDays, httpsLink } from "../common";
-import { publicApiGet } from "../public-api";
+import { HttpStatusError } from "../../core/http";
+import { reserveHost, deferHost } from "../fetch-state";
 import { publishedText, sha256 } from "../wider/adapters";
-import { runCollector } from "../parents/shared";
+import { runCollector, SourceUnavailable } from "../parents/shared";
 import { newestFirst } from "../web";
 import type { CollectedEvent, Connector, ConnectorContext, DroppedItem, SourceResult, SourceTask } from "../types";
 import { rangesFor } from "../../core/time";
 import { WINDOWS } from "../../sourcemap/windows";
 import { hostOf } from "../../sourcemap/store";
 import { townName } from "../locality";
-import { US_STATES } from "../../../../../shared/geography";
+import { US_STATES, COMMUNITY_USER_AGENT } from "../../../../../shared/geography";
+import { list } from "../../playbook";
 import { groundedSearch, jsonArray, usageRecorder } from "../../model/budget";
 import type { Details } from "../../editions/details";
 
 export const GDELT = "https://api.gdeltproject.org/api/v2/doc/doc";
 export const GDELT_PAUSE_MS = 5500;
 export const NEWS_PUBLISHERS = "news_publishers";
-export const AGGREGATORS = ["news.google.com", "yahoo.com", "msn.com", "aol.com", "newsbreak.com", "apple.news", "flipboard.com", "ground.news", "nytimes.com", "washingtonpost.com", "cnn.com", "foxnews.com", "apnews.com", "usatoday.com", "nbcnews.com", "cbsnews.com", "abcnews.go.com", "reuters.com", "bloomberg.com", "wsj.com", "theguardian.com", "npr.org", "bbc.com", "bbc.co.uk", "youtube.com", "facebook.com", "x.com", "twitter.com", "reddit.com", "nextdoor.com", "legacy.com", "yelp.com", "patch.com/national"];
+export const AGGREGATORS = list("general.reject.aggregators");
 const TOPICS = [
   { name: "news", terms: "" },
   { name: "safety and civic", terms: "(police OR fire OR crash OR council OR school OR arrested OR rescue OR permit)" },
   { name: "business and community", terms: "(restaurant OR opening OR closing OR obituary OR festival OR market OR development OR neighbors)" },
 ];
+let gdeltNextAt = 0;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function aggregator(url: string) {
@@ -74,10 +77,24 @@ type Hit = { title: string; url: string; day: string; domain: string; image: str
 
 async function gdelt(context: ConnectorContext, query: string, days: number): Promise<Hit[]> {
   const params = new URLSearchParams({ query: `${query} sourcelang:english`, mode: "ArtList", format: "json", maxrecords: "75", timespan: `${Math.max(1, Math.min(days, 90))}d`, sort: "DateDesc" });
-  const body = await publicApiGet(context.transport, `${GDELT}?${params.toString()}`, "application/json", 2 * 1024 * 1024, 30_000);
-  const text = new TextDecoder().decode(body).trim();
-  if (!text.startsWith("{")) return [];
+  const host = "api.gdeltproject.org";
+  const wait = await reserveHost(host, GDELT_PAUSE_MS) ?? Math.max(0, gdeltNextAt - Date.now());
+  if (wait > GDELT_PAUSE_MS) throw new HttpStatusError(429, GDELT, Math.ceil(wait / 1000));
+  gdeltNextAt = Date.now() + wait + GDELT_PAUSE_MS;
+  if (wait) await sleep(wait);
+  const response = await context.transport({ url: `${GDELT}?${params}`, headers: { "User-Agent": COMMUNITY_USER_AGENT, Accept: "application/json" }, maxBytes: 2 * 1024 * 1024, timeoutMs: 20_000 });
+  if (response.status === 429) {
+    const value = response.headers["retry-after"] ?? "";
+    const seconds = Math.max(60, /^\d+$/.test(value) ? Number(value) : (Date.parse(value) - Date.now()) / 1000 || 60);
+    gdeltNextAt = Date.now() + seconds * 1000;
+    await deferHost(host, seconds * 1000);
+    throw new HttpStatusError(429, GDELT, Math.ceil(seconds));
+  }
+  if (response.status >= 300) throw new HttpStatusError(response.status, GDELT);
+  const text = new TextDecoder().decode(response.body).trim();
+  if (!text.startsWith("{")) throw new SourceUnavailable("failed", "GDELT returned non-JSON content, not an empty search result");
   const data = JSON.parse(text) as { articles?: Array<{ url?: string; title?: string; seendate?: string; domain?: string; socialimage?: string }> };
+  if (!Array.isArray(data.articles)) throw new SourceUnavailable("failed", "GDELT response lacks an articles array");
   return (data.articles ?? []).flatMap((article) => {
     const url = httpsLink(article.url ?? null);
     const seen = /^(\d{4})(\d{2})(\d{2})/.exec(article.seendate ?? "");
@@ -111,11 +128,19 @@ async function search(task: SourceTask, context: ConnectorContext, record: Sourc
   const hits: Hit[] = [];
   if (backend === "llm") hits.push(...await llmNews(context, query, since));
   else {
-    for (const [index, topic] of TOPICS.entries()) {
-      if (index) await sleep(GDELT_PAUSE_MS);
-      try { hits.push(...await gdelt(context, `${query} ${topic.terms}`.trim(), days)); }
-      catch (error) { record.pages_checked.push(`${topic.name}: ${error instanceof Error ? error.message : String(error)}`); }
+    let succeeded = 0;
+    for (const topic of TOPICS) {
+      try { hits.push(...await gdelt(context, `${query} ${topic.terms}`.trim(), days)); succeeded++; }
+      catch (error) {
+        record.pages_checked.push(`${topic.name}: ${error instanceof Error ? error.message : String(error)}`);
+        if (error instanceof HttpStatusError && error.status === 429) {
+          if (!succeeded) throw error; // Queue retry, respecting Retry-After; no immediate repeat.
+          break; // Preserve earlier results as partial, without hammering the provider.
+        }
+      }
     }
+    if (!succeeded) throw new SourceUnavailable("failed", `All GDELT topic searches failed: ${record.pages_checked.join("; ")}`);
+    if (record.pages_checked.length) record.status = "partial";
   }
   const events: CollectedEvent[] = [];
   const seen = new Set<string>();
@@ -137,7 +162,7 @@ async function search(task: SourceTask, context: ConnectorContext, record: Sourc
     } as CollectedEvent);
   }
   await recordPublishers(context.db, context.location.id, publishers);
-  record.detail = `${backend}: ${hits.length} results for ${query}; ${events.length} to check against the article, ${dropped.length} left out`;
+  record.detail = `${backend}: ${hits.length} results for ${query}; ${events.length} to check against the article, ${dropped.length} left out${record.status === "partial" ? "; incomplete search: " + record.pages_checked.join("; ") : ""}`;
   return events;
 }
 

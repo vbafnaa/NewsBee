@@ -1,0 +1,256 @@
+{
+  "exported_at": "2026-11-07T00:47:50.837Z",
+  "database": "isolated local wedgwood_comparison",
+  "commit": "eacb76e",
+  "summary": {
+    "locations": 1,
+    "pipeline_runs": 3,
+    "runs": [
+      {
+        "id": "f3541a5c-5b52-483b-8f58-fe23f0f45f5b",
+        "kind": "map",
+        "status": "mapped",
+        "sources": 0,
+        "error": null
+      },
+      {
+        "id": "f0f092e9-e03b-4e1e-9c28-262ca5c06043",
+        "kind": "edition",
+        "status": "cancelled",
+        "sources": 22,
+        "error": "Cancelled by local-admin@localhost"
+      },
+      {
+        "id": "de205296-bceb-485f-9534-860024d17b57",
+        "kind": "map",
+        "status": "mapped",
+        "sources": 0,
+        "error": null
+      }
+    ],
+    "pipeline_jobs": 43,
+    "jobs": [
+      {
+        "kind": "finish_map",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "collect_source",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "plan_sources",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "finish_map",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      }
+    ],
+    "source_map": 35,
+    "discovery_state": 9,
+    "source_results": 22,
+    "source_shortlists": 0,
+    "collected_items": 744,
+    "run_decisions": 96
+  }
+}

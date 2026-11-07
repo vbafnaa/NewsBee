@@ -187,7 +187,7 @@ export function storyLinks(html: string, pageUrl: string, cap: number): string[]
 
 export function calendarLinks(html: string, pageUrl: string): string[] {
   const out: string[] = [];
-  for (const match of html.matchAll(/href=["']([^"']*(?:\.ics\b|[?&]ical=1|\/ical\/?|webcal:)[^"']*)["']/gi)) {
+  for (const match of html.matchAll(/href=["']([^"']*(?:\.ics\b|[?&]ical=1|\/ical\/?|\/ics\/?|webcal:)[^"']*)["']/gi)) {
     try {
       const url = new URL(decodeHTML(match[1]).replace(/^webcal:/i, "https:"), pageUrl).toString();
       if (httpsLink(url) && !out.includes(url)) out.push(url);
@@ -214,3 +214,18 @@ export function parseSitemap(xml: string): { sitemaps: SitemapEntry[]; urls: Sit
 /** Feed paths sites commonly use. */
 export const FEED_GUESSES = ["/feed", "/rss", "/rss.xml", "/news/feed", "/events/feed", "/?feed=rss2", "/feeds/posts/default"];
 export const SITEMAP_GUESSES = ["/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml", "/news-sitemap.xml"];
+
+/** Read only explicitly embedded Trumba configurations; retain the branch filter. */
+export function trumbaFeeds(html: string): string[] {
+  const feeds = new Set<string>();
+  for (const match of html.matchAll(/\bTrumba\.addSpud\s*\(\s*([\s\S]{0,4000}?)\)\s*;/g)) {
+    const name = /\bwebName\s*:\s*["']([a-zA-Z0-9_-]+)["']/.exec(match[1])?.[1];
+    if (!name) continue;
+    const filter = /\bfilterview\s*:\s*["']([^"']+)["']/.exec(match[1])?.[1];
+    const url = new URL(`https://www.trumba.com/calendars/${name}.rss`);
+    url.searchParams.set("weeks", "4");
+    if (filter) url.searchParams.set("filterview", filter);
+    feeds.add(url.toString());
+  }
+  return [...feeds];
+}

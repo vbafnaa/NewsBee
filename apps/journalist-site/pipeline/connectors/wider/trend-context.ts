@@ -1,5 +1,7 @@
 import { Parser } from "htmlparser2";
 import { httpsLink, MAX_FEED_BYTES } from "../common";
+import { advertisedFeeds } from "../feeds";
+import { sourceMap } from "../../sourcemap/store";
 import { Fetcher } from "../fetcher";
 import type { ConnectorContext } from "../types";
 import { pageLinks } from "../ai-discovery";
@@ -60,6 +62,7 @@ export function parseTrendReport(html: string, url: string, topic: string, today
       if (["script", "style", "nav", "aside", "header", "footer", "form", "noscript"].includes(name)) hidden++;
       if (name === "script") { scriptType = attributes.type ?? ""; script = ""; }
       if (name === "title") inTitle = true;
+      if (name === "time" && (/(?:^|\s)(?:published|entry-date)(?:\s|$)/.test(attributes.class ?? "") || attributes.itemprop === "datePublished")) published ||= attributes.datetime ?? "";
       if (name === "meta") {
         const key = attributes.property ?? attributes.name;
         if (key === "og:title") title = attributes.content ?? title;
@@ -101,14 +104,14 @@ export function parseTrendReport(html: string, url: string, topic: string, today
   }
   structured.forEach(articleMetadata);
   const age = Date.parse(`${today}T23:59:59Z`) - Date.parse(published);
-  if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 || !publisher.trim()) return null;
+  if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 ) return null;
   if (sponsoredItem({ title, link: url, summary: paragraphs.join(" "), categories: sections })) return null;
   const relevant = paragraphs.filter((text) => (!topic || topicMention(`${title} ${text}`, topic))
     && trendTier(place, title, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
   // Do not let a sidebar's town name or a popularity-only paragraph establish relevance.
   const evidence = relevant.filter((text) => !ATTENTION.test(text) && !/\b(?:pageviews|daily views|post count)\b/i.test(text));
   if (!title.trim() || ATTENTION.test(title) || !evidence.length) return null;
-  return { url, publisher: publisher.trim(), published_at: published, headline: title.trim(),
+  return { url, publisher: publisher.trim() || new URL(url).hostname, published_at: published, headline: title.trim(),
     excerpt: evidence.slice(0, 2).join(" ").slice(0, 4000) };
 }
 
@@ -161,6 +164,7 @@ export async function discoverReports(context: ConnectorContext, place: Region, 
   }
   const reportsByUrl = new Map<string, TrendContext>();
   const reports: TrendContext[] = [];
+  const rejected: Array<{ url: string; reason: string }> = [];
   let fetched = 0;
   for (const [url, topics] of [...topicsByUrl].slice(0, 12)) {
     try {
@@ -170,13 +174,13 @@ export async function discoverReports(context: ConnectorContext, place: Region, 
       if (report) {
         context.log.info("trend_context_verified", { url: finalUrl, publisher: report.publisher });
         reportsByUrl.set(finalUrl, report);
-      }
+      } else rejected.push({ url: finalUrl, reason: "No recent dated substantive reporting with explicit location evidence" });
     } catch (error) { failed(url, error); }
   }
-  if (candidates.length && !fetched) throw new Error("All linked reporting unavailable");
+  if (candidates.length && !fetched) throw new Error(`All linked reporting unavailable: ${errors.join("; ")}`);
   reports.push(...reportsByUrl.values());
   if (!reports.length) context.log.info("trend_context_missing", { reports_checked: Math.min(topicsByUrl.size, 12), location_id: place.location_id });
-  return { reports, errors };
+  return { reports, errors, rejected };
 }
 
 export async function trendContext(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext | null> {
@@ -185,4 +189,24 @@ export async function trendContext(context: ConnectorContext, topic: string, pla
 
 export function reportedDescription(report: TrendContext) {
   return `Reporting by ${report.publisher}, published ${report.published_at.slice(0, 10)}. ${report.excerpt}`;
+}
+
+/** Feed fallback from the existing source map, never a supplied human registry. */
+export async function communityFeeds(context: ConnectorContext): Promise<{ feeds: string[]; errors: string[] }> {
+  const feeds: string[] = [], errors: string[] = [];
+  const sources = await sourceMap(context.db).find({ location_id: context.location.id, reader: "web",
+    status: { $in: ["active", "pinned"] }, section: "community", link_only: { $ne: true } }).limit(30).toArray();
+  const hosts = new Set<string>();
+  const fetcher = new Fetcher(publicSourceTransport(context.transport));
+  for (const source of sources.sort((a, b) => (a.url?.length ?? 0) - (b.url?.length ?? 0))) {
+    if (!source.url || hosts.size >= 3) continue;
+    const host = new URL(source.url).hostname;
+    if (hosts.has(host)) continue;
+    hosts.add(host);
+    try {
+      const [url, html] = await fetcher.getText(source.url, MAX_FEED_BYTES, "text/html");
+      feeds.push(...advertisedFeeds(html, url).slice(0, 1));
+    } catch (error) { errors.push(`${source.url}: ${String(error)}`); }
+  }
+  return { feeds: [...new Set(feeds)].slice(0, 3), errors };
 }

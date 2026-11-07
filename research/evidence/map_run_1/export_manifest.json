@@ -1,0 +1,77 @@
+{
+  "exported_at": "2026-11-07T00:01:38.224Z",
+  "database": "isolated local wedgwood_comparison",
+  "commit": "eacb76e",
+  "summary": {
+    "locations": 1,
+    "pipeline_runs": 1,
+    "runs": [
+      {
+        "id": "de205296-bceb-485f-9534-860024d17b57",
+        "kind": "map",
+        "status": "mapped",
+        "sources": 0,
+        "error": null
+      }
+    ],
+    "pipeline_jobs": 10,
+    "jobs": [
+      {
+        "kind": "finish_map",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      },
+      {
+        "kind": "discover",
+        "status": "completed",
+        "error": null
+      }
+    ],
+    "source_map": 22,
+    "discovery_state": 9,
+    "source_results": 0,
+    "source_shortlists": 0,
+    "collected_items": 0,
+    "run_decisions": 31
+  }
+}

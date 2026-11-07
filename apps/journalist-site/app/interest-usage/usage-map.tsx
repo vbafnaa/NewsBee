@@ -59,7 +59,7 @@ export default function UsageMap({ loadUsage = loadRecordedUsage, preview = fals
     {data && <>
       <div className="metric-grid usage-metrics">{METRICS.map(([key, label]) => <button key={key} type="button" className="metric-card" aria-pressed={metric === key} onClick={() => setMetric(key)} style={{ borderTopColor: COLORS[key] }}><small>{label}</small><strong>{totals[key].toLocaleString()}</strong><span>Show on map</span></button>)}</div>
       <section className="panel">
-        <div className="section-heading"><div><h2>{METRICS.find(([key]) => key === metric)![1]} by community</h2><p>Geographic heat grid: darker cells mean more recorded activity. Zoom into nearby communities; select a marker, community group or table row for exact details.</p></div>
+        <div className="section-heading"><div><h2>{METRICS.find(([key]) => key === metric)![1]} by community</h2><p>Darker cells mean more activity. Select a community for exact counts.</p></div>
           <label className="field">Location<select aria-label="Location" value={location} onChange={(event) => { setLocation(event.target.value); setSelected(""); }}><option value="">All recorded locations</option>{data.rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label></div>
         {!totals[metric] ? <p className="empty-state">No {METRICS.find(([key]) => key === metric)![1].toLowerCase()} recorded for this selection. No activity is inferred from searches, source clicks or model calls.</p> :
           <InteractiveHeatmap key={`${range}/${location}/${metric}`} rows={rows} metric={metric} selected={selected} onSelect={setSelected} />}
@@ -69,7 +69,7 @@ export default function UsageMap({ loadUsage = loadRecordedUsage, preview = fals
         </tbody></table></div>
         {!rows.length && <p>No recorded activity in this date range. Usage appears after an edition is read or a signup is saved.</p>}
       </section>
-      <details className="panel" open><summary>What these numbers mean</summary>
+      <details className="panel"><summary>Metric definitions, privacy &amp; history</summary>
         <dl className="metric-definitions"><dt>Edition reads</dt><dd>One anonymous edition-view event, not one event per story. Reloads and return visits count again; these are not unique people. Source opens and shares are excluded. Tracking can be blocked and is not email-open tracking.</dd>
           <dt>Subscription signups</dt><dd>The first recorded weekly-update signup per email and location through the subscription form. Email delivery is not active.</dd>
           <dt>Interest signups</dt><dd>The first recorded launch-interest signup per email and requested location. One person can explicitly register both intents; repeating either form does not inflate that metric.</dd>

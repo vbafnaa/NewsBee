@@ -1,27 +1,19 @@
-import { currentAdmin, sameOrigin } from "@/lib/admin-session";
-import { enableAdminAccount, listAdminAccounts } from "@/auth";
+import { ownerGuard } from "@/lib/admin-session";
+import { disableAdminAccount, enableAdminAccount, listAdminAccounts } from "@/auth";
+import { ownerEmail } from "@/pipeline/accounts/identity";
 import type { NextRequest } from "next/server";
 
-async function authorized() {
-  return Boolean(await currentAdmin());
-}
-
-export async function GET() {
-  if (!(await authorized())) {
-    return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
-  }
-  return Response.json({ accounts: await listAdminAccounts() });
+export async function GET(request: Request) {
+  const denied = await ownerGuard(request);
+  if (denied) return denied;
+  return Response.json({ accounts: await listAdminAccounts() }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: NextRequest) {
-  if (!(await authorized())) {
-    return Response.json({ detail: "Sign in as an authorized administrator" }, { status: 401 });
-  }
-  if (!sameOrigin(request)) {
-    return Response.json({ detail: "Cross-origin admin requests are not allowed" }, { status: 403 });
-  }
+  const denied = await ownerGuard(request);
+  if (denied) return denied;
 
-  let body: { email?: unknown };
+  let body: { email?: unknown; enabled?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -36,6 +28,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ detail: "Enter a valid email address" }, { status: 400 });
   }
 
-  const account = await enableAdminAccount(email);
+  if (body.enabled !== undefined && typeof body.enabled !== "boolean") return Response.json({ detail: "Invalid enabled flag" }, { status: 400 });
+  if (body.enabled === false && email === ownerEmail()) return Response.json({ detail: "The configured owner cannot be disabled" }, { status: 403 });
+  const account = body.enabled === false ? await disableAdminAccount(email) : await enableAdminAccount(email);
   return Response.json({ account }, { status: 201 });
 }

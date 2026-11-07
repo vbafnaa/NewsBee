@@ -9,6 +9,7 @@
 import type { Db } from "mongodb";
 import { FREE_SERVICES, PAID_SERVICES, LEGACY_OPTIONS, currentOptions, runContext, type FreeService, type PaidService } from "../core/run-options";
 import type { HttpTransport } from "../core/http";
+import { safeError } from "../core/redaction";
 
 export const API_CALLS = "api_calls";
 export type ApiCall = {
@@ -44,7 +45,7 @@ const LABELS = Object.fromEntries(PAID_SERVICES.map((service) => [service.id, se
 export async function logApiCall(service: string, paid: boolean, outcome: ApiCall["outcome"], detail: string | null = null, cost: number | null = null, units = 1) {
   const context = runContext();
   if (!context) return;
-  await apiCalls(context.db).insertOne({ run_id: context.runId, location_id: context.locationId, service, paid, units, outcome, detail: detail?.slice(0, 300) ?? null, cost_estimate: cost, created_at: Date.now() / 1000 }).catch(() => undefined);
+  await apiCalls(context.db).insertOne({ run_id: context.runId, location_id: context.locationId, service, paid, units, outcome, detail: detail ? safeError(detail) : null, cost_estimate: cost, created_at: Date.now() / 1000 }).catch(() => undefined);
 }
 
 /** Why a paid call may not happen now, or null when it may, which takes it from the budget. A refusal is logged. */

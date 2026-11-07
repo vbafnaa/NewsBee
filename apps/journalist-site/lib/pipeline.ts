@@ -1,6 +1,7 @@
-import { lightSettings, loadSettings, rankingSettings } from "@/pipeline/core/config";
-import { createRuntime } from "@/pipeline/model/runtime";
-import { ensureUsageIndexes, mongoUsageSink } from "@/pipeline/model/usage";
+import { ensureUsageIndexes } from "@/pipeline/model/usage";
+import { infrastructureSettings } from "@/pipeline/accounts/execution";
+import { NO_MODEL, runtimesForRun } from "@/pipeline/accounts/runtime";
+import { safeError } from "@/pipeline/core/redaction";
 import { ensureJobIndexes, ensureJobLogIndexes } from "@/pipeline/orchestration/jobs";
 import { ensureFetchStateIndexes, shareFetchState } from "@/pipeline/connectors/fetch-state";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
@@ -16,9 +17,9 @@ import { ensureApiCallIndexes } from "@/pipeline/trace/gateway";
 
 let indexes: Promise<void> | null = null;
 
-/** Everything the pipeline needs, built from environment settings (local or cloud). */
+/** Shared infrastructure only; sponsor-specific runtimes are built after claiming a job. */
 export async function pipelineDeps(): Promise<OrchestratorDeps> {
-  const settings = loadSettings();
+  const settings = infrastructureSettings();
   const db = await getDatabase();
   indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db)]).then(() => undefined).catch((error) => {
     indexes = null;
@@ -26,21 +27,17 @@ export async function pipelineDeps(): Promise<OrchestratorDeps> {
   });
   await indexes;
   shareFetchState(db);
-  const sink = mongoUsageSink(db);
-  return {
+  const deps: OrchestratorDeps = {
     db,
     settings,
     store: getArtifacts(),
-    model: createRuntime(settings, undefined, undefined, { role: "writing", sink }),
-    rankingModel: createRuntime(rankingSettings(settings), undefined, undefined, { role: "ranking", sink }),
-    lightModel: createRuntime(lightSettings(settings), undefined, undefined, { role: "extraction", sink }),
-    discoveryModel: createRuntime(lightSettings(settings), undefined, undefined, { role: "discovery", sink }),
-    agentModel: createRuntime(settings, undefined, undefined, { role: "agent", sink }),
-    agentLightModel: createRuntime(lightSettings(settings), undefined, undefined, { role: "agent", sink }),
+    model: NO_MODEL,
   };
+  deps.runtimeForRun = (run) => runtimesForRun(deps, run);
+  return deps;
 }
 
 export function errorResponse(error: unknown, status = 500) {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = safeError(error);
   return Response.json({ detail }, { status });
 }

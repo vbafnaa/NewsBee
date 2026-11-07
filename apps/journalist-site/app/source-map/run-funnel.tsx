@@ -9,10 +9,11 @@ import { PRIORITY_TOPICS, type RunOptions } from "@/pipeline/core/run-values";
 
 type Stage = { id: string; phase: string; label: string; count: number | null; note: string | null; decided_by: string[]; left_out: Array<{ reason: string; count: number }>; recorded: boolean };
 type Coverage = { topic: string; label: string; queries: number; sources: number; items: number; local: number; written: number; printed: number; status: string; note: string | null };
+type Category = { category: string; label: string; found: number; readable: number; link_only: number; built_in: number; empty: boolean };
 type Service = { service: string; label: string; paid: boolean; calls: number; failed: number; skipped: number; cost_estimate: number | null; skip_reason: string | null };
 type Funnel = {
   run: { id: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; edition_id: string | null; error: string | null; window: [string, string]; recorded: boolean; transitions: Array<{ status: string; by: string; at: number }>; by: string };
-  options: RunOptions; stages: Stage[]; coverage: Coverage[]; costs: { services: Service[]; model_usage: Array<{ provider: string; role: string; calls: number; input_tokens: number; output_tokens: number }> };
+  options: RunOptions; stages: Stage[]; coverage: Coverage[]; categories: Category[] | null; costs: { services: Service[]; model_usage: Array<{ provider: string; role: string; calls: number; input_tokens: number; output_tokens: number }> };
   tiers: Record<string, number>; rules_tripped: Array<{ rule: string; count: number }>; access_overrides: Array<{ rule: string; count: number }>;
   agent_plans: Array<{ round: string; reason: string | null; queries: string[]; planned_by: string | null; model: string | null }>;
 };
@@ -147,6 +148,15 @@ function TopicCoverage({ coverage, topic, onTopic }: { coverage: Coverage[]; top
     </tbody></table></div></section>;
 }
 
+function CategoryCoverage({ categories }: { categories: Category[] }) {
+  const empty = categories.filter((row) => row.empty);
+  return <section aria-label="Sources by category"><h3>Sources by category</h3>
+    <p>{empty.length ? `Nothing found for: ${empty.map((row) => row.label).join(", ")}.` : "Every category has a source."}</p>
+    <div className="table-wrap"><table><thead><tr><th>Category</th><th>Found</th><th>Read each run</th><th>Links only</th><th>National readers</th></tr></thead><tbody>
+      {categories.map((row) => <tr key={row.category}><td>{row.label}</td><td><strong>{row.found}</strong></td><td>{row.readable}</td><td>{row.link_only}</td><td>{row.built_in}</td></tr>)}
+    </tbody></table></div></section>;
+}
+
 function Compare({ locationId, runs }: { locationId: string; runs: RunRow[] }) {
   const [left, setLeft] = useState(runs[1]?.run_id ?? "");
   const [right, setRight] = useState(runs[0]?.run_id ?? "");
@@ -218,6 +228,7 @@ export default function RunFunnel({ locationId, runId, view }: { locationId: str
         <RunHeader funnel={funnel} locationId={locationId} />
         <FunnelTable funnel={funnel} selected={stage} onSelect={setStage} />
         {selected && <StageDetail locationId={locationId} runId={funnel.run.id} stage={selected} topic={topic} />}
+        {funnel.categories && <CategoryCoverage categories={funnel.categories} />}
         <TopicCoverage coverage={funnel.coverage} topic={topic} onTopic={setTopic} />
         {funnel.agent_plans.length > 0 && <details className="location-settings"><summary>Agent plans: {funnel.agent_plans.length} rounds</summary>
           {funnel.agent_plans.map((plan) => <div key={plan.round}><h4>{plan.round} ({plan.planned_by === "model" ? `planned by ${plan.model ?? "the model"}` : "planned by rules"})</h4><p>{plan.reason}</p><ul>{plan.queries.map((query) => <li key={query}><code>{query}</code></li>)}</ul></div>)}

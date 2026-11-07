@@ -12,6 +12,9 @@ import { COLLECTIONS } from "../storage/mongo";
 import { cancelRunJobs, type JobKind } from "./jobs";
 import { editionPeriodStart } from "../core/time";
 import { collectedItems } from "../editions/assemble";
+import type { ExecutionBinding } from "../accounts/execution";
+import type { CategoryCoverage } from "../sourcemap/store";
+import { PLAYBOOK_VERSION } from "../playbook";
 
 /** Count retained inputs in the store authoring reads, not connector/run summary counters. */
 export async function collectionCandidateCount(db: Db, runId: string): Promise<number> {
@@ -36,7 +39,7 @@ export function stageKinds(run: Pick<PipelineRun, "status">): JobKind[] { return
 /** Runs with work to do. Editions come before map runs, then oldest first, so each finishes in turn. */
 export async function workableRuns(db: Db) {
   return runs(db).aggregate<PipelineRun>([
-    { $match: { status: { $in: PROCESSING_RUN_STATUSES } } },
+    { $match: { status: { $in: PROCESSING_RUN_STATUSES }, execution_blocked: { $exists: false } } },
     { $addFields: { is_map: { $eq: ["$kind", "map"] } } },
     { $sort: { is_map: 1, created_at: 1, _id: 1 } },
     { $lookup: {
@@ -79,13 +82,20 @@ export type RunSourceSnapshot = { source_id: string; name: string; url: string |
 
 export type PipelineRun = {
   _id: string;
+  admission?: "newsroom";
+  execution?: ExecutionBinding;
+  execution_blocked?: { reason: string; at: number };
   /** A map run only writes the source map. Absent on runs from before the split, which were editions. */
   kind?: "map" | "edition";
+  /** A finished map run's sources per category, as they stood when it ended. */
+  category_coverage?: CategoryCoverage[];
   location_id: string;
   location_name: string;
   trigger: { by: string; kind: "manual" | "all" | "cron" };
   /** Chosen at kick-off and fixed for the run. Absent on runs from before run options. */
   options?: RunOptions;
+  /** Content hash of the playbook this run used, so its results can be tied to a set of rules. Absent on older runs. */
+  playbook_version?: string;
   source_snapshot?: RunSourceSnapshot[];
   status: RunStatus;
   today: string;
@@ -132,39 +142,11 @@ export function runs(db: Db) {
   return db.collection<PipelineRun>(COLLECTIONS.runs);
 }
 
-/** The old index only guarded collecting; preserve the furthest active attempt. */
-async function reconcileLegacyActiveRuns(db: Db) {
-  const duplicates = await runs(db).aggregate<{ _id: string; attempts: Pick<PipelineRun, "_id" | "status" | "created_at">[] }>([
-    { $match: { status: { $in: ACTIVE_RUN_STATUSES } } },
-    { $group: { _id: "$location_id", attempts: { $push: { _id: "$_id", status: "$status", created_at: "$created_at" } }, count: { $sum: 1 } } },
-    { $match: { count: { $gt: 1 } } },
-  ]).toArray();
-  let overlappingPublication = false;
-  for (const group of duplicates) {
-    const priority: Record<string, number> = { publishing: 5, finishing: 4, awaiting_finish: 3, authoring: 2, awaiting_authoring: 1, collecting: 0, mapping: 0 };
-    group.attempts.sort((a, b) => priority[b.status] - priority[a.status] || b.created_at - a.created_at || a._id.localeCompare(b._id));
-    const [keep, ...superseded] = group.attempts;
-    for (const attempt of superseded) {
-      if (attempt.status === "publishing") {
-        overlappingPublication = true;
-        log.warn("overlapping_publication", { location_id: group._id, run_id: attempt._id });
-        continue; // A Drive write may already be in progress; do not interrupt it.
-      }
-      const timestamp = now();
-      const changed = await runs(db).updateOne(
-        { _id: attempt._id, status: { $in: CANCELLABLE_RUN_STATUSES } },
-        { $set: { status: "cancelled", error: `Superseded by active run ${keep._id} during run-index migration`, completed_at: timestamp, updated_at: timestamp } },
-      );
-      if (changed.modifiedCount) {
-        await cancelRunJobs(db, attempt._id);
-        log.warn("legacy_run_superseded", { location_id: group._id, run_id: attempt._id, active_run_id: keep._id });
-      }
-    }
-  }
-  return overlappingPublication;
-}
-
 export async function ensureRunIndexes(db: Db) {
+  await runs(db).createIndex({ admission: 1 }, {
+    unique: true, name: "one_unfinished_newsroom_run",
+    partialFilterExpression: { admission: "newsroom", status: { $in: ACTIVE_RUN_STATUSES } },
+  });
   await runs(db).createIndexes([
     { key: { location_id: 1, created_at: -1 } },
     { key: { status: 1, created_at: -1 } },
@@ -177,7 +159,17 @@ export async function ensureRunIndexes(db: Db) {
   // Index builds are repeated across serverless instances. Reconciliation is idempotent,
   // and the collecting-only index remains in place until the stronger index exists.
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await reconcileLegacyActiveRuns(db)) return;
+    const active = await runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES } }).toArray();
+    if (active.length > 1) {
+      await runs(db).updateMany({ _id: { $in: active.map((run) => run._id) } }, {
+        $set: { execution_blocked: { reason: "Historical unfinished runs conflict with the global newsroom slot. Cancel excess runs explicitly before reconnecting or claiming the remaining run.", at: now() } },
+      });
+      log.error("historical_newsroom_conflict", { runs: active.map((run) => run._id) });
+      return;
+    }
+    if (active[0] && !active[0].execution) await runs(db).updateOne({ _id: active[0]._id }, {
+      $set: { execution_blocked: { reason: "Legacy run has no credential sponsor. The owner must explicitly claim it or cancel it.", at: now() } },
+    });
     try {
       await runs(db).createIndex(
         { location_id: 1 },
@@ -216,6 +208,7 @@ export function newRun(
   return {
     ...(discovery ? { planned: false, discovery } : {}),
     ...(options ? { options } : {}),
+    playbook_version: PLAYBOOK_VERSION,
     _id: randomUUID(),
     kind: "edition",
     location_id: location.id,

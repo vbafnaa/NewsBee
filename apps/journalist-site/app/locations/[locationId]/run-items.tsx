@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import ItemTrace from "./item-trace";
+import { useExecutionPolicy } from "../../components/execution-policy";
 
 type Item = { _id: string; source_id: string; source_name: string; title: string; url: string | null; event_date: string | null; status: string; reason: string | null; step: string; section?: string | null; rank?: number | null; score?: number | null };
 type Page = { items: Item[]; total: number; counts: Record<string, number> };
@@ -16,6 +17,7 @@ export default function RunItems({ locationId }: { locationId: string }) {
   const [trace, setTrace] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { policy } = useExecutionPolicy();
   useEffect(() => {
     setRunId(new URLSearchParams(window.location.search).get("run"));
     const inspect = (event: Event) => { setRunId((event as CustomEvent<{ runId: string }>).detail.runId); setTrace(null); };
@@ -37,7 +39,7 @@ export default function RunItems({ locationId }: { locationId: string }) {
   if (!runId) return <section className="panel"><h2>Items</h2><p>Inspect a run to see every item it collected and why each was kept or left out.</p></section>;
   return <section className="panel" id="run-items">
     <div className="section-heading"><div><h2>Items in this run</h2><p>{page ? `${page.total} items · ${Object.entries(page.counts).map(([key, value]) => `${value} ${key.replace(/_/g, " ")}`).join(" · ")}` : "Loading…"}</p></div>
-      <button type="button" className="secondary" disabled={busy} onClick={() => void reassemble()}>Reassemble and rewrite</button></div>
+      <button type="button" className="secondary" disabled={busy || !policy?.permissions[runId]?.canSpend} onClick={() => void reassemble()}>Reassemble and rewrite</button></div>
     {error && <p className="alert" role="alert">{error}</p>}
     <div className="filters">
       <label>Search<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Headline" /></label>

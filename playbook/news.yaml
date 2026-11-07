@@ -1,0 +1,75 @@
+# Other local news. See README.md for how to edit a rule.
+category: news
+label: Other local news
+target: true
+topic: news
+
+goal:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/core/run-values.ts
+    rules:
+      - { id: news.goal.other_news, text: Other local news. }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: news.prefer.own_reporting, text: "Local news that does its own reporting is useful, mainly as a lead to the original record. Sites that rewrite other sources are not." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: news.prefer.osm_newspaper, set: osm_kinds, order: 21, text: Newspaper offices with a website., osm: { kind: newspaper, tag: office, priority: 2, story_kind: news_report } }
+
+reject: []
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: news.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as a news report., value: news_report }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: news.stage1.local_news, stage: stage1, source_type: Local outlets, pattern: '"{place}" "{state}" (newspaper OR "local news")' }
+      - { id: news.stage1.neighbourhood_blogs, stage: stage1, source_type: Blogs and newsletters, pattern: '"{place}" (blog OR newsletter) news' }
+      - { id: news.stage1.city_news, stage: stage1, source_type: City news, pattern: 'site:{city_domain} (news OR "press releases")' }
+      - { id: news.stage1.local_radio, stage: stage1, source_type: Local radio, pattern: '"{city}" "{state}" (radio OR "public radio") news' }
+      - { id: news.stage2.place_sweep, stage: stage2, source_type: Local outlets, pattern: '"{place}" "{state}" news after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: news.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: local news }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: news.page.site_links
+        set: site_links
+        order: 10
+        text: "Links to news, press releases, announcements and alerts."
+        regex: '\b(news(?:letter|flash|room)?|press releases?|announcements?|alerts?|notices?|blog)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - { id: news.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [trending_topic, social_trend, local_news, news_report] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: news.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/area.ts
+    rules:
+      - { id: news.stop.outlet_radius_km, text: How far out a newsroom can be., value: 25 }
+      - { id: news.stop.outlets_checked, text: Newsrooms checked for a current feed., value: 12 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: news.example.regional_national, verdict: rejected, text: "A regional news site's national coverage: it isn't local just because the outlet is nearby." }

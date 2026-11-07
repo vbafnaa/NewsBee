@@ -31,7 +31,7 @@ export default function InboxView({ locationId }: { locationId?: string }) {
       {[["Held stories", data.counts.held_stories, "#held"], ["Source suggestions", data.counts.suggestions, "#suggestions"], ["Problem reports", data.counts.reports, "#reports"], ["Reader stories", data.counts.reader_stories, "#reader-stories"], ["Family notices", data.counts.family_notices, "#family-notices"]].map(([label, count, href]) =>
         <a key={String(label)} className={`strip-card${Number(count) ? " warn" : ""}`} href={String(href)}><small>{label}</small><strong>{count}</strong></a>)}
     </div>}
-    <section className="panel" id="held"><h2>Held stories</h2><p>Stories the writing checks or the floor rules held in recent runs. Rewrite one, force it in or out from the run inspector, or leave it held.</p>
+    <section className="panel" id="held"><h2>Held stories</h2><p>Review writing and rule checks in the run inspector. Rewrite, force in or out, or leave held.</p>
       {data && !data.held.length ? <p>None.</p> : <ul className="alert-list">{data?.held.map((item) => <li key={item.id}>
         <span><strong>{item.location_name}:</strong> {item.title} {item.section && <small>· {item.section.replaceAll("_", " ")}</small>}</span>
         <small>{item.floor ? `Floor: ${item.floor}. ` : ""}{item.reasons.join(", ") || "no reason recorded"}</small>
@@ -41,7 +41,7 @@ export default function InboxView({ locationId }: { locationId?: string }) {
         </div>
       </li>)}</ul>}
     </section>
-    <section className="panel" id="suggestions"><h2>Source suggestions from readers</h2><p>Approving checks the site (robots.txt, a readable homepage) and adds it to the location&rsquo;s source map, pinned.</p>
+    <section className="panel" id="suggestions"><h2>Reader source suggestions</h2><p>Approval checks site access and readability, then pins the source.</p>
       {data && !data.suggestions.length ? <p>None.</p> : <ul className="alert-list">{data?.suggestions.map((item) => <li key={item._id}>
         <span><strong>{item.location_name}:</strong> <a href={item.url} target="_blank" rel="noopener noreferrer">{item.name}</a> <small>· {item.section.replaceAll("_", " ")}</small></span>
         {item.why && <small>{item.why}</small>}

@@ -1,0 +1,16 @@
+{
+  "baseline_exact": 3,
+  "independent_exact": 3,
+  "assisted_exact": 31,
+  "intake": {
+    "not_attempted": 14,
+    "validated_and_saved": 28,
+    "rejected": 9
+  },
+  "independent_candidates": 58,
+  "independent_pending_locality": 55,
+  "assisted_candidates": 105,
+  "assisted_pending_locality": 101,
+  "assisted_unique_urls": 96,
+  "assisted_run": "7ed77593-d9c8-4be7-b35e-5e0bb75e1e48"
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "_id": "osm-r13915552-wa:national",
+    "location_id": "osm-r13915552-wa",
+    "method": "national",
+    "label": "National public data and onboarding sources",
+    "last_run_at": 1794013045.633,
+    "ok": true,
+    "found": 10,
+    "added": 10,
+    "detail": "10 national and onboarding sources",
+    "next_due_at": 1794617845.633
+  },
+  {
+    "_id": "osm-r13915552-wa:meetings",
+    "location_id": "osm-r13915552-wa",
+    "method": "meetings",
+    "label": "Meeting platforms",
+    "last_run_at": 1794013048.154,
+    "ok": true,
+    "found": 1,
+    "added": 1,
+    "detail": "Seattle and King County: 1 accounts found",
+    "next_due_at": 1796605048.154
+  },
+  {
+    "_id": "osm-r13915552-wa:opendata",
+    "location_id": "osm-r13915552-wa",
+    "method": "opendata",
+    "label": "Open-data portals",
+    "last_run_at": 1794013048.156,
+    "ok": true,
+    "found": 3,
+    "added": 3,
+    "detail": "4 portals (cos-data.seattle.gov, performance.seattle.gov, data.kingcounty.gov, data.wa.gov); 3 datasets",
+    "next_due_at": 1795222648.156
+  },
+  {
+    "_id": "osm-r13915552-wa:publishers",
+    "location_id": "osm-r13915552-wa",
+    "method": "publishers",
+    "label": "Publishers found by news search",
+    "last_run_at": 1794013054.573,
+    "ok": true,
+    "found": 0,
+    "added": 0,
+    "detail": "0 publishers with 2+ results; 0 added",
+    "next_due_at": 1794617854.573
+  },
+  {
+    "_id": "osm-r13915552-wa:athletics",
+    "location_id": "osm-r13915552-wa",
+    "method": "athletics",
+    "label": "State athletic association",
+    "last_run_at": 1794013050.744,
+    "ok": true,
+    "found": 1,
+    "added": 1,
+    "detail": "1 associations with a current feed",
+    "next_due_at": 1796605050.744
+  },
+  {
+    "_id": "osm-r13915552-wa:government",
+    "location_id": "osm-r13915552-wa",
+    "method": "government",
+    "label": "City and county websites",
+    "last_run_at": 1794013045.712,
+    "ok": true,
+    "found": 12,
+    "added": 12,
+    "detail": "city site, King County; 12 sources",
+    "next_due_at": 1796605045.712
+  },
+  {
+    "_id": "osm-r13915552-wa:newsrooms",
+    "location_id": "osm-r13915552-wa",
+    "method": "newsrooms",
+    "label": "Wikidata newsrooms",
+    "last_run_at": 1794013048.163,
+    "ok": true,
+    "found": 5,
+    "added": 5,
+    "detail": "5 newsrooms with a current feed",
+    "next_due_at": 1795222648.163
+  },
+  {
+    "_id": "osm-r13915552-wa:directories",
+    "location_id": "osm-r13915552-wa",
+    "method": "directories",
+    "label": "Official institution directories",
+    "last_run_at": 1794013048.145,
+    "ok": true,
+    "found": 12,
+    "added": 12,
+    "detail": "12 institution endpoints from live authority directories; 0 rejected fetches; school name / nearby library / named organization selection",
+    "next_due_at": 1796605048.145
+  },
+  {
+    "_id": "osm-r13915552-wa:osm",
+    "location_id": "osm-r13915552-wa",
+    "method": "osm",
+    "label": "OpenStreetMap places inside the area",
+    "last_run_at": 1794016088.83,
+    "ok": true,
+    "found": 9,
+    "added": 7,
+    "detail": "52 places with websites in bounding box; 9 qualifying sources inside the area; https://overpass-api.de/api/interpreter: TimeoutError: The operation was aborted due to timeout; https://overpass.private.coffee/api/interpreter: TimeoutError: The operation was aborted due to timeout; https://maps.mail.ru/osm/tools/overpass/api/interpreter: success (52 elements)",
+    "next_due_at": 1796608088.83
+  },
+  {
+    "_id": "osm-r13915552-wa:llm",
+    "location_id": "osm-r13915552-wa",
+    "method": "llm",
+    "label": "Gemini suggestions (checked)",
+    "last_run_at": 1794013054.593,
+    "ok": true,
+    "found": 7,
+    "added": 3,
+    "detail": "17 suggestions; 7 checked and kept",
+    "next_due_at": 1796605054.593
+  }
+]

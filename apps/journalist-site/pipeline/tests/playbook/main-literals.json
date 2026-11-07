@@ -1,0 +1,895 @@
+{
+ "regexes": [
+  {
+   "file": "discovery/topics.ts",
+   "source": "(?:high|middle|junior|prep\\w*|academy|school)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "[:(]",
+   "flags": ""
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "\\s+County$",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "[:(]",
+   "flags": ""
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "\\{(\\w+)\\}",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "(?:^|\\s)site:(\\S+)",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/topics.ts",
+   "source": "^www\\.",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "tribe-events|tribe_events|the-events-calendar",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "squarespace",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "trumba\\.com",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "(?:webName\\s*:\\s*[\"']|trumba\\.com\\/calendars\\/)([\\w.-]+?)(?:[\"'.]|\\.(?:rss|ics|json))",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "calendar\\.google\\.com\\/calendar",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "calendar\\.google\\.com\\/calendar\\/[^\"']*?[?&;]src=([^&\"';]+)",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "wp-content|wp-includes",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "[?#]",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\/?$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "href=[\"']([^\"']*RSSFeed\\.aspx\\?[^\"']+)[\"']",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "CID=All",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "civicplus|civicengage|CivicAlerts",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\/([a-z0-9]{4}-[a-z0-9]{4})(?:\\/|$)",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "(^|[.-])data\\.",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(\\d{1,2})\\/(\\d{1,2})\\/(20\\d{2})\\b",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "(?:datetime|datePublished|dateModified|startDate)[\"'=:\\s]+[\"']?(20\\d{2}-\\d{2}-\\d{2})",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<(script|style|noscript|svg)\\b[\\s\\S]*?<\\/\\1>",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<[^>]+>",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "href=[\"'][^\"']*\\.pdf\\b",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "href=[\"'][^\"']*(?:DocumentCenter\\/View|AgendaCenter\\/ViewFile)",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<iframe[^>]+(?:tableau|powerbi|arcgis)|experience\\.arcgis|public\\.tableau\\.com|app\\.powerbi\\.com",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<form\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(parcel|search by|look ?up|enter (?:an?|your)|account number)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(agendas?|minutes|agenda center|public meetings?|council meetings?|meeting (?:portal|videos?|archive))\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(public hearings?|hearing (?:examiner|notices?)|public notices?|legal notices?|boards?,? (?:and|&|&amp;) commissions?|advisory (?:boards?|committees?)|planning commission)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(city council|town council|county council|county commissioners?|board of (?:county )?commissioners|councilmembers?|town hall|legislation)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(police|sheriff|blotter|crime|incidents?|public safety|fire|emergency (?:management|services)|911)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(obituar(?:y|ies)|memorials?|tributes|recent services)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(permits?|permitting|land use|assessors?|zoning|recorder|property (?:sales|search|records)|development (?:notices?|services)|community development|planning|building (?:department|division|services)|housing)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(business licen[cs](?:es?|ing)|economic development|business (?:resources|directory|assistance|support|services|development|news)|start(?:ing)? a business|new businesses|chamber of commerce|downtown (?:association|alliance|partnership)|main street|shop local)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(athletics?|sports|teams?|standings|scores|league|game schedule)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(calendars?|events?|festivals?|programs|classes|recreation|things to do)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(volunteers?|volunteering|get involved|neighbou?rhoods?|community (?:groups|organi[sz]ations|councils?|centers?|services|resources)|non-?profits?|projects?|capital improvements?|transportation|service advisor(?:y|ies)|parks?|librar(?:y|ies))\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(news(?:letter|flash|room)?|press releases?|announcements?|alerts?|notices?|blog)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(school board|board of (?:directors|education|trustees)|board (?:meetings?|agendas?|minutes|docs)|boarddocs|agendas?|minutes)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(ptsa|ptso|pta|pto|parent[- ]teacher|(?:band|music|choir|drama|theat(?:er|re)|arts?) boosters?)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(calendars?|events?|news(?:letters?)?|announcements?|bulletins?)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(athletics?|sports|teams?|standings|scores|game schedule|boosters?)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(government|departments?|your city|city hall|services|residents?|community|business|schools|our schools|families|parents|district|i want to|site ?map)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "[?&](?:aid|eid|nid|itemid|post|p)=\\d",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "(?:^|\\.)(?:legistar\\.com|civicclerk\\.com|primegov\\.com|granicus\\.com|iqm2\\.com|novusagenda\\.com|municodemeetings\\.com|escribemeetings\\.com|civicweb\\.net|boarddocs\\.com|eboardsolutions\\.com|highbond\\.com|boardbook\\.org|agendaonline\\.net|destinyhosted\\.com)$",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(?:PTSA|PTSO|PTA|PTO)\\b|parent[- ]teacher|\\b(?:school district|public schools)\\b",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(chamber of commerce|chamber|downtown [\\w ]{0,20}(?:association|alliance|partnership)|business (?:improvement|association)|main street|economic development (?:council|authority|alliance|corporation))\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\b(united way|volunteer|community (?:council|association|club|foundation)|neighbou?rhood (?:association|council)|food bank|rotary|kiwanis|lions club|historical society)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "^www\\.",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "[/_-]+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<a\\b[^>]*href=[\"']([^\"'#]+)[\"'][^>]*>([\\s\\S]*?)<\\/a>",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "<[^>]+>",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\.(pdf|docx?|xlsx?|zip|jpe?g|png)$",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "^https?:$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "[.-]",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\.(pdf|docx?|xlsx?|zip|jpe?g|png)$",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "\\/20\\d{2}\\/\\d{1,2}\\/",
+   "flags": ""
+  },
+  {
+   "file": "discovery/inspect.ts",
+   "source": "-",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "\\b(?:elementary|middle|high|k-8|k-12|academy)(?: school)?$",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "<a\\b[^>]*href=[\"']([^\"'#]+)[\"'][^>]*>([\\s\\S]*?)<\\/a>",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "<[^>]+>",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "\\b(school|elementary|middle|high|k-8|k-12|the)\\b",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/schools.ts",
+   "source": "[^a-z0-9]",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "city council|town council|board of (?:selectmen|aldermen)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "\\bmayor\\b|city manager|town manager",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "\\bagendas?\\b|\\bminutes\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "departments?\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "city hall|town hall|municipal",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "official website",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "\\bpermits?\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "chamber of commerce|visitors? (?:bureau|guide)|tourism|real estate|\\bvisit\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "\\.gov$|\\.us$|(^|\\.)(cityof|townof|ci\\.)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "<title[^>]*>([\\s\\S]*?)<\\/title>",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "^Q\\d+$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/city-site.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "[^a-z0-9]",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\/+$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "<a\\b[^>]*href=[\"']([^\"']*RSSFeed\\.aspx\\?[^\"']+)[\"'][^>]*>",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "&amp;",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "All",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "agendacenter",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\bchamber\\b|business (?:association|improvement)|downtown|main street|merchants|economic development",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\bPTS?A\\b|\\bPTO\\b|parent[- ]teacher",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^\\/+",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "_",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "county$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "police|crime|incident|calls? for service|offen[cs]e|dispatch",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "fire|\\bems\\b|911|emergency",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "permit|construction|land use|development|building",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "inspection|restaurant|food establishment",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "business licen|liquor|licen[cs]e appl|new business|licen[cs]e",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\b311\\b|service request|code (enforcement|violation|complaint)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "real property sales|property sales|home sales|parcel sales|deed|sales? (history|transactions?)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "archiv|historic|summary|statistic|totals|\\bby (year|month)\\b|\\b(19\\d\\d|20[01]\\d|202[0-4])\\b|renewal|rental|child ?care|marriage|firearm|contractor|professional",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^www\\.",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^[a-z0-9]{4}-[a-z0-9]{4}$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "(^|_)lat(itude)?$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "city",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^[a-z0-9]{4}-[a-z0-9]{4}$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "chamber of commerce|chamber",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "downtown|main street|business (?:association|improvement)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "visit|things to do|events",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "community (?:council|club|association)|neighbou?rhood (?:association|council)|neighbou?rs",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "<title[^>]*>([\\s\\S]*?)<\\/title>",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "<a\\b[^>]*href=[\"']([^\"'#]+)[\"']",
+   "flags": "gi"
+  },
+  {
+   "file": "discovery/methods.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "href=[\"']([^\"']*(?:terms|tos|legal)[^\"']*)[\"']",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "\\b(scrap(?:e|ing)|automated (?:means|access|systems)|crawl(?:er|ing)?|robots?|data mining)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "^(.*?)\\/20\\d{2}\\/\\d{1,2}\\/.*$",
+   "flags": ""
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "\\.csv(\\?|$)",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "fire|911|ems",
+   "flags": "i"
+  },
+  {
+   "file": "discovery/evaluate.ts",
+   "source": "[^a-z]",
+   "flags": "g"
+  },
+  {
+   "file": "discovery/institutions.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "discovery/institutions.ts",
+   "source": "^\\/+",
+   "flags": ""
+  },
+  {
+   "file": "discovery/institutions.ts",
+   "source": "\\bhigh\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "things to do|this weekend|\\bevents (in|this|to)\\b|agenda this week|what'?s happening|weekend guide|\\bcalendar\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "obituar|passed away|celebration of life|memorial service|in loving memory|\\bfuneral\\b|\\bdied\\b|\\bwedding anniversary\\b|\\bturns 100\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "\\bpolice\\b|sheriff|arrest|\\bcrash|collision|\\bfire\\b|shooting|stabb|burglar|theft|robber|\\b911\\b|\\bmedics?\\b|aid response|rescue|\\bcrime|missing person|suspect|charged with|\\bcourt\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "weather|\\bstorm|windstorm|flood|heat wave|\\bsmoke\\b|air quality|advisory|snow|king tide|earthquake|power outage",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\\bdefeated\\b|\\bleague\\b.*\\b(game|match|season)\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "real estate|home sale|\\bsold for\\b|listing|\\bpermit|zoning|rezone|land use|development|construction|housing|apartment|townhome|\\bparcel|demolition|single-family",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "\\bschool|student|teacher|\\bpta\\b|ptsa|graduat|scholar|national merit|homecoming|\\byouth\\b|\\bkids?\\b",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "council|commission|\\bboard\\b|ordinance|\\bcity\\b|county|\\blevy\\b|budget|\\bvote|election|hearing|mayor|legislat|agenda|public comment|311|code enforcement",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "now open|grand opening|\\bopens\\b|opening|closing|\\bcloses\\b|restaurant|\\bcafe|bakery|brewery|\\bshop\\b|\\bstore\\b|business|liquor|licen[cs]e|inspection|layoff|ribbon cutting",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "festival|concert|\\bmarket\\b|\\bfair\\b|\\bclass\\b|workshop|storytime|\\btour\\b|exhibit|screening|\\bwalk\\b|fun run|meetup|celebrat|\\bevent|parade|cleanup|volunteer",
+   "flags": "i"
+  },
+  {
+   "file": "sourcemap/sections.ts",
+   "source": "neighbou?r|community council|association|volunteer|good deed|local hero|club\\b",
+   "flags": "i"
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "news|times|herald|gazette|tribune|journal|post|blog|press|courier|chronicle|observer|sentinel|examiner|weekly|daily|patch\\.com",
+   "flags": "i"
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "\\b(?:PTSA|PTSO|PTA|PTO)\\b|parent[- ]teacher",
+   "flags": ""
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "(?:ptsa|ptso|pta)(?:[.-])|(?:^|[.-])pto(?:[.-])",
+   "flags": ""
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "newsbreak|msn\\.com|yahoo\\.com|ground\\.news|flipboard|aol\\.com|smartnews|newsbreakapp",
+   "flags": "i"
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "\\.gov$|\\.gov\\.|\\.us$|\\.mil$|^(data|city|county)\\.",
+   "flags": ""
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "\\.k12\\.|\\.edu$",
+   "flags": ""
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "\\.org$",
+   "flags": ""
+  },
+  {
+   "file": "search/classifier.ts",
+   "source": "\\.org$|\\.church$|\\.foundation$",
+   "flags": ""
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "^(\\d{4}-\\d{2}-\\d{2})",
+   "flags": ""
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "^http:",
+   "flags": ""
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "^[A-Z][a-z]{2,8} \\d{1,2}, \\d{4}$",
+   "flags": ""
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "-?\\b(site|inurl|intitle|filetype|after|before):\\S+",
+   "flags": "g"
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "(?:^|\\s)after:(\\d{4}-\\d{2}-\\d{2})",
+   "flags": ""
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "(?:^|\\s)site:(\\S+)",
+   "flags": "gi"
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "(?:^|\\s)-site:(\\S+)",
+   "flags": "gi"
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "(^|\\s)-?\\b(site|inurl|intitle|filetype|after|before):\\S+",
+   "flags": "gi"
+  },
+  {
+   "file": "search/provider.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "agent/map-sources.ts",
+   "source": "_",
+   "flags": "g"
+  },
+  {
+   "file": "agent/map-sources.ts",
+   "source": "(^|\\s)(-?)site:(\\S+)",
+   "flags": "gi"
+  },
+  {
+   "file": "agent/map-sources.ts",
+   "source": "^www\\.",
+   "flags": ""
+  },
+  {
+   "file": "agent/map-sources.ts",
+   "source": "\\s+",
+   "flags": "g"
+  },
+  {
+   "file": "agent/map-sources.ts",
+   "source": "\\binurl:(admin|login|wp-admin)|password|filetype:(sql|env|xlsx?)",
+   "flags": "i"
+  }
+ ],
+ "strings": [
+  "site:{city_domain} police (blotter OR \"incident reports\" OR \"crime data\")",
+  "\"{parent}\" police (blotter OR \"significant incident\" OR \"press releases\")",
+  "\"{city}\" \"fire department\" (news OR incidents OR \"press releases\")",
+  "\"{place}\" (\"police blotter\" OR \"incident report\" OR \"press release\") site:.gov",
+  "\"{parent}\" (police OR crime OR fire OR 911) dataset \"open data\"",
+  "\"{county} County\" \"{city}\" sheriff (blotter OR \"press release\" OR arrests)",
+  "\"{county} County\" \"{city}\" prosecutor (\"press release\" OR news OR charges)",
+  "\"{place}\" \"{state}\" (\"funeral home\" OR mortuary OR cremation) (obituaries OR \"recent services\")",
+  "\"{parent}\" \"{state}\" (\"funeral home\" OR mortuary OR cremation) obituaries",
+  "inurl:obituaries \"{place}\" \"{state}\"",
+  "\"{name}\" \"{state}\" obituaries",
+  "\"{place}\" inurl:calendar (parks OR library OR community)",
+  "\"{place}\" (branch OR library) events",
+  "\"{place}\" \"community center\" programs",
+  "\"{name}\" \"{state}\" events",
+  "site:{city_domain} \"{place}\" (\"upcoming events\" OR calendar)",
+  "\"{venue}\" (\"upcoming events\" OR tickets OR schedule)",
+  "\"{county} County\" \"{city}\" (assessor OR recorder) (\"sales data\" OR \"parcel search\" OR \"recorded documents\")",
+  "\"{county} County\" \"{city}\" \"real property\" sales filetype:csv",
+  "site:{city_domain} (\"building permit\" OR \"land use\") (notices OR issued OR applications)",
+  "\"{place}\" \"high school\" (athletics OR \"varsity\") (schedule OR scores)",
+  "\"{place}\" \"middle school\" (athletics OR sports) schedule",
+  "\"{school}\" athletics (schedule OR scores OR roster)",
+  "\"{place}\" youth (soccer OR baseball OR basketball OR hockey OR \"little league\") (schedule OR standings)",
+  "\"{parent}\" high school league (schedule OR standings OR results)",
+  "\"{name}\" \"{state}\" (schedule OR results OR calendar)",
+  "site:{host} inurl:athletics",
+  "site:{association} \"{school}\" (schedule OR results)",
+  "site:{city_domain} (agenda OR minutes) (\"city council\" OR \"town council\" OR \"county commissioners\")",
+  "site:{city_domain} (\"public hearing\" OR \"hearing notice\" OR \"legal notice\")",
+  "site:{city_domain} (\"boards and commissions\" OR \"planning commission\")",
+  "\"{city}\" \"{state}\" \"city council\" agenda (legistar OR civicclerk OR primegov OR granicus)",
+  "site:{city_domain} (agenda OR minutes OR \"public hearing\" OR \"city council\")",
+  "site:{city_domain} (councilmember OR \"town hall\") \"{place}\"",
+  "\"{city}\" \"{state}\" \"school board\" (agenda OR minutes OR meetings)",
+  "\"{city}\" \"{state}\" (\"school district\" OR \"public schools\") calendar",
+  "\"{city}\" \"school district\" (boarddocs OR simbli OR \"board meetings\")",
+  "\"{place}\" (PTA OR PTSA OR PTO) (meeting OR calendar OR newsletter)",
+  "\"{school}\" (PTA OR PTSA OR PTO)",
+  "\"{city}\" \"{state}\" \"chamber of commerce\" (members OR events OR news)",
+  "\"{place}\" (\"downtown association\" OR \"business association\" OR \"business improvement\")",
+  "\"{place}\" (\"now open\" OR \"grand opening\")",
+  "\"{place}\" (\"closing its doors\" OR \"going out of business\" OR \"last day of business\")",
+  "\"{place}\" (\"shop local\" OR \"local deals\" OR coupons)",
+  "site:{city_domain} (\"business license\" OR \"economic development\")",
+  "site:.org \"{place}\" (\"community council\" OR \"neighborhood association\") meeting",
+  "\"{place}\" volunteer (opportunities OR \"volunteer center\" OR \"food bank\")",
+  "\"{place}\" nonprofit (community OR foundation)",
+  "\"{city}\" (rotary OR kiwanis OR \"lions club\") meeting",
+  "site:{city_domain} (volunteer OR \"neighborhood\" OR \"community groups\")",
+  "\"{place}\" \"{state}\" (newspaper OR \"local news\")",
+  "\"{place}\" (blog OR newsletter) news",
+  "site:{city_domain} (news OR \"press releases\")",
+  "\"{city}\" \"{state}\" (radio OR \"public radio\") news",
+  "site:{host} \"{place}\" (arrest OR incident OR investigation) after:{after}",
+  "\"{place}\" (police OR sheriff) (arrested OR incident OR investigation) after:{after}",
+  "site:{host} (obituary OR \"in loving memory\") after:{after}",
+  "\"{place}\" \"{state}\" obituary after:{after}",
+  "\"{place}\" (\"this weekend\" OR \"upcoming\") (event OR festival OR concert) after:{after}",
+  "\"{place}\" (\"sold for\" OR \"sale price\" OR \"recently sold\") after:{after}",
+  "site:{city_domain} \"{place}\" (\"permit issued\" OR \"land use notice\") after:{after}",
+  "site:{host} (score OR recap OR results) after:{after}",
+  "\"{school}\" (defeated OR playoff OR \"final score\") after:{after}",
+  "site:{host} (recap OR result OR schedule) after:{after}",
+  "site:{city_domain} (agenda OR \"public hearing\" OR ordinance) after:{after}",
+  "\"{place}\" (\"city council\" OR \"town council\") (voted OR approved OR hearing) after:{after}",
+  "site:{host} (board OR PTA OR PTSA OR news) after:{after}",
+  "\"{city}\" \"school board\" (voted OR approved OR meeting) after:{after}",
+  "\"{place}\" (\"now open\" OR \"grand opening\" OR \"ribbon cutting\") after:{after}",
+  "\"{place}\" (\"closing\" OR \"going out of business\") business after:{after}",
+  "\"{place}\" (\"community council\" OR \"neighborhood association\" OR volunteer) after:{after}",
+  "\"{place}\" \"{state}\" news after:{after}",
+  "site:{city_domain} (transportation OR \"capital projects\" OR \"current projects\") \"{place}\"",
+  "\"{city}\" (transit OR metro) \"service advisories\"",
+  "site:{city_domain} parks \"{place}\"",
+  "\"{city}\" (liquor OR cannabis) \"license\" (\"new applications\" OR \"license actions\")",
+  "\"{county} County\" \"{city}\" \"food establishment\" inspection data",
+  "site:.gov \"{place}\" \"{state}\" (permit OR notice)",
+  "site:{city_domain} filetype:pdf \"{place}\" \"land use\""
+ ]
+}

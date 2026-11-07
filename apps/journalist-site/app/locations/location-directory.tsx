@@ -6,7 +6,7 @@ import { adminApi } from "@/lib/admin-client";
 import LocationOnboarding from "../location-onboarding";
 
 type Location = { id: string; name: string; state: string; removal_pending?: boolean; source_coverage?: { status: string } };
-export default function LocationDirectory() {
+export default function LocationDirectory({ owner = false }: { owner?: boolean }) {
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -25,13 +25,12 @@ export default function LocationDirectory() {
     {error && <p className="alert" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="panel">
-      <div className="section-heading"><div><h2>Your community desks</h2><p>One connected workspace per location, from reader input to a finished edition.</p></div><a className="button" href="#onboarding">Onboard a location</a></div>
+      <div className="section-heading"><h2>Community desks</h2><a className="button" href="#onboarding">Add a location</a></div>
       <label className="field">Find a workspace<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by location" /></label>
       {!locations && !error && <p role="status">Loading locations…</p>}
       <div className="location-grid">{locations?.filter((location) => location.name.toLowerCase().includes(query.toLowerCase())).map((location) => <article className="location-card" key={location.id}>
         <p className="eyebrow">{location.state} · {location.source_coverage?.status?.replaceAll("_", " ") ?? "Coverage not assessed"}</p><h3><Link href={`/locations/${encodeURIComponent(location.id)}`}>{location.name}</Link></h3>
-        <p>Review inputs → Collect → Author → Publish</p>
-        {location.removal_pending && <p className="alert">Removal incomplete — <Link href={`/locations/${encodeURIComponent(location.id)}?tab=settings#remove-location`}>retry cleanup</Link></p>}
+        {location.removal_pending && <p className="alert">Removal incomplete{owner ? <> — <Link href={`/locations/${encodeURIComponent(location.id)}?tab=settings#remove-location`}>retry cleanup</Link></> : " — contact the owner"}</p>}
         <div className="card-actions"><Link className="button secondary" href={`/locations/${encodeURIComponent(location.id)}`}>Open workspace</Link><Link href={`/locations/${encodeURIComponent(location.id)}?tab=runs`}>Pipeline & logs</Link></div>
       </article>)}</div>
       {locations?.length === 0 && <p>No locations onboarded. Add your first community below.</p>}

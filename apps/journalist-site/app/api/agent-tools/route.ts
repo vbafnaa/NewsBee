@@ -1,7 +1,7 @@
 import { adminRoute } from "@/lib/admin-api";
 import { isDeployed, resolveRunOptions, withRunContext } from "@/pipeline/core/run-options";
 import { blockedPlatform, Fetcher } from "@/pipeline/connectors/fetcher";
-import { publicSourceTransport } from "@/pipeline/connectors/public-http";
+import { publicOnlyTransport, publicSourceTransport } from "@/pipeline/connectors/public-http";
 import { httpsLink } from "@/pipeline/connectors/common";
 import { articleMeta, mainText, pageRights, rightsAction } from "@/pipeline/connectors/web/page";
 import { fetchTransport } from "@/pipeline/core/http";
@@ -15,6 +15,7 @@ import { findEndpoint, inspectPage, siteLinks, sitemapLinks } from "@/pipeline/d
 import { logger } from "@/pipeline/core/log";
 import { PRIORITY_TOPICS } from "@/pipeline/core/run-values";
 import type { PriorityTopic } from "@/pipeline/core/run-values";
+import { personalRequestDeps } from "@/pipeline/accounts/runtime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -32,9 +33,10 @@ export async function POST(request: Request) {
   return adminRoute(request, async (deps) => {
     if (isDeployed()) return Response.json({ detail: "Agent tools are local only." }, { status: 403 });
     const { tool, args = {}, location_id: locationId } = await request.json() as { tool: string; args?: Record<string, unknown>; location_id: string };
+    if (["search", "classify"].includes(tool)) deps = await personalRequestDeps(deps, deps.principal!, undefined, tool === "search");
     const location = await getLocation(deps.db, locationId);
     const options = resolveRunOptions({ flow: "agentic" });
-    const transport = fetchTransport;
+    const transport = deps.transport ?? publicOnlyTransport(fetchTransport);
     const place = location.community?.name ?? location.name.split(",")[0];
     const today = new Date().toISOString().slice(0, 10);
     const fetcher = new Fetcher(publicSourceTransport(transport, 15_000));

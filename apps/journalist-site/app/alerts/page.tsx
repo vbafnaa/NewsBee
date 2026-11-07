@@ -7,7 +7,7 @@ export default async function AlertsPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="alerts" title="Alerts"
-    description="Problems that need an editor, each with its fix. Alerts clear themselves when the problem passes.">
+    description="Resolve source and pipeline issues. Alerts clear when resolved.">
     <AlertsList />
   </AdminShell>;
 }

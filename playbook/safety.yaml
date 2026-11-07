@@ -1,0 +1,98 @@
+# Police, fire and safety. See README.md for how to edit a rule.
+category: safety
+label: Police, fire and safety
+target: true
+topic: crime
+
+goal:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: safety.goal.local_crime, text: "Find sources that publish original information about local crime in this place." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: safety.prefer.logs, text: "Police and sheriff logs, and court notices." }
+      - { id: safety.prefer.levels_above, text: "A city's police blotter, 911 dispatch and open data, and a county's prosecutor, count if their items can be filtered to the place." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: safety.prefer.osm_police, set: osm_kinds, order: 1, text: Police stations with a website., osm: { kind: police, tag: amenity, priority: 0 } }
+      - { id: safety.prefer.osm_fire_station, set: osm_kinds, order: 2, text: Fire stations with a website., osm: { kind: fire_station, tag: amenity, priority: 0 } }
+      - id: safety.prefer.opendata_police
+        set: opendata_topics
+        order: 0
+        text: Open-data police and crime datasets.
+        opendata: { topic: police, query: police calls, state_level: false }
+        regex: 'police|crime|incident|calls? for service|offen[cs]e|dispatch'
+        flags: i
+      - id: safety.prefer.opendata_fire
+        set: opendata_topics
+        order: 1
+        text: Open-data fire and emergency datasets.
+        opendata: { topic: fire, query: fire 911, state_level: false }
+        regex: 'fire|\bems\b|911|emergency'
+        flags: i
+
+reject: []
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: safety.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as a news report., value: news_report }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: safety.stage1.city_police, stage: stage1, source_type: Police, pattern: 'site:{city_domain} police (blotter OR "incident reports" OR "crime data")' }
+      - { id: safety.stage1.city_police_news, stage: stage1, source_type: Police, pattern: '"{parent}" police (blotter OR "significant incident" OR "press releases")' }
+      - { id: safety.stage1.fire_news, stage: stage1, source_type: Fire, pattern: '"{city}" "fire department" (news OR incidents OR "press releases")' }
+      - { id: safety.stage1.police_blotter, stage: stage1, source_type: Police, pattern: '"{place}" ("police blotter" OR "incident report" OR "press release") site:.gov' }
+      - { id: safety.stage1.open_data, stage: stage1, source_type: Open data, pattern: '"{parent}" (police OR crime OR fire OR 911) dataset "open data"' }
+      - { id: safety.stage1.sheriff, stage: stage1, source_type: Sheriff, pattern: '"{county} County" "{city}" sheriff (blotter OR "press release" OR arrests)' }
+      - { id: safety.stage1.prosecutor, stage: stage1, source_type: Prosecutor, pattern: '"{county} County" "{city}" prosecutor ("press release" OR news OR charges)' }
+      - { id: safety.stage2.agency_sweep, stage: stage2, source_type: Police, for_each: { list: agency_hosts, limit: 2 }, pattern: 'site:{host} "{place}" (arrest OR incident OR investigation) after:{after}' }
+      - { id: safety.stage2.place_sweep, stage: stage2, source_type: Police, pattern: '"{place}" (police OR sheriff) (arrested OR incident OR investigation) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: safety.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: police reports }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: safety.page.site_links
+        set: site_links
+        order: 3
+        text: Links to police, sheriff, fire and emergency pages.
+        regex: '\b(police|sheriff|blotter|crime|incidents?|public safety|fire|emergency (?:management|services)|911)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: safety.page.item_keywords
+        set: item_keywords
+        order: 2
+        text: Words that put a story in this section.
+        regex: '\bpolice\b|sheriff|arrest|\bcrash|collision|\bfire\b|shooting|stabb|burglar|theft|robber|\b911\b|\bmedics?\b|aid response|rescue|\bcrime|missing person|suspect|charged with|\bcourt\b'
+        flags: i
+      - { id: safety.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [court_case, safety_incident] }
+      - { id: safety.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [court_case, safety_incident] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: safety.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 3 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: safety.example.police_blotter, verdict: accepted, text: "A city police department's blotter or incident reports: most items name a neighbourhood or a block, so they can be filtered." }
+      - { id: safety.example.open_dataset, verdict: accepted, text: "A city's open crime or dispatch dataset: rows have locations, and a dataset beats a dashboard showing the same data." }

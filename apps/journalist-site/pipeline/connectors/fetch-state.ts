@@ -81,3 +81,9 @@ export async function savePage(url: string, accept: string, body: Uint8Array, he
 export async function touchPage(url: string, accept: string) {
   await shared?.collection<PageDoc>(PAGES).updateOne({ _id: pageKey(url, accept) }, { $set: { fetched_at: Date.now(), expires_at: new Date(Date.now() + PAGE_MS) } }).catch(() => undefined);
 }
+
+/** Extend a provider's shared cooldown after a refusal; never shorten an existing one. */
+export async function deferHost(host: string, milliseconds: number) {
+  const next = Date.now() + milliseconds;
+  if (shared) await shared.collection<PaceDoc>(PACE).updateOne({ _id: host }, { $max: { next_at: next }, $set: { expires_at: new Date(next + 3600_000) } }, { upsert: true });
+}

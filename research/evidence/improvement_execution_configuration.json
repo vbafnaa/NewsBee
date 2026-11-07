@@ -1,0 +1,32 @@
+{
+  "recorded_at": "2026-11-07T00:52:29.203619+00:00",
+  "base_commit": "eacb76e008d7d9edd3b4849a89993934eb701ef1",
+  "working_tree_modified": true,
+  "files_sha256": {
+    "apps/journalist-site/pipeline/discovery/methods.ts": "3d9766399b9ababe0eb6053d2eef5a3a3880157cb83d7aa2957dd1770925a37f",
+    "apps/journalist-site/pipeline/discovery/topics.ts": "5a2371e9c6b60c7d753efbacb5a316066f588a4d0810e463532826aace4684e4",
+    "apps/journalist-site/pipeline/sourcemap/store.ts": "d7763b61ff9006c9be8ac6dbe1c0219875f151e85856ab22a047c3bace555d34",
+    "apps/journalist-site/pipeline/discovery/linked-pages.ts": "738049bed447a92c7c519dd1241a0f72fc06edf7edfd2739043c7b492faea0c1",
+    "apps/journalist-site/pipeline/tests/discovery/linked-pages.test.ts": "a6ae67b61e42d0e0c7f98f8e893e412f5e3f6c3fa83d4fa2f51fb2b30cdedbf1",
+    "apps/journalist-site/pipeline/tests/discovery/model-readiness.test.ts": "c32cd5ea9f2c71e849aabd20d27d78c49877028230733e5c6ec4dd7e0f940c11",
+    "apps/journalist-site/pipeline/tests/discovery/local-queries.test.ts": "f48b6b33f82c8aea00ed1eb481a3f9e094d24b5b64998b3b12d8195224a5e251",
+    "research/validate_registry_sources.mjs": "d6ccfe64f8bb1266955fb73a3c06d20eb1ce0551ddcb6da540968aaeeb926abf"
+  },
+  "model": "qwen2.5-coder:latest",
+  "database": "isolated local wedgwood_comparison",
+  "location_id": "osm-r13915552-wa",
+  "discovery_run": "f3541a5c-5b52-483b-8f58-fe23f0f45f5b",
+  "independent_collection": "9cf376a7-303c-45ae-a9b8-5c1c86892b0b",
+  "assisted_collection": "7ed77593-d9c8-4be7-b35e-5e0bb75e1e48",
+  "tests": {
+    "typescript": "passed",
+    "targeted_discovery_and_providers": 29,
+    "intake_access_orchestration_regressions": 30,
+    "git_diff_check": "passed"
+  },
+  "notes": [
+    "Export manifests identify the base commit; this manifest and patch record the modified implementation actually tested.",
+    "No authoring, publication or deployment.",
+    "Independent snapshots captured before registry intake."
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "map_sources": 47,
+  "directory_sources": 12,
+  "exact_registry_endpoints": 8,
+  "collection_run": "5030d2a8-2801-424f-bd67-61e16600f525",
+  "collection_tasks": 41,
+  "retained_records_all_sources": 78,
+  "pending_locality_all_sources": 75,
+  "directory_retained_records": 20,
+  "directory_pending_locality": 20
+}
