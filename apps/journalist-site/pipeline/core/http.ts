@@ -25,7 +25,7 @@ export type HttpTransport = (request: HttpRequest) => Promise<HttpResponse>;
 export class ResponseTooLargeError extends Error {}
 
 export class HttpStatusError extends Error {
-  constructor(readonly status: number, readonly url: string) {
+  constructor(readonly status: number, readonly url: string, readonly retryAfterSeconds?: number) {
     super(`HTTP ${status} from ${url}`);
   }
 }

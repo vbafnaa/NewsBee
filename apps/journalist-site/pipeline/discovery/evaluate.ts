@@ -20,22 +20,28 @@ import { jinaHtml, jinaRead } from "../connectors/web/jina";
 import { articleMeta, mainText, pageRights, rightsAction } from "../connectors/web/page";
 import type { ConnectorContext } from "../connectors/types";
 import { accessIgnored, currentOptions, runContext, rulesOff, type PriorityTopic } from "../core/run-options";
+import { limit, regex, table } from "../playbook";
 import { classify, type Classification } from "../search/classifier";
 import { search, searchQueries, type SearchResult } from "../search/provider";
 import type { SectionId } from "../sourcemap/sections";
-import { hostOf, normaliseUrl, webSourceId, type SourceAccess, type SourceCandidate, type SourceScope, type SourceTier } from "../sourcemap/store";
+import { hostOf, normaliseUrl, webSourceId, type DiscoveryMethod, type SourceAccess, type SourceCandidate, type SourceScope, type SourceTier } from "../sourcemap/store";
 import { paidCall } from "../trace/gateway";
 import { recordDecision } from "../trace/decisions";
 import { areaFacts } from "./area";
 import { verifiedCitySite } from "./city-site";
 import { findFeed } from "./feeds";
-import { datasetOf, findEndpoint, inspectPage, siteLinks, sitemapLinks, type SiteLink } from "./inspect";
+import { datasetOf, findEndpoint, inspectPage, siteLinks, sitemapLinks, type SiteKind, type SiteLink } from "./inspect";
 import type { DiscoveryContext } from "./methods";
 import { TOPIC_SECTIONS, type PlannedQuery } from "./topics";
 
 const ACCEPT_HTML = "text/html, application/xhtml+xml";
-const THIN_PAGE = 300;
-const STALE_MIN_DATES = 3;
+const THIN_PAGE = limit("general.stop.thin_page_chars");
+const STALE_MIN_DATES = limit("general.stop.stale_min_dates");
+const DATASET_RECENT_DAYS = limit("general.stop.dataset_recent_days");
+const FETCHES_PER_QUERY = limit("general.stop.fetches_per_query");
+const FOLLOWUP_LINKS_MIN = limit("general.stop.followup_links_min");
+const FIRE_DATASET = regex("general.evidence.dataset_fire_words");
+const PAGE_STORY_KINDS = table("general.evidence.page_story_kinds");
 const TERMS_LINK = /href=["']([^"']*(?:terms|tos|legal)[^"']*)["']/i;
 const TERMS_RESTRICTION = /\b(scrap(?:e|ing)|automated (?:means|access|systems)|crawl(?:er|ing)?|robots?|data mining)\b/i;
 /** Queries searched at once; each host is still paced by the Fetcher. */
@@ -113,7 +119,8 @@ export type EvaluationResult = {
 };
 function emptyResult(): EvaluationResult { return { candidates: [], checked: [], links: [], rejected: [], leftover: [], hosts: [], counts: { queries: 0, results: 0, fetched: 0, skipped: 0, failed: 0, not_run: 0 } }; }
 
-type Options = { method: "dork" | "agent"; seen: Set<string>; fetchesPerQuery?: number; origin?: "template" | "agent"; deadline?: number };
+/** `fixed`: a method of the current flow, whose checked pages are active sources rather than proposals. */
+type Options = { method: DiscoveryMethod; seen: Set<string>; fetchesPerQuery?: number; origin?: "template" | "agent"; deadline?: number; fixed?: boolean; siteKind?: SiteKind };
 
 /** Check one lead. Returns whether it became a source. */
 async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead, verdict: Classification | null, options: Options, out: EvaluationResult) {
@@ -134,12 +141,13 @@ async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead
   const section: SectionId = lead.section ?? (lead.topic ? TOPIC_SECTIONS[lead.topic] : "community");
   const topics = lead.topic ? [lead.topic] : [];
   const checkedAt = Date.now() / 1000;
+  const standing = options.fixed ? { status: "active" as const, section_page: true } : { status: "proposed" as const };
   const foundBy = (detail: string) => ({ method: options.method, detail: `${detail}${lead.topic ? ` (${lead.topic})` : ""}`, query: lead.query ?? null });
   // A platform we never read, or an aggregator: a public agency's account is still worth a link.
   if (blockedPlatform(lead.url) || aggregator(lead.url)) {
     await note("link_only_lead", "platform or aggregator we never read: kept as a link-only lead", "blocked_site");
     if (names.some((name) => mentions(`${lead.title} ${lead.snippet}`, name))) out.candidates.push({
-      source_id: webSourceId(lead.url), name: (lead.title || host).slice(0, 120), url: lead.url, feed_url: null, reader: "web", params: { url: lead.url, section, inside_area: false }, section, found_by: foundBy(`${lead.family}: platform we don't read, kept as a link`), inside_area: false, link_only: true, status: "proposed", source_tier: tier, topics, why: "On a platform we don't read: an editor can check it", source_kind: "lookup",
+      source_id: webSourceId(lead.url), name: (lead.title || host).slice(0, 120), url: lead.url, feed_url: null, reader: "web", params: { url: lead.url, section, inside_area: false }, section, found_by: foundBy(`${lead.family}: platform we don't read, kept as a link`), inside_area: false, link_only: true, ...standing, source_tier: tier, topics, why: "On a platform we don't read: an editor can check it", source_kind: "lookup",
       access: { robots: "blocked", rights: "unknown", terms: "not_checked", checked_at: checkedAt, fresh: false }, evidence: lead.snippet ? [{ url: lead.url, quote: lead.snippet, kind: "search", at: checkedAt }] : [],
     });
     return;
@@ -153,12 +161,12 @@ async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead
   }
   // An open-data dataset is read through its own API, by the open-data reader.
   const dataset = datasetOf(lead.url);
-  const datasetTopic = lead.topic === "crime" ? (/fire|911|ems/i.test(`${lead.title} ${lead.snippet}`) ? "fire" : "police") : lead.topic === "home_sales" ? "permits" : null;
+  const datasetTopic = lead.topic === "crime" ? (FIRE_DATASET.test(`${lead.title} ${lead.snippet}`) ? "fire" : "police") : lead.topic === "home_sales" ? "permits" : null;
   if (dataset && datasetTopic) {
     try {
       const view = JSON.parse(new TextDecoder().decode(await publicApiGet(context.transport, `https://${dataset.domain}/api/views/${dataset.dataset}.json`, "application/json", 2 * 1024 * 1024, 20_000))) as { name?: string; attribution?: string; rowsUpdatedAt?: number };
       const updated = Number(view.rowsUpdatedAt ?? 0) * 1000;
-      if (updated && Date.now() - updated > 120 * 86400_000) { await note("fetch", "dataset hasn't been updated recently", "stale", { outcome: "stale" }); reject(lead.url, "dataset hasn't been updated recently"); return; }
+      if (updated && Date.now() - updated > DATASET_RECENT_DAYS * 86400_000) { await note("fetch", "dataset hasn't been updated recently", "stale", { outcome: "stale" }); reject(lead.url, "dataset hasn't been updated recently"); return; }
       out.candidates.push({
         source_id: `opendata:${dataset.domain}:${dataset.dataset}`, name: `${view.name ?? lead.title} (${view.attribution ?? dataset.domain})`.slice(0, 120), url: `https://${dataset.domain}/d/${dataset.dataset}`, reader: "opendata",
         params: { domain: dataset.domain, dataset: dataset.dataset, topic: datasetTopic, filter: "radius", agency: view.attribution ?? dataset.domain, license: null }, section, found_by: foundBy(`${lead.family}: open-data dataset`), inside_area: false, status: "proposed", source_tier: "official", topics, source_kind: "dataset", scope: lead.scope ?? "city", why: "An open dataset: each row is filtered to the place by location",
@@ -177,7 +185,7 @@ async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead
     reject(lead.url, blocked ? `blocked: ${reason}` : `failed: ${reason}`);
     if (blocked) out.candidates.push({
       source_id: webSourceId(lead.url), name: lead.title || host, url: lead.url, feed_url: null, reader: "web", params: { url: lead.url, section, inside_area: false }, section,
-      found_by: foundBy(`${lead.family}: blocked, kept as a link`), inside_area: false, link_only: true, status: "proposed", source_tier: tier, topics, why: "Blocked from reading, kept as a link-only lead",
+      found_by: foundBy(`${lead.family}: blocked, kept as a link`), inside_area: false, link_only: true, ...standing, source_tier: tier, topics, why: "Blocked from reading, kept as a link-only lead",
       access: { robots: "blocked", rights: "unknown", terms: "not_checked", checked_at: checkedAt, fresh: false }, evidence: [{ url: lead.url, quote: lead.snippet || null, kind: "search", at: checkedAt }],
     });
     return;
@@ -233,9 +241,9 @@ async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead
     : named ? `Names ${named}` : inParent ? `Covers ${inParent}` : inCounty ? `Covers ${inCounty}` : lead.scope ? `${lead.title} serves this place` : "Flagged: no local evidence";
   const candidate: SourceCandidate = {
     source_id: webSourceId(endpoint?.url ?? url), name: (lead.title || pageTitle || host).slice(0, 120), url, feed_url: endpoint?.url ?? null, reader: "web",
-    params: { url, feed_url: endpoint?.url ?? null, kind: lead.topic === "deaths" ? "obituary" : lead.topic === "sports" ? "school_sports" : "local_news", section, inside_area: false }, section,
+    params: { url, feed_url: endpoint?.url ?? null, kind: PAGE_STORY_KINDS[lead.topic ?? ""] ?? PAGE_STORY_KINDS.default, section, inside_area: false }, section,
     found_by: foundBy(lead.family),
-    inside_area: Boolean(named && mentions(pageTitle, named)), status: "proposed", source_tier: tier, topics, agent_run_id: runContext()?.runId ?? null, access_overrides: overrides, why,
+    inside_area: Boolean(named && mentions(pageTitle, named)), ...standing, source_tier: tier, topics, agent_run_id: runContext()?.runId ?? null, access_overrides: overrides, why,
     link_only: action === "link-only" || asReference, scope: scope ?? undefined, source_kind: inspection.kind, latest_day: inspection.latest,
     access: { robots: overrides.includes("robots") ? "ignored" : "allowed", rights: action, terms, checked_at: checkedAt, fresh: inspection.fresh },
     evidence: [{ url: page.url, quote: evidenceName ? quoteAround(haystack, evidenceName) : lead.snippet || null, kind: "locality", at: checkedAt }, ...(inspection.latest ? [{ url: page.url, quote: `Latest dated item: ${inspection.latest}`, kind: "date" as const, at: checkedAt }] : [])],
@@ -245,8 +253,8 @@ async function checkLead(context: DiscoveryContext, fetcher: Fetcher, lead: Lead
   await note("fetch", `kept: ${why}; ${inspection.kind}${endpoint ? `, verified ${endpoint.format}` : ""}`, null, { outcome: "kept", terms, rights: action, feed: endpoint?.url ?? null, kind: inspection.kind, latest: inspection.latest, scope }, blocked);
   // A first-party site's other sections may be sources of their own.
   if (firstParty || tier === "business") {
-    const found: SiteLink[] = siteLinks(html, page.url);
-    const links = found.length >= 2 ? found : [...found, ...await sitemapLinks(fetcher, page.url)];
+    const found: SiteLink[] = siteLinks(html, page.url, undefined, options.siteKind);
+    const links = found.length >= FOLLOWUP_LINKS_MIN ? found : [...found, ...await sitemapLinks(fetcher, page.url, undefined, options.siteKind)];
     for (const link of links) out.links.push({ url: link.url, title: link.title || `${candidate.name}: ${link.section}`, snippet: "", topic: link.topic, family: "site_section", section: link.section as SectionId, scope: scope ?? undefined });
   }
 }
@@ -290,8 +298,8 @@ export async function evaluateQueries(context: DiscoveryContext, queries: Planne
         await recordDecision({ stage: "result", actor: "rule", subject: result.url, decision: "skipped", reason: "already considered this run", rule: "duplicate", topic: query.topic, evidence: { query: query.query, position: result.position } });
         continue;
       }
-      if (fetched >= (options.fetchesPerQuery ?? 3) || (options.deadline && Date.now() >= options.deadline)) {
-        await recordDecision({ stage: "result", actor: "rule", subject: result.url, decision: "not_fetched", reason: `past the ${options.fetchesPerQuery ?? 3} fetches for this query`, rule: "fetch_budget", topic: query.topic, evidence: { query: query.query, position: result.position } });
+      if (fetched >= (options.fetchesPerQuery ?? FETCHES_PER_QUERY) || (options.deadline && Date.now() >= options.deadline)) {
+        await recordDecision({ stage: "result", actor: "rule", subject: result.url, decision: "not_fetched", reason: `past the ${options.fetchesPerQuery ?? FETCHES_PER_QUERY} fetches for this query`, rule: "fetch_budget", topic: query.topic, evidence: { query: query.query, position: result.position } });
         continue;
       }
       options.seen.add(key);

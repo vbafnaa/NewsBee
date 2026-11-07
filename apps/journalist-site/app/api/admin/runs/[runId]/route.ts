@@ -45,6 +45,7 @@ export async function GET(request: Request, context: Context) {
     }));
     return {
       run,
+      funding: await db.collection("journalist_funding_audit").find({ run_id: runId }, { projection: { _id: 0 } }).sort({ at: -1 }).limit(50).toArray(),
       health: await locationHealth(db, run, { id: run.location_id, name: run.location_name }, { runTimeoutSeconds: settings.runTimeoutSeconds }),
       jobs: (await runJobs(db, runId)).map(({ _id, payload: _payload, ...job }) => ({ id: _id, ...job })),
       stories,

@@ -8,7 +8,7 @@ import { runContext } from "../core/run-options";
 import { sourceMap } from "../sourcemap/store";
 import type { SearchResult } from "./provider";
 
-const SECTION_TOPICS: Record<string, string> = { safety: "crime", obituaries: "deaths", events: "events", real_estate: "home_sales", schools: "sports", sports: "sports" };
+const SECTION_TOPICS: Record<string, string> = { safety: "crime", obituaries: "deaths", events: "events", real_estate: "home_sales", sports: "sports", civic: "government", schools: "schools", business: "business", community: "community", news: "news" };
 
 export async function fixtureResults(db: Db, query: string, topic: string | null): Promise<SearchResult[]> {
   const hosted = /(?<!-)site:([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})/i.exec(query)?.[1];

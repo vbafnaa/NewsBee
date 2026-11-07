@@ -5,10 +5,10 @@
 export const PAID_SERVICES = [
   { id: "gemini", label: "Gemini", use: "Writing, ranking, extraction, discovery", budget: 800 },
   { id: "openai_compatible", label: "OpenAI-compatible APIs", use: "Model fallback, if configured", budget: 200 },
-  { id: "tavily", label: "Tavily", use: "Council documents and agent search", budget: 100 },
-  { id: "serpapi", label: "SerpApi", use: "Google operator search", budget: 100 },
-  { id: "searchapi", label: "SearchApi", use: "Google operator search", budget: 100 },
-  { id: "brightdata", label: "Bright Data", use: "Google operator search", budget: 100 },
+  { id: "tavily", label: "Tavily", use: "Council documents and agent search", budget: 130 },
+  { id: "serpapi", label: "SerpApi", use: "Google operator search", budget: 130 },
+  { id: "searchapi", label: "SearchApi", use: "Google operator search", budget: 130 },
+  { id: "brightdata", label: "Bright Data", use: "Google operator search", budget: 130 },
   { id: "exa", label: "Exa", use: "Coverage comparison search", budget: 50 },
   { id: "scrapingbee", label: "ScrapingBee", use: "JavaScript-rendered pages", budget: 50 },
   { id: "jev", label: "Jev (TypeSafe)", use: "Result, page and item classification", budget: 500 },
@@ -20,7 +20,7 @@ export const PAID_SERVICE_IDS = PAID_SERVICES.map((service) => service.id) as re
 
 export const FREE_SERVICES = [
   { id: "gdelt", label: "GDELT", hosts: ["gdeltproject.org"] },
-  { id: "overpass", label: "Overpass (OpenStreetMap)", hosts: ["overpass-api.de", "overpass.kumi.systems", "overpass.private.coffee"] },
+  { id: "overpass", label: "Overpass (OpenStreetMap)", hosts: ["overpass-api.de", "overpass.kumi.systems", "overpass.private.coffee", "maps.mail.ru"] },
   { id: "nominatim", label: "Nominatim (OpenStreetMap)", hosts: ["nominatim.openstreetmap.org"] },
   { id: "socrata", label: "Socrata", hosts: ["api.us.socrata.com"] },
   { id: "nws", label: "National Weather Service", hosts: ["api.weather.gov"] },
@@ -28,6 +28,7 @@ export const FREE_SERVICES = [
   { id: "bluesky", label: "Bluesky", hosts: ["api.bsky.app"] },
   { id: "jina", label: "Jina Reader", hosts: ["r.jina.ai"] },
   { id: "county_records", label: "County assessor and recorder data", hosts: [] },
+  { id: "nces", label: "NCES school district directory", hosts: ["nces.ed.gov"] },
 ] as const;
 export type FreeService = typeof FREE_SERVICES[number]["id"];
 
@@ -41,6 +42,11 @@ export const PRIORITY_TOPICS = [
   { id: "events", label: "Local events" },
   { id: "home_sales", label: "Home sales and permits" },
   { id: "sports", label: "Local sports" },
+  { id: "government", label: "Council and government" },
+  { id: "schools", label: "Schools, boards and PTAs" },
+  { id: "business", label: "Business openings, closings and offers" },
+  { id: "community", label: "Community groups and volunteering" },
+  { id: "news", label: "Other local news" },
 ] as const;
 export type PriorityTopic = typeof PRIORITY_TOPICS[number]["id"];
 export const SEARCH_PROVIDERS = ["serpapi", "searchapi", "brightdata", "exa", "tavily", "fixture"] as const;
@@ -49,6 +55,9 @@ export const CLASSIFIER_MODES = ["off", "shadow", "jev"] as const;
 export type ClassifierMode = typeof CLASSIFIER_MODES[number];
 
 export type RunOptions = {
+  purpose?: "test" | "training" | "final";
+  admin_approval_id?: string;
+  rebuild?: boolean;
   mode: "autopilot" | "manual";
   /** An edition's flow: agentic adds topic sweeps. */
   flow: "current" | "agentic";

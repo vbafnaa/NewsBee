@@ -7,7 +7,7 @@ export default async function DiscoveryPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="discovery" title="Discovery"
-    description="How each location's source map is built: every discovery method, what it last found and kept, errors, and when it runs next.">
+    description="Source discovery results, errors and next runs.">
     <DiscoveryView />
   </AdminShell>;
 }

@@ -1,0 +1,48 @@
+{
+  "exact_registry_endpoints": 8,
+  "matches": [
+    [
+      "WCC news / Wedgwood Community Council",
+      "https://www.wedgwoodcc.org/",
+      "directories"
+    ],
+    [
+      "WCC meetings",
+      "https://www.wedgwoodcc.org/about/meetings/",
+      "directories"
+    ],
+    [
+      "Wedgwood Elementary calendar",
+      "https://wedgwoodes.seattleschools.org/calendar/",
+      "directories"
+    ],
+    [
+      "Northeast Library events / Seattle Public Library \u2014 Northeast Branch events",
+      "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+      "directories"
+    ],
+    [
+      "King County Food Establishment Inspection Data",
+      "https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+      "opendata"
+    ],
+    [
+      "WIAA official news",
+      "https://www.wiaa.com/feed/",
+      "athletics"
+    ],
+    [
+      "Northeast Branch bulletin boards and community-posting binder",
+      "https://www.spl.org/hours-and-locations/northeast-branch",
+      "directories"
+    ],
+    [
+      "The Seattle Medium",
+      "https://seattlemedium.com/",
+      "newsrooms"
+    ]
+  ],
+  "directory_endpoints": 12,
+  "total_map_sources": 47,
+  "note": "Registry used only after automatic discovery to measure overlap. Branch page match does not prove physical notice/archive recovery."
+}

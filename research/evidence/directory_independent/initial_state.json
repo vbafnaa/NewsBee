@@ -1,0 +1,78 @@
+{
+  "created_at": "2026-11-07T00:57:17.382Z",
+  "database": "wedgwood_independent",
+  "initial_collections": [
+    "locations plus scheduler-created empty collections and heartbeat"
+  ],
+  "initial_source_count": 0,
+  "registry_loaded": false,
+  "imported_previous_sources": false,
+  "location": {
+    "_id": "osm-r13915552-wa",
+    "id": "osm-r13915552-wa",
+    "name": "Wedgwood, Seattle, WA",
+    "state": "WA",
+    "census_geoid": null,
+    "latitude": 47.690221,
+    "longitude": -122.2905745,
+    "directory_edition": "IMLS PLS FY2022",
+    "government": {
+      "status": "detected",
+      "platform": "legistar",
+      "tenant": "seattle",
+      "website": "https://seattle.gov/",
+      "wikidata_id": "Q5083",
+      "pages_checked": [
+        "https://seattle.gov/"
+      ],
+      "detail": "legistar tenant seattle found under a name guessed from the town"
+    },
+    "community": {
+      "name": "Wedgwood",
+      "state": "WA",
+      "state_name": "Washington",
+      "parent_id": "seattle-wa",
+      "parent_name": "Seattle",
+      "parent_kind": "city",
+      "latitude": 47.690221,
+      "longitude": -122.2905745,
+      "aliases": [],
+      "coverage_terms": [
+        "Wedgwood"
+      ],
+      "library_branches": [],
+      "newsrooms": [],
+      "geography": {
+        "_id": "osm-r13915552-wa",
+        "id": "osm-r13915552-wa",
+        "name": "Wedgwood",
+        "label": "Wedgwood, Seattle, WA",
+        "state": "WA",
+        "state_name": "Washington",
+        "kind": "suburb",
+        "parent_name": "Seattle",
+        "parent_kind": "city",
+        "latitude": 47.690221,
+        "longitude": -122.2905745,
+        "area": {
+          "method": "approximate_bbox",
+          "bbox": [
+            -122.30808,
+            47.6830397,
+            -122.2797623,
+            47.6975789
+          ]
+        },
+        "provider": "photon",
+        "osm_type": "R",
+        "osm_id": 13915552,
+        "website": null,
+        "attribution": "\u00a9 OpenStreetMap contributors",
+        "name_lower": "wedgwood",
+        "fetched_at": 1794009536069
+      }
+    },
+    "systems": []
+  },
+  "note": "Automatic scheduler created empty collections and a heartbeat before location insertion. locations/source_map/pipeline_runs/discovered_sources/manual_links were checked empty; only the geographic location profile was inserted. Built-in public reference catalogs may populate during normal pipeline execution."
+}

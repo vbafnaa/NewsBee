@@ -1,0 +1,127 @@
+# Business openings and closings. See README.md for how to edit a rule.
+category: business
+label: Business openings and closings
+target: true
+topic: business
+
+goal:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: business.goal.also_cover_openings, set: also_cover, order: 2, text: business openings and licences }
+      - { id: business.goal.also_cover_inspections, set: also_cover, order: 3, text: food and health inspections }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: business.prefer.first_party, text: First-party business updates. }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - id: business.prefer.opendata_inspections
+        set: opendata_topics
+        order: 3
+        text: Open-data food inspection datasets.
+        opendata: { topic: inspections, query: food inspections, state_level: false }
+        regex: 'inspection|restaurant|food establishment'
+        flags: i
+      - id: business.prefer.opendata_licences
+        set: opendata_topics
+        order: 4
+        text: Open-data business licence datasets, including the state's.
+        opendata: { topic: licences, query: license applications, state_level: true }
+        regex: 'business licen|liquor|licen[cs]e appl|new business|licen[cs]e'
+        flags: i
+      - id: business.prefer.address_chamber
+        set: usual_addresses
+        order: 0
+        text: A chamber of commerce at its usual address. The page must say what it is and name the place.
+        reason: A guess proves nothing, so the page must say what it is and name the place, then pass every check a search result would.
+        address: { label: chamber }
+        regex: 'chamber of commerce|chamber'
+        flags: i
+        values: ['{city}chamber.org', '{city}chamber.com', '{city}areachamber.org', '{city}areachamber.com', '{city}chamberofcommerce.org', '{city}.com', '{city}.org']
+      - id: business.prefer.address_downtown
+        set: usual_addresses
+        order: 1
+        text: A downtown or business association at its usual address. The page must say what it is and name the place.
+        reason: A guess proves nothing, so the page must say what it is and name the place, then pass every check a search result would.
+        address: { label: downtown }
+        regex: 'downtown|main street|business (?:association|improvement)'
+        flags: i
+        values: ['downtown{city}.org', 'downtown{city}.com', '{city}downtown.org', '{city}downtown.com', '{place}business.org', '{place}businessassociation.org']
+
+reject: []
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: business.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as local news., value: local_news }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: business.general.local_business_records, stage: general, order: 4, pattern: '"{city}" "{place}" ("business license" OR "new license" OR "grand opening")' }
+      - { id: business.stage1.chamber, stage: stage1, source_type: Business groups, pattern: '"{city}" "{state}" "chamber of commerce" (members OR events OR news)' }
+      - { id: business.stage1.business_groups, stage: stage1, source_type: Business groups, pattern: '"{place}" ("downtown association" OR "business association" OR "business improvement")' }
+      - { id: business.stage1.businesses, stage: stage1, source_type: Openings, pattern: '"{place}" ("now open" OR "grand opening")' }
+      - { id: business.stage1.closings, stage: stage1, source_type: Closings, pattern: '"{place}" ("closing its doors" OR "going out of business" OR "last day of business")' }
+      - { id: business.stage1.offers, stage: stage1, source_type: Offers, pattern: '"{place}" ("shop local" OR "local deals" OR coupons)' }
+      - { id: business.stage1.city_business, stage: stage1, source_type: City business pages, pattern: 'site:{city_domain} ("business license" OR "economic development")' }
+      - { id: business.general.licences, stage: general, order: 9, source_type: Licences, pattern: '"{city}" (liquor OR cannabis) "license" ("new applications" OR "license actions")' }
+      - { id: business.general.inspections, stage: general, order: 10, source_type: Inspections, pattern: '"{county} County" "{city}" "food establishment" inspection data' }
+      - { id: business.stage2.opening_sweep, stage: stage2, source_type: Openings, pattern: '"{place}" ("now open" OR "grand opening" OR "ribbon cutting") after:{after}' }
+      - { id: business.stage2.closing_sweep, stage: stage2, source_type: Closings, pattern: '"{place}" ("closing" OR "going out of business") business after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: business.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: chamber of commerce business news }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: business.page.site_links
+        set: site_links
+        order: 6
+        text: "Links to business licences, economic development and the chamber."
+        regex: '\b(business licen[cs](?:es?|ing)|economic development|business (?:resources|directory|assistance|support|services|development|news)|start(?:ing)? a business|new businesses|chamber of commerce|downtown (?:association|alliance|partnership)|main street|shop local)\b'
+        flags: i
+      - id: business.page.group_links
+        set: group_links
+        order: 1
+        text: Business groups a public body links out to.
+        regex: '\b(chamber of commerce|chamber|downtown [\w ]{0,20}(?:association|alliance|partnership)|business (?:improvement|association)|main street|economic development (?:council|authority|alliance|corporation))\b'
+        flags: i
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - id: business.page.osm_group_names
+        set: osm_group_names
+        order: 0
+        text: Names that move an OpenStreetMap group into this section.
+        reason: Groups OpenStreetMap files as one kind of office, sorted by what their name says they are.
+        regex: '\bchamber\b|business (?:association|improvement)|downtown|main street|merchants|economic development'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: business.page.item_keywords
+        set: item_keywords
+        order: 8
+        text: Words that put a story in this section.
+        regex: 'now open|grand opening|\bopens\b|opening|closing|\bcloses\b|restaurant|\bcafe|bakery|brewery|\bshop\b|\bstore\b|business|liquor|licen[cs]e|inspection|layoff|ribbon cutting'
+        flags: i
+      - { id: business.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [business_opening] }
+      - { id: business.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [business_opening] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: business.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+
+examples: []

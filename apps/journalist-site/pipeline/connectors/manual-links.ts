@@ -110,7 +110,7 @@ export async function addSourceLink(db: Db, settings: Settings, locationId: stri
   if (!name || name.length > 120) throw new InvalidSourceLink("Enter a source name of 1-120 characters");
   const url = checkedUrl(values.url);
   const note = typeof values.note === "string" ? values.note.trim().slice(0, 500) : "";
-  const section: SectionId = isSection(values.section) ? values.section : values.connector === "remembrance" ? "obituaries" : values.connector === "athletics" ? "schools" : values.connector === "justice" ? "safety" : "news";
+  const section: SectionId = isSection(values.section) ? values.section : values.connector === "remembrance" ? "obituaries" : values.connector === "athletics" ? "sports" : values.connector === "justice" ? "safety" : "news";
   if (section === "obituaries" && note.length < 10) throw new InvalidSourceLink("Record how the funeral home or publisher gave permission to republish its notices");
   const location = await getLocation(db, locationId);
   const today = localToday(location.state);
@@ -150,6 +150,8 @@ export async function addSourceLink(db: Db, settings: Settings, locationId: stri
     throw new InvalidSourceLink(`Link could not be validated: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (preview.result.status !== "ingested") throw new InvalidSourceLink(`Link is not usable: ${preview.result.detail}`);
+  const labelled = await sourceMap(db).findOne({ _id: `${locationId}:${candidate.source_id}` }, { projection: { review: 1 } });
+  if (labelled?.review?.decision === "reject") throw new InvalidSourceLink("This source was rejected. Change its Decision in the source network to use it again.");
   if (await sourceMap(db).findOne({ _id: `${locationId}:${candidate.source_id}`, found_by: { $exists: true }, status: { $ne: "rejected" } })) {
     await sourceMap(db).updateOne({ _id: `${locationId}:${candidate.source_id}` }, { $set: { status: "pinned", found_by: candidate.found_by, ...(note ? { note } : {}) } });
   } else {
@@ -177,7 +179,7 @@ export async function migrateManualLinks(db: Db, locationId: string) {
       } catch { /* not a dataset link */ }
       continue;
     }
-    const section: SectionId = link.connector === "remembrance" ? "obituaries" : link.connector === "athletics" ? "schools" : link.connector === "justice" ? "safety" : link.connector === "localsites" ? "community" : "news";
+    const section: SectionId = link.connector === "remembrance" ? "obituaries" : link.connector === "athletics" ? "sports" : link.connector === "justice" ? "safety" : link.connector === "localsites" ? "community" : "news";
     candidates.push({ source_id: webSourceId(link.url), name: link.name, url: link.url, reader: "web", params: { url: link.url, kind: webKind(section, null), section, inside_area: link.connector === "localsites" }, section, found_by: { method: "migrated", detail: `Earlier ${link.connector} link` }, inside_area: link.connector === "localsites", status: "pinned", note: link.note ?? null });
   }
   if (candidates.length) await upsertCandidates(db, locationId, candidates);

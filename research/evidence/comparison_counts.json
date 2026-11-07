@@ -1,0 +1,22 @@
+{
+  "comparison_classifications": {
+    "Found only by human": 37,
+    "Machine found the general website but missed the relevant content": 11,
+    "Found by human and machine": 3
+  },
+  "retained_candidates": 61,
+  "connector_local_updates": 3,
+  "awaiting_locality": 58,
+  "dropped_audit_records": 683,
+  "sources": 22,
+  "websites_or_dataset_endpoints": 12,
+  "by_source": {
+    "opendata:cos-data.seattle.gov:76t5-zqzr": 2,
+    "web:ca81bb9cb08e": 9,
+    "web:58f6a880f189": 15,
+    "opendata:cos-data.seattle.gov:kzjm-xkqj": 1,
+    "web:43502f8de4c1": 10,
+    "web:496de024da04": 12,
+    "web:24db13dae541": 12
+  }
+}

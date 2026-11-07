@@ -1,15 +1,9 @@
-import { adminRoute, kickPipeline } from "@/lib/admin-api";
-import { currentAdmin } from "@/lib/admin-session";
-import { startAll } from "@/pipeline/orchestration/orchestrator";
+import { adminRoute } from "@/lib/admin-api";
+import { RunConflict } from "@/pipeline/orchestration/runs";
 
 export const maxDuration = 300;
 
-/** Start a run for every onboarded location with the kick-off options. */
+/** Batch admission cannot reserve multiple unfinished newsroom runs. */
 export async function POST(request: Request) {
-  return adminRoute(request, async (deps) => {
-    const body = await request.json().catch(() => ({})) as { options?: unknown };
-    const started = await startAll(deps, (await currentAdmin()) ?? "admin", body.options);
-    kickPipeline(deps, request.url);
-    return { jobs: started.map(({ run, started: fresh }) => ({ job_id: run._id, location_id: run.location_id, started: fresh })) };
-  });
+  return adminRoute(request, async () => { throw new RunConflict("Batch runs are disabled. Start one location; only one unfinished map or edition run may occupy the newsroom."); });
 }

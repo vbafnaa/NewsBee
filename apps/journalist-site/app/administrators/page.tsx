@@ -1,14 +1,16 @@
-import { currentAdmin } from "@/lib/admin-session";
+import { currentPrincipal } from "@/lib/admin-session";
 import { redirect } from "next/navigation";
 import AdminManagement from "./admin-management";
 import AdminShell from "../admin-shell";
 
 export default async function AdministratorsPage() {
-  const email = await currentAdmin();
-  if (!email) redirect("/login");
+  const principal = await currentPrincipal();
+  if (!principal) redirect("/login");
+  if (principal.role !== "owner") redirect("/account");
+  const email = principal.email;
 
   return (
-    <AdminShell email={email} page="administrators" title="Administrator access"
+    <AdminShell email={email} page="administrators" title="Users"
       description="Manage who can sign in to the journalist workspace.">
       <AdminManagement />
     </AdminShell>

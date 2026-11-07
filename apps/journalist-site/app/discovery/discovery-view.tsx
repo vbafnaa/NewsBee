@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
+import { useExecutionPolicy } from "../components/execution-policy";
 
 type State = { method: string; label: string; last_run_at?: number; ok?: boolean; found?: number; added?: number; detail?: string; next_due_at?: number; never_run?: boolean; refresh_days?: number };
 type Row = { location_id: string; location_name: string; methods: State[] };
@@ -13,6 +14,7 @@ export default function DiscoveryView() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState<string | null>(null);
+  const { policy } = useExecutionPolicy();
   const load = useCallback(async () => {
     try { setRows((await adminApi<{ locations: Row[] }>("discovery")).locations); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }, []);
@@ -33,7 +35,8 @@ export default function DiscoveryView() {
           <td>{state.label}</td><td>{when(state.last_run_at)}</td>
           <td>{state.never_run ? "Never run" : <><span className={`status-badge tone-${state.ok ? "ok" : "failed"}`}>{state.ok ? "ok" : "failed"}</span> <small>{state.detail}</small></>}</td>
           <td>{state.found ?? "—"}</td><td>{state.added ?? "—"}</td><td>{state.never_run ? "Next run" : when(state.next_due_at)}</td>
-          <td><button type="button" className="secondary" disabled={running !== null} onClick={() => void run(row.location_id, state.method)}>{running === `${row.location_id}:${state.method}` ? "Running…" : "Run now"}</button></td>
+          <td>{state.method === "dork" ? <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs`}>Configure paid source-map search</Link>
+            : <button type="button" className="secondary" disabled={running !== null || !policy || (state.method === "llm" && policy.reasons.length > 0)} onClick={() => void run(row.location_id, state.method)}>{running === `${row.location_id}:${state.method}` ? "Running…" : "Run now"}</button>}</td>
         </tr>)}</tbody>
       </table></div>
     </section>)}

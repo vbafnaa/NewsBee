@@ -4,13 +4,14 @@
  * window), with a guaranteed share of the query budget. General families use what is left.
  *
  * The search kit is built from location data, and grows as discovery finds things: a school
- * on the map creates athletics queries, a funeral home creates obituary queries, a county
+ * on the map creates athletics and PTA queries, a funeral home creates obituary queries, a county
  * creates assessor and sheriff queries. A template whose placeholder has no value is skipped.
  *
  * A neighbourhood's best sources often never name it: the city's police, the county assessor.
  * So a topic can search by the city as well as the place, but every query stays tied to the
  * community: results about a whole county, state or region cost money and rarely concern it.
- * The state appears only to tell apart places with the same name.
+ * The state appears only to tell apart places with the same name. The query patterns are in the
+ * playbook, under each category's search playbook, in the order they run.
  */
 import type { Db } from "mongodb";
 import type { ConnectorContext, LocationProfile } from "../connectors/types";
@@ -23,6 +24,7 @@ import { mentions } from "../connectors/community";
 import { DO_NOT_SCRAPE } from "../connectors/fetcher";
 import { AGGREGATORS } from "../connectors/newssearch";
 import { US_STATES } from "../../../../shared/geography";
+import { CATEGORIES_IN_PLAYBOOK, limit, queriesFor, regex, ruleSet, type Rule } from "../playbook";
 import { hostOf, sourceMap } from "../sourcemap/store";
 import { areaFacts } from "./area";
 import { verifiedCitySite } from "./city-site";
@@ -43,7 +45,7 @@ async function postcode(transport: HttpTransport, location: LocationProfile) {
   } catch { return []; }
 }
 
-const SCHOOL_NAME = /(?:high|middle|junior|prep\w*|academy|school)\b/i;
+const SCHOOL_NAME = regex("schools.page.kit_school_name");
 
 export async function buildSearchKit(context: { db: Db; transport: HttpTransport; location: LocationProfile; today: string; settings: unknown; log: unknown; fetcher: unknown }): Promise<SearchKit> {
   const { location, db } = context;
@@ -53,14 +55,14 @@ export async function buildSearchKit(context: { db: Db; transport: HttpTransport
   const institutions = await localInstitutions({ db, transport: context.transport, location }).catch(() => [] as Institution[]);
   const onMapSchools = records.filter((record) => record.section === "schools" && SCHOOL_NAME.test(record.name)).map((record) => ({ name: record.name.split(/[:(]/)[0].trim(), host: hostOf(record.url) || null }));
   const nearbySchools = institutions.filter((item) => item.kind === "school").map((item) => ({ name: item.name, host: hostOf(item.website) || null }));
-  const schools = [...nearbySchools, ...onMapSchools].filter((school, index, all) => all.findIndex((other) => other.name === school.name) === index).slice(0, 8);
+  const schools = [...nearbySchools, ...onMapSchools].filter((school, index, all) => all.findIndex((other) => other.name === school.name) === index).slice(0, limit("general.stop.kit_schools"));
   // Search only inside a site that has been checked as the city's own.
   const citySite = await verifiedCitySite(context as unknown as Parameters<typeof verifiedCitySite>[0]).catch(() => null);
   const names = location.community ? { place: location.community.name, parent: location.community.parent_name } : { place: townName(location), parent: null };
   return {
     ...names, state: US_STATES[location.state] ?? location.state, stateCode: location.state, county: facts?.county?.replace(/\s+County$/i, "") ?? null,
     cityDomain: citySite?.host ?? null, zips: await postcode(context.transport, location), schools, institutions,
-    venues: records.filter((record) => record.section === "events").slice(0, 5).map((record) => record.name.split(/[:(]/)[0].trim()),
+    venues: records.filter((record) => record.section === "events").slice(0, limit("general.stop.kit_venues")).map((record) => record.name.split(/[:(]/)[0].trim()),
     agencyHosts: hostsIn((record) => record.section === "safety" || record.topics?.includes("crime") === true),
     funeralHosts: hostsIn((record) => record.section === "obituaries" || record.topics?.includes("deaths") === true),
     schoolHosts: hostsIn((record) => record.section === "schools"),
@@ -72,10 +74,11 @@ export async function buildSearchKit(context: { db: Db; transport: HttpTransport
 
 export type PlannedQuery = { topic: PriorityTopic | null; family: string; query: string; stage: "stage1" | "stage2"; section?: SectionId };
 
+const EXCLUSIONS = ruleSet("search_exclusions");
 /** Sites to leave out: aggregators and platforms we never read. */
 function exclusions(topic: PriorityTopic | null) {
-  const list = topic === "home_sales" ? ["yelp.com", "zillow.com"] : topic === "events" ? ["facebook.com", "eventbrite.com"] : topic === "deaths" ? ["legacy.com"] : ["facebook.com"];
-  return list.map((site) => `-site:${site}`).join(" ");
+  const list = EXCLUSIONS.find((rule) => rule.topic === topic && topic !== null) ?? EXCLUSIONS.find((rule) => rule.category === "general")!;
+  return list.values!.map((site) => `-site:${site}`).join(" ");
 }
 export const NEVER_READ = [...DO_NOT_SCRAPE, ...AGGREGATORS];
 
@@ -86,79 +89,31 @@ function fill(kit: SearchKit, template: string, topic: PriorityTopic | null, val
   return missing ? null : `${query} ${exclusions(topic)}`.trim();
 }
 
-function stage1(kit: SearchKit, topic: PriorityTopic): Array<[string, string, Record<string, string>?]> {
-  switch (topic) {
-    case "crime": return [
-      ["city_police", 'site:{city_domain} police (blotter OR "incident reports" OR "crime data")'],
-      ["city_police_news", '"{parent}" police (blotter OR "significant incident" OR "press releases")'],
-      ["police_blotter", '"{place}" ("police blotter" OR "incident report" OR "press release") site:.gov'],
-      ["open_data", '"{parent}" (police OR crime OR fire OR 911) dataset "open data"'],
-      ["sheriff", '"{county} County" "{city}" sheriff (blotter OR "press release" OR arrests)'],
-      ["prosecutor", '"{county} County" "{city}" prosecutor ("press release" OR news OR charges)'],
-    ];
-    case "deaths": return [
-      ["funeral_homes", '"{place}" "{state}" ("funeral home" OR mortuary OR cremation) (obituaries OR "recent services")'],
-      ["city_funeral_homes", '"{parent}" "{state}" ("funeral home" OR mortuary OR cremation) obituaries'],
-      ["obituaries", 'inurl:obituaries "{place}" "{state}"'],
-      ...kit.institutions.filter((item) => item.kind === "funeral_directors" && !item.website).slice(0, 2).map((item): [string, string, Record<string, string>] => ["institution", '"{name}" "{state}" obituaries', { name: item.name }]),
-    ];
-    case "events": return [
-      ["calendars", '"{place}" inurl:calendar (parks OR library OR community)'],
-      ["branch_library", '"{place}" (branch OR library) events'],
-      ["community_center", '"{place}" "community center" programs'],
-      ...kit.institutions.filter((item) => ["library", "community_centre", "arts_centre", "theatre"].includes(item.kind) && !item.website).slice(0, 2).map((item): [string, string, Record<string, string>] => ["institution", '"{name}" "{state}" events', { name: item.name }]),
-      ["city_events", 'site:{city_domain} "{place}" ("upcoming events" OR calendar)'],
-      ...kit.venues.slice(0, 2).map((venue): [string, string, Record<string, string>] => ["venue", '"{venue}" ("upcoming events" OR tickets OR schedule)', { venue }]),
-    ];
-    case "home_sales": return [
-      ["assessor", '"{county} County" "{city}" (assessor OR recorder) ("sales data" OR "parcel search" OR "recorded documents")'],
-      ["sales_files", '"{county} County" "{city}" "real property" sales filetype:csv'],
-      ["permits", 'site:{city_domain} ("building permit" OR "land use") (notices OR issued OR applications)'],
-    ];
-    // Each level of sport comes first, so the budget can't cut one out; specific schools follow.
-    case "sports": return [
-      ["high_school_sports", '"{place}" "high school" (athletics OR "varsity") (schedule OR scores)'],
-      ["middle_school_sports", '"{place}" "middle school" (athletics OR sports) schedule'],
-      ...kit.schools.slice(0, 3).map((school): [string, string, Record<string, string>] => ["school_athletics", '"{school}" athletics (schedule OR scores OR roster)', { school: school.name }]),
-      ["youth_leagues", '"{place}" youth (soccer OR baseball OR basketball OR hockey OR "little league") (schedule OR standings)'],
-      ["league", '"{parent}" high school league (schedule OR standings OR results)'],
-      ...kit.institutions.filter((item) => item.kind === "club" && !item.website).slice(0, 2).map((item): [string, string, Record<string, string>] => ["institution", '"{name}" "{state}" (schedule OR results OR calendar)', { name: item.name }]),
-      ...kit.schoolHosts.slice(0, 2).map((host): [string, string, Record<string, string>] => ["district_athletics", "site:{host} inurl:athletics", { host }]),
-      ...(kit.associationHost && kit.schools[0] ? [["association", 'site:{association} "{school}" (schedule OR results)', { association: kit.associationHost, school: kit.schools[0].name }] as [string, string, Record<string, string>]] : []),
-    ];
+type Planned = [string, string, Record<string, string>?];
+const family = (rule: Rule) => rule.id.split(".").pop()!;
+const categoryOf = (topic: PriorityTopic) => CATEGORIES_IN_PLAYBOOK.find((category) => category.topic === topic)!.id;
+
+/** One value set per row a `for_each` query makes. */
+function rows(kit: SearchKit, each: NonNullable<Rule["for_each"]>): Array<Record<string, string>> {
+  const hosts = (list: string[]) => list.slice(0, each.limit).map((host) => ({ host }));
+  switch (each.list) {
+    case "institutions": return kit.institutions.filter((item) => each.kinds!.includes(item.kind) && !item.website).slice(0, each.limit).map((item) => ({ name: item.name }));
+    case "venues": return kit.venues.slice(0, each.limit).map((venue) => ({ venue }));
+    case "schools": return kit.schools.slice(0, each.limit).map((school) => ({ school: school.name }));
+    case "school_hosts": return hosts(kit.schoolHosts);
+    case "agency_hosts": return hosts(kit.agencyHosts);
+    case "funeral_hosts": return hosts(kit.funeralHosts);
+    case "team_hosts": return hosts(kit.teamHosts);
+    case "association_school": return kit.associationHost && kit.schools[0] ? [{ association: kit.associationHost, school: kit.schools[0].name }] : [];
+    default: throw new Error(`Unknown query list: ${each.list}`);
   }
 }
 
-function stage2(kit: SearchKit, topic: PriorityTopic, after: string): Array<[string, string, Record<string, string>?]> {
-  const since = { after };
-  const each = (family: string, hosts: string[], template: string, count = 2) => hosts.slice(0, count).map((host): [string, string, Record<string, string>] => [family, template, { host, ...since }]);
-  switch (topic) {
-    case "crime": return [...each("agency_sweep", kit.agencyHosts, 'site:{host} "{place}" (arrest OR incident OR investigation) after:{after}'), ["place_sweep", '"{place}" (police OR sheriff) (arrested OR incident OR investigation) after:{after}', since]];
-    case "deaths": return [...each("funeral_sweep", kit.funeralHosts, 'site:{host} (obituary OR "in loving memory") after:{after}'), ["place_sweep", '"{place}" "{state}" obituary after:{after}', since]];
-    case "events": return [["place_sweep", '"{place}" ("this weekend" OR "upcoming") (event OR festival OR concert) after:{after}', since]];
-    case "home_sales": return [["sales_sweep", '"{place}" ("sold for" OR "sale price" OR "recently sold") after:{after}', since], ["permit_sweep", 'site:{city_domain} "{place}" ("permit issued" OR "land use notice") after:{after}', since]];
-    case "sports": return [
-      ...each("school_sweep", kit.schoolHosts, "site:{host} (score OR recap OR results) after:{after}"),
-      ...kit.schools.slice(0, 2).map((school): [string, string, Record<string, string>] => ["school_results", '"{school}" (defeated OR playoff OR "final score") after:{after}', { school: school.name, ...since }]),
-      ...each("team_sweep", kit.teamHosts, "site:{host} (recap OR result OR schedule) after:{after}"),
-    ];
-  }
+function queryRows(kit: SearchKit, topic: PriorityTopic, stage: "stage1" | "stage2", extra: Record<string, string> = {}): Planned[] {
+  return queriesFor(stage, categoryOf(topic)).flatMap((rule): Planned[] => rule.for_each ? rows(kit, rule.for_each).map((values) => [family(rule), rule.pattern!, { ...values, ...extra }]) : [[family(rule), rule.pattern!, extra]]);
 }
 
-const GENERAL: Array<[string, string, SectionId]> = [
-  ["city_records", 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")', "civic"],
-  ["representative", 'site:{city_domain} (councilmember OR "town hall") "{place}"', "civic"],
-  ["community_groups", 'site:.org "{place}" ("community council" OR "neighborhood association") meeting', "community"],
-  ["school_groups", '"{place}" (PTA OR PTSA) newsletter', "schools"],
-  ["street_projects", 'site:{city_domain} (transportation OR "capital projects" OR "current projects") "{place}"', "community"],
-  ["transit_alerts", '"{city}" (transit OR metro) "service advisories"', "community"],
-  ["parks", 'site:{city_domain} parks "{place}"', "community"],
-  ["licences", '"{city}" (liquor OR cannabis) "license" ("new applications" OR "license actions")', "business"],
-  ["inspections", '"{county} County" "{city}" "food establishment" inspection data', "business"],
-  ["other_agencies", 'site:.gov "{place}" "{state}" (permit OR notice)', "civic"],
-  ["hidden_documents", 'site:{city_domain} filetype:pdf "{place}" "land use"', "real_estate"],
-  ["businesses", '"{place}" ("now open" OR "grand opening")', "business"],
-];
+const GENERAL = queriesFor("general").sort((a, b) => a.order! - b.order!).map((rule): [string, string, SectionId] => [family(rule), rule.pattern!, rule.category as SectionId]);
 
 /** A query must name the place, its city, a ZIP or a local institution, or stay inside a confirmed site. */
 export function isLocalQuery(kit: SearchKit, query: string, sites: Set<string>) {
@@ -172,12 +127,11 @@ export function isLocalQuery(kit: SearchKit, query: string, sites: Set<string>) 
 
 /** Stage 1 queries: every topic gets a guaranteed share of the budget, and general families use the rest. */
 export function stage1Queries(kit: SearchKit, topics: PriorityTopic[], budget: number): PlannedQuery[] {
-  const share = Math.max(2, Math.floor(budget / Math.max(1, topics.length + 1)));
+  const share = Math.max(limit("general.stop.min_topic_share"), Math.floor(budget / Math.max(1, topics.length + 1)));
+  const shares = topics.map((topic) => queryRows(kit, topic, "stage1").flatMap(([family, template, values]) => { const query = fill(kit, template, topic, values); return query ? [{ topic, family, query, stage: "stage1" as const }] : []; }).slice(0, share));
+  // Taken in turn, so running out of time costs every topic a query, not the last topics all of theirs.
   const planned: PlannedQuery[] = [];
-  for (const topic of topics) {
-    const filled = stage1(kit, topic).flatMap(([family, template, values]) => { const query = fill(kit, template, topic, values); return query ? [{ topic, family, query, stage: "stage1" as const }] : []; });
-    planned.push(...filled.slice(0, share));
-  }
+  for (let turn = 0; turn < share; turn += 1) for (const filled of shares) if (filled[turn]) planned.push(filled[turn]);
   for (const [family, template, section] of GENERAL) {
     if (planned.length >= budget) break;
     const query = fill(kit, template, null);
@@ -187,12 +141,12 @@ export function stage1Queries(kit: SearchKit, topics: PriorityTopic[], budget: n
 }
 
 /** Stage 2 queries for one topic, looking for new pages in the window. */
-export function stage2Queries(kit: SearchKit, topic: PriorityTopic, after: string, budget = 4): PlannedQuery[] {
-  return stage2(kit, topic, after).flatMap(([family, template, values]) => { const query = fill(kit, template, topic, values); return query ? [{ topic, family, query, stage: "stage2" as const }] : []; }).slice(0, budget);
+export function stage2Queries(kit: SearchKit, topic: PriorityTopic, after: string, budget = limit("general.stop.stage2_queries")): PlannedQuery[] {
+  return queryRows(kit, topic, "stage2", { after }).flatMap(([family, template, values]) => { const query = fill(kit, template, topic, values); return query ? [{ topic, family, query, stage: "stage2" as const }] : []; }).slice(0, budget);
 }
 
-export const TOPIC_SECTIONS: Record<PriorityTopic, "safety" | "obituaries" | "events" | "real_estate" | "sports"> = { crime: "safety", deaths: "obituaries", events: "events", home_sales: "real_estate", sports: "sports" };
-export const TOPIC_KINDS: Record<PriorityTopic, string> = { crime: "news_report", deaths: "obituary", events: "event", home_sales: "home_sale", sports: "game_result" };
+export const TOPIC_SECTIONS = Object.fromEntries(CATEGORIES_IN_PLAYBOOK.filter((category) => category.topic).map((category) => [category.topic, category.id])) as Record<PriorityTopic, SectionId>;
+export const TOPIC_KINDS = Object.fromEntries(ruleSet("item_kinds").map((rule) => [rule.topic, rule.value])) as Record<PriorityTopic, string>;
 
 /** The priority topic an item or section belongs to, for coverage counts. */
 export function topicOfItem(item: { kind?: unknown; section?: unknown }): PriorityTopic | null {
@@ -202,5 +156,10 @@ export function topicOfItem(item: { kind?: unknown; section?: unknown }): Priori
   if (kind === "event" || section === "events") return "events";
   if (["home_sale", "building_permit", "development", "housing_market"].includes(kind) || section === "real_estate") return "home_sales";
   if (["school_sports", "game_result"].includes(kind) || section === "sports") return "sports";
+  if (["meeting_preview", "meeting_outcome", "public_record"].includes(kind) || section === "civic") return "government";
+  if (section === "schools") return "schools";
+  if (section === "business") return "business";
+  if (section === "community") return "community";
+  if (section === "news") return "news";
   return null;
 }

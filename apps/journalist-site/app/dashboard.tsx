@@ -6,6 +6,10 @@ import { adminApi as api } from "@/lib/admin-client";
 import LocationOnboarding from "./location-onboarding";
 import RunOptionsPanel from "./components/run-options-panel";
 import type { RunOptions } from "@/pipeline/core/run-values";
+import { ExecutionNotice, RunExecutionSummary, useExecutionPolicy, executionDisabledReason } from "./components/execution-policy";
+import ExplainedButton from "./components/explained-button";
+import type { ExecutionBinding } from "@/pipeline/accounts/execution";
+import PipelineApprovals from "./components/pipeline-approvals";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -41,8 +45,9 @@ type Health = {
 type RunSource = { source_id: string; job_id: string | null; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
 type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[]; rank?: number | null; why?: string | null };
 type Job = { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
-type Run = { _id: string; kind?: string; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null; stage_transitions?: { status: string }[] };
+type Run = { _id: string; kind?: string; execution?: ExecutionBinding; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null; stage_transitions?: { status: string }[] };
 type RunDetail = {
+  funding?: { funding: "personal" | "admin"; provider: string; model: string; reason: string | null; ok: boolean; at: number }[];
   run: Run & { draft_id: string | null; window: [string, string]; sources: RunSource[]; error: string | null };
   health: LocationHealth;
   stories: Story[];
@@ -142,7 +147,7 @@ function JobLog({ job, source, initiallyOpen, retry, busy }: { job: Job; source?
   </details>;
 }
 
-export default function Dashboard({ locationId }: { locationId?: string }) {
+export default function Dashboard({ locationId, owner = false }: { locationId?: string; owner?: boolean }) {
   const [health, setHealth] = useState<Health | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -152,6 +157,9 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [runOptions, setRunOptions] = useState<RunOptions | null>(null);
+  const [runOptionsError, setRunOptionsError] = useState("");
+  const { policy, error: policyError, refresh: refreshPolicy } = useExecutionPolicy(runOptions);
+  const canSpend = (runId: string) => Boolean(policy?.permissions[runId]?.canSpend);
 
   const load = useCallback(async () => {
     try {
@@ -238,9 +246,8 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
     const action = status === "awaiting_authoring" ? "authoring" : status === "awaiting_finish" ? "finish" : PROCESSING.includes(status) ? "resume" : null;
     if (!action) return null;
     const label = action === "authoring" ? "Start authoring" : action === "finish" ? "Write front page and email, then publish" : "Resume";
-    return <button className="secondary" disabled={busy || (action === "authoring" && candidates === 0)}
-      title={action === "authoring" && candidates === 0 ? "No usable items collected. Review sources and retry collection." : undefined}
-      onClick={() => void act(`${label}: processing kicked off.`, () => api(`runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" }))}>{label}</button>;
+    return <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "spend", runId) ?? (action === "authoring" && candidates === 0 ? "No usable items collected. Review sources and retry collection." : null)}
+      onClick={() => void act(`${label}: processing kicked off.`, () => api(`runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" }))}>{label}</ExplainedButton>;
   }
 
   function cancelSelected(run: { _id: string; location_name: string }) {
@@ -294,7 +301,7 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
       {coverage?.gaps.length ? <ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul> : null}
       <div className="card-actions">
         <a href={`/locations/${encodeURIComponent(run.location_id)}?tab=sources`}>Review sources</a>
-        <button className="secondary" disabled={busy} onClick={() => void restartSelected(run, true)}>Retry collection</button>
+        <button className="secondary" disabled={busy || !canSpend(run._id)} onClick={() => void restartSelected(run, true)}>Retry collection</button>
       </div>
     </div>;
   }
@@ -303,6 +310,7 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
 
   return (
     <>
+      <ExecutionNotice policy={policy} error={policyError} runId={detail?.run._id} refresh={refreshPolicy} />
       {error && <p className="alert" role="alert">{error}</p>}
       {notice && <p className="notice" role="status">{notice}</p>}
       {health && health.scheduler.status !== "ok" && (health.queue.pending ?? 0) > 0 && (health.queue.running ?? 0) === 0 && <p className="alert" role="alert">
@@ -322,13 +330,14 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
 
       <section className="panel">
         <div className="section-heading">
-            <div><p className="eyebrow">Edition pipeline</p><h2>{locationId ? "Run orchestration" : "Locations & runs"}</h2><p>Choose the options once, then run. Refreshing the source map only updates a location&rsquo;s sources. Creating an edition reads that map, and autopilot takes it to print. The source map shows every choice each run made. Email is not sent.</p></div>
-           {!locationId && <button disabled={busy || !locations.length}
+            <div><h2>{locationId ? "Pipeline" : "Locations & runs"}</h2><p>Refresh updates sources. Create edition uses the saved source map.</p></div>
+           {!locationId && <button disabled
              onClick={() => void act("Started an edition for every location with a source map.", () => api("ingestion", { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>
-             {runOptions?.mode === "manual" ? "Start collection for all locations" : "Create editions for all"}
+             Batch runs disabled: one unfinished run per newsroom
            </button>}
         </div>
-        <RunOptionsPanel onChange={setRunOptions} />
+        <h3>New run options</h3><p className="chart-caption">Applies to new runs only; existing purpose, sponsor and approval stay unchanged.</p>
+        <RunOptionsPanel onChange={setRunOptions} onError={setRunOptionsError} />
         <div className="operations-toolbar"><span>{health?.queue.running ?? 0} jobs running / {health?.queue.pending ?? 0} waiting</span><Link href="/dashboard">Dashboard &rarr;</Link></div>
          <div className="location-run-list">
            {health?.locations.filter((row) => !locationId || row.location_id === locationId).map((row) => {
@@ -337,6 +346,7 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
             const coverage = locations.find((location) => location.id === row.location_id)?.source_coverage;
             return <article className="run-card" key={row.location_id}>
               <div className="section-heading"><h3><Link href={`/locations/${encodeURIComponent(row.location_id)}`}>{row.location_name}</Link></h3><span className={`status-badge tone-${badge.tone}`}>{badge.label}</span></div>
+              <RunExecutionSummary run={recent.find((run) => run._id === row.run_id)} />
               <ol className="pipeline-steps" aria-label={`${row.location_name} pipeline`}>
                  {["Discover & collect", "Assemble, rank & write", "Front page & email"].map((step, index) => {
                   const stage = stageIndex(row.stage);
@@ -354,23 +364,25 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
                 {[row.error, ...row.model_errors, ...row.failed_sources.map((source) => `${source.name}: ${source.error ?? "failed"}`)].filter(Boolean).join("; ")}
               </p>}
               <div className="card-actions">
-                  <button disabled={busy || running}
-                    onClick={() => void act(`Started ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>{running ? "Run open" : runOptions?.mode === "manual" ? "Start collection" : "Create edition"}</button>
-                  <button className="secondary" disabled={busy || running}
+                  <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : runOptionsError || executionDisabledReason(policy, policyError, "map") || (!runOptions ? "Loading run options." : running ? "This location already has an unfinished run. Inspect it before refreshing sources." : null)}
                     onClick={() => void act(`Refreshing the source map for ${row.location_name}.`, () =>
-                      api(`locations/${encodeURIComponent(row.location_id)}/map-run`, { method: "POST", body: JSON.stringify({ options: runOptions, rebuild: true }) }))}>Refresh source map</button>
+                      api(`locations/${encodeURIComponent(row.location_id)}/map-run`, { method: "POST", body: JSON.stringify({ options: runOptions, rebuild: true }) }))}>Refresh source map</ExplainedButton>
+                  <ExplainedButton disabledReason={busy ? "Another action is in progress." : runOptionsError || executionDisabledReason(policy, policyError, "edition") || (!runOptions ? "Loading run options." : running ? "This location already has an unfinished run. Inspect it before starting new work." : null)}
+                    onClick={() => void act(`Started ${row.location_name}.`, () =>
+                      api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>{running ? "Run open" : runOptions?.mode === "manual" ? "Start collection" : "Create edition"}</ExplainedButton>
                   {row.run_id && <a className="button secondary" href={`/source-map?${new URLSearchParams({ location: row.location_id, mode: "edition", run: row.run_id })}`}>See the funnel</a>}
                   {row.run_id && stageAction(row.run_id, row.stage, row.candidate_count)}
                    {row.run_id && (locationId
                      ? <button className="secondary" onClick={() => { void openRun(row.run_id!, row.location_id); window.dispatchEvent(new CustomEvent("newsbee:inspect-run", { detail: { runId: row.run_id } })); }}>Inspect run</button>
                      : <Link className="button secondary" href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs&run=${encodeURIComponent(row.run_id)}`}>Inspect run</Link>)}
                   {row.run_id && CANCELLABLE.includes(row.stage) && <button className="secondary" disabled={busy} onClick={() => cancelSelected({ _id: row.run_id!, location_name: row.location_name })}>Cancel run</button>}
-                  {row.run_id && !running && <button className="secondary" disabled={busy} onClick={() => void restartSelected({ _id: row.run_id!, location_id: row.location_id, location_name: row.location_name })}>Restart run</button>}
+                  {row.run_id && !running && <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "restart", row.run_id)} onClick={() => void restartSelected({ _id: row.run_id!, location_id: row.location_id, location_name: row.location_name })}>Restart run</ExplainedButton>}
               </div>
+              <PipelineApprovals locationId={row.location_id} kind="map" options={runOptions ? { ...runOptions, rebuild: true } : null} onStarted={async (runId) => { await load(); await openRun(runId, row.location_id); }} />
+              <PipelineApprovals locationId={row.location_id} kind="edition" options={runOptions} onStarted={async (runId) => { await load(); await openRun(runId, row.location_id); }} />
               <details className="location-settings"><summary>Location actions</summary><div className="card-actions">
                     <a href={`/locations/${encodeURIComponent(row.location_id)}?tab=sources`}>Source map</a>
-                  <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=settings#remove-location`}>Remove location and files…</Link>
+                  {owner && <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=settings#remove-location`}>Remove location and files…</Link>}
               </div></details>
             </article>;
           })}
@@ -385,10 +397,13 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
             <div className="card-actions">
               {stageAction(detail.run._id, detail.run.status, detail.health.candidate_count)}
               {CANCELLABLE.includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
-              {["published", "failed", "cancelled"].includes(detail.run.status) && <button className="secondary" disabled={busy || recent.some((item) => item.location_id === detail.run.location_id && ACTIVE.includes(item.status))} onClick={() => void restartSelected(detail.run)}>Restart run</button>}
+              {["mapped", "published", "failed", "cancelled"].includes(detail.run.status) && <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "restart", detail.run._id)} onClick={() => void restartSelected(detail.run)}>Restart run</ExplainedButton>}
                <button className="secondary" onClick={() => { setDetail(null); window.history.replaceState(window.history.state, "", `/locations/${encodeURIComponent(detail.run.location_id)}?tab=runs`); }}>Close</button>
             </div>
           </div>
+          <RunExecutionSummary run={detail.run} />
+          {!detail.funding?.length && <p className="chart-caption">No model funding calls recorded yet.</p>}
+          {!!detail.funding?.length && <details className="location-settings"><summary>Recorded funding · {detail.funding.filter((call) => call.funding === "admin").length} Admin / {detail.funding.filter((call) => call.funding !== "admin").length} personal attempts{detail.funding.length === 50 ? " (latest 50)" : ""}</summary><ul>{detail.funding.map((call, index) => <li key={index}><strong>{call.funding === "admin" ? "Admin tokens" : "Personal tokens"}</strong>: {call.provider} / {call.model} / {call.ok ? "served" : "failed"}{call.reason ? ` / ${call.reason}` : ""}</li>)}</ul></details>}
           <ol className="pipeline-steps" aria-label="Run stages">
             {["Collect", "Author", "Front page & email"].map((step, index) => {
               const stage = stageIndex(detail.run.status);
@@ -408,7 +423,7 @@ export default function Dashboard({ locationId }: { locationId?: string }) {
           <div className="job-log-list">{detail.jobs.map((job) =>
             <JobLog key={job.id} job={job} source={detail.run.sources.find((source) => source.job_id === job.id)}
               initiallyOpen={job.id === defaultLogId} busy={busy}
-              retry={canRetryStep(job) ? () => void act("Retrying only the selected step; completed work is preserved.", () =>
+              retry={canRetryStep(job) && canSpend(detail.run._id) ? () => void act("Retrying only the selected step; completed work is preserved.", () =>
                 api(`runs/${encodeURIComponent(detail.run._id)}/jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" })) : undefined} />
           )}</div>
           {!detail.jobs.length && <p>No work has been queued for this run.</p>}

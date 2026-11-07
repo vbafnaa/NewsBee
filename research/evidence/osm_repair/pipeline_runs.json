@@ -1,0 +1,1908 @@
+[
+  {
+    "_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "planned": true,
+    "discovery": [],
+    "options": {
+      "mode": "manual",
+      "flow": "current",
+      "map_flow": "current",
+      "guardrails": "strict",
+      "guardrails_off": [],
+      "access": "respect",
+      "access_ignore": [],
+      "count_history": false,
+      "paid": {},
+      "external_off": [],
+      "search_provider": "serpapi",
+      "classifier": "off",
+      "topics": [
+        "crime",
+        "deaths",
+        "events",
+        "home_sales",
+        "sports"
+      ],
+      "story_limit": null
+    },
+    "kind": "edition",
+    "location_id": "osm-r13915552-wa",
+    "location_name": "Wedgwood, Seattle, WA",
+    "trigger": {
+      "by": "local-admin@localhost",
+      "kind": "manual"
+    },
+    "status": "awaiting_authoring",
+    "today": "2026-11-06",
+    "window": [
+      "2026-11-07",
+      "2026-11-13"
+    ],
+    "last_edition_day": null,
+    "sources": [
+      {
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "type": "opendata",
+        "job_id": "8adef9da-8116-4992-b858-baae3131b051",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "17 rows since 2026-10-30; 2 items kept, 15 left out",
+        "event_count": 2,
+        "shortlisted": 2,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "type": "web",
+        "job_id": "5d584923-55b6-414f-a872-9269dae885fe",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "type": "trending",
+        "job_id": "ac2b6601-12b6-4652-b07b-efe0dc4d33f8",
+        "status": "completed",
+        "result_status": "failed",
+        "detail": "Error: All linked reporting unavailable",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "type": "web",
+        "job_id": "a46033bb-81ba-4330-b363-8255658df854",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 13 items kept, 6 left out",
+        "event_count": 13,
+        "shortlisted": 13,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "type": "homesafety",
+        "job_id": "6de51629-81b0-43f9-86b6-4d0e4fccf0f0",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "7 health-based violations in WA since 2026-05-10; 4 community water systems, 4 checked, 0 serving Wedgwood or within 50 km",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "type": "remembrance",
+        "job_id": "fac21dd0-ccf8-461b-a690-a4c52e60e5b0",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 approved family notices for Wedgwood; 0 approved since 2026-10-30",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "type": "opendata",
+        "job_id": "d48bb297-8a0d-4824-a423-249cee46c757",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "411 rows since 2026-10-30; 0 items kept, 411 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:af8ec1111da2",
+        "name": "Green Lake Branch",
+        "type": "web",
+        "job_id": "4224785a-21de-4184-b3ae-8875e84b7c26",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:9131c6ba85cd",
+        "name": "Green Lake Branch: All Green Lake Branch Events",
+        "type": "web",
+        "job_id": "c0e840c2-b271-4571-8af7-1925435cd9a3",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "type": "web",
+        "job_id": "022395cb-b9a5-4cb1-8501-39806768ff45",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 9 items kept, 6 left out",
+        "event_count": 9,
+        "shortlisted": 9,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "type": "web",
+        "job_id": "c3de98e2-16d0-4a51-8aba-c5ee6c561b89",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "type": "meetings",
+        "job_id": "eec50c78-913a-4456-a2ce-4bd53eea0bde",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "legistar API: 0 upcoming agendas, 0 recent outcomes",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": {
+          "method": "rules"
+        },
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:edea93e63fe6",
+        "name": "King County: Birth certificates",
+        "type": "web",
+        "job_id": "a788ca58-82f0-4d1a-bc86-c4cb29121c64",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:2ee662c07eb6",
+        "name": "King County: Land use inspections",
+        "type": "web",
+        "job_id": "3a94abcb-3463-4f38-b641-3386156bb39b",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:9642d62be4d0",
+        "name": "King County: Marriage licenses",
+        "type": "web",
+        "job_id": "4a5f8bbe-6f83-4f5d-967f-b3d573f456d1",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:6b874fbd74fd",
+        "name": "King County: Property tax assessments (residential)",
+        "type": "web",
+        "job_id": "105fe9ae-3260-41f3-a5ba-1b10e3be0718",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "type": "hazards",
+        "job_id": "dfc94ea8-9b1b-4e69-89fc-65ef480e7077",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 active Weather Service alerts for Wedgwood; 0 kept",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "type": "newssearch",
+        "job_id": "8c9d5957-4def-4a9a-ad78-533cdb839fd6",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "gdelt: 0 results for \"Wedgwood\" \"Seattle\"; 0 to check against the article, 0 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:868ca86c8c1b",
+        "name": "Northeast Branch",
+        "type": "web",
+        "job_id": "4e64cf72-b0f2-4430-b815-ebf5471b23d3",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:8341be3f9458",
+        "name": "Northeast Branch: All Northeast Branch Events",
+        "type": "web",
+        "job_id": "9d473740-07d3-47e4-adcf-dbbef48742c6",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "type": "web",
+        "job_id": "ed2b7439-98a4-4864-bd1a-6fa1ad2e6d5f",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 10 items kept, 5 left out",
+        "event_count": 10,
+        "shortlisted": 10,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:1e8778548321",
+        "name": "Seattle Parks and Recreation: Community Grant Programs",
+        "type": "web",
+        "job_id": "14ac5353-c955-49c4-94af-756dfd024486",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 4 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:9015f0a2efd7",
+        "name": "Seattle Parks and Recreation: Contact Seattle Parks & Recreation",
+        "type": "web",
+        "job_id": "26f4be0b-7d81-4500-96d7-94372916a769",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 4 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:66a74e6c1f09",
+        "name": "Seattle Parks and Recreation: Scholarships for Recreation and Childcare",
+        "type": "web",
+        "job_id": "165f0391-980e-454c-bcbd-6e69c06d1a54",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: no feed, 5 pages; 0 items kept, 0 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "type": "meetings",
+        "job_id": "f0dd8bb2-11ae-4675-ad54-f1fe1d4340f6",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "legistar API: 0 upcoming agendas, 0 recent outcomes",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": {
+          "method": "rules"
+        },
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "type": "opendata",
+        "job_id": "7eeb11a1-4317-402d-b3e3-614ec2c20efe",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "370 rows since 2026-10-30; 1 items kept, 370 left out",
+        "event_count": 1,
+        "shortlisted": 1,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "type": "web",
+        "job_id": "ec07315c-154b-4fd7-a924-90324dd987fb",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "7 requests: feed, 4 pages; 12 items kept, 2 left out",
+        "event_count": 12,
+        "shortlisted": 12,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "type": "community",
+        "job_id": "4e7f50d1-bd54-4ee6-81c0-b4598cbac038",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 approved neighbour stories for Wedgwood; 0 current",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "type": "web",
+        "job_id": "f33dcc2c-4004-455e-8974-58e5872a949e",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 11 items kept, 4 left out",
+        "event_count": 11,
+        "shortlisted": 11,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "type": "justice",
+        "job_id": "0ac702b4-cfef-482c-ae96-494151575f10",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 announcements since 2026-10-30; 0 name Seattle or its area (0 kept)",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "type": "hazards",
+        "job_id": "f6bfe21d-83ef-40ee-a359-639d265364da",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "0 earthquakes of magnitude 2.5+ within 50 km since 2026-10-30; 0 noticeable in 0 stories",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "type": "web",
+        "job_id": "19acbbca-2106-4bcc-a864-9b5f983d65ac",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "8 requests: feed, 5 pages; 0 items kept, 17 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:3ee50aa0bccf",
+        "name": "Wedgwood Block Watch",
+        "type": "web",
+        "job_id": "8cfcfff7-4f60-43f7-a547-6c17f5741b0e",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out",
+        "event_count": 5,
+        "shortlisted": 5,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:4f36215dc62f",
+        "name": "Wedgwood Block Watch: Meetings",
+        "type": "web",
+        "job_id": "74fba8c7-b829-4de6-ad39-628716cd7da9",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out",
+        "event_count": 5,
+        "shortlisted": 5,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:3741b6e14e86",
+        "name": "Wedgwood Block Watch: Newsletter",
+        "type": "web",
+        "job_id": "d4bcd85f-4ca8-431a-90b9-082d36b40b6f",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out",
+        "event_count": 5,
+        "shortlisted": 5,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:f076ae9f4047",
+        "name": "Wedgwood Community Council",
+        "type": "web",
+        "job_id": "ebb8fe45-aa86-492a-ac8d-366e5c81be1a",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out",
+        "event_count": 5,
+        "shortlisted": 5,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:6fc8c92e4121",
+        "name": "Wedgwood Elementary",
+        "type": "web",
+        "job_id": "fabce663-aff2-4a3a-b1aa-952b466aefaa",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:ca29ba4a38db",
+        "name": "Wedgwood Elementary: Calendar",
+        "type": "web",
+        "job_id": "950854bb-3160-4e79-ab85-9804fe44cb6a",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "10 requests: feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:4a26601fdd0f",
+        "name": "Wedgwood Elementary: News",
+        "type": "web",
+        "job_id": "a5605a3f-a4fa-4683-b049-4d469e4e7148",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "9 requests: feed, 5 pages; 0 items kept, 5 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "web:2498c035024c",
+        "name": "Wedgwood Elementary: Read the PTA Newsletter",
+        "type": "web",
+        "job_id": "a7e8289b-ed49-4b17-84a4-2cca6c96c132",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "8 requests: feed, 4 pages; 0 items kept, 4 left out",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      },
+      {
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "type": "trending",
+        "job_id": "b0a0ec46-b531-418e-b02c-e5b72f7d9481",
+        "status": "completed",
+        "result_status": "ingested",
+        "detail": "5 topics measured for Wedgwood, 0 recent locally reported stories; 0 omitted without local story context",
+        "event_count": 0,
+        "shortlisted": 0,
+        "link_discovery": null,
+        "error": null,
+        "health": "healthy"
+      }
+    ],
+    "collection_tasks": [
+      {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "76t5-zqzr",
+          "topic": "permits",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:76t5-zqzr"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "params": {
+          "url": "https://www.seattle.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "community",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:12a97f513c66"
+        }
+      },
+      {
+        "type": "trending",
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:bluesky"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "params": {
+          "url": "https://crosscut.com/",
+          "feed_url": "https://www.cascadepbs.org/rss/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:58f6a880f189"
+        }
+      },
+      {
+        "type": "homesafety",
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:homesafety:sdwis"
+        }
+      },
+      {
+        "type": "remembrance",
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:remembrance:family"
+        }
+      },
+      {
+        "type": "opendata",
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "params": {
+          "domain": "data.kingcounty.gov",
+          "dataset": "r878-4sxa",
+          "topic": "inspections",
+          "filter": "city",
+          "agency": "Public Health - Seattle & King County",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:data.kingcounty.gov:r878-4sxa"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:af8ec1111da2",
+        "name": "Green Lake Branch",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/green-lake-branch",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations",
+          "directory_selection": "Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "source_map_id": "osm-r13915552-wa:web:af8ec1111da2"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:9131c6ba85cd",
+        "name": "Green Lake Branch: All Green Lake Branch Events",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/green-lake-branch/green-lake-branch-events",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations/green-lake-branch",
+          "directory_selection": "Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "authority_directory_url": "https://www.spl.org/hours-and-locations",
+          "source_map_id": "osm-r13915552-wa:web:9131c6ba85cd"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "params": {
+          "url": "https://iexaminer.org/",
+          "feed_url": "https://iexaminer.org/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:ca81bb9cb08e"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "params": {
+          "url": "https://kingcounty.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "civic",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:224872219f21"
+        }
+      },
+      {
+        "type": "meetings",
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "params": {
+          "government": {
+            "status": "override",
+            "platform": "legistar",
+            "tenant": "kingcounty",
+            "website": "https://kingcounty.legistar.com/",
+            "wikidata_id": null,
+            "pages_checked": [
+              "https://kingcounty.legistar.com/"
+            ],
+            "detail": "legistar account 'kingcounty' matched by name"
+          },
+          "fixed": true,
+          "level": "county",
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:kingcounty"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:edea93e63fe6",
+        "name": "King County: Birth certificates",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/dph/certificates-permits-licenses/order-birth-certificate",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:edea93e63fe6"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:2ee662c07eb6",
+        "name": "King County: Land use inspections",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/local-services/buildings-property/inspections/land-use-inspections",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:2ee662c07eb6"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:9642d62be4d0",
+        "name": "King County: Marriage licenses",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/marriage-licensing",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:9642d62be4d0"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:6b874fbd74fd",
+        "name": "King County: Property tax assessments (residential)",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/assessor/buildings-and-property/property-taxes/residential-property-taxes",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:6b874fbd74fd"
+        }
+      },
+      {
+        "type": "hazards",
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:nws"
+        }
+      },
+      {
+        "type": "newssearch",
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "params": {
+          "backend": "gdelt",
+          "source_map_id": "osm-r13915552-wa:newssearch:gdelt"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:868ca86c8c1b",
+        "name": "Northeast Branch",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations",
+          "directory_selection": "Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "source_map_id": "osm-r13915552-wa:web:868ca86c8c1b"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:8341be3f9458",
+        "name": "Northeast Branch: All Northeast Branch Events",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "directory_selection": "Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "authority_directory_url": "https://www.spl.org/hours-and-locations",
+          "source_map_id": "osm-r13915552-wa:web:8341be3f9458"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "params": {
+          "url": "https://seattlemedium.com/",
+          "feed_url": "https://seattlemedium.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:43502f8de4c1"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:1e8778548321",
+        "name": "Seattle Parks and Recreation: Community Grant Programs",
+        "params": {
+          "url": "https://www.seattle.gov/parks/about-us/contracts-and-partnerships/partnership-opportunities/community-grant-programs",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:1e8778548321"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:9015f0a2efd7",
+        "name": "Seattle Parks and Recreation: Contact Seattle Parks & Recreation",
+        "params": {
+          "url": "https://www.seattle.gov/parks/about-us/contact-us",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:9015f0a2efd7"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:66a74e6c1f09",
+        "name": "Seattle Parks and Recreation: Scholarships for Recreation and Childcare",
+        "params": {
+          "url": "https://www.seattle.gov/parks/scholarships-and-financial-aid",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:66a74e6c1f09"
+        }
+      },
+      {
+        "type": "meetings",
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "params": {
+          "government": {
+            "status": "detected",
+            "platform": "legistar",
+            "tenant": "seattle",
+            "website": "https://seattle.gov/",
+            "wikidata_id": "Q5083",
+            "pages_checked": [
+              "https://seattle.gov/"
+            ],
+            "detail": "legistar tenant seattle found under a name guessed from the town"
+          },
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:seattle"
+        }
+      },
+      {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "kzjm-xkqj",
+          "topic": "fire",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:kzjm-xkqj"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "params": {
+          "url": "https://www.seattleweekly.com/",
+          "feed_url": "https://www.seattleweekly.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:496de024da04"
+        }
+      },
+      {
+        "type": "community",
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:community:neighbours"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "params": {
+          "url": "https://www.thestranger.com/",
+          "feed_url": "https://www.thestranger.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:24db13dae541"
+        }
+      },
+      {
+        "type": "justice",
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:justice:doj"
+        }
+      },
+      {
+        "type": "hazards",
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:usgs"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "params": {
+          "url": "https://www.wiaa.com/",
+          "feed_url": "https://www.wiaa.com/feed/",
+          "kind": "school_sports",
+          "section": "schools",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:a0b0f07c95e3"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:3ee50aa0bccf",
+        "name": "Wedgwood Block Watch",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:3ee50aa0bccf"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:4f36215dc62f",
+        "name": "Wedgwood Block Watch: Meetings",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/about/meetings/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "authority_directory_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "source_map_id": "osm-r13915552-wa:web:4f36215dc62f"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:3741b6e14e86",
+        "name": "Wedgwood Block Watch: Newsletter",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/newsletter/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "authority_directory_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "source_map_id": "osm-r13915552-wa:web:3741b6e14e86"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:f076ae9f4047",
+        "name": "Wedgwood Community Council",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:f076ae9f4047"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:6fc8c92e4121",
+        "name": "Wedgwood Elementary",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattleschools.org/schools/",
+          "directory_selection": "School name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:6fc8c92e4121"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:ca29ba4a38db",
+        "name": "Wedgwood Elementary: Calendar",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/calendar/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:ca29ba4a38db"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:4a26601fdd0f",
+        "name": "Wedgwood Elementary: News",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/news/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:4a26601fdd0f"
+        }
+      },
+      {
+        "type": "web",
+        "source_id": "web:2498c035024c",
+        "name": "Wedgwood Elementary: Read the PTA Newsletter",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/get-involved/pta-newsletter/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:2498c035024c"
+        }
+      },
+      {
+        "type": "trending",
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:wikipedia"
+        }
+      }
+    ],
+    "draft_id": null,
+    "edition_id": null,
+    "published": null,
+    "error": null,
+    "created_at": 1794013187.338,
+    "updated_at": 1794013259.906,
+    "authoring_started_at": null,
+    "stage_started_at": 1794013187.338,
+    "stage_transitions": [
+      {
+        "status": "collecting",
+        "by": "local-admin@localhost",
+        "at": 1794013187.338
+      },
+      {
+        "status": "awaiting_authoring",
+        "by": "worker",
+        "at": 1794013259.906
+      }
+    ],
+    "completed_at": null,
+    "map_version": 1,
+    "source_snapshot": [
+      {
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "url": "https://data.kingcounty.gov/d/r878-4sxa",
+        "reader": "opendata",
+        "status": "active",
+        "section": "business",
+        "found_by": "opendata",
+        "detail": "food inspections on the county portal data.kingcounty.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "url": null,
+        "reader": "meetings",
+        "status": "active",
+        "section": "civic",
+        "found_by": "national",
+        "detail": "Legistar and CivicClerk tenant APIs; official city council HTML/PDF agendas and minutes",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "url": "https://kingcounty.legistar.com/",
+        "reader": "meetings",
+        "status": "active",
+        "section": "civic",
+        "found_by": "meetings",
+        "detail": "legistar account 'kingcounty' matched by name; confirm it is King County",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "url": "https://kingcounty.gov/",
+        "reader": "web",
+        "status": "active",
+        "section": "civic",
+        "found_by": "government",
+        "detail": "The county's official website (OpenStreetMap)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "url": null,
+        "reader": "community",
+        "status": "active",
+        "section": "community",
+        "found_by": "national",
+        "detail": "Stories readers submit on the reader site, published only after an editor approves them",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "url": "https://www.seattle.gov/",
+        "reader": "web",
+        "status": "active",
+        "section": "community",
+        "found_by": "llm",
+        "detail": "Offers a wide range of community events and programs.",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:3ee50aa0bccf",
+        "name": "Wedgwood Block Watch",
+        "url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+        "reader": "web",
+        "status": "active",
+        "section": "community",
+        "found_by": "directories",
+        "detail": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf → https://www.wedgwoodcc.org/wedgwood-block-watch/; Official directory's linked organization name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:4f36215dc62f",
+        "name": "Wedgwood Block Watch: Meetings",
+        "url": "https://www.wedgwoodcc.org/about/meetings/",
+        "reader": "web",
+        "status": "active",
+        "section": "community",
+        "found_by": "directories",
+        "detail": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf → https://www.wedgwoodcc.org/wedgwood-block-watch/ → https://www.wedgwoodcc.org/about/meetings/; Official directory's linked organization name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:3741b6e14e86",
+        "name": "Wedgwood Block Watch: Newsletter",
+        "url": "https://www.wedgwoodcc.org/newsletter/",
+        "reader": "web",
+        "status": "active",
+        "section": "community",
+        "found_by": "directories",
+        "detail": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf → https://www.wedgwoodcc.org/wedgwood-block-watch/ → https://www.wedgwoodcc.org/newsletter/; Official directory's linked organization name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:f076ae9f4047",
+        "name": "Wedgwood Community Council",
+        "url": "https://www.wedgwoodcc.org/",
+        "reader": "web",
+        "status": "active",
+        "section": "community",
+        "found_by": "directories",
+        "detail": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf → https://www.wedgwoodcc.org/; Official directory's linked organization name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:ac054b22167c",
+        "name": "City of Seattle: Damaged Sidewalks",
+        "url": "https://www.seattle.gov/transportation/projects-and-programs/programs/maintenance-and-paving/sidewalk-repair-program",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "llm",
+        "detail": "Navigation from https://www.seattle.gov/: Damaged Sidewalks",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:6e5329bcaaa0",
+        "name": "City of Seattle: Potholes",
+        "url": "https://seattle.gov/transportation/projects-and-programs/programs/maintenance-and-paving/potholes",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "government",
+        "detail": "Navigation from https://seattle.gov/: Potholes",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:868ca86c8c1b",
+        "name": "Northeast Branch",
+        "url": "https://www.spl.org/hours-and-locations/northeast-branch",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "directories",
+        "detail": "https://www.spl.org/hours-and-locations → https://www.spl.org/hours-and-locations/northeast-branch; Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:8341be3f9458",
+        "name": "Northeast Branch: All Northeast Branch Events",
+        "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "directories",
+        "detail": "https://www.spl.org/hours-and-locations → https://www.spl.org/hours-and-locations/northeast-branch → https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events; Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:af8ec1111da2",
+        "name": "Green Lake Branch",
+        "url": "https://www.spl.org/hours-and-locations/green-lake-branch",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "directories",
+        "detail": "https://www.spl.org/hours-and-locations → https://www.spl.org/hours-and-locations/green-lake-branch; Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:9131c6ba85cd",
+        "name": "Green Lake Branch: All Green Lake Branch Events",
+        "url": "https://www.spl.org/hours-and-locations/green-lake-branch/green-lake-branch-events",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "directories",
+        "detail": "https://www.spl.org/hours-and-locations → https://www.spl.org/hours-and-locations/green-lake-branch → https://www.spl.org/hours-and-locations/green-lake-branch/green-lake-branch-events; Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:66a74e6c1f09",
+        "name": "Seattle Parks and Recreation: Scholarships for Recreation and Childcare",
+        "url": "https://www.seattle.gov/parks/scholarships-and-financial-aid",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "llm",
+        "detail": "Navigation from https://www.seattle.gov/parks/: Scholarships for Recreation and Childcare",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:9015f0a2efd7",
+        "name": "Seattle Parks and Recreation: Contact Seattle Parks & Recreation",
+        "url": "https://www.seattle.gov/parks/about-us/contact-us",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "llm",
+        "detail": "Navigation from https://www.seattle.gov/parks/: Contact Seattle Parks & Recreation",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:1e8778548321",
+        "name": "Seattle Parks and Recreation: Community Grant Programs",
+        "url": "https://www.seattle.gov/parks/about-us/contracts-and-partnerships/partnership-opportunities/community-grant-programs",
+        "reader": "web",
+        "status": "active",
+        "section": "events",
+        "found_by": "llm",
+        "detail": "Navigation from https://www.seattle.gov/parks/: Community Grant Programs",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "url": null,
+        "reader": "newssearch",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "GDELT news search for the place (Gemini grounded search optional); headlines and links, each checked against the article before use",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "url": null,
+        "reader": "trending",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "url": null,
+        "reader": "trending",
+        "status": "active",
+        "section": "news",
+        "found_by": "national",
+        "detail": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "url": "https://www.seattleweekly.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q861430)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "url": "https://www.thestranger.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q3522886)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "url": "https://crosscut.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q5188530)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "url": "https://iexaminer.org/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q6050327)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "url": "https://seattlemedium.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "news",
+        "found_by": "newsrooms",
+        "detail": "Published in Seattle (http://www.wikidata.org/entity/Q7442135)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "url": null,
+        "reader": "remembrance",
+        "status": "active",
+        "section": "obituaries",
+        "found_by": "national",
+        "detail": "Family-submitted death notices approved by an editor, and editor-added funeral-home feeds with a recorded republication permission",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "url": "https://cos-data.seattle.gov/d/76t5-zqzr",
+        "reader": "opendata",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "opendata",
+        "detail": "building permits on the city portal cos-data.seattle.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:55923927d51f",
+        "name": "City of Seattle: Get a Building Permit",
+        "url": "https://www.seattle.gov/construction-and-inspections/permits",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "llm",
+        "detail": "Navigation from https://www.seattle.gov/: Get a Building Permit",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:2ee662c07eb6",
+        "name": "King County: Land use inspections",
+        "url": "https://kingcounty.gov/en/dept/local-services/buildings-property/inspections/land-use-inspections",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "government",
+        "detail": "Navigation from https://kingcounty.gov/: Land use inspections",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:6b874fbd74fd",
+        "name": "King County: Property tax assessments (residential)",
+        "url": "https://kingcounty.gov/en/dept/assessor/buildings-and-property/property-taxes/residential-property-taxes",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "government",
+        "detail": "Navigation from https://kingcounty.gov/: Property tax assessments (residential)",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:257a30eac189",
+        "name": "King County: Parcel sales search",
+        "url": "https://info.kingcounty.gov/assessor/esales/eSales.aspx",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "government",
+        "detail": "Navigation from https://kingcounty.gov/: Parcel sales search",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:9642d62be4d0",
+        "name": "King County: Marriage licenses",
+        "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/marriage-licensing",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "government",
+        "detail": "Navigation from https://kingcounty.gov/: Marriage licenses",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:edea93e63fe6",
+        "name": "King County: Birth certificates",
+        "url": "https://kingcounty.gov/en/dept/dph/certificates-permits-licenses/order-birth-certificate",
+        "reader": "web",
+        "status": "active",
+        "section": "real_estate",
+        "found_by": "government",
+        "detail": "Navigation from https://kingcounty.gov/: Birth certificates",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "url": null,
+        "reader": "justice",
+        "status": "active",
+        "section": "safety",
+        "found_by": "national",
+        "detail": "U.S. Department of Justice press releases for the state's U.S. Attorney's Offices, and editor-added county prosecutor or attorney general feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "url": "https://cos-data.seattle.gov/d/kzjm-xkqj",
+        "reader": "opendata",
+        "status": "active",
+        "section": "safety",
+        "found_by": "opendata",
+        "detail": "fire 911 on the city portal cos-data.seattle.gov",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:b1249a904462",
+        "name": "City of Seattle: Graffiti",
+        "url": "https://seattle.gov/police/need-help/neighborhood-issues/graffiti",
+        "reader": "web",
+        "status": "active",
+        "section": "safety",
+        "found_by": "government",
+        "detail": "Navigation from https://seattle.gov/: Graffiti",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:ad5c102337f3",
+        "name": "City of Seattle: Police",
+        "url": "https://seattle.gov/police-accountability/complaints/file-a-complaint",
+        "reader": "web",
+        "status": "active",
+        "section": "safety",
+        "found_by": "government",
+        "detail": "Navigation from https://seattle.gov/: Police",
+        "tier": null,
+        "topics": [],
+        "collected": false,
+        "skip_reason": "link only: listed, never collected"
+      },
+      {
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "url": "https://www.wiaa.com/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "athletics",
+        "detail": "Wikidata http://www.wikidata.org/entity/Q7971987",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:6fc8c92e4121",
+        "name": "Wedgwood Elementary",
+        "url": "https://wedgwoodes.seattleschools.org/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "directories",
+        "detail": "https://www.seattleschools.org/schools/ → https://wedgwoodes.seattleschools.org/; School name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:ca29ba4a38db",
+        "name": "Wedgwood Elementary: Calendar",
+        "url": "https://wedgwoodes.seattleschools.org/calendar/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "directories",
+        "detail": "https://www.seattleschools.org/schools/ → https://wedgwoodes.seattleschools.org/ → https://wedgwoodes.seattleschools.org/calendar/; School name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:4a26601fdd0f",
+        "name": "Wedgwood Elementary: News",
+        "url": "https://wedgwoodes.seattleschools.org/news/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "directories",
+        "detail": "https://www.seattleschools.org/schools/ → https://wedgwoodes.seattleschools.org/ → https://wedgwoodes.seattleschools.org/news/; School name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "web:2498c035024c",
+        "name": "Wedgwood Elementary: Read the PTA Newsletter",
+        "url": "https://wedgwoodes.seattleschools.org/get-involved/pta-newsletter/",
+        "reader": "web",
+        "status": "active",
+        "section": "schools",
+        "found_by": "directories",
+        "detail": "https://www.seattleschools.org/schools/ → https://wedgwoodes.seattleschools.org/ → https://wedgwoodes.seattleschools.org/get-involved/pta-newsletter/; School name matches Wedgwood",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "url": null,
+        "reader": "hazards",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "National Weather Service alerts and USGS earthquake feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "url": null,
+        "reader": "hazards",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "National Weather Service alerts and USGS earthquake feeds",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      },
+      {
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "url": null,
+        "reader": "homesafety",
+        "status": "active",
+        "section": "weather",
+        "found_by": "national",
+        "detail": "EPA Safe Drinking Water health-based violations for community water systems serving the county",
+        "tier": null,
+        "topics": [],
+        "collected": true,
+        "skip_reason": null
+      }
+    ],
+    "collect_started_at": 1794013187.966
+  },
+  {
+    "_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "planned": false,
+    "discovery": [
+      "national",
+      "government",
+      "directories",
+      "osm",
+      "meetings",
+      "opendata",
+      "newsrooms",
+      "athletics",
+      "publishers",
+      "llm"
+    ],
+    "options": {
+      "mode": "manual",
+      "flow": "current",
+      "map_flow": "current",
+      "guardrails": "strict",
+      "guardrails_off": [],
+      "access": "respect",
+      "access_ignore": [],
+      "count_history": false,
+      "paid": {},
+      "external_off": [],
+      "search_provider": "serpapi",
+      "classifier": "off",
+      "topics": [
+        "crime",
+        "deaths",
+        "events",
+        "home_sales",
+        "sports"
+      ],
+      "story_limit": null
+    },
+    "kind": "map",
+    "location_id": "osm-r13915552-wa",
+    "location_name": "Wedgwood, Seattle, WA",
+    "trigger": {
+      "by": "local-admin@localhost",
+      "kind": "manual"
+    },
+    "status": "mapped",
+    "today": "2026-11-06",
+    "window": [
+      "2026-11-07",
+      "2026-11-13"
+    ],
+    "last_edition_day": null,
+    "sources": [],
+    "collection_tasks": [],
+    "draft_id": null,
+    "edition_id": null,
+    "published": null,
+    "error": null,
+    "created_at": 1794013045.068,
+    "updated_at": 1794013172.062,
+    "authoring_started_at": null,
+    "stage_started_at": 1794013045.068,
+    "stage_transitions": [
+      {
+        "status": "mapping",
+        "by": "local-admin@localhost",
+        "at": 1794013045.068
+      },
+      {
+        "status": "mapped",
+        "by": "worker",
+        "at": 1794013172.062
+      }
+    ],
+    "completed_at": 1794013172.062
+  }
+]

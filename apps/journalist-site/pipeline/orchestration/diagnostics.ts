@@ -42,6 +42,7 @@ function jobLabel(run: PipelineRun, job: Job) {
 const ACTIVE_JOB = (job: Job) => job.status === "pending" || job.status === "running";
 
 export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerState, timeoutSeconds: number | null, current = now()): RunDiagnostics {
+  if (run.execution_blocked) return { deadline_at: null, overdue: false, issues: [{ code: "credentials_paused", severity: "failed", message: run.execution_blocked.reason }] };
   if (!PROCESSING_RUN_STATUSES.includes(run.status)) return { deadline_at: null, overdue: false, issues: [] };
   const deadline = timeoutSeconds ? (run.stage_started_at ?? run.created_at) + timeoutSeconds : null;
   const issues: RunIssue[] = [];
@@ -109,6 +110,7 @@ export async function expireOverdueRuns(db: Db, timeoutSeconds: number | null, c
   if (!timeoutSeconds) return [];
   const overdue = await runs(db).find({
     status: { $in: PROCESSING_RUN_STATUSES },
+    execution_blocked: { $exists: false },
     $or: [
       { stage_started_at: { $lt: current - timeoutSeconds } },
       { stage_started_at: { $exists: false }, created_at: { $lt: current - timeoutSeconds } },

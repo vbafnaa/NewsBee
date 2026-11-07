@@ -49,7 +49,7 @@ export default function DashboardHome() {
       <div className={`strip-card${data.strip.alerts ? " warn" : ""}`}><small>Open alerts</small><strong>{data.strip.alerts}</strong><Link href="/alerts">Alerts</Link></div>
     </div>}
     <section className="panel">
-      <div className="section-heading"><div><h2>Community desks</h2><p>Open a workspace for editorial review, pipeline controls, logs and resulting editions. Counts compare with the previous edition.</p></div>
+      <div className="section-heading"><div><h2>Community desks</h2><p>Changes compare with the previous edition.</p></div>
         <Link className="button" href="/locations#onboarding">Onboard a location</Link></div>
       <div className="table-wrap"><table>
         <thead><tr><th>Location</th><th>Latest pipeline activity</th><th>Sources</th><th>Edition funnel</th><th>Attention</th></tr></thead>
@@ -66,7 +66,7 @@ export default function DashboardHome() {
       </table></div>
       {data && !data.locations.length && <p>No locations yet. <Link href="/locations">Add one</Link>.</p>}
     </section>
-    <details className="panel"><summary>Batch operations</summary><p>Create editions for every location with a source map, using the default run options.</p><button disabled={busy || !data?.locations.length} onClick={() => { if (window.confirm("Start collection for every location?")) void startAll(); }}>Start collection for all locations</button></details>
+    <section className="notice"><p>One unfinished source-map or edition run may occupy the newsroom. Open a location to start or resume its run; paused and editor-waiting work holds the slot too.</p></section>
     {data && data.alerts.length > 0 && <section className="panel"><h2>Latest alerts</h2>
       <ul className="alert-list">{data.alerts.map((alert) => <li key={alert.id}>
         <span><span className={`status-badge tone-${alert.severity}`}>{alert.severity}</span> {alert.location_name && <strong>{alert.location_name}: </strong>}{alert.message}</span>

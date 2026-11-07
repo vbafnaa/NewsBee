@@ -7,7 +7,7 @@ import { apiJson, mapApi } from "@/lib/admin-client";
 import SourceMapManager from "../locations/[locationId]/source-map-manager";
 import RunFunnel from "./run-funnel";
 
-export default function SourceReview({ locationId, mode, runId, view }: { locationId: string; mode: string; runId: string | null; view: string }) {
+export default function SourceReview({ locationId, mode, runId, view, canLabel = false }: { locationId: string; mode: string; runId: string | null; view: string; canLabel?: boolean }) {
   const router = useRouter();
   const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
   const [error, setError] = useState("");
@@ -33,8 +33,8 @@ export default function SourceReview({ locationId, mode, runId, view }: { locati
       <Link aria-current={mode !== "edition" ? "page" : undefined} href={path(locationId, "inventory")}>Source network</Link>
     </nav>
     {error && <p className="alert" role="alert">{error}</p>}
-    {mode !== "edition" ? <SourceMapManager key={locationId} locationId={locationId || undefined} /> :
-      !locationId ? <section className="panel"><h2>Choose a location to review a run</h2><p>Each run is specific to one location. Choose a coverage area above to see its funnel, from the first search to the final edition.</p></section> :
+    {mode !== "edition" ? <SourceMapManager key={locationId} locationId={locationId || undefined} canLabel={canLabel} /> :
+      !locationId ? <section className="panel"><h2>Choose a location above to review its runs</h2></section> :
       <RunFunnel key={`${locationId}:${view}`} locationId={locationId} runId={runId} view={view} />}
   </>;
 }

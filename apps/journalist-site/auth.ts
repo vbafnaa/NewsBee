@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { MongoClient } from "mongodb";
-import { repositoryRoot } from "./pipeline/core/config";
+import { disableAccount, normalizedEmail, ownerEmail, principalForEmail, type Account } from "./pipeline/accounts/identity";
 
 type MongoCache = typeof globalThis & {
   newsbeeMongo?: {
@@ -11,7 +11,7 @@ type MongoCache = typeof globalThis & {
   };
 };
 
-export type AdminAccount = { email: string; enabled: boolean; createdAt?: Date };
+export type AdminAccount = Account;
 async function getMongoClient() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error("MONGODB_URI is not configured");
@@ -41,16 +41,7 @@ export async function getMongoDatabase() {
 export async function isAdminEmail(email: string | null | undefined) {
   if (!email) return false;
 
-  const databaseName = process.env.MONGODB_DATABASE;
-  if (!databaseName) throw new Error("MONGODB_DATABASE is not configured");
-
-  const client = await getMongoClient();
-  const normalizedEmail = email.trim().toLowerCase();
-  const account = await client
-    .db(databaseName)
-    .collection<{ email: string; enabled: boolean }>("journalist_admins")
-    .findOne({ email: normalizedEmail, enabled: true }, { projection: { _id: 1 } });
-  return account !== null;
+  return (await principalForEmail(await getMongoDatabase(), email)) !== null;
 }
 
 async function adminAccountsCollection() {
@@ -63,20 +54,25 @@ async function adminAccountsCollection() {
 export async function listAdminAccounts() {
   const collection = await adminAccountsCollection();
   const accounts = await collection
-    .find({}, { projection: { _id: 0, email: 1, enabled: 1 } })
+    .find({}, { projection: { _id: 0, email: 1, enabled: 1, role: 1 } })
     .sort({ email: 1 })
     .toArray();
-  return accounts;
+  return accounts.map((account) => ({ ...account, role: account.email === ownerEmail() ? "owner" : "editor" }));
 }
 
 export async function enableAdminAccount(email: string) {
+  email = normalizedEmail(email);
   const accounts = await adminAccountsCollection();
   await accounts.updateOne(
     { email },
-    { $set: { email, enabled: true }, $setOnInsert: { createdAt: new Date() } },
+    { $set: { email, enabled: true, role: email === ownerEmail() ? "owner" : "editor" }, $setOnInsert: { createdAt: new Date() } },
     { upsert: true },
   );
   return { email, enabled: true };
+}
+
+export async function disableAdminAccount(email: string) {
+  return disableAccount(await getMongoDatabase(), email);
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({

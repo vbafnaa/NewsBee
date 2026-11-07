@@ -19,12 +19,13 @@ import { ensureDirectories } from "../communities/bootstrap";
 import { COLLECTIONS } from "../storage/mongo";
 import { US_STATES } from "../../../../shared/geography";
 import { cachedDiscovery, rejectedUrls } from "./cache";
+import { limit } from "../playbook";
 import { findFeed } from "./feeds";
 import { athleticsAssociations, nearbyOutlets, nearbyTopics, type Topic } from "./wikidata";
 
 export const NEARBY_KM = 50;
-export const OUTLET_RADIUS_KM = 25;
-export const MAX_OUTLETS_CHECKED = 12;
+export const OUTLET_RADIUS_KM = limit("news.stop.outlet_radius_km");
+export const MAX_OUTLETS_CHECKED = limit("news.stop.outlets_checked");
 export const AREA_TTL_DAYS = 30;
 export const SOURCES_TTL_DAYS = 14;
 export const CENSUS_COUNTY = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates";

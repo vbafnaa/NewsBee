@@ -1,0 +1,2038 @@
+[
+  {
+    "_id": "b0a0ec46-b531-418e-b02c-e5b72f7d9481",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "trending",
+        "source_id": "trending:wikipedia",
+        "name": "Wikipedia-discovered local reporting",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:wikipedia"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:trending:wikipedia",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013188.0019999,
+    "available_at": 1794013187.962,
+    "started_at": 1794013243.344,
+    "completed_at": 1794013249.516,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:b0a0ec46-b531-418e-b02c-e5b72f7d9481",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013243.344
+  },
+  {
+    "_id": "a7e8289b-ed49-4b17-84a4-2cca6c96c132",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:2498c035024c",
+        "name": "Wedgwood Elementary: Read the PTA Newsletter",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/get-involved/pta-newsletter/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:2498c035024c"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:2498c035024c",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013188.001,
+    "available_at": 1794013187.962,
+    "started_at": 1794013242.578,
+    "completed_at": 1794013257.036,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 4
+    },
+    "log_file": "mongo:a7e8289b-ed49-4b17-84a4-2cca6c96c132",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013242.578
+  },
+  {
+    "_id": "a5605a3f-a4fa-4683-b049-4d469e4e7148",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:4a26601fdd0f",
+        "name": "Wedgwood Elementary: News",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/news/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:4a26601fdd0f"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:4a26601fdd0f",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013188,
+    "available_at": 1794013187.962,
+    "started_at": 1794013242.019,
+    "completed_at": 1794013259.915,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:a5605a3f-a4fa-4683-b049-4d469e4e7148",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013242.019
+  },
+  {
+    "_id": "950854bb-3160-4e79-ab85-9804fe44cb6a",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:ca29ba4a38db",
+        "name": "Wedgwood Elementary: Calendar",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/calendar/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://wedgwoodes.seattleschools.org/",
+          "directory_selection": "School name matches Wedgwood",
+          "authority_directory_url": "https://www.seattleschools.org/schools/",
+          "source_map_id": "osm-r13915552-wa:web:ca29ba4a38db"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:ca29ba4a38db",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9989998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013241.086,
+    "completed_at": 1794013259.413,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:950854bb-3160-4e79-ab85-9804fe44cb6a",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013241.086
+  },
+  {
+    "_id": "fabce663-aff2-4a3a-b1aa-952b466aefaa",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:6fc8c92e4121",
+        "name": "Wedgwood Elementary",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/",
+          "section": "schools",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattleschools.org/schools/",
+          "directory_selection": "School name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:6fc8c92e4121"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:6fc8c92e4121",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013241.077,
+    "completed_at": 1794013257.73,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:fabce663-aff2-4a3a-b1aa-952b466aefaa",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013241.077
+  },
+  {
+    "_id": "ebb8fe45-aa86-492a-ac8d-366e5c81be1a",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:f076ae9f4047",
+        "name": "Wedgwood Community Council",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:f076ae9f4047"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:f076ae9f4047",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.997,
+    "available_at": 1794013187.962,
+    "started_at": 1794013240.322,
+    "completed_at": 1794013243.307,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 5,
+      "dropped": 10
+    },
+    "log_file": "mongo:ebb8fe45-aa86-492a-ac8d-366e5c81be1a",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013240.322
+  },
+  {
+    "_id": "d4bcd85f-4ca8-431a-90b9-082d36b40b6f",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:3741b6e14e86",
+        "name": "Wedgwood Block Watch: Newsletter",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/newsletter/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "authority_directory_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "source_map_id": "osm-r13915552-wa:web:3741b6e14e86"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:3741b6e14e86",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9959998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013234.249,
+    "completed_at": 1794013240.286,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 5,
+      "dropped": 10
+    },
+    "log_file": "mongo:d4bcd85f-4ca8-431a-90b9-082d36b40b6f",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013234.249
+  },
+  {
+    "_id": "74fba8c7-b829-4de6-ad39-628716cd7da9",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:4f36215dc62f",
+        "name": "Wedgwood Block Watch: Meetings",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/about/meetings/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "authority_directory_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "source_map_id": "osm-r13915552-wa:web:4f36215dc62f"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:4f36215dc62f",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.995,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.968,
+    "completed_at": 1794013242.556,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 5,
+      "dropped": 10
+    },
+    "log_file": "mongo:74fba8c7-b829-4de6-ad39-628716cd7da9",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.968
+  },
+  {
+    "_id": "8cfcfff7-4f60-43f7-a547-6c17f5741b0e",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:3ee50aa0bccf",
+        "name": "Wedgwood Block Watch",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/wedgwood-block-watch/",
+          "section": "community",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/documents/Departments/Neighborhoods/Districts/District4NeighborhoodsOrganizations.pdf",
+          "directory_selection": "Official directory's linked organization name matches Wedgwood",
+          "source_map_id": "osm-r13915552-wa:web:3ee50aa0bccf"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:3ee50aa0bccf",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.994,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.728,
+    "completed_at": 1794013241.038,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 5,
+      "dropped": 10
+    },
+    "log_file": "mongo:8cfcfff7-4f60-43f7-a547-6c17f5741b0e",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.728
+  },
+  {
+    "_id": "19acbbca-2106-4bcc-a864-9b5f983d65ac",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:a0b0f07c95e3",
+        "name": "Washington Interscholastic Activities Association",
+        "params": {
+          "url": "https://www.wiaa.com/",
+          "feed_url": "https://www.wiaa.com/feed/",
+          "kind": "school_sports",
+          "section": "schools",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:a0b0f07c95e3"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:a0b0f07c95e3",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9929998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.72,
+    "completed_at": 1794013241.982,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 17
+    },
+    "log_file": "mongo:19acbbca-2106-4bcc-a864-9b5f983d65ac",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.72
+  },
+  {
+    "_id": "f6bfe21d-83ef-40ee-a359-639d265364da",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "hazards",
+        "source_id": "hazards:usgs",
+        "name": "USGS earthquakes nearby",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:usgs"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:hazards:usgs",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9919999,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.171,
+    "completed_at": 1794013228.674,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:f6bfe21d-83ef-40ee-a359-639d265364da",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.171
+  },
+  {
+    "_id": "0ac702b4-cfef-482c-ae96-494151575f10",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "justice",
+        "source_id": "justice:doj",
+        "name": "U.S. Attorney's Office announcements",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:justice:doj"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:justice:doj",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.991,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.158,
+    "completed_at": 1794013228.941,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:0ac702b4-cfef-482c-ae96-494151575f10",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.158
+  },
+  {
+    "_id": "f33dcc2c-4004-455e-8974-58e5872a949e",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:24db13dae541",
+        "name": "The Stranger",
+        "params": {
+          "url": "https://www.thestranger.com/",
+          "feed_url": "https://www.thestranger.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:24db13dae541"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:24db13dae541",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.99,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.113,
+    "completed_at": 1794013234.217,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 11,
+      "dropped": 4
+    },
+    "log_file": "mongo:f33dcc2c-4004-455e-8974-58e5872a949e",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.113
+  },
+  {
+    "_id": "4e7f50d1-bd54-4ee6-81c0-b4598cbac038",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "community",
+        "source_id": "community:neighbours",
+        "name": "Stories shared by Wedgwood neighbours",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:community:neighbours"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:community:neighbours",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9889998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013228.104,
+    "completed_at": 1794013228.119,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:4e7f50d1-bd54-4ee6-81c0-b4598cbac038",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013228.104
+  },
+  {
+    "_id": "ec07315c-154b-4fd7-a924-90324dd987fb",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:496de024da04",
+        "name": "Seattle Weekly",
+        "params": {
+          "url": "https://www.seattleweekly.com/",
+          "feed_url": "https://www.seattleweekly.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:496de024da04"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:496de024da04",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.988,
+    "available_at": 1794013187.962,
+    "started_at": 1794013224.282,
+    "completed_at": 1794013228.073,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 12,
+      "dropped": 2
+    },
+    "log_file": "mongo:ec07315c-154b-4fd7-a924-90324dd987fb",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013224.282
+  },
+  {
+    "_id": "7eeb11a1-4317-402d-b3e3-614ec2c20efe",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:kzjm-xkqj",
+        "name": "Seattle Real Time Fire 911 Calls (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "kzjm-xkqj",
+          "topic": "fire",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:kzjm-xkqj"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:opendata:cos-data.seattle.gov:kzjm-xkqj",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.987,
+    "available_at": 1794013187.962,
+    "started_at": 1794013217.787,
+    "completed_at": 1794013221.127,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 1,
+      "dropped": 370
+    },
+    "log_file": "mongo:7eeb11a1-4317-402d-b3e3-614ec2c20efe",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013217.787
+  },
+  {
+    "_id": "f0dd8bb2-11ae-4675-ad54-f1fe1d4340f6",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "meetings",
+        "source_id": "meetings:legistar:seattle",
+        "name": "Seattle public meetings affecting Wedgwood",
+        "params": {
+          "government": {
+            "status": "detected",
+            "platform": "legistar",
+            "tenant": "seattle",
+            "website": "https://seattle.gov/",
+            "wikidata_id": "Q5083",
+            "pages_checked": [
+              "https://seattle.gov/"
+            ],
+            "detail": "legistar tenant seattle found under a name guessed from the town"
+          },
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:seattle"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:meetings:legistar:seattle",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9859998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013213.648,
+    "completed_at": 1794013217.777,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:f0dd8bb2-11ae-4675-ad54-f1fe1d4340f6",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013213.648
+  },
+  {
+    "_id": "165f0391-980e-454c-bcbd-6e69c06d1a54",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:66a74e6c1f09",
+        "name": "Seattle Parks and Recreation: Scholarships for Recreation and Childcare",
+        "params": {
+          "url": "https://www.seattle.gov/parks/scholarships-and-financial-aid",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:66a74e6c1f09"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:66a74e6c1f09",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.985,
+    "available_at": 1794013187.962,
+    "started_at": 1794013212.576,
+    "completed_at": 1794013228.035,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:165f0391-980e-454c-bcbd-6e69c06d1a54",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013212.576
+  },
+  {
+    "_id": "26f4be0b-7d81-4500-96d7-94372916a769",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:9015f0a2efd7",
+        "name": "Seattle Parks and Recreation: Contact Seattle Parks & Recreation",
+        "params": {
+          "url": "https://www.seattle.gov/parks/about-us/contact-us",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:9015f0a2efd7"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:9015f0a2efd7",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.984,
+    "available_at": 1794013187.962,
+    "started_at": 1794013211.848,
+    "completed_at": 1794013224.258,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 4
+    },
+    "log_file": "mongo:26f4be0b-7d81-4500-96d7-94372916a769",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013211.848
+  },
+  {
+    "_id": "14ac5353-c955-49c4-94af-756dfd024486",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:1e8778548321",
+        "name": "Seattle Parks and Recreation: Community Grant Programs",
+        "params": {
+          "url": "https://www.seattle.gov/parks/about-us/contracts-and-partnerships/partnership-opportunities/community-grant-programs",
+          "section": "events",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.seattle.gov/parks/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:1e8778548321"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:1e8778548321",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9829998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013211.406,
+    "completed_at": 1794013222.148,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 4
+    },
+    "log_file": "mongo:14ac5353-c955-49c4-94af-756dfd024486",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013211.406
+  },
+  {
+    "_id": "ed2b7439-98a4-4864-bd1a-6fa1ad2e6d5f",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:43502f8de4c1",
+        "name": "Seattle Medium",
+        "params": {
+          "url": "https://seattlemedium.com/",
+          "feed_url": "https://seattlemedium.com/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:43502f8de4c1"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:43502f8de4c1",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9819999,
+    "available_at": 1794013187.962,
+    "started_at": 1794013211.062,
+    "completed_at": 1794013235.862,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 10,
+      "dropped": 5
+    },
+    "log_file": "mongo:ed2b7439-98a4-4864-bd1a-6fa1ad2e6d5f",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013211.062
+  },
+  {
+    "_id": "9d473740-07d3-47e4-adcf-dbbef48742c6",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:8341be3f9458",
+        "name": "Northeast Branch: All Northeast Branch Events",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "directory_selection": "Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "authority_directory_url": "https://www.spl.org/hours-and-locations",
+          "source_map_id": "osm-r13915552-wa:web:8341be3f9458"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:8341be3f9458",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.981,
+    "available_at": 1794013187.962,
+    "started_at": 1794013209.573,
+    "completed_at": 1794013213.638,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:9d473740-07d3-47e4-adcf-dbbef48742c6",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013209.573
+  },
+  {
+    "_id": "4e64cf72-b0f2-4430-b815-ebf5471b23d3",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:868ca86c8c1b",
+        "name": "Northeast Branch",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations",
+          "directory_selection": "Nearby serving branch: 1.36 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "source_map_id": "osm-r13915552-wa:web:868ca86c8c1b"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:868ca86c8c1b",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9799998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013208.035,
+    "completed_at": 1794013211.398,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:4e64cf72-b0f2-4430-b815-ebf5471b23d3",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013208.035
+  },
+  {
+    "_id": "8c9d5957-4def-4a9a-ad78-533cdb839fd6",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "newssearch",
+        "source_id": "newssearch:gdelt",
+        "name": "News search (GDELT)",
+        "params": {
+          "backend": "gdelt",
+          "source_map_id": "osm-r13915552-wa:newssearch:gdelt"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:newssearch:gdelt",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9789999,
+    "available_at": 1794013187.962,
+    "started_at": 1794013207.375,
+    "completed_at": 1794013249.146,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:8c9d5957-4def-4a9a-ad78-533cdb839fd6",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013207.375
+  },
+  {
+    "_id": "dfc94ea8-9b1b-4e69-89fc-65ef480e7077",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "hazards",
+        "source_id": "hazards:nws",
+        "name": "National Weather Service alerts",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:hazards:nws"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:hazards:nws",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.978,
+    "available_at": 1794013187.962,
+    "started_at": 1794013203.898,
+    "completed_at": 1794013207.368,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:dfc94ea8-9b1b-4e69-89fc-65ef480e7077",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013203.898
+  },
+  {
+    "_id": "105fe9ae-3260-41f3-a5ba-1b10e3be0718",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:6b874fbd74fd",
+        "name": "King County: Property tax assessments (residential)",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/assessor/buildings-and-property/property-taxes/residential-property-taxes",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:6b874fbd74fd"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:6b874fbd74fd",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.977,
+    "available_at": 1794013187.962,
+    "started_at": 1794013197.222,
+    "completed_at": 1794013212.566,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:105fe9ae-3260-41f3-a5ba-1b10e3be0718",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013197.222
+  },
+  {
+    "_id": "4a5f8bbe-6f83-4f5d-967f-b3d573f456d1",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:9642d62be4d0",
+        "name": "King County: Marriage licenses",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/marriage-licensing",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:9642d62be4d0"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:9642d62be4d0",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9759998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013196.606,
+    "completed_at": 1794013211.825,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:4a5f8bbe-6f83-4f5d-967f-b3d573f456d1",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013196.606
+  },
+  {
+    "_id": "3a94abcb-3463-4f38-b641-3386156bb39b",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:2ee662c07eb6",
+        "name": "King County: Land use inspections",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/local-services/buildings-property/inspections/land-use-inspections",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:2ee662c07eb6"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:2ee662c07eb6",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.975,
+    "available_at": 1794013187.962,
+    "started_at": 1794013196.109,
+    "completed_at": 1794013211.056,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:3a94abcb-3463-4f38-b641-3386156bb39b",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013196.109
+  },
+  {
+    "_id": "a788ca58-82f0-4d1a-bc86-c4cb29121c64",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:edea93e63fe6",
+        "name": "King County: Birth certificates",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/dph/certificates-permits-licenses/order-birth-certificate",
+          "section": "real_estate",
+          "inside_area": false,
+          "discovery_parent_url": "https://kingcounty.gov/",
+          "kind": "local_news",
+          "source_map_id": "osm-r13915552-wa:web:edea93e63fe6"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:edea93e63fe6",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.974,
+    "available_at": 1794013187.962,
+    "started_at": 1794013195.619,
+    "completed_at": 1794013209.564,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:a788ca58-82f0-4d1a-bc86-c4cb29121c64",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013195.619
+  },
+  {
+    "_id": "eec50c78-913a-4456-a2ce-4bd53eea0bde",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "meetings",
+        "source_id": "meetings:legistar:kingcounty",
+        "name": "King County public meetings",
+        "params": {
+          "government": {
+            "status": "override",
+            "platform": "legistar",
+            "tenant": "kingcounty",
+            "website": "https://kingcounty.legistar.com/",
+            "wikidata_id": null,
+            "pages_checked": [
+              "https://kingcounty.legistar.com/"
+            ],
+            "detail": "legistar account 'kingcounty' matched by name"
+          },
+          "fixed": true,
+          "level": "county",
+          "source_map_id": "osm-r13915552-wa:meetings:legistar:kingcounty"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:meetings:legistar:kingcounty",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9729998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013195.158,
+    "completed_at": 1794013203.891,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:eec50c78-913a-4456-a2ce-4bd53eea0bde",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013195.158
+  },
+  {
+    "_id": "c3de98e2-16d0-4a51-8aba-c5ee6c561b89",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:224872219f21",
+        "name": "King County",
+        "params": {
+          "url": "https://kingcounty.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "civic",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:224872219f21"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:224872219f21",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.972,
+    "available_at": 1794013187.962,
+    "started_at": 1794013194.414,
+    "completed_at": 1794013208.026,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:c3de98e2-16d0-4a51-8aba-c5ee6c561b89",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013194.414
+  },
+  {
+    "_id": "022395cb-b9a5-4cb1-8501-39806768ff45",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:ca81bb9cb08e",
+        "name": "International Examiner",
+        "params": {
+          "url": "https://iexaminer.org/",
+          "feed_url": "https://iexaminer.org/feed/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:ca81bb9cb08e"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:ca81bb9cb08e",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.971,
+    "available_at": 1794013187.962,
+    "started_at": 1794013191.808,
+    "completed_at": 1794013197.211,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 9,
+      "dropped": 6
+    },
+    "log_file": "mongo:022395cb-b9a5-4cb1-8501-39806768ff45",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013191.808
+  },
+  {
+    "_id": "c0e840c2-b271-4571-8af7-1925435cd9a3",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:9131c6ba85cd",
+        "name": "Green Lake Branch: All Green Lake Branch Events",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/green-lake-branch/green-lake-branch-events",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations/green-lake-branch",
+          "directory_selection": "Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "authority_directory_url": "https://www.spl.org/hours-and-locations",
+          "source_map_id": "osm-r13915552-wa:web:9131c6ba85cd"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:9131c6ba85cd",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9699998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013189.143,
+    "completed_at": 1794013196.103,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:c0e840c2-b271-4571-8af7-1925435cd9a3",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013189.143
+  },
+  {
+    "_id": "4224785a-21de-4184-b3ae-8875e84b7c26",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:af8ec1111da2",
+        "name": "Green Lake Branch",
+        "params": {
+          "url": "https://www.spl.org/hours-and-locations/green-lake-branch",
+          "section": "events",
+          "kind": "local_news",
+          "inside_area": false,
+          "discovery_parent_url": "https://www.spl.org/hours-and-locations",
+          "directory_selection": "Nearby serving branch: 2.87 km from location center; official branch coordinates; not assumed inside neighborhood",
+          "source_map_id": "osm-r13915552-wa:web:af8ec1111da2"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:af8ec1111da2",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9689999,
+    "available_at": 1794013187.962,
+    "started_at": 1794013188.271,
+    "completed_at": 1794013194.398,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:4224785a-21de-4184-b3ae-8875e84b7c26",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013188.271
+  },
+  {
+    "_id": "d48bb297-8a0d-4824-a423-249cee46c757",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "opendata",
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)",
+        "params": {
+          "domain": "data.kingcounty.gov",
+          "dataset": "r878-4sxa",
+          "topic": "inspections",
+          "filter": "city",
+          "agency": "Public Health - Seattle & King County",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:data.kingcounty.gov:r878-4sxa"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:opendata:data.kingcounty.gov:r878-4sxa",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.968,
+    "available_at": 1794013187.962,
+    "started_at": 1794013188.12,
+    "completed_at": 1794013196.581,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 411
+    },
+    "log_file": "mongo:d48bb297-8a0d-4824-a423-249cee46c757",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013188.12
+  },
+  {
+    "_id": "fac21dd0-ccf8-461b-a690-a4c52e60e5b0",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "remembrance",
+        "source_id": "remembrance:family",
+        "name": "Family-submitted remembrances",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:remembrance:family"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:remembrance:family",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.967,
+    "available_at": 1794013187.962,
+    "started_at": 1794013188.036,
+    "completed_at": 1794013188.096,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:fac21dd0-ccf8-461b-a690-a4c52e60e5b0",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013188.036
+  },
+  {
+    "_id": "6de51629-81b0-43f9-86b6-4d0e4fccf0f0",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "homesafety",
+        "source_id": "homesafety:sdwis",
+        "name": "Drinking water safety (EPA)",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:homesafety:sdwis"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:homesafety:sdwis",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9659998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013188.004,
+    "completed_at": 1794013191.793,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:6de51629-81b0-43f9-86b6-4d0e4fccf0f0",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013188.004
+  },
+  {
+    "_id": "a46033bb-81ba-4330-b363-8255658df854",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:58f6a880f189",
+        "name": "Crosscut",
+        "params": {
+          "url": "https://crosscut.com/",
+          "feed_url": "https://www.cascadepbs.org/rss/",
+          "kind": "news_report",
+          "section": "news",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:58f6a880f189"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:58f6a880f189",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.965,
+    "available_at": 1794013187.962,
+    "started_at": 1794013187.972,
+    "completed_at": 1794013195.611,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 13,
+      "dropped": 6
+    },
+    "log_file": "mongo:a46033bb-81ba-4330-b363-8255658df854",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013187.972
+  },
+  {
+    "_id": "ac2b6601-12b6-4652-b07b-efe0dc4d33f8",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "trending",
+        "source_id": "trending:bluesky",
+        "name": "Community reporting links",
+        "params": {
+          "source_map_id": "osm-r13915552-wa:trending:bluesky"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:trending:bluesky",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.964,
+    "available_at": 1794013187.962,
+    "started_at": 1794013187.971,
+    "completed_at": 1794013188.249,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "failed",
+      "events": 0,
+      "dropped": 0
+    },
+    "log_file": "mongo:ac2b6601-12b6-4652-b07b-efe0dc4d33f8",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013187.971
+  },
+  {
+    "_id": "5d584923-55b6-414f-a872-9269dae885fe",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "web",
+        "source_id": "web:12a97f513c66",
+        "name": "City of Seattle",
+        "params": {
+          "url": "https://www.seattle.gov/",
+          "feed_url": null,
+          "kind": "local_news",
+          "section": "community",
+          "inside_area": false,
+          "source_map_id": "osm-r13915552-wa:web:12a97f513c66"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:web:12a97f513c66",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.9629998,
+    "available_at": 1794013187.962,
+    "started_at": 1794013187.966,
+    "completed_at": 1794013195.15,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 0,
+      "dropped": 5
+    },
+    "log_file": "mongo:5d584923-55b6-414f-a872-9269dae885fe",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013187.966
+  },
+  {
+    "_id": "8adef9da-8116-4992-b858-baae3131b051",
+    "kind": "collect_source",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "payload": {
+      "task": {
+        "type": "opendata",
+        "source_id": "opendata:cos-data.seattle.gov:76t5-zqzr",
+        "name": "Building Permits (City of Seattle)",
+        "params": {
+          "domain": "cos-data.seattle.gov",
+          "dataset": "76t5-zqzr",
+          "topic": "permits",
+          "filter": "radius",
+          "agency": "City of Seattle",
+          "license": "Public Domain",
+          "source_map_id": "osm-r13915552-wa:opendata:cos-data.seattle.gov:76t5-zqzr"
+        }
+      }
+    },
+    "dedupe_key": "collect:5030d2a8-2801-424f-bd67-61e16600f525:opendata:cos-data.seattle.gov:76t5-zqzr",
+    "durable_step": true,
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.962,
+    "available_at": 1794013187.962,
+    "started_at": 1794013187.964,
+    "completed_at": 1794013189.134,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "status": "ingested",
+      "events": 2,
+      "dropped": 15
+    },
+    "log_file": "mongo:8adef9da-8116-4992-b858-baae3131b051",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013187.964
+  },
+  {
+    "_id": "6478e509-14ac-4070-bc3a-8ee95011db2b",
+    "kind": "plan_sources",
+    "run_id": "5030d2a8-2801-424f-bd67-61e16600f525",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "plan:5030d2a8-2801-424f-bd67-61e16600f525",
+    "durable_step": true,
+    "payload": {},
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013187.341,
+    "available_at": 1794013187.341,
+    "started_at": 1794013187.908,
+    "completed_at": 1794013187.981,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "sources": 41
+    },
+    "log_file": "mongo:6478e509-14ac-4070-bc3a-8ee95011db2b",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013187.908
+  },
+  {
+    "_id": "6603e5a7-295c-4254-b438-b084488a76ca",
+    "kind": "finish_map",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "finish_map:de92aae7-453b-452b-a5d1-812347a1a574:0",
+    "durable_step": true,
+    "payload": {
+      "step": 0
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013146.948,
+    "available_at": 1794013146.948,
+    "started_at": 1794013147.799,
+    "completed_at": 1794013172.07,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "more": false,
+      "checked": 2
+    },
+    "log_file": "mongo:6603e5a7-295c-4254-b438-b084488a76ca",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013147.799
+  },
+  {
+    "_id": "f1b9accd-4767-4d37-a068-aacbb21c3236",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:llm",
+    "durable_step": true,
+    "payload": {
+      "method": "llm"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.083,
+    "available_at": 1794013045.083,
+    "started_at": 1794013054.589,
+    "completed_at": 1794013146.943,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "llm",
+      "ok": true,
+      "found": 7,
+      "added": 3,
+      "detail": "17 suggestions; 7 checked and kept"
+    },
+    "log_file": "mongo:f1b9accd-4767-4d37-a068-aacbb21c3236",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013054.589
+  },
+  {
+    "_id": "031ba4af-6c71-4a84-9b32-17c20711c583",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:publishers",
+    "durable_step": true,
+    "payload": {
+      "method": "publishers"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.081,
+    "available_at": 1794013045.081,
+    "started_at": 1794013054.569,
+    "completed_at": 1794013054.577,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "publishers",
+      "ok": true,
+      "found": 0,
+      "added": 0,
+      "detail": "0 publishers with 2+ results; 0 added"
+    },
+    "log_file": "mongo:031ba4af-6c71-4a84-9b32-17c20711c583",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013054.569
+  },
+  {
+    "_id": "2bc37819-6561-4318-8f53-e3aaa21f2845",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:athletics",
+    "durable_step": true,
+    "payload": {
+      "method": "athletics"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.08,
+    "available_at": 1794013045.08,
+    "started_at": 1794013050.74,
+    "completed_at": 1794013057.267,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "athletics",
+      "ok": true,
+      "found": 1,
+      "added": 1,
+      "detail": "1 associations with a current feed"
+    },
+    "log_file": "mongo:2bc37819-6561-4318-8f53-e3aaa21f2845",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013050.74
+  },
+  {
+    "_id": "335cc7a5-afbc-40d8-b43e-14a0fe67395c",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:newsrooms",
+    "durable_step": true,
+    "payload": {
+      "method": "newsrooms"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.079,
+    "available_at": 1794013045.079,
+    "started_at": 1794013048.157,
+    "completed_at": 1794013078.615,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "newsrooms",
+      "ok": true,
+      "found": 5,
+      "added": 5,
+      "detail": "5 newsrooms with a current feed"
+    },
+    "log_file": "mongo:335cc7a5-afbc-40d8-b43e-14a0fe67395c",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013048.157
+  },
+  {
+    "_id": "c77edeb2-bec0-4b0c-a44d-46c4c7a25731",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:opendata",
+    "durable_step": true,
+    "payload": {
+      "method": "opendata"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.078,
+    "available_at": 1794013045.078,
+    "started_at": 1794013048.144,
+    "completed_at": 1794013054.558,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "opendata",
+      "ok": true,
+      "found": 3,
+      "added": 3,
+      "detail": "4 portals (cos-data.seattle.gov, performance.seattle.gov, data.kingcounty.gov, data.wa.gov); 3 datasets"
+    },
+    "log_file": "mongo:c77edeb2-bec0-4b0c-a44d-46c4c7a25731",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013048.144
+  },
+  {
+    "_id": "f008cc5e-8c58-47e3-86a8-338825fc9a37",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:meetings",
+    "durable_step": true,
+    "payload": {
+      "method": "meetings"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.076,
+    "available_at": 1794013045.076,
+    "started_at": 1794013048.14,
+    "completed_at": 1794013050.73,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "meetings",
+      "ok": true,
+      "found": 1,
+      "added": 1,
+      "detail": "Seattle and King County: 1 accounts found"
+    },
+    "log_file": "mongo:f008cc5e-8c58-47e3-86a8-338825fc9a37",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013048.14
+  },
+  {
+    "_id": "9c891da1-1965-4885-ab93-9005ca97665a",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:osm",
+    "durable_step": true,
+    "payload": {
+      "method": "osm"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.075,
+    "available_at": 1794013045.075,
+    "started_at": 1794013048.135,
+    "completed_at": 1794013138.208,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "osm",
+      "ok": false,
+      "found": 0,
+      "added": 0,
+      "detail": "TimeoutError: The operation was aborted due to timeout"
+    },
+    "log_file": "mongo:9c891da1-1965-4885-ab93-9005ca97665a",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013048.135
+  },
+  {
+    "_id": "75ae779c-2249-40b8-9884-cae88f21afbf",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:directories",
+    "durable_step": true,
+    "payload": {
+      "method": "directories"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.074,
+    "available_at": 1794013045.074,
+    "started_at": 1794013048.133,
+    "completed_at": 1794013086.375,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "directories",
+      "ok": true,
+      "found": 12,
+      "added": 12,
+      "detail": "12 institution endpoints from live authority directories; 0 rejected fetches; school name / nearby library / named organization selection"
+    },
+    "log_file": "mongo:75ae779c-2249-40b8-9884-cae88f21afbf",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013048.133
+  },
+  {
+    "_id": "562d6c26-74fa-4996-b423-763dbc8c8ada",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:government",
+    "durable_step": true,
+    "payload": {
+      "method": "government"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.072,
+    "available_at": 1794013045.072,
+    "started_at": 1794013045.707,
+    "completed_at": 1794013061.697,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "government",
+      "ok": true,
+      "found": 12,
+      "added": 12,
+      "detail": "city site, King County; 12 sources"
+    },
+    "log_file": "mongo:562d6c26-74fa-4996-b423-763dbc8c8ada",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013045.707
+  },
+  {
+    "_id": "96395b6e-544c-4b84-9d6b-0f185f46c794",
+    "kind": "discover",
+    "run_id": "de92aae7-453b-452b-a5d1-812347a1a574",
+    "location_id": "osm-r13915552-wa",
+    "dedupe_key": "discover:de92aae7-453b-452b-a5d1-812347a1a574:national",
+    "durable_step": true,
+    "payload": {
+      "method": "national"
+    },
+    "status": "completed",
+    "attempts": 1,
+    "created_at": 1794013045.071,
+    "available_at": 1794013045.071,
+    "started_at": 1794013045.626,
+    "completed_at": 1794013045.681,
+    "lease_until": null,
+    "claim_token": null,
+    "error": null,
+    "result": {
+      "method": "national",
+      "ok": true,
+      "found": 10,
+      "added": 10,
+      "detail": "10 national and onboarding sources"
+    },
+    "log_file": "mongo:96395b6e-544c-4b84-9d6b-0f185f46c794",
+    "log_error": null,
+    "dispatch_error": null,
+    "dispatched_at": 1794013045.626
+  }
+]

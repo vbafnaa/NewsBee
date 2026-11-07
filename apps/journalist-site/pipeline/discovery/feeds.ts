@@ -3,10 +3,11 @@ import { addDays, MAX_FEED_BYTES } from "../connectors/common";
 import type { Fetcher } from "../connectors/fetcher";
 import { advertisedFeeds } from "../connectors/feeds";
 import { parseNewsFeed } from "../connectors/wider/adapters";
+import { limit } from "../playbook";
 
 export const FEED_GUESSES = ["/feed", "/feed/", "/rss", "/rss.xml", "/feeds/posts/default", "/?feed=rss2"];
 export const MAX_REQUESTS = 4;
-export const STALE_DAYS = 45;
+export const STALE_DAYS = limit("general.stop.feed_recent_days");
 const ACCEPT_HTML = "text/html, application/xhtml+xml";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml";
 

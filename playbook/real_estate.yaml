@@ -1,0 +1,97 @@
+# Real estate and development. See README.md for how to edit a rule.
+category: real_estate
+label: Real estate and development
+target: true
+topic: home_sales
+
+goal:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: real_estate.goal.home_sales, text: "Find sources that publish home sales and permits for this place." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: real_estate.prefer.records, text: "County assessor and recorder records, and city permit pages." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - id: real_estate.prefer.opendata_permits
+        set: opendata_topics
+        order: 2
+        text: Open-data permit and development datasets.
+        opendata: { topic: permits, query: building permits, state_level: false }
+        regex: 'permit|construction|land use|development|building'
+        flags: i
+      - id: real_estate.prefer.opendata_sales
+        text: A portal's home sale dataset, read by the property reader.
+        regex: 'real property sales|property sales|home sales|parcel sales|deed|sales? (history|transactions?)'
+        flags: i
+      - { id: real_estate.prefer.opendata_sales_query, text: The words used to find a home sale dataset., pattern: property sales }
+
+reject:
+  - consumers: [manual, agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: real_estate.reject.search_exclusions, set: search_exclusions, text: Sites left out of this category's searches., reason: "Sites to leave out, aggregators and platforms we never read.", values: [yelp.com, zillow.com] }
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: real_estate.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as a home sale., value: home_sale }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: real_estate.stage1.assessor, stage: stage1, source_type: County records, pattern: '"{county} County" "{city}" (assessor OR recorder) ("sales data" OR "parcel search" OR "recorded documents")' }
+      - { id: real_estate.stage1.sales_files, stage: stage1, source_type: County records, pattern: '"{county} County" "{city}" "real property" sales filetype:csv' }
+      - { id: real_estate.stage1.permits, stage: stage1, source_type: City permits, pattern: 'site:{city_domain} ("building permit" OR "land use") (notices OR issued OR applications)' }
+      - { id: real_estate.general.hidden_documents, stage: general, order: 12, source_type: City documents, pattern: 'site:{city_domain} filetype:pdf "{place}" "land use"' }
+      - { id: real_estate.stage2.sales_sweep, stage: stage2, source_type: Home sales, pattern: '"{place}" ("sold for" OR "sale price" OR "recently sold") after:{after}' }
+      - { id: real_estate.stage2.permit_sweep, stage: stage2, source_type: City permits, pattern: 'site:{city_domain} "{place}" ("permit issued" OR "land use notice") after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: real_estate.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: property records sales }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: real_estate.page.site_links
+        set: site_links
+        order: 5
+        text: Links to permit, planning, assessor and housing pages.
+        regex: '\b(permits?|permitting|land use|assessors?|zoning|recorder|property (?:sales|search|records)|development (?:notices?|services)|community development|planning|building (?:department|division|services)|housing)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: real_estate.page.item_keywords
+        set: item_keywords
+        order: 5
+        text: Words that put a story in this section.
+        regex: 'real estate|home sale|\bsold for\b|listing|\bpermit|zoning|rezone|land use|development|construction|housing|apartment|townhome|\bparcel|demolition|single-family'
+        flags: i
+      - { id: real_estate.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [housing_market, development, home_sale, building_permit] }
+      - { id: real_estate.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [housing_market, development, home_sale, building_permit] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: real_estate.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: real_estate.stop.sales_portals, text: Open-data portals searched for home sales., value: 2 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: real_estate.example.parcel_lookup, verdict: rejected, text: "A parcel lookup or dashboard with no list of recent items: keep it as a link for checking facts, not as a source to read each week." }

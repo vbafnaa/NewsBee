@@ -1,0 +1,104 @@
+# Events and things to do. See README.md for how to edit a rule.
+category: events
+label: Events and things to do
+target: true
+topic: events
+
+goal:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: events.goal.local_events, text: "Find sources that publish local events for this place." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: events.prefer.calendars, text: "Venues, and parks and library calendars." }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: events.prefer.osm_library, set: osm_kinds, order: 4, text: Libraries with a website., osm: { kind: library, tag: amenity, priority: 1 } }
+      - { id: events.prefer.osm_marketplace, set: osm_kinds, order: 6, text: Markets with a website., osm: { kind: marketplace, tag: amenity, priority: 2 } }
+      - { id: events.prefer.osm_arts_centre, set: osm_kinds, order: 12, text: Arts centres with a website., osm: { kind: arts_centre, tag: amenity, priority: 4 } }
+      - { id: events.prefer.osm_theatre, set: osm_kinds, order: 13, text: Theatres with a website., osm: { kind: theatre, tag: amenity, priority: 5 } }
+      - { id: events.prefer.osm_museum, set: osm_kinds, order: 15, text: Museums with a website., osm: { kind: museum, tag: tourism, priority: 5 } }
+      - { id: events.prefer.osm_park, set: osm_kinds, order: 23, text: Parks with a website., osm: { kind: park, tag: leisure, priority: 8 } }
+      - id: events.prefer.address_visitors
+        set: usual_addresses
+        order: 2
+        text: A visitors site at its usual address. The page must say what it is and name the place.
+        reason: A guess proves nothing, so the page must say what it is and name the place, then pass every check a search result would.
+        address: { label: visitors }
+        regex: 'visit|things to do|events'
+        flags: i
+        values: ['visit{city}.com', 'visit{city}.org']
+
+reject:
+  - consumers: [manual, agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: events.reject.search_exclusions, set: search_exclusions, text: Sites left out of this category's searches., reason: "Sites to leave out, aggregators and platforms we never read.", values: [facebook.com, eventbrite.com] }
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: events.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as an event., value: event }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: events.stage1.calendars, stage: stage1, source_type: Calendars, pattern: '"{place}" inurl:calendar (parks OR library OR community)' }
+      - { id: events.stage1.branch_library, stage: stage1, source_type: Libraries, pattern: '"{place}" (branch OR library) events' }
+      - { id: events.stage1.community_center, stage: stage1, source_type: Community centres, pattern: '"{place}" "community center" programs' }
+      - { id: events.stage1.institution, stage: stage1, source_type: Venues, for_each: { list: institutions, kinds: [library, community_centre, arts_centre, theatre], limit: 2 }, pattern: '"{name}" "{state}" events' }
+      - { id: events.stage1.city_events, stage: stage1, source_type: Calendars, pattern: 'site:{city_domain} "{place}" ("upcoming events" OR calendar)' }
+      - { id: events.stage1.venue, stage: stage1, source_type: Venues, for_each: { list: venues, limit: 2 }, pattern: '"{venue}" ("upcoming events" OR tickets OR schedule)' }
+      - { id: events.stage2.place_sweep, stage: stage2, source_type: Events, pattern: '"{place}" ("this weekend" OR "upcoming") (event OR festival OR concert) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: events.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: community events calendar }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: events.page.site_links
+        set: site_links
+        order: 8
+        text: Links to calendars, events and recreation pages.
+        regex: '\b(calendars?|events?|festivals?|programs|classes|recreation|things to do)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: events.page.item_keywords_roundups
+        set: item_keywords
+        order: 0
+        text: Event roundups, checked first.
+        reason: Event roundups ("things to do this weekend", "your agenda this week") before topic words in their listings.
+        regex: 'things to do|this weekend|\bevents (in|this|to)\b|agenda this week|what''?s happening|weekend guide|\bcalendar\b'
+        flags: i
+      - id: events.page.item_keywords
+        set: item_keywords
+        order: 9
+        text: Words that put a story in this section.
+        regex: 'festival|concert|\bmarket\b|\bfair\b|\bclass\b|workshop|storytime|\btour\b|exhibit|screening|\bwalk\b|fun run|meetup|celebrat|\bevent|parade|cleanup|volunteer'
+        flags: i
+      - { id: events.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [event] }
+      - { id: events.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [event] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: events.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: events.example.branch_library, verdict: accepted, text: "A branch library's events page with a calendar feed behind it." }

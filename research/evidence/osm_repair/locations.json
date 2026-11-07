@@ -1,0 +1,71 @@
+[
+  {
+    "_id": "osm-r13915552-wa",
+    "id": "osm-r13915552-wa",
+    "name": "Wedgwood, Seattle, WA",
+    "state": "WA",
+    "census_geoid": null,
+    "latitude": 47.690221,
+    "longitude": -122.2905745,
+    "directory_edition": "IMLS PLS FY2022",
+    "government": {
+      "status": "detected",
+      "platform": "legistar",
+      "tenant": "seattle",
+      "website": "https://seattle.gov/",
+      "wikidata_id": "Q5083",
+      "pages_checked": [
+        "https://seattle.gov/"
+      ],
+      "detail": "legistar tenant seattle found under a name guessed from the town"
+    },
+    "community": {
+      "name": "Wedgwood",
+      "state": "WA",
+      "state_name": "Washington",
+      "parent_id": "seattle-wa",
+      "parent_name": "Seattle",
+      "parent_kind": "city",
+      "latitude": 47.690221,
+      "longitude": -122.2905745,
+      "aliases": [],
+      "coverage_terms": [
+        "Wedgwood"
+      ],
+      "library_branches": [],
+      "newsrooms": [],
+      "geography": {
+        "_id": "osm-r13915552-wa",
+        "id": "osm-r13915552-wa",
+        "name": "Wedgwood",
+        "label": "Wedgwood, Seattle, WA",
+        "state": "WA",
+        "state_name": "Washington",
+        "kind": "suburb",
+        "parent_name": "Seattle",
+        "parent_kind": "city",
+        "latitude": 47.690221,
+        "longitude": -122.2905745,
+        "area": {
+          "method": "approximate_bbox",
+          "bbox": [
+            -122.30808,
+            47.6830397,
+            -122.2797623,
+            47.6975789
+          ]
+        },
+        "provider": "photon",
+        "osm_type": "R",
+        "osm_id": 13915552,
+        "website": null,
+        "attribution": "© OpenStreetMap contributors",
+        "name_lower": "wedgwood",
+        "fetched_at": 1794009536069
+      }
+    },
+    "systems": [],
+    "source_map_at": 1794013172.061,
+    "source_map_version": 1
+  }
+]

@@ -76,6 +76,11 @@ export async function reassemble(db: Db, runId: string, by: string) {
   if (!run) throw new Error(`Unknown run: ${runId}`);
   await getLocation(db, run.location_id);
   if (!["awaiting_authoring", "awaiting_finish", "authoring", "failed"].includes(run.status)) throw new RunConflict("Reassemble before publishing: the run must be waiting for authoring or for the front page");
+  const at = now();
+  const admitted = await runs(db).updateOne({ _id: runId, status: run.status, updated_at: run.updated_at }, {
+    $set: { status: "awaiting_authoring", admission: "newsroom", updated_at: at },
+  });
+  if (!admitted.matchedCount) throw new RunConflict("The run changed before reassembly. Reload and retry.");
   if (run.draft_id) {
     await db.collection(COLLECTIONS.editions).deleteOne({ id: run.draft_id, status: { $ne: "published" } });
     await db.collection(COLLECTIONS.editionEntries).deleteMany({ edition_id: run.draft_id });
@@ -83,7 +88,6 @@ export async function reassemble(db: Db, runId: string, by: string) {
   await db.collection(COLLECTIONS.jobs).updateMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story"] }, status: { $in: ["pending", "running"] } }, { $set: { status: "cancelled" } });
   await db.collection(COLLECTIONS.jobs).deleteMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story"] } });
   await collectedItems(db).updateMany({ run_id: runId, step: { $ne: "reader" } }, { $set: { status: "collected", reason: null, step: "reader", section: null, rank: null, score: null, why: null } });
-  const at = now();
   await runs(db).updateOne({ _id: runId }, { $set: { status: "awaiting_authoring", draft_id: null, error: null, updated_at: at }, $push: { stage_transitions: { status: "awaiting_authoring", by, at } } });
   return { reassemble: true };
 }

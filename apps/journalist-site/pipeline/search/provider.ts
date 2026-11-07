@@ -18,6 +18,7 @@ import type { HttpTransport } from "../core/http";
 import { currentOptions, isDeployed, runContext, type SearchProvider } from "../core/run-options";
 import { paidCall } from "../trace/gateway";
 import { httpsLink } from "../connectors/common";
+import { adaptedRequest } from "./adapter";
 import { fixtureResults } from "./fixture";
 
 export const SEARCH_QUERIES = "search_queries";
@@ -80,11 +81,10 @@ async function brightData(settings: Settings, transport: HttpTransport, query: s
 }
 
 async function exa(settings: Settings, transport: HttpTransport, query: string) {
-  const plain = query.replace(/-?\b(site|inurl|intitle|filetype|after|before):\S+/g, " ").replace(/\s+/g, " ").trim();
   const response = await transport({
     url: "https://api.exa.ai/search", method: "POST", timeoutMs: 30_000,
     headers: { "Content-Type": "application/json", "x-api-key": settings.integrations.exaKey! },
-    body: JSON.stringify({ query: plain, type: "auto", numResults: 10, contents: { highlights: true } }),
+    body: JSON.stringify(adaptedRequest("exa", query)),
   });
   if (response.status >= 400) throw new Error(`Exa returned HTTP ${response.status}`);
   const data = JSON.parse(decode(response.body)) as { results?: Array<{ url?: string; title?: string; publishedDate?: string; highlights?: string[] }> };
@@ -92,15 +92,7 @@ async function exa(settings: Settings, transport: HttpTransport, query: string) 
 }
 
 /** Tavily has no Google operators: site: and after: become its parameters, and the rest are stripped. */
-export function tavilyRequest(query: string) {
-  const domains = (pattern: RegExp) => [...query.matchAll(pattern)].map((match) => match[1].toLowerCase()).filter((domain) => !domain.startsWith("."));
-  const after = /(?:^|\s)after:(\d{4}-\d{2}-\d{2})/.exec(query)?.[1];
-  const include = domains(/(?:^|\s)site:(\S+)/gi), exclude = domains(/(?:^|\s)-site:(\S+)/gi);
-  return {
-    query: query.replace(/(^|\s)-?\b(site|inurl|intitle|filetype|after|before):\S+/gi, " ").replace(/\s+/g, " ").trim(), max_results: 10, search_depth: "basic",
-    ...(include.length ? { include_domains: include } : {}), ...(exclude.length ? { exclude_domains: exclude } : {}), ...(after ? { start_date: after } : {}),
-  };
-}
+export const tavilyRequest = (query: string) => adaptedRequest("tavily", query);
 
 async function tavily(settings: Settings, transport: HttpTransport, query: string) {
   const response = await transport({

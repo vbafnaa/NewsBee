@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
-import { auth, isAdminEmail } from "@/auth";
+import { auth, getMongoDatabase } from "@/auth";
+import { principalForEmail, type Principal } from "@/pipeline/accounts/identity";
 
 export const LOCAL_ADMIN = "local-admin@localhost";
 
@@ -10,16 +11,27 @@ function isLocalHost(host: string | null) {
 
 /** Local development skips Google sign-in, but only in local mode, off Vercel, on localhost. */
 export async function localAdminAllowed() {
-  if ((process.env.NEWSBEE_MODE ?? "local") !== "local" || process.env.VERCEL) return false;
+  if (process.env.NEWSBEE_MODE !== "local" || process.env.VERCEL || process.env.NODE_ENV === "production") return false;
   return isLocalHost((await headers()).get("host"));
 }
 
 /** The signed-in admin's email, or null. */
 export async function currentAdmin(): Promise<string | null> {
-  if (await localAdminAllowed()) return LOCAL_ADMIN;
+  return (await currentPrincipal())?.email ?? null;
+}
+
+export async function currentPrincipal(): Promise<Principal | null> {
+  if (await localAdminAllowed()) return { id: "local-admin", email: LOCAL_ADMIN, role: "owner" };
   const session = await auth();
   const email = session?.user?.email;
-  return email && (await isAdminEmail(email)) ? email : null;
+  return email ? principalForEmail(await getMongoDatabase(), email) : null;
+}
+
+export async function ownerGuard(request: Request): Promise<Response | null> {
+  const denied = await adminGuard(request);
+  if (denied) return denied;
+  return (await currentPrincipal())?.role === "owner" ? null
+    : Response.json({ detail: "Owner access required" }, { status: 403 });
 }
 
 export function sameOrigin(request: Request) {

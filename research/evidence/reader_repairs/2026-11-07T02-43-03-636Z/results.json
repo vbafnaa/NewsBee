@@ -1,0 +1,1182 @@
+{
+  "checked_at": "2026-11-07T02:43:32.825Z",
+  "scope": "Real connectors, archived independent source map; no orchestration, locality model, publication or database writes",
+  "results": [
+    {
+      "component": "https://wedgwoodes.seattleschools.org/calendar/",
+      "result": {
+        "source_id": "web:ca29ba4a38db",
+        "name": "Wedgwood Elementary: Calendar",
+        "website": "https://wedgwoodes.seattleschools.org/calendar/",
+        "status": "ingested",
+        "detail": "10 requests: calendar, 4 pages; 3 items kept, 128 left out",
+        "feed_kind": "ical",
+        "feed_url": "https://wedgwoodes.seattleschools.org/feed/",
+        "pages_checked": [
+          "https://wedgwoodes.seattleschools.org/calendar/",
+          "https://wedgwoodes.seattleschools.org/events/ics/",
+          "https://www.seattleschools.org/dates/ics/",
+          "https://wedgwoodes.seattleschools.org/feed/",
+          "https://wedgwoodes.seattleschools.org/wp-sitemap.xml",
+          "https://wedgwoodes.seattleschools.org/sitemap.xml",
+          "https://wedgwoodes.seattleschools.org/student-life/sps-basic-rules-rights-and-responsibilities/",
+          "https://wedgwoodes.seattleschools.org/resources/who-to-contact-to-resolve-a-concern/",
+          "https://wedgwoodes.seattleschools.org/student-life/student-cellphone-use-expectations/",
+          "https://wedgwoodes.seattleschools.org/events/"
+        ],
+        "response_sha256": null,
+        "event_count": 3,
+        "skipped_other_venues": 0,
+        "skipped_outside_window": 0,
+        "skipped_unusable": {},
+        "unmatched_venues": {},
+        "calendar_feeds": [
+          "https://wedgwoodes.seattleschools.org/events/ics/",
+          "https://www.seattleschools.org/dates/ics/"
+        ]
+      },
+      "events": [
+        {
+          "source_event_id": "413daebc7b728b7b",
+          "title": "Enrollment Info Session",
+          "event_date": "2026-11-19",
+          "schedule_text": "Thursday, November 19, 2026, 5:30pm – 7pm",
+          "venue": "",
+          "room": null,
+          "source_url": "https://wedgwoodes.seattleschools.org/events/sps-enrollment-information-session-in-person-2/",
+          "description": "SPS Enrollment Information Session (In-Person). Enrollment Community Information Sessions. Community information sessions hosted by the SPS Enrollment Team. In-person and virtual sessions are scheduled in November, December, and January, so you can pick what works best for you. Location: Viewlands Elementary, 10525 3rd Ave. NW, Seattle, WA 98177. Here’s what you’ll learn: - How the enrollment process works. - The Open Enrollment for School Choice lottery timeline. - Understanding Open Enrollment for School Choice options and eligibility. There will be 5 in-person and 2 virtual sessions to make it easy for every family to participate. Don’t miss out—let’s make Open Enrollment for School Choice simple and stress-free! Learn more about the Enrollment Information Sessions. (https://www.seattleschools.org/news/enrollment-info-sessions/).",
+          "kind": "event",
+          "source_name": "Wedgwood Elementary: Calendar",
+          "needs_locality": true,
+          "section_hint": "schools",
+          "details": {
+            "places": [],
+            "when": "Thursday, November 19, 2026, 5:30pm – 7pm",
+            "links": [
+              "https://wedgwoodes.seattleschools.org/events/sps-enrollment-information-session-in-person-2/"
+            ]
+          }
+        },
+        {
+          "source_event_id": "b9187e372a587511",
+          "title": "No School Veterans Day",
+          "event_date": "2026-11-11",
+          "schedule_text": "Wednesday, November 11, 2026",
+          "venue": "",
+          "room": null,
+          "source_url": "https://wedgwoodes.seattleschools.org/events/veterans-day-no-school-3/",
+          "description": "Veterans Day, No School. Veterans Day Observed (no school). View all school year dates (https://www.seattleschools.org/news/school-calendar/).",
+          "kind": "event",
+          "source_name": "Wedgwood Elementary: Calendar",
+          "needs_locality": true,
+          "section_hint": "schools",
+          "details": {
+            "places": [],
+            "when": "Wednesday, November 11, 2026",
+            "links": [
+              "https://wedgwoodes.seattleschools.org/events/veterans-day-no-school-3/"
+            ]
+          }
+        },
+        {
+          "source_event_id": "27fa89705da9d1d4",
+          "title": "No School Veterans Day",
+          "event_date": "2026-11-11",
+          "schedule_text": "Wednesday, November 11, 2026",
+          "venue": "",
+          "room": null,
+          "source_url": "https://www.seattleschools.org/events/veterans-day-2026/",
+          "description": "Veterans Day, No School. Veterans Day Observed (no school). View all school year dates (https://www.seattleschools.org/news/school-calendar/).",
+          "kind": "event",
+          "source_name": "Wedgwood Elementary: Calendar",
+          "needs_locality": true,
+          "section_hint": "schools",
+          "details": {
+            "places": [],
+            "when": "Wednesday, November 11, 2026",
+            "links": [
+              "https://www.seattleschools.org/events/veterans-day-2026/"
+            ]
+          }
+        }
+      ],
+      "dropped": [
+        {
+          "source_event_id": "485521487a1e2bfc",
+          "title": "Sup. Community Meeting",
+          "url": "https://wedgwoodes.seattleschools.org/events/superintendent-community-engagement-meeting/",
+          "reason": "outside_window",
+          "event_date": "2026-09-29"
+        },
+        {
+          "source_event_id": "215ce18e1ba98724",
+          "title": "Labor Day (no school)",
+          "url": "https://wedgwoodes.seattleschools.org/events/labor-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2026-09-07"
+        },
+        {
+          "source_event_id": "b95df9fb7a7fd97d",
+          "title": "No School",
+          "url": "https://wedgwoodes.seattleschools.org/events/day-between-semesters-no-school/",
+          "reason": "outside_window",
+          "event_date": "2027-01-28"
+        },
+        {
+          "source_event_id": "3b9620f7ad7aa75e",
+          "title": "No School Thanksgiving",
+          "url": "https://wedgwoodes.seattleschools.org/events/thanksgiving-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2026-11-26"
+        },
+        {
+          "source_event_id": "178bc61c48d4d439",
+          "title": "First Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-1-12-grade-3/",
+          "reason": "outside_window",
+          "event_date": "2026-09-02"
+        },
+        {
+          "source_event_id": "14d7d9a0b4d6ac8b",
+          "title": "Last Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/last-day-of-school-3/",
+          "reason": "outside_window",
+          "event_date": "2027-06-21"
+        },
+        {
+          "source_event_id": "2f1a721cb793e83a",
+          "title": "No School Juneteenth",
+          "url": "https://wedgwoodes.seattleschools.org/events/juneteenth-3/",
+          "reason": "outside_window",
+          "event_date": "2027-06-18"
+        },
+        {
+          "source_event_id": "6e6ccce6f7408151",
+          "title": "No School Memorial Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/memorial-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2027-05-31"
+        },
+        {
+          "source_event_id": "9056582a19595c9c",
+          "title": "No School Spring Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/spring-break-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2027-04-12"
+        },
+        {
+          "source_event_id": "c60aad31b7d0cf9b",
+          "title": "No School Mid-Winter",
+          "url": "https://wedgwoodes.seattleschools.org/events/mid-winter-break-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2027-02-15"
+        },
+        {
+          "source_event_id": "05c94ea48f14f2ed",
+          "title": "No School MLK Jr. Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/martin-luther-king-jr-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2027-01-18"
+        },
+        {
+          "source_event_id": "fe67d9a0e42811eb",
+          "title": "No School Winter Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/winter-break-no-school-3/",
+          "reason": "outside_window",
+          "event_date": "2026-12-21"
+        },
+        {
+          "source_event_id": "396803053915ded7",
+          "title": "1-hour Early Dismissal",
+          "url": "https://wedgwoodes.seattleschools.org/events/early-dismissal-3/",
+          "reason": "outside_window",
+          "event_date": "2026-12-18"
+        },
+        {
+          "source_event_id": "717fac878138bc9b",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://wedgwoodes.seattleschools.org/events/family-teacher-conferences-at-elementary-and-k-8-schools-3/",
+          "reason": "outside_window",
+          "event_date": "2026-11-23"
+        },
+        {
+          "source_event_id": "df9e78a8acc762fc",
+          "title": "No School PD Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/professional-development-day-no-school-3/",
+          "reason": "outside_window",
+          "event_date": "2026-10-09"
+        },
+        {
+          "source_event_id": "b4e648ff861d7f43",
+          "title": "First Day PreK & K",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-prek-and-kindergarten-3/",
+          "reason": "outside_window",
+          "event_date": "2026-09-08"
+        },
+        {
+          "source_event_id": "45f5902d4001372f",
+          "title": "End of Trimester 2",
+          "url": "https://wedgwoodes.seattleschools.org/events/end-of-trimester-2/",
+          "reason": "outside_window",
+          "event_date": "2026-03-17"
+        },
+        {
+          "source_event_id": "eb90c7ef7ee8433a",
+          "title": "End of Trimester 1",
+          "url": "https://wedgwoodes.seattleschools.org/events/end-of-trimester-1/",
+          "reason": "outside_window",
+          "event_date": "2025-12-01"
+        },
+        {
+          "source_event_id": "0a83b9a08d69f35e",
+          "title": "End of Semester 1",
+          "url": "https://wedgwoodes.seattleschools.org/events/end-of-semester-1/",
+          "reason": "outside_window",
+          "event_date": "2026-01-27"
+        },
+        {
+          "source_event_id": "5f4acef40010f7ce",
+          "title": "End of Quarter 2",
+          "url": "https://wedgwoodes.seattleschools.org/events/end-of-quarter-2/",
+          "reason": "outside_window",
+          "event_date": "2026-01-27"
+        },
+        {
+          "source_event_id": "a4246c981ead7cb7",
+          "title": "End of Quarter 3",
+          "url": "https://wedgwoodes.seattleschools.org/events/end-of-quarter-3/",
+          "reason": "outside_window",
+          "event_date": "2026-04-07"
+        },
+        {
+          "source_event_id": "09e18589b30d85c6",
+          "title": "SPS Registration Fair",
+          "url": "https://wedgwoodes.seattleschools.org/events/sps-enrollment-registration-fair/",
+          "reason": "outside_window",
+          "event_date": "2026-01-31"
+        },
+        {
+          "source_event_id": "2f64e9b19e379ea5",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-in-person-3/",
+          "reason": "outside_window",
+          "event_date": "2025-12-04"
+        },
+        {
+          "source_event_id": "6cc418b36b7eaa1a",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-in-person-4/",
+          "reason": "outside_window",
+          "event_date": "2025-11-18"
+        },
+        {
+          "source_event_id": "8851a5ddf728cdae",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-in-person/",
+          "reason": "outside_window",
+          "event_date": "2025-11-13"
+        },
+        {
+          "source_event_id": "884c35e21c6656a9",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-in-person-2/",
+          "reason": "outside_window",
+          "event_date": "2025-12-02"
+        },
+        {
+          "source_event_id": "9734f38aca716481",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-in-person-5/",
+          "reason": "outside_window",
+          "event_date": "2025-11-20"
+        },
+        {
+          "source_event_id": "8cdbb25080563212",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-virtual/",
+          "reason": "outside_window",
+          "event_date": "2025-11-12"
+        },
+        {
+          "source_event_id": "78f82c00e825c8e9",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-virtual-2/",
+          "reason": "outside_window",
+          "event_date": "2025-12-09"
+        },
+        {
+          "source_event_id": "f712056e1ecc2a88",
+          "title": "Enrollment Info Session",
+          "url": "https://wedgwoodes.seattleschools.org/events/enrollment-community-information-session-virtual-3/",
+          "reason": "outside_window",
+          "event_date": "2026-01-15"
+        },
+        {
+          "source_event_id": "da69ea57bf23b859",
+          "title": "SPS Enrollment Fair",
+          "url": "https://wedgwoodes.seattleschools.org/events/sps-enrollment-fair/",
+          "reason": "outside_window",
+          "event_date": "2026-01-10"
+        },
+        {
+          "source_event_id": "606b6f066ef58f80",
+          "title": "School Tour",
+          "url": "https://wedgwoodes.seattleschools.org/events/wedgwoods-school-of-choice-open-house/",
+          "reason": "outside_window",
+          "event_date": "2026-01-22"
+        },
+        {
+          "source_event_id": "c06b698ba07d7949",
+          "title": "No School Memorial Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/memorial-day-no-school-24-25-school-year/",
+          "reason": "outside_window",
+          "event_date": "2025-05-26"
+        },
+        {
+          "source_event_id": "e93f33958dad24e0",
+          "title": "Juneteenth",
+          "url": "https://wedgwoodes.seattleschools.org/events/juneteenth-2/",
+          "reason": "outside_window",
+          "event_date": "2026-06-19"
+        },
+        {
+          "source_event_id": "dd0069edce7b440f",
+          "title": "Last Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/last-day-of-school-2/",
+          "reason": "outside_window",
+          "event_date": "2026-06-17"
+        },
+        {
+          "source_event_id": "350a55d6eede7049",
+          "title": "No School Memorial Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/memorial-day-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2026-05-25"
+        },
+        {
+          "source_event_id": "9bc9137a022d1c3d",
+          "title": "No School Spring Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/spring-break-no-school/",
+          "reason": "outside_window",
+          "event_date": "2026-04-13"
+        },
+        {
+          "source_event_id": "2b28d752857764de",
+          "title": "No School Mid-Winter",
+          "url": "https://wedgwoodes.seattleschools.org/events/mid-winter-break-no-school/",
+          "reason": "outside_window",
+          "event_date": "2026-02-16"
+        },
+        {
+          "source_event_id": "670c0e7b6b83a672",
+          "title": "No School MLK Jr. Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/mlk-jr-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2026-01-19"
+        },
+        {
+          "source_event_id": "76c6c635548c076b",
+          "title": "No School Winter Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/winter-break-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2025-12-22"
+        },
+        {
+          "source_event_id": "f3c430df94e594bc",
+          "title": "1-hour Early Dismissal",
+          "url": "https://wedgwoodes.seattleschools.org/events/early-dismissal-2/",
+          "reason": "outside_window",
+          "event_date": "2025-12-19"
+        },
+        {
+          "source_event_id": "fc93e33cfe264972",
+          "title": "No School Thanksgiving",
+          "url": "https://wedgwoodes.seattleschools.org/events/thanksgiving-no-school/",
+          "reason": "outside_window",
+          "event_date": "2025-11-27"
+        },
+        {
+          "source_event_id": "a6ee4a554cdbf00d",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://wedgwoodes.seattleschools.org/events/family-teacher-conferences-at-elementary-and-k-8-schools-2/",
+          "reason": "outside_window",
+          "event_date": "2025-11-24"
+        },
+        {
+          "source_event_id": "8c240dc65bb90464",
+          "title": "No School Veterans Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/veterans-day-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2025-11-11"
+        },
+        {
+          "source_event_id": "85ab4b8e2a070a20",
+          "title": "No School PD Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/professional-development-day-no-school-2/",
+          "reason": "outside_window",
+          "event_date": "2025-10-10"
+        },
+        {
+          "source_event_id": "d8f6fe7cc67db33e",
+          "title": "First Day Kindergarten",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-prek-and-kindergarten-2/",
+          "reason": "outside_window",
+          "event_date": "2025-09-08"
+        },
+        {
+          "source_event_id": "1fb4fada12a4bef4",
+          "title": "First Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-1-12-grade-2/",
+          "reason": "outside_window",
+          "event_date": "2025-09-03"
+        },
+        {
+          "source_event_id": "b572774ee2660a9d",
+          "title": "SPS Admissions Fair",
+          "url": "https://wedgwoodes.seattleschools.org/events/admissions-fair/",
+          "reason": "outside_window",
+          "event_date": "2025-02-01"
+        },
+        {
+          "source_event_id": "1aac70c43e461c1d",
+          "title": "School Tour",
+          "url": "https://wedgwoodes.seattleschools.org/events/wedgwoods-prospective-family-information-session/",
+          "reason": "outside_window",
+          "event_date": "2025-01-30"
+        },
+        {
+          "source_event_id": "890ddc460e9dd57a",
+          "title": "End of Trimester 2",
+          "url": "https://wedgwoodes.seattleschools.org/events/trimester-2/",
+          "reason": "outside_window",
+          "event_date": "2025-03-19"
+        },
+        {
+          "source_event_id": "29b3d112e2ae2972",
+          "title": "End of Trimester 1",
+          "url": "https://wedgwoodes.seattleschools.org/events/trimester-1/",
+          "reason": "outside_window",
+          "event_date": "2024-12-03"
+        },
+        {
+          "source_event_id": "08331c2029dbf015",
+          "title": "End of Quarter 3",
+          "url": "https://wedgwoodes.seattleschools.org/events/quarter-3/",
+          "reason": "outside_window",
+          "event_date": "2025-04-08"
+        },
+        {
+          "source_event_id": "f50f7dca1f3051ce",
+          "title": "End of Quarter 2",
+          "url": "https://wedgwoodes.seattleschools.org/events/quarter-2/",
+          "reason": "outside_window",
+          "event_date": "2025-01-28"
+        },
+        {
+          "source_event_id": "3a1ab4c4962b3891",
+          "title": "End of Quarter 1",
+          "url": "https://wedgwoodes.seattleschools.org/events/quarter-1/",
+          "reason": "outside_window",
+          "event_date": "2024-11-06"
+        },
+        {
+          "source_event_id": "d6295556ae412815",
+          "title": "End of Semester 1",
+          "url": "https://wedgwoodes.seattleschools.org/events/semester-1/",
+          "reason": "outside_window",
+          "event_date": "2025-01-28"
+        },
+        {
+          "source_event_id": "07c0c986bf08fe39",
+          "title": "Juneteenth",
+          "url": "https://wedgwoodes.seattleschools.org/events/juneteenth/",
+          "reason": "outside_window",
+          "event_date": "2025-06-19"
+        },
+        {
+          "source_event_id": "f19330bdae75f34f",
+          "title": "Last Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/last-day-of-school/",
+          "reason": "outside_window",
+          "event_date": "2025-06-18"
+        },
+        {
+          "source_event_id": "f4fe9f46ebe06040",
+          "title": "No School Spring Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/spring-break/",
+          "reason": "outside_window",
+          "event_date": "2025-04-14"
+        },
+        {
+          "source_event_id": "4863c3b002bc104c",
+          "title": "No School Mid-Winter",
+          "url": "https://wedgwoodes.seattleschools.org/events/mid-winter-break/",
+          "reason": "outside_window",
+          "event_date": "2025-02-17"
+        },
+        {
+          "source_event_id": "07b04a13184b77e1",
+          "title": "No School MLK Jr. Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/mlk-jr-day/",
+          "reason": "outside_window",
+          "event_date": "2025-01-20"
+        },
+        {
+          "source_event_id": "ac90aeff45e49532",
+          "title": "1-hour Early Dismissal",
+          "url": "https://wedgwoodes.seattleschools.org/events/early-dismissal/",
+          "reason": "outside_window",
+          "event_date": "2024-12-20"
+        },
+        {
+          "source_event_id": "68a4f5e076f66b7d",
+          "title": "No School Winter Break",
+          "url": "https://wedgwoodes.seattleschools.org/events/winter-break-no-school/",
+          "reason": "outside_window",
+          "event_date": "2024-12-23"
+        },
+        {
+          "source_event_id": "cdf69f286e27e4ff",
+          "title": "Native American Heritage",
+          "url": "https://wedgwoodes.seattleschools.org/events/native-american-heritage-day/",
+          "reason": "outside_window",
+          "event_date": "2024-11-29"
+        },
+        {
+          "source_event_id": "b3e03531fcbd520d",
+          "title": "No School Thanksgiving",
+          "url": "https://wedgwoodes.seattleschools.org/events/thanksgiving/",
+          "reason": "outside_window",
+          "event_date": "2024-11-28"
+        },
+        {
+          "source_event_id": "20852266a025774c",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://wedgwoodes.seattleschools.org/events/family-teacher-conferences-at-elementary-and-k-8-schools/",
+          "reason": "outside_window",
+          "event_date": "2024-11-25"
+        },
+        {
+          "source_event_id": "8f76efebd1f0056f",
+          "title": "No School Veterans Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/veterans-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2024-11-11"
+        },
+        {
+          "source_event_id": "4ee68e404b6c451c",
+          "title": "No School PD Day",
+          "url": "https://wedgwoodes.seattleschools.org/events/professional-development-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2024-10-11"
+        },
+        {
+          "source_event_id": "fe5da23a1467fe38",
+          "title": "First Day Kindergarten",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-prek-and-kindergarten/",
+          "reason": "outside_window",
+          "event_date": "2024-09-09"
+        },
+        {
+          "source_event_id": "81243f0dfc811843",
+          "title": "First Day of School",
+          "url": "https://wedgwoodes.seattleschools.org/events/first-day-of-school-1-12-grade/",
+          "reason": "outside_window",
+          "event_date": "2024-09-04"
+        },
+        {
+          "source_event_id": "c21a6950e6908f06",
+          "title": "Labor Day (no school)",
+          "url": "https://www.seattleschools.org/events/labor-day-no-school/",
+          "reason": "outside_window",
+          "event_date": "2026-09-07"
+        },
+        {
+          "source_event_id": "be931741018c8246",
+          "title": "No School",
+          "url": "https://www.seattleschools.org/events/day-between-semesters-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-01-28"
+        },
+        {
+          "source_event_id": "481b04ebff51ea32",
+          "title": "No School Thanksgiving",
+          "url": "https://www.seattleschools.org/events/thanksgiving-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-11-26"
+        },
+        {
+          "source_event_id": "e57afbed1cdeb3ca",
+          "title": "First Day of School",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-09-02"
+        },
+        {
+          "source_event_id": "3de78c81ab0bab52",
+          "title": "Last Day of School",
+          "url": "https://www.seattleschools.org/events/last-day-of-school-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-06-21"
+        },
+        {
+          "source_event_id": "63d3aae53366114b",
+          "title": "No School Juneteenth",
+          "url": "https://www.seattleschools.org/events/juneteenth-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-06-18"
+        },
+        {
+          "source_event_id": "c5f75f643dc83355",
+          "title": "No School Memorial Day",
+          "url": "https://www.seattleschools.org/events/memorial-day-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-05-31"
+        },
+        {
+          "source_event_id": "db202326e322db97",
+          "title": "No School Spring Break",
+          "url": "https://www.seattleschools.org/events/spring-break-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-04-12"
+        },
+        {
+          "source_event_id": "3c85bbdbe8c12806",
+          "title": "No School Mid-Winter",
+          "url": "https://www.seattleschools.org/events/mid-winter-break-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-02-15"
+        },
+        {
+          "source_event_id": "15f5d6589810c66f",
+          "title": "No School MLK Jr. Day",
+          "url": "https://www.seattleschools.org/events/mlk-jr-day-2027/",
+          "reason": "outside_window",
+          "event_date": "2027-01-18"
+        },
+        {
+          "source_event_id": "6b46e5f527a68915",
+          "title": "No School Winter Break",
+          "url": "https://www.seattleschools.org/events/winter-break-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-12-21"
+        },
+        {
+          "source_event_id": "b8e954380f0c4032",
+          "title": "1-hour Early Dismissal",
+          "url": "https://www.seattleschools.org/events/early-dismissal-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-12-18"
+        },
+        {
+          "source_event_id": "55e69c4b86d4de54",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://www.seattleschools.org/events/family-teacher-conferences-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-11-23"
+        },
+        {
+          "source_event_id": "9e2b349974b783e1",
+          "title": "No School PD Day",
+          "url": "https://www.seattleschools.org/events/pd-day-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-10-09"
+        },
+        {
+          "source_event_id": "4d8a61b4265dc838",
+          "title": "First Day PreK & K",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-prek-k-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-09-08"
+        },
+        {
+          "source_event_id": "229d1a36cc586a68",
+          "title": "End of Trimester 2",
+          "url": "https://www.seattleschools.org/events/end-of-trimester-2-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-03-17"
+        },
+        {
+          "source_event_id": "acdbd78661e823ab",
+          "title": "End of Trimester 1",
+          "url": "https://www.seattleschools.org/events/end-of-trimester-1-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-12-01"
+        },
+        {
+          "source_event_id": "67dca388dcae2213",
+          "title": "End of Semester 1",
+          "url": "https://www.seattleschools.org/events/end-of-semester-1-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-01-27"
+        },
+        {
+          "source_event_id": "0797507b25265ff1",
+          "title": "End of Quarter 2",
+          "url": "https://www.seattleschools.org/events/end-of-quarter-2-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-01-27"
+        },
+        {
+          "source_event_id": "3b710c48c0146638",
+          "title": "End of Quarter 3",
+          "url": "https://www.seattleschools.org/events/end-of-quarter-3-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-04-07"
+        },
+        {
+          "source_event_id": "f15ad7e24c8a52e3",
+          "title": "End of Quarter 1",
+          "url": "https://www.seattleschools.org/events/end-of-quarter-1-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-11-05"
+        },
+        {
+          "source_event_id": "c21658c75e95c25c",
+          "title": "No School Memorial Day",
+          "url": "https://www.seattleschools.org/events/memorial-day-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-05-26"
+        },
+        {
+          "source_event_id": "b11e379bda3dd1b4",
+          "title": "Juneteenth",
+          "url": "https://www.seattleschools.org/events/juneteenth-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-06-19"
+        },
+        {
+          "source_event_id": "1f28fc55eeac4694",
+          "title": "Last Day of School",
+          "url": "https://www.seattleschools.org/events/last-day-of-school-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-06-17"
+        },
+        {
+          "source_event_id": "a9db4c98dec2eb25",
+          "title": "No School Memorial Day",
+          "url": "https://www.seattleschools.org/events/memorial-day-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-05-25"
+        },
+        {
+          "source_event_id": "83ca409f8e9f6b9b",
+          "title": "No School Spring Break",
+          "url": "https://www.seattleschools.org/events/spring-break-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-04-13"
+        },
+        {
+          "source_event_id": "6b75cefedd4b1981",
+          "title": "No School Mid-Winter",
+          "url": "https://www.seattleschools.org/events/mid-winter-break-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-02-16"
+        },
+        {
+          "source_event_id": "8f06ad1785910895",
+          "title": "No School MLK Jr. Day",
+          "url": "https://www.seattleschools.org/events/mlk-jr-day-2026/",
+          "reason": "outside_window",
+          "event_date": "2026-01-19"
+        },
+        {
+          "source_event_id": "4de1034cc512595c",
+          "title": "No School Winter Break",
+          "url": "https://www.seattleschools.org/events/winter-break-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-12-22"
+        },
+        {
+          "source_event_id": "b6c8c44541e7b1ea",
+          "title": "1-hour Early Dismissal",
+          "url": "https://www.seattleschools.org/events/early-dismissal-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-12-19"
+        },
+        {
+          "source_event_id": "e9485438e2e16be1",
+          "title": "No School Thanksgiving",
+          "url": "https://www.seattleschools.org/events/thanksgiving-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-11-27"
+        },
+        {
+          "source_event_id": "b2650664a0f6d531",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://www.seattleschools.org/events/family-teacher-conferences-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-11-24"
+        },
+        {
+          "source_event_id": "778f129d1b6198f4",
+          "title": "No School Veterans Day",
+          "url": "https://www.seattleschools.org/events/veterans-day-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-11-11"
+        },
+        {
+          "source_event_id": "50cd408cf1897746",
+          "title": "No School PD Day",
+          "url": "https://www.seattleschools.org/events/pd-day-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-10-10"
+        },
+        {
+          "source_event_id": "fb4caf4b9721a41e",
+          "title": "First Day Pre-K & K",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-prek-k-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-09-08"
+        },
+        {
+          "source_event_id": "362fef4275f94bc0",
+          "title": "First Day of School",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-09-03"
+        },
+        {
+          "source_event_id": "eca45595fe02d8b2",
+          "title": "End of Trimester 2",
+          "url": "https://www.seattleschools.org/events/trimester-2/",
+          "reason": "outside_window",
+          "event_date": "2025-03-19"
+        },
+        {
+          "source_event_id": "3eb8832b394cb0ff",
+          "title": "End of Trimester 1",
+          "url": "https://www.seattleschools.org/events/trimester-1/",
+          "reason": "outside_window",
+          "event_date": "2024-12-03"
+        },
+        {
+          "source_event_id": "02908bca30ef1bb0",
+          "title": "End of Quarter 3",
+          "url": "https://www.seattleschools.org/events/quarter-3/",
+          "reason": "outside_window",
+          "event_date": "2025-04-08"
+        },
+        {
+          "source_event_id": "51199c1ea8828342",
+          "title": "End of Quarter 2",
+          "url": "https://www.seattleschools.org/events/quarter-2/",
+          "reason": "outside_window",
+          "event_date": "2025-01-28"
+        },
+        {
+          "source_event_id": "d583362503197675",
+          "title": "End of Quarter 1",
+          "url": "https://www.seattleschools.org/events/quarter-1/",
+          "reason": "outside_window",
+          "event_date": "2024-11-06"
+        },
+        {
+          "source_event_id": "65cd69b5cb7b5c77",
+          "title": "End of Semester 1",
+          "url": "https://www.seattleschools.org/events/semester-1/",
+          "reason": "outside_window",
+          "event_date": "2025-01-28"
+        },
+        {
+          "source_event_id": "f07a8d11ddfdbbbc",
+          "title": "Juneteenth",
+          "url": "https://www.seattleschools.org/events/juneteenth-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-06-19"
+        },
+        {
+          "source_event_id": "68891784002fc617",
+          "title": "Last Day of School",
+          "url": "https://www.seattleschools.org/events/last-day-of-school/",
+          "reason": "outside_window",
+          "event_date": "2025-06-18"
+        },
+        {
+          "source_event_id": "18250b32549d5cbe",
+          "title": "No School Spring Break",
+          "url": "https://www.seattleschools.org/events/spring-break-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-04-14"
+        },
+        {
+          "source_event_id": "a3ac81dabc2c43f7",
+          "title": "No School Mid-Winter",
+          "url": "https://www.seattleschools.org/events/mid-winter-break/",
+          "reason": "outside_window",
+          "event_date": "2025-02-17"
+        },
+        {
+          "source_event_id": "9f7a7a9ae4b46d15",
+          "title": "No School MLK Jr. Day",
+          "url": "https://www.seattleschools.org/events/mlk-jr-day-2025/",
+          "reason": "outside_window",
+          "event_date": "2025-01-20"
+        },
+        {
+          "source_event_id": "361d1b0d7b31330d",
+          "title": "1-hour Early Dismissal",
+          "url": "https://www.seattleschools.org/events/early-dismissal-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-12-20"
+        },
+        {
+          "source_event_id": "5f28444f69429fae",
+          "title": "No School Winter Break",
+          "url": "https://www.seattleschools.org/events/winter-break-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-12-23"
+        },
+        {
+          "source_event_id": "63e35d22693d379a",
+          "title": "No School Thanksgiving",
+          "url": "https://www.seattleschools.org/events/thanksgiving-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-11-28"
+        },
+        {
+          "source_event_id": "3dd7b0f8aaf83563",
+          "title": "Elem, K-8 Conferences",
+          "url": "https://www.seattleschools.org/events/family-teacher-conferences-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-11-25"
+        },
+        {
+          "source_event_id": "66e952629f532f69",
+          "title": "No School Veterans Day",
+          "url": "https://www.seattleschools.org/events/veterans-day-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-11-11"
+        },
+        {
+          "source_event_id": "a4a4d0e82c2b5876",
+          "title": "No School PD Day",
+          "url": "https://www.seattleschools.org/events/pd-day-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-10-11"
+        },
+        {
+          "source_event_id": "a930a07c94dab1e7",
+          "title": "First Day Kindergarten",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-prek-k-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-09-09"
+        },
+        {
+          "source_event_id": "89b7f28fde42e332",
+          "title": "First Day of School",
+          "url": "https://www.seattleschools.org/events/first-day-of-school-2024/",
+          "reason": "outside_window",
+          "event_date": "2024-09-04"
+        },
+        {
+          "source_event_id": "8b0b247111518924",
+          "title": "SPS Basic Rules, Rights, and Responsibilities – Wedgwood Elementary School",
+          "url": "https://wedgwoodes.seattleschools.org/student-life/sps-basic-rules-rights-and-responsibilities/",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "68c83d37037314e2",
+          "title": "Who to Contact to Resolve a Concern – Wedgwood Elementary School",
+          "url": "https://wedgwoodes.seattleschools.org/resources/who-to-contact-to-resolve-a-concern/",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "4627f7e2fb6645cb",
+          "title": "Student Cellphone Use Expectations – Wedgwood Elementary School",
+          "url": "https://wedgwoodes.seattleschools.org/student-life/student-cellphone-use-expectations/",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "ed05673e1590abb0",
+          "title": "Events – Wedgwood Elementary School",
+          "url": "https://wedgwoodes.seattleschools.org/events/",
+          "reason": "undated",
+          "event_date": null
+        }
+      ]
+    },
+    {
+      "component": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+      "result": {
+        "source_id": "web:8341be3f9458",
+        "name": "Northeast Branch: All Northeast Branch Events",
+        "website": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+        "status": "ingested",
+        "detail": "10 requests: calendar, 4 pages; 3 items kept, 5 left out",
+        "feed_kind": "trumba_rss",
+        "feed_url": "https://www.trumba.com/calendars/kalendaro.rss?weeks=4&filterview=LocationNET",
+        "pages_checked": [
+          "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+          "https://www.trumba.com/calendars/kalendaro.rss?weeks=4&filterview=LocationNET",
+          "https://www.spl.org/feed (HttpStatusError)",
+          "https://www.spl.org/rss (HttpStatusError)",
+          "https://www.spl.org/sitemap.xml (HttpStatusError)",
+          "https://www.spl.org/sitemap_index.xml (HttpStatusError)",
+          "https://www.spl.org/hours-and-locations/international-district-chinatown-branch",
+          "https://www.spl.org/using-the-library/get-started/get-started-in-spanish",
+          "https://www.spl.org/hours-and-locations/madrona-sally-goldmark-branch",
+          "https://www.spl.org/using-the-library/get-started/get-started-in-chinese"
+        ],
+        "response_sha256": null,
+        "event_count": 3,
+        "skipped_other_venues": 0,
+        "skipped_outside_window": 0,
+        "skipped_unusable": {
+          "no_venue": 2
+        },
+        "unmatched_venues": {},
+        "calendar_feeds": [
+          "https://www.trumba.com/calendars/kalendaro.rss?weeks=4&filterview=LocationNET"
+        ]
+      },
+      "events": [
+        {
+          "source_event_id": "545459ec18f0cb7a",
+          "title": "Family Story Time",
+          "event_date": "2026-11-10",
+          "schedule_text": "Tuesday, November 10, 2026, 10:30 – 11:30am",
+          "venue": "Northeast Branch",
+          "venue_url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "room": "Children's Area",
+          "source_url": "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D205891461",
+          "description": "At storytime, kids ages 0-5 and their families can enjoy stories, songs, and fun learning activities. Registration Required: Registration is not required. Detailed Description: Early Learning is a great way for kids ages 0-5 and their families to develop learning, literacy, and language skills as well as community with other families., We read stories, sing songs, and have engaging, educational activities that help kids and their caregivers grow together. Event Logistics: Families of all ages are welcome, though this early learning program is intended for youth aged 0-5, their caregivers and families., Find out more about Early Learning & Story Time programs. Contact Us: If you have questions about this event, Ask Us or call 206-386-4636. ADA Accommodations: We can provide accommodations for people with disabilities at Library events. Please contact LEAP at least seven days before the event to request accommodations., All Library programs are free and open to the public.",
+          "kind": "event",
+          "source_name": "Northeast Branch: All Northeast Branch Events",
+          "needs_locality": true,
+          "section_hint": "events",
+          "details": {
+            "places": [
+              "Northeast Branch"
+            ],
+            "when": "Tuesday, November 10, 2026, 10:30 – 11:30am",
+            "links": [
+              "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D205891461"
+            ]
+          }
+        },
+        {
+          "source_event_id": "0d6a1db67d4ae6ca",
+          "title": "Genealogy Drop-In",
+          "event_date": "2026-11-12",
+          "schedule_text": "Thursday, November 12, 2026, 2 – 3:30pm",
+          "venue": "Northeast Branch",
+          "venue_url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "room": "Meeting Room",
+          "source_url": "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D206692316",
+          "description": "Free one-on-one genealogy help from the Seattle Genealogical Society. Registration Required: Registration is not required. Detailed Description: Members of the Seattle Genealogical Society (SGS) will offer one-on-one help to those with questions about their family history research. All levels of experience are welcome. Just drop in!, Thanks to our partner Seattle Genealogical Society.,. Event Logistics: Genealogy Drop-In programs are held at multiple branches. View upcoming events. Contact Us: If you have questions about this event, Ask Us or call 206-386-4636. ADA Accommodations: We can provide accommodations for people with disabilities at Library events. Please contact LEAP at least seven days before the event to request accommodations., All Library programs are free and open to the public.",
+          "kind": "event",
+          "source_name": "Northeast Branch: All Northeast Branch Events",
+          "needs_locality": true,
+          "section_hint": "events",
+          "details": {
+            "places": [
+              "Northeast Branch"
+            ],
+            "when": "Thursday, November 12, 2026, 2 – 3:30pm",
+            "links": [
+              "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D206692316"
+            ]
+          }
+        },
+        {
+          "source_event_id": "eb9bae229e9ccfa2",
+          "title": "Family Story Time",
+          "event_date": "2026-11-17",
+          "schedule_text": "Tuesday, November 17, 2026, 10:30 – 11:30am",
+          "venue": "Northeast Branch",
+          "venue_url": "https://www.spl.org/hours-and-locations/northeast-branch",
+          "room": "Children's Area",
+          "source_url": "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D205891462",
+          "description": "At storytime, kids ages 0-5 and their families can enjoy stories, songs, and fun learning activities. Registration Required: Registration is not required. Detailed Description: Early Learning is a great way for kids ages 0-5 and their families to develop learning, literacy, and language skills as well as community with other families., We read stories, sing songs, and have engaging, educational activities that help kids and their caregivers grow together. Event Logistics: Families of all ages are welcome, though this early learning program is intended for youth aged 0-5, their caregivers and families., Find out more about Early Learning & Story Time programs. Contact Us: If you have questions about this event, Ask Us or call 206-386-4636. ADA Accommodations: We can provide accommodations for people with disabilities at Library events. Please contact LEAP at least seven days before the event to request accommodations., All Library programs are free and open to the public.",
+          "kind": "event",
+          "source_name": "Northeast Branch: All Northeast Branch Events",
+          "needs_locality": true,
+          "section_hint": "events",
+          "details": {
+            "places": [
+              "Northeast Branch"
+            ],
+            "when": "Tuesday, November 17, 2026, 10:30 – 11:30am",
+            "links": [
+              "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D205891462"
+            ]
+          }
+        }
+      ],
+      "dropped": [
+        {
+          "source_event_id": "616fc16562e2e6fb",
+          "title": "Family Story Time",
+          "url": "https://www.spl.org/event-calendar?trumbaEmbed=view%3Devent%26eventid%3D205891472",
+          "reason": "outside_window",
+          "event_date": "2026-11-24"
+        },
+        {
+          "source_event_id": "a2d3bce46cfa5cf1",
+          "title": "International District / Chinatown Branch",
+          "url": "https://www.spl.org/hours-and-locations/international-district-chinatown-branch",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "20ad49e9807aade4",
+          "title": "Comience en español",
+          "url": "https://www.spl.org/using-the-library/get-started/get-started-in-spanish",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "cddd135fe666e935",
+          "title": "Madrona-Sally Goldmark Branch",
+          "url": "https://www.spl.org/hours-and-locations/madrona-sally-goldmark-branch",
+          "reason": "undated",
+          "event_date": null
+        },
+        {
+          "source_event_id": "e622dd51240d9433",
+          "title": "开始用中文",
+          "url": "https://www.spl.org/using-the-library/get-started/get-started-in-chinese",
+          "reason": "undated",
+          "event_date": null
+        }
+      ]
+    },
+    {
+      "component": "community_reporting",
+      "fallback": {
+        "feeds": [
+          "https://www.wedgwoodcc.org/feed/"
+        ],
+        "errors": []
+      },
+      "reports": [],
+      "errors": [
+        "https://www.mobilize.us/mobilize/event/939498/: Error: robots.txt couldn't be read, treated as a no: https://www.mobilize.us/mobilize/event/939498/"
+      ],
+      "rejected": [
+        {
+          "url": "https://www.wedgwoodcc.org/2026/11/02/dahl-field-restroom-renovation-schedule-update/?utm_source=rss",
+          "reason": "No recent dated substantive reporting with explicit location evidence"
+        },
+        {
+          "url": "https://www.wedgwoodcc.org/2026/10/29/join-us-for-our-november-2026-board-meeting-via-zoom-november-10th-700-830pm/?utm_source=rss",
+          "reason": "No recent dated substantive reporting with explicit location evidence"
+        },
+        {
+          "url": "https://www.wedgwoodcc.org/2026/10/29/wedgwood-business-district-trick-or-treat-saturday-october-31st-4-6pm/?utm_source=rss",
+          "reason": "No recent dated substantive reporting with explicit location evidence"
+        }
+      ]
+    },
+    {
+      "component": "gdelt",
+      "error": "Error: HTTP 429 from https://api.gdeltproject.org/api/v2/doc/doc",
+      "status": 429,
+      "retryAfterSeconds": 60
+    }
+  ]
+}

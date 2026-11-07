@@ -31,7 +31,7 @@ export function unfold(lines: string[]) {
   }
   return events;
 }
-export function parseIcal(content: Uint8Array): ParsedEvents {
+export function parseIcal(content: Uint8Array, options: { allowMissingVenue?: boolean } = {}): ParsedEvents {
   checkSize(content);
   let source: string;
   try { source = new TextDecoder("utf-8", { fatal: true }).decode(content); }
@@ -46,7 +46,7 @@ export function parseIcal(content: Uint8Array): ParsedEvents {
     const field = (name: string) => unescapeIcs(item[name]?.[1] ?? "").trim();
     if ("RRULE" in item || "RECURRENCE-ID" in item) { skip("recurring"); continue; }
     if (field("STATUS").toUpperCase() === "CANCELLED" || cancelledTitle(field("SUMMARY"))) { skip("cancelled"); continue; }
-    if (!field("LOCATION")) { skip("no_venue"); continue; }
+    if (!field("LOCATION") && !options.allowMissingVenue) { skip("no_venue"); continue; }
     const link = httpsLink(field("URL"));
     if (!link) { skip("no_link"); continue; }
     const startPair = item.DTSTART ?? ["", ""];

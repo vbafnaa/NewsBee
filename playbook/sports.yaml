@@ -1,0 +1,101 @@
+# Local sports. A target category of its own, and school sports belong here, not under schools.
+# See README.md for how to edit a rule.
+category: sports
+label: Local sports
+target: true
+topic: sports
+
+goal:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: sports.goal.local_sports, text: "Find sources that publish local sports for this place: school and local teams only." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: sports.prefer.athletics_pages, text: School athletics pages. }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: sports.prefer.osm_sports_centre, set: osm_kinds, order: 24, text: Sports centres with a website., osm: { kind: sports_centre, tag: leisure, priority: 8 } }
+      - { id: sports.prefer.athletics_association_section, text: "The section a state's school athletic association is filed under.", value: sports }
+
+reject:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: sports.reject.professional_college, text: "Sports means school and local teams, never professional or college ones." }
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: sports.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as a game result., value: game_result }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: sports.stage1.high_school_sports, stage: stage1, source_type: School sports, reason: "Each level of sport comes first, so the budget can't cut one out. Specific schools follow.", pattern: '"{place}" "high school" (athletics OR "varsity") (schedule OR scores)' }
+      - { id: sports.stage1.middle_school_sports, stage: stage1, source_type: School sports, reason: "Each level of sport comes first, so the budget can't cut one out. Specific schools follow.", pattern: '"{place}" "middle school" (athletics OR sports) schedule' }
+      - { id: sports.stage1.school_athletics, stage: stage1, source_type: School sports, for_each: { list: schools, limit: 3 }, pattern: '"{school}" athletics (schedule OR scores OR roster)' }
+      - { id: sports.stage1.youth_leagues, stage: stage1, source_type: Youth leagues, pattern: '"{place}" youth (soccer OR baseball OR basketball OR hockey OR "little league") (schedule OR standings)' }
+      - { id: sports.stage1.league, stage: stage1, source_type: School sports, pattern: '"{parent}" high school league (schedule OR standings OR results)' }
+      - { id: sports.stage1.institution, stage: stage1, source_type: Local clubs, for_each: { list: institutions, kinds: [club], limit: 2 }, pattern: '"{name}" "{state}" (schedule OR results OR calendar)' }
+      - { id: sports.stage1.district_athletics, stage: stage1, source_type: School sports, for_each: { list: school_hosts, limit: 2 }, pattern: 'site:{host} inurl:athletics' }
+      - { id: sports.stage1.association, stage: stage1, source_type: School sports, for_each: { list: association_school, limit: 1 }, pattern: 'site:{association} "{school}" (schedule OR results)' }
+      - { id: sports.stage2.school_sweep, stage: stage2, source_type: School sports, for_each: { list: school_hosts, limit: 2 }, pattern: 'site:{host} (score OR recap OR results) after:{after}' }
+      - { id: sports.stage2.school_results, stage: stage2, source_type: School sports, for_each: { list: schools, limit: 2 }, pattern: '"{school}" (defeated OR playoff OR "final score") after:{after}' }
+      - { id: sports.stage2.team_sweep, stage: stage2, source_type: Local clubs, for_each: { list: team_hosts, limit: 2 }, pattern: 'site:{host} (recap OR result OR schedule) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: sports.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: high school sports schedule }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: sports.page.site_links
+        set: site_links
+        order: 7
+        text: Links to athletics and team pages on a government or group site.
+        regex: '\b(athletics?|sports|teams?|standings|scores|league|game schedule)\b'
+        flags: i
+      - id: sports.page.school_site_links
+        set: school_site_links
+        order: 2
+        text: "Links to athletics, team and booster pages on a school site."
+        reason: "Ahead of calendars and news, so an athletics calendar is filed here."
+        regex: '\b(athletics?|sports|teams?|standings|scores|game schedule|boosters?)\b'
+        flags: i
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: sports.page.item_keywords
+        set: item_keywords
+        order: 4
+        text: Words that put a story in this section.
+        regex: 'athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\bdefeated\b|\bleague\b.*\b(game|match|season)\b'
+        flags: i
+      - { id: sports.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [school_sports, game_result] }
+      - { id: sports.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [school_sports, game_result] }
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: sports.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 2 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: sports.stop.school_pages, text: "Athletics pages kept from one school's site, on top of its board and parent group pages.", value: 1 }
+
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: sports.example.school_athletics, verdict: accepted, text: "A school's own athletics page and its league's schedule page." }
+      - { id: sports.example.professional_team, verdict: rejected, text: "A professional or college team: it isn't personal to this community, even if it plays nearby." }

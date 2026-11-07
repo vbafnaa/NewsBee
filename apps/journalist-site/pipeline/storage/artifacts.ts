@@ -6,7 +6,7 @@
  */
 import { lstat, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { loadSettings } from "../core/config";
+import { repositoryRoot } from "../core/config";
 import { DriveArtifacts } from "./drive";
 import { MongoArtifacts } from "./mongo-artifacts";
 import { getDatabase } from "./mongo";
@@ -124,18 +124,20 @@ export function useArtifacts(store: ArtifactStore | null) {
 }
 
 export function localDriveRoot() {
-  return process.env.NEWSBEE_LOCAL_DRIVE_DIR ?? path.join(loadSettings().localDataDir, "drive");
+  return process.env.NEWSBEE_LOCAL_DRIVE_DIR ?? path.join(repositoryRoot(), ".local", "stage2", "drive");
 }
 
 export function getArtifacts(): ArtifactStore {
   if (override) return override;
   if (usesMongoArtifacts()) return new MongoArtifacts(getDatabase);
-  return loadSettings().mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
+  const mode = (process.env.NEWSBEE_MODE ?? "local").trim().toLowerCase();
+  if (!["cloud", "local"].includes(mode)) throw new Error("NEWSBEE_MODE must be 'local' or 'cloud'");
+  return mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
 }
 
 /** Folder that holds pipeline run artifacts (not visible to the reader site). */
 export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews" | "logs", ...names: string[]) {
-  const configuredRoot = loadSettings().pipelineDriveFolderId;
+  const configuredRoot = process.env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID?.trim() || null;
   if (store.kind === "drive" && !configuredRoot) {
     throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
   }

@@ -1,0 +1,19 @@
+{
+  "base_commit": "eacb76e008d7d9edd3b4849a89993934eb701ef1",
+  "modified_working_tree": true,
+  "map_run": "de92aae7-453b-452b-a5d1-812347a1a574",
+  "source_inputs": "Location profile and live citywide official directories; no registry, assisted sources or old source caches",
+  "model": "qwen2.5-coder:latest (new directory method does not call it)",
+  "tests": {
+    "discovery_tests_passed": 18,
+    "typescript": "passed"
+  },
+  "sha256": {
+    "apps/journalist-site/pipeline/discovery/directories.ts": "4d79e9db156b4a3c2c30ea22faf906066324577983e9b058675a64d73838cd81",
+    "apps/journalist-site/pipeline/discovery/methods.ts": "f52e94b512e5814668801fc943db98e33d832880a370e2166ce7f17b8c22487e",
+    "apps/journalist-site/pipeline/sourcemap/store.ts": "d623a6cf773a2c5ce376b2eba05d7863a4f56047383e5a2eb4c315677a75f22e",
+    "apps/journalist-site/pipeline/tests/discovery/directories.test.ts": "79ccca6a9b937308bce6778c8b8784b994b48e298c26289759f1f2d23812f896"
+  },
+  "collection_run": "5030d2a8-2801-424f-bd67-61e16600f525",
+  "collection_completed_before_authoring": true
+}

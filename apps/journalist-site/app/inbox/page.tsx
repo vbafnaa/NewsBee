@@ -9,7 +9,7 @@ export default async function InboxPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
   return <AdminShell email={email} page="inbox" title="Inbox"
-    description="Everything waiting for an editor: held stories, reader source suggestions, problem reports, reader stories and family notices.">
+    description="Stories, sources and reports awaiting review.">
     <InboxView />
     <div id="reader-stories"><NeighbourStoryReview /></div>
     <div id="family-notices"><RemembranceReview /></div>

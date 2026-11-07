@@ -3,16 +3,22 @@
  * for the source map. They run as separate jobs at the start of a run when due (each has
  * its own refresh period), so a slow method never blocks the others.
  *
- *   government  the city's and county's own websites (location profile, OpenStreetMap
- *               via Nominatim) and the feeds they publish (CivicPlus news, calendar,
- *               agendas, alerts)
- *   osm         websites of town halls, libraries, community centres, schools, colleges,
- *               arts venues, theatres, museums, markets and associations inside the area
+ *   government  the city's and county's own websites (the checked city site, OpenStreetMap
+ *               via Nominatim), the feeds they publish (CivicPlus news, calendar, agendas,
+ *               alerts), their category pages (agendas, hearings, boards, police and fire,
+ *               permits, business, parks, volunteering), and the groups they link to
+ *   osm         websites of town halls, police and fire stations, courts, libraries, community
+ *               centres, schools, colleges, arts venues, theatres, museums, markets, newspapers,
+ *               nonprofits and associations inside the area
  *   meetings    Legistar, CivicClerk and PrimeGov accounts for the city and county
  *   opendata    Socrata portals for the city, county and state and their police, fire,
  *               permit, inspection, licence and 311 datasets
  *   newsrooms   Wikidata outlets published nearby with a current feed
  *   athletics   the state's school athletic association (Wikidata)
+ *   schools     the school districts covering the place (Census, NCES), their board
+ *               meetings, calendars and news, and each local school's PTA, PTSA or PTO
+ *   groups      chambers, downtown and neighbourhood groups at their usual addresses, each
+ *               fetched and checked, and funeral homes' obituary pages
  *   publishers  outlets news search keeps finding covering the place
  *   llm         Gemini suggestions (school district, PTAs, leagues, funeral homes,
  *               business groups, community councils), each fetched and checked
@@ -26,10 +32,12 @@ import type { HttpTransport } from "../core/http";
 import type { Logger } from "../core/log";
 import type { ModelRuntime } from "../model/runtime";
 import type { ConnectorContext, LocationProfile } from "../connectors/types";
-import { DiscoveryBlockedError, type Fetcher } from "../connectors/fetcher";
+import type { PriorityTopic } from "../core/run-values";
+import { DiscoveryBlockedError, Fetcher } from "../connectors/fetcher";
+import { publicSourceTransport } from "../connectors/public-http";
 import { httpsLink } from "../connectors/common";
 import { publicApiGet } from "../connectors/public-api";
-import { locationCenter, townName, OVERPASS, OVERPASS_TIMEOUT_MS, TOWN_RADIUS_KM } from "../connectors/locality";
+import { locationCenter, townName, areaBox, TOWN_RADIUS_KM } from "../connectors/locality";
 import { mentions } from "../connectors/community";
 import { CONNECTORS, selectSources } from "../connectors/registry";
 import { newsPublishers, aggregator } from "../connectors/newssearch";
@@ -42,10 +50,18 @@ import type { SectionId } from "../sourcemap/sections";
 import { canSpend, groundedSearch, jsonArray, usageRecorder } from "../model/budget";
 import { pythonJson } from "../model/newsworthiness";
 import { currentOptions, itemCap } from "../core/run-options";
+import { fill, limit, list, regex, ruleSet, setting, table, template } from "../playbook";
 import { recordDecision } from "../trace/decisions";
-import { evaluateQueries, JOB_DEADLINE_MS } from "./evaluate";
-import { OVERPASS_MIRRORS } from "./institutions";
+import { verifiedCitySite } from "./city-site";
+import { evaluateLeads, evaluateQueries, JOB_DEADLINE_MS } from "./evaluate";
+import { localInstitutions, OVERPASS_MIRRORS } from "./institutions";
+import { districtSites, localSchools, schoolLinks } from "./schools";
+import type { OutsideLink } from "./inspect";
+import { checkGroups, pageKey, scanSite, type Site } from "./site-pages";
+import { queryOverpass, QUERY_SECONDS } from "../connectors/overpass";
 import { buildSearchKit, stage1Queries } from "./topics";
+import { linkedPages } from "./linked-pages";
+import { directories } from "./directories";
 
 export type DiscoveryContext = {
   db: Db;
@@ -62,6 +78,7 @@ export type DiscoveryContext = {
 export type MethodDefinition = { method: DiscoveryMethod; label: string; refreshDays: number; run(context: DiscoveryContext): Promise<{ candidates: SourceCandidate[]; detail: string }> };
 
 const ACCEPT_HTML = "text/html, application/xhtml+xml";
+const REFRESH_DAYS = table<number>("general.stop.method_refresh_days");
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
 export const SOCRATA_CATALOG = "https://api.us.socrata.com/api/catalog/v1";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,10 +94,7 @@ function place(location: LocationProfile) { return location.community?.name ?? t
 function slug(text: string | null | undefined) { return (text ?? "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
 
 // --- government ---------------------------------------------------------------------------
-const CIVICPLUS_MODULES: Record<string, { title: string; section: SectionId }> = {
-  "1": { title: "News flash", section: "news" }, "58": { title: "Calendar", section: "events" },
-  "65": { title: "Agendas", section: "civic" }, "63": { title: "Alerts", section: "safety" },
-};
+const CIVICPLUS_MODULES = table<{ title: string; section: SectionId }>("general.prefer.civicplus_modules");
 async function countyWebsite(context: DiscoveryContext, county: string): Promise<string | null> {
   const state = US_STATES[context.location.state];
   if (!state) return null;
@@ -109,49 +123,71 @@ async function civicPlusFeeds(context: DiscoveryContext, site: string, label: st
       seen.add(module);
       const { title, section } = CIVICPLUS_MODULES[module];
       const link = httpsLink(feed.toString());
-      if (link) out.push(webCandidate(root, `${label}: ${title}`, section, "government", "CivicPlus feed on the government website", { feed: link, inside }));
+      if (link) out.push({ ...webCandidate(root, `${label}: ${title}`, section, "government", "CivicPlus feed on the government website", { feed: link, inside }), section_page: true });
     }
   } catch { /* not CivicPlus, or not allowed */ }
   try {
     const [url, html] = await context.fetcher.getText(`${root}/AgendaCenter`, 2 * 1024 * 1024, ACCEPT_HTML);
-    if (/agendacenter/i.test(html)) out.push(webCandidate(url, `${label}: Agenda Center`, "civic", "government", "CivicPlus Agenda Center (agendas are PDFs: listed with a link)", { inside, linkOnly: true }));
+    if (/agendacenter/i.test(html)) out.push({ ...webCandidate(url, `${label}: Agenda Center`, "civic", "government", "CivicPlus Agenda Center (agendas are PDFs: listed with a link)", { inside, linkOnly: true }), section_page: true });
   } catch { /* none */ }
   return out;
 }
+/** What a county adds for a place: its sheriff, its assessor and its commissioners' meetings. */
+const COUNTY_SECTIONS = list("civic.prefer.county_sections") as SectionId[];
 const government: MethodDefinition = {
-  method: "government", label: "City and county websites", refreshDays: 30,
+  method: "government", label: "City and county websites", refreshDays: REFRESH_DAYS.government,
   async run(context) {
     const candidates: SourceCandidate[] = [];
     const town = townName(context.location);
-    const city = httpsLink(context.location.government?.website ?? null);
+    const started = Date.now();
+    // The checked site first: a location record can have no website, or the wrong one.
+    const checked = await verifiedCitySite(context).catch(() => null);
+    const city = httpsLink(checked?.url ?? context.location.government?.website ?? null);
     // A town's own government is local by construction; for a neighbourhood it is city-wide.
     const cityInside = !context.location.community;
+    const seen = new Set<string>();
+    const outside: OutsideLink[] = [];
+    const scanned = async (url: string, site: Omit<Site, "url" | "kind">, label: string, inside: boolean, deadline: number) => {
+      const feeds = await civicPlusFeeds(context, url, label, inside);
+      candidates.push(...feeds);
+      for (const feed of feeds) if (feed.url) seen.add(pageKey(feed.url));
+      const scan = await scanSite(context, { ...site, url, kind: "government" }, "government", seen, deadline, new Set(feeds.flatMap((feed) => feed.feed_url ? [feed.feed_url] : [])));
+      candidates.push(...scan.candidates);
+      outside.push(...scan.outside);
+    };
     if (city) {
       candidates.push(webCandidate(city, `City of ${town}`, "civic", "government", "The city's official website", { inside: cityInside }));
-      candidates.push(...await civicPlusFeeds(context, city, `City of ${town}`, cityInside));
+      seen.add(pageKey(city));
+      await scanned(city, { name: `City of ${town}`, scope: cityInside ? "place" : "city" }, `City of ${town}`, cityInside, started + JOB_DEADLINE_MS * 0.6);
     }
     const facts = await areaFacts(context as unknown as ConnectorContext).catch(() => null);
     if (facts?.county) {
       const county = await countyWebsite(context, facts.county);
       if (county && hostOf(county) !== hostOf(city)) {
         candidates.push(webCandidate(county, facts.county, "civic", "government", "The county's official website (OpenStreetMap)"));
-        candidates.push(...await civicPlusFeeds(context, county, facts.county, false));
+        seen.add(pageKey(county));
+        await scanned(county, { name: facts.county, scope: "county", sections: COUNTY_SECTIONS, pages: limit("civic.stop.county_pages"), hubs: limit("civic.stop.county_hub_pages") }, facts.county, false, started + JOB_DEADLINE_MS * 0.85);
       }
     }
-    return { candidates, detail: `${city ? "city site" : "no city site"}${facts?.county ? `, ${facts.county}` : ""}; ${candidates.length} sources` };
+    const groups = await checkGroups(context, outside, list("civic.prefer.linked_group_sections") as SectionId[], "government", seen, started + JOB_DEADLINE_MS);
+    candidates.push(...groups.candidates);
+    return { candidates, detail: `${city ? `city site ${hostOf(city)}` : "no city site"}${facts?.county ? `, ${facts.county}` : ""}; ${candidates.length} sources, ${groups.candidates.length} from groups they link to` };
   },
 };
 
 // --- OpenStreetMap places -------------------------------------------------------------------
-const OSM_KINDS: Record<string, { priority: number; section: SectionId; kind?: string }> = {
-  townhall: { priority: 0, section: "civic" }, government: { priority: 0, section: "civic" }, library: { priority: 1, section: "events" },
-  community_centre: { priority: 1, section: "community" }, marketplace: { priority: 2, section: "events" }, social_centre: { priority: 2, section: "community" },
-  school: { priority: 3, section: "schools" }, college: { priority: 4, section: "schools" }, university: { priority: 4, section: "schools" },
-  arts_centre: { priority: 4, section: "events" }, theatre: { priority: 5, section: "events" }, museum: { priority: 5, section: "events" },
-  association: { priority: 6, section: "community" }, place_of_worship: { priority: 7, section: "community" }, funeral_directors: { priority: 7, section: "obituaries", kind: "obituary" },
-  park: { priority: 8, section: "events" }, sports_centre: { priority: 8, section: "schools" },
-};
-export const OSM_CAP = 40;
+const OSM_RULES = ruleSet("osm_kinds");
+const OSM_KINDS: Record<string, { priority: number; section: SectionId; kind?: string }> = Object.fromEntries(OSM_RULES.map((rule) => [rule.osm!.kind, { priority: rule.osm!.priority, section: rule.section as SectionId, kind: rule.osm!.story_kind }]));
+export const OSM_CAP = limit("general.stop.osm_cap");
+/** No one section may fill the list: a big city has dozens of schools and places of worship. */
+export const OSM_SECTION_CAP = limit("general.stop.osm_section_cap");
+const OSM_PER_HOST = limit("general.stop.osm_per_host");
+/** Groups OpenStreetMap files as one kind of office, sorted by what their name says they are. */
+const GROUP_SECTIONS = ruleSet("osm_group_names").map((rule): [RegExp, SectionId] => [rule.test, rule.section as SectionId]);
+export function osmSection(kind: string, name: string): SectionId {
+  const section = OSM_KINDS[kind].section;
+  return section === "community" ? GROUP_SECTIONS.find(([test]) => test.test(name))?.[1] ?? section : section;
+}
 export { OVERPASS_MIRRORS };
 function websiteOf(tags: Record<string, string>) {
   const raw = (tags.website ?? tags["contact:website"] ?? tags.url ?? "").split(";")[0].trim();
@@ -160,22 +196,17 @@ function websiteOf(tags: Record<string, string>) {
   return httpsLink(url);
 }
 const osm: MethodDefinition = {
-  method: "osm", label: "OpenStreetMap places inside the area", refreshDays: 30,
+  method: "osm", label: "OpenStreetMap places inside the area", refreshDays: REFRESH_DAYS.osm,
   async run(context) {
     const { center, area } = locationCenter(context.location);
     if (!center) return { candidates: [], detail: "Location has no coordinates" };
-    const reach = Math.round((area?.radius_km ?? (area ? 3 : TOWN_RADIUS_KM)) * 1000);
-    const around = `(around:${reach},${center[1]},${center[0]})`;
-    const site = '[~"^(website|contact:website)$"~"."]';
-    const query = `[out:json][timeout:60];(nwr${around}["name"]["amenity"~"^(townhall|library|community_centre|marketplace|social_centre|school|college|university|arts_centre|theatre|place_of_worship)$"]${site};nwr${around}["name"]["tourism"="museum"]${site};nwr${around}["name"]["office"~"^(government|association)$"]${site};nwr${around}["name"]["shop"="funeral_directors"]${site};nwr${around}["name"]["leisure"~"^(park|sports_centre)$"]${site};);out tags center 400;`;
-    let body: Uint8Array | null = null;
-    let lastError: unknown = null;
-    for (const endpoint of [OVERPASS, ...OVERPASS_MIRRORS]) {
-      try { body = await publicApiGet(context.transport, `${endpoint}?data=${encodeURIComponent(query)}`, "application/json", 4 * 1024 * 1024, OVERPASS_TIMEOUT_MS); break; }
-      catch (error) { lastError = error; }
-    }
-    if (!body) throw lastError instanceof Error ? lastError : new Error("Overpass is unavailable");
-    const elements = (JSON.parse(new TextDecoder().decode(body)) as { elements?: Array<{ tags?: Record<string, string>; lat?: number; lon?: number; center?: { lat: number; lon: number } }> }).elements ?? [];
+    const [west, south, east, north] = areaBox(area, center);
+    // Query the actual bbox (polygon candidates are filtered below), not an unrelated
+    // 3 km circle. One indexed name/website scan avoids five overlapping nwr scans.
+    const box = `(${south},${west},${north},${east})`;
+    const query = `[out:json][timeout:${QUERY_SECONDS}];nwr${box}["name"][~"^(website|contact:website)$"~"."];out tags center;`;
+    const response = await queryOverpass(context.transport, query);
+    const elements = response.data.elements;
     const found: Array<{ name: string; url: string; kind: string; point: Point }> = [];
     for (const element of elements) {
       const tags = element.tags ?? {};
@@ -189,18 +220,20 @@ const osm: MethodDefinition = {
     }
     found.sort((a, b) => OSM_KINDS[a.kind].priority - OSM_KINDS[b.kind].priority || a.name.localeCompare(b.name));
     const perHost = new Map<string, number>();
+    const perSection = new Map<SectionId, number>();
     const seen = new Set<string>();
     const candidates: SourceCandidate[] = [];
     for (const item of found) {
-      const host = hostOf(item.url), key = normaliseUrl(item.url);
-      if (seen.has(key) || (perHost.get(host) ?? 0) >= itemCap(2)) continue;
+      const host = hostOf(item.url), key = normaliseUrl(item.url), section = osmSection(item.kind, item.name);
+      if (seen.has(key) || (perHost.get(host) ?? 0) >= itemCap(OSM_PER_HOST) || (perSection.get(section) ?? 0) >= itemCap(OSM_SECTION_CAP)) continue;
       seen.add(key);
       perHost.set(host, (perHost.get(host) ?? 0) + 1);
+      perSection.set(section, (perSection.get(section) ?? 0) + 1);
       const definition = OSM_KINDS[item.kind];
-      candidates.push(webCandidate(item.url, item.name, definition.section, "osm", `${item.kind.replace(/_/g, " ")} inside ${place(context.location)}`, { inside: true, kind: definition.kind }));
+      candidates.push(webCandidate(item.url, item.name, section, "osm", `${item.kind.replace(/_/g, " ")} inside ${place(context.location)}`, { inside: true, kind: definition.kind }));
       if (candidates.length >= itemCap(OSM_CAP)) break;
     }
-    return { candidates, detail: `${elements.length} places with websites nearby; ${candidates.length} inside the area` };
+    return { candidates, detail: `${elements.length} places with websites in bounding box; ${candidates.length} qualifying sources inside the area; ${response.attempts.join("; ")}` };
   },
 };
 
@@ -209,23 +242,24 @@ async function probeJson(context: DiscoveryContext, url: string) {
   try { return JSON.parse(new TextDecoder().decode(await publicApiGet(context.transport, url, "application/json", 512 * 1024, 15_000))) as unknown; }
   catch { return null; }
 }
+const MIN_TENANT = limit("civic.stop.min_tenant_chars");
 const meetings: MethodDefinition = {
-  method: "meetings", label: "Meeting platforms", refreshDays: 30,
+  method: "meetings", label: "Meeting platforms", refreshDays: REFRESH_DAYS.meetings,
   async run(context) {
     const state = context.location.state.toLowerCase();
     const town = townName(context.location);
     const facts = await areaFacts(context as unknown as ConnectorContext).catch(() => null);
     const governments: Array<{ name: string; level: "city" | "county"; slugs: string[] }> = [];
     const c = slug(town);
-    if (c.length >= 4) governments.push({ name: town, level: "city", slugs: [c, `${c}${state}`, `cityof${c}`, `cityof${c}${state}`] });
+    if (c.length >= MIN_TENANT) governments.push({ name: town, level: "city", slugs: list("civic.prefer.meeting_tenants_city").map((name) => fill(name, { city: c, state })) });
     if (facts?.county) {
       const k = slug(facts.county), bare = k.replace(/county$/, "");
-      governments.push({ name: facts.county, level: "county", slugs: [k, `${k}${state}`, `${bare}county${state}`, `${bare}co`] });
+      governments.push({ name: facts.county, level: "county", slugs: list("civic.prefer.meeting_tenants_county").map((name) => fill(name, { county: k, state, bare })) });
     }
     const existing = context.location.government;
     const candidates: SourceCandidate[] = [];
     for (const government of governments) {
-      for (const tenant of [...new Set(government.slugs)].filter((value) => value.length >= 4)) {
+      for (const tenant of [...new Set(government.slugs)].filter((value) => value.length >= MIN_TENANT)) {
         if (existing?.tenant === tenant) break;
         const legistar = await probeJson(context, `https://webapi.legistar.com/v1/${tenant}/bodies?$top=1`);
         if (Array.isArray(legistar) && legistar.length) {
@@ -259,18 +293,11 @@ function meetingCandidate(government: { name: string; level: "city" | "county" }
 }
 
 // --- open data ------------------------------------------------------------------------------
-const TOPICS: Array<{ topic: Topic; query: string; rule: RegExp; stateLevel: boolean }> = [
-  { topic: "police", query: "police calls", rule: /police|crime|incident|calls? for service|offen[cs]e|dispatch/i, stateLevel: false },
-  { topic: "fire", query: "fire 911", rule: /fire|\bems\b|911|emergency/i, stateLevel: false },
-  { topic: "permits", query: "building permits", rule: /permit|construction|land use|development|building/i, stateLevel: false },
-  { topic: "inspections", query: "food inspections", rule: /inspection|restaurant|food establishment/i, stateLevel: false },
-  { topic: "licences", query: "license applications", rule: /business licen|liquor|licen[cs]e appl|new business|licen[cs]e/i, stateLevel: true },
-  { topic: "311", query: "311 service requests", rule: /\b311\b|service request|code (enforcement|violation|complaint)/i, stateLevel: false },
-];
+const TOPICS = ruleSet("opendata_topics").map((rule) => ({ topic: rule.opendata!.topic as Topic, query: rule.opendata!.query, rule: rule.test, stateLevel: rule.opendata!.state_level }));
 
 /** A Socrata portal's home sale dataset, read by the property reader. */
-const SALES_RULE = /real property sales|property sales|home sales|parcel sales|deed|sales? (history|transactions?)/i;
-const STALE_NAME = /archiv|historic|summary|statistic|totals|\bby (year|month)\b|\b(19\d\d|20[01]\d|202[0-4])\b|renewal|rental|child ?care|marriage|firearm|contractor|professional/i;
+const SALES_RULE = regex("real_estate.prefer.opendata_sales");
+const STALE_NAME = regex("general.reject.stale_dataset_names");
 const DATE_TYPES = new Set(["calendar_date", "floating_timestamp", "fixed_timestamp", "date"]);
 type CatalogResult = { resource?: { id?: string; name?: string; attribution?: string | null; columns_field_name?: string[]; columns_datatype?: string[]; data_updated_at?: string; updatedAt?: string; page_views?: { page_views_total?: number } }; metadata?: { domain?: string; license?: string | null } };
 export function matchPortals(domains: string[], location: LocationProfile, county: string | null): Array<[string, "city" | "county" | "state"]> {
@@ -279,15 +306,15 @@ export function matchPortals(domains: string[], location: LocationProfile, count
   for (const domain of domains) {
     const labels = domain.toLowerCase().replace(/^www\./, "").split(".");
     const names = new Set(labels.slice(0, -1));
-    if (city.length >= 4 && [city, `cityof${city}`, `${city}${state}`, `${city}gov`].some((name) => names.has(name))) found.push([domain, "city"]);
-    else if (countySlug.length >= 6 && [countySlug, `${countySlug}${state}`].some((name) => names.has(name))) found.push([domain, "county"]);
-    else if (labels.at(-1) === "gov" && (names.has(state) || names.has(stateName)) && names.size <= 2) found.push([domain, "state"]);
+    if (city.length >= limit("civic.stop.min_city_portal_chars") && list("civic.prefer.portal_names_city").some((name) => names.has(fill(name, { city, state })))) found.push([domain, "city"]);
+    else if (countySlug.length >= limit("civic.stop.min_county_portal_chars") && list("civic.prefer.portal_names_county").some((name) => names.has(fill(name, { county: countySlug, state })))) found.push([domain, "county"]);
+    else if (labels.at(-1) === "gov" && (names.has(state) || names.has(stateName)) && names.size <= limit("civic.stop.state_portal_labels")) found.push([domain, "state"]);
   }
   const order = { city: 0, county: 1, state: 2 };
-  return [...new Map(found.map((item) => [item[0], item])).values()].sort((a, b) => order[a[1]] - order[b[1]]).slice(0, 4);
+  return [...new Map(found.map((item) => [item[0], item])).values()].sort((a, b) => order[a[1]] - order[b[1]]).slice(0, limit("civic.stop.portals"));
 }
 const opendata: MethodDefinition = {
-  method: "opendata", label: "Open-data portals", refreshDays: 14,
+  method: "opendata", label: "Open-data portals", refreshDays: REFRESH_DAYS.opendata,
   async run(context) {
     const facts = await areaFacts(context as unknown as ConnectorContext).catch(() => null);
     // The catalogue no longer lists its domains, so portals are found from searches for the
@@ -301,7 +328,7 @@ const opendata: MethodDefinition = {
       } catch { /* try the next query */ }
     }
     for (const name of [slug(town), slug(facts?.county), context.location.state.toLowerCase(), slug(state)].filter((value) => value.length >= 2)) {
-      for (const host of [`data.${name}.gov`, `data.cityof${name}.gov`]) {
+      for (const host of list("civic.prefer.portal_hosts").map((address) => fill(address, { name }))) {
         if (domains.has(host)) continue;
         try {
           const body = await publicApiGet(context.transport, `${SOCRATA_CATALOG}?${new URLSearchParams({ domains: host, limit: "1" }).toString()}`, "application/json", 1024 * 1024, 20_000);
@@ -310,7 +337,7 @@ const opendata: MethodDefinition = {
       }
     }
     const portals = matchPortals([...domains], context.location, facts?.county ?? null);
-    const freshAfter = Date.now() - 60 * 86400_000;
+    const freshAfter = Date.now() - limit("civic.stop.dataset_recent_days") * 86400_000;
     const candidates: SourceCandidate[] = [];
     for (const [domain, level] of portals) {
       for (const topic of TOPICS) {
@@ -344,9 +371,9 @@ const opendata: MethodDefinition = {
         });
       }
     }
-    for (const [domain] of portals.slice(0, 2)) {
+    for (const [domain] of portals.slice(0, limit("real_estate.stop.sales_portals"))) {
       try {
-        const rows = (JSON.parse(new TextDecoder().decode(await publicApiGet(context.transport, `${SOCRATA_CATALOG}?${new URLSearchParams({ domains: domain, only: "dataset", q: "property sales", limit: "20" })}`, "application/json", 4 * 1024 * 1024, 30_000))) as { results?: CatalogResult[] }).results ?? [];
+        const rows = (JSON.parse(new TextDecoder().decode(await publicApiGet(context.transport, `${SOCRATA_CATALOG}?${new URLSearchParams({ domains: domain, only: "dataset", q: template("real_estate.prefer.opendata_sales_query"), limit: "20" })}`, "application/json", 4 * 1024 * 1024, 30_000))) as { results?: CatalogResult[] }).results ?? [];
         const hit = rows.find((row) => /^[a-z0-9]{4}-[a-z0-9]{4}$/.test(row.resource?.id ?? "") && SALES_RULE.test(row.resource?.name ?? "") && !STALE_NAME.test(row.resource?.name ?? ""));
         if (hit?.resource?.id) candidates.push({ source_id: `property:${domain}:${hit.resource.id}`, name: `${hit.resource.name} (${hit.resource.attribution?.trim() || domain})`, url: `https://${domain}/d/${hit.resource.id}`, reader: "property", params: { backend: "socrata", domain, dataset: hit.resource.id }, section: "real_estate", found_by: { method: "opendata", detail: `property sales on the portal ${domain}` }, inside_area: false, topics: ["home_sales"] });
       } catch { /* the portal has no sales data */ }
@@ -357,27 +384,101 @@ const opendata: MethodDefinition = {
 
 // --- newsrooms, athletics, publishers --------------------------------------------------------
 const newsrooms: MethodDefinition = {
-  method: "newsrooms", label: "Wikidata newsrooms", refreshDays: 14,
+  method: "newsrooms", label: "Wikidata newsrooms", refreshDays: REFRESH_DAYS.newsrooms,
   async run(context) {
     const found = await discoveredNewsrooms(context as unknown as ConnectorContext);
     return { candidates: found.map((item) => webCandidate(item.website, item.name, "news", "newsrooms", item.provenance.detail, { feed: item.feed, kind: "news_report" })), detail: `${found.length} newsrooms with a current feed` };
   },
 };
 const athletics: MethodDefinition = {
-  method: "athletics", label: "State athletic association", refreshDays: 30,
+  method: "athletics", label: "State athletic association", refreshDays: REFRESH_DAYS.athletics,
   async run(context) {
     const found = await discoveredAthletics(context as unknown as ConnectorContext);
-    return { candidates: found.map((item) => webCandidate(item.website, item.name, "schools", "athletics", `Wikidata ${item.provenance.detail}`, { feed: item.feed, kind: "school_sports" })), detail: `${found.length} associations with a current feed` };
+    return { candidates: found.map((item) => webCandidate(item.website, item.name, setting("sports.prefer.athletics_association_section") as SectionId, "athletics", `Wikidata ${item.provenance.detail}`, { feed: item.feed, kind: "school_sports" })), detail: `${found.length} associations with a current feed` };
   },
 };
-export const PUBLISHER_MIN_HITS = 2;
-const publishers: MethodDefinition = {
-  method: "publishers", label: "Publishers found by news search", refreshDays: 7,
+
+// --- schools --------------------------------------------------------------------------------
+const MAX_DISTRICTS = limit("schools.stop.districts");
+const MAX_SCHOOLS = limit("schools.stop.schools");
+const schools: MethodDefinition = {
+  method: "schools", label: "School districts, boards and PTAs", refreshDays: REFRESH_DAYS.schools,
   async run(context) {
-    const rows = await newsPublishers(context.db).find({ location_id: context.location.id, hits: { $gte: PUBLISHER_MIN_HITS } }).sort({ hits: -1 }).limit(15).toArray();
+    const started = Date.now();
+    const districts = (await districtSites(context)).slice(0, MAX_DISTRICTS);
+    const known = (await localInstitutions(context).catch(() => [])).filter((item) => item.kind === "school");
+    const seen = new Set<string>();
+    const candidates: SourceCandidate[] = [];
+    const outside: OutsideLink[] = [];
+    const pages: Array<[string, string]> = [];
+    for (const [index, district] of districts.entries()) {
+      const scan = await scanSite(context, { url: district.website, name: district.name, kind: "school", scope: "city", home: { section: "schools", topic: "schools" } }, "schools", seen, started + JOB_DEADLINE_MS * 0.5 * (index + 1) / districts.length);
+      candidates.push(...scan.candidates);
+      outside.push(...scan.outside);
+      pages.push(...scan.read);
+    }
+    // Each school's own site, for the parent group and athletics pages that a district never lists.
+    const local = localSchools(schoolLinks(pages), known, Boolean(context.location.community), MAX_SCHOOLS);
+    for (const school of local) {
+      if (Date.now() >= started + JOB_DEADLINE_MS * 0.85) break;
+      const scan = await scanSite(context, { url: school.url, name: school.name, kind: "school", scope: "city", sections: ["schools"], hubs: limit("schools.stop.school_hub_pages"), pages: limit("schools.stop.school_pages"), bestRank: limit("schools.stop.school_best_rank"), sportsPages: limit("sports.stop.school_pages"), home: { section: "schools", topic: "schools" } }, "schools", seen, started + JOB_DEADLINE_MS * 0.85);
+      candidates.push(...scan.candidates);
+      outside.push(...scan.outside);
+    }
+    const groups = await checkGroups(context, outside, list("schools.prefer.linked_group_sections") as SectionId[], "schools", seen, started + JOB_DEADLINE_MS);
+    candidates.push(...groups.candidates);
+    return { candidates, detail: `${districts.map((district) => district.name).join(", ") || "no district website on record"}; ${local.length} schools read; ${candidates.length} sources, ${groups.candidates.length} parent groups off-site` };
+  },
+};
+
+// --- local groups ---------------------------------------------------------------------------
+/**
+ * Where groups usually live, from the place's name alone. A guess proves nothing: the page must
+ * say what it is and name the place, then pass every check a search result would.
+ */
+export function groupAddresses(city: string, place: string) {
+  const c = slug(city), p = slug(place);
+  return ruleSet("usual_addresses").map((rule) => ({ label: rule.address!.label, section: rule.section as SectionId, topic: rule.topic as PriorityTopic, proof: rule.test, hosts: rule.values!.map((host) => fill(host, { city: c, place: p })) }));
+}
+const MAX_FUNERAL_HOMES = limit("obituaries.stop.funeral_homes");
+const groups: MethodDefinition = {
+  method: "groups", label: "Chambers, neighbourhood groups and funeral homes", refreshDays: REFRESH_DAYS.groups,
+  async run(context) {
+    const deadline = Date.now() + JOB_DEADLINE_MS;
+    const name = place(context.location), city = context.location.community?.parent_name ?? name;
+    const seen = new Set<string>();
+    const candidates: SourceCandidate[] = [];
+    for (const group of groupAddresses(city, name)) {
+      for (const host of [...new Set(group.hosts)]) {
+        if (Date.now() >= deadline) break;
+        let page: [string, string];
+        try { page = await context.fetcher.getText(`https://www.${host}/`, 2 * 1024 * 1024, ACCEPT_HTML); }
+        catch { continue; }
+        const title = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(page[1])?.[1] ?? "").replace(/\s+/g, " ").trim();
+        if (!group.proof.test(`${title} ${page[1].slice(0, 20_000)}`) || !(mentions(title, name) || mentions(title, city))) continue;
+        const checked = await evaluateLeads(context, [{ url: page[0], title: title.slice(0, 120) || host, snippet: "", topic: group.topic, family: `usual_address:${group.label}`, section: group.section }], { method: "groups", seen, deadline, fixed: true, siteKind: "organisation" });
+        candidates.push(...checked.candidates);
+        if (checked.candidates.length) break;
+      }
+    }
+    const homes = (await localInstitutions(context).catch(() => [])).filter((item) => item.kind === "funeral_directors" && item.website).slice(0, MAX_FUNERAL_HOMES);
+    for (const home of homes) {
+      if (Date.now() >= deadline) break;
+      const scan = await scanSite(context, { url: home.website!, name: home.name, kind: "organisation", scope: home.inside ? "place" : "city", sections: ["obituaries"], hubs: limit("obituaries.stop.funeral_hub_pages"), pages: limit("obituaries.stop.funeral_pages") }, "groups", seen, deadline);
+      candidates.push(...scan.candidates);
+    }
+    return { candidates, detail: `${candidates.length} sources; ${homes.length} funeral homes read` };
+  },
+};
+
+export const PUBLISHER_MIN_HITS = limit("general.stop.publisher_min_hits");
+const publishers: MethodDefinition = {
+  method: "publishers", label: "Publishers found by news search", refreshDays: REFRESH_DAYS.publishers,
+  async run(context) {
+    const rows = await newsPublishers(context.db).find({ location_id: context.location.id, hits: { $gte: PUBLISHER_MIN_HITS } }).sort({ hits: -1 }).limit(limit("general.stop.publisher_rows")).toArray();
     const candidates: SourceCandidate[] = [];
     for (const row of rows) {
-      if (aggregator(row.url) || candidates.length >= 8) continue;
+      if (aggregator(row.url) || candidates.length >= limit("general.stop.publisher_sources")) continue;
       const feed = await findFeed(context.fetcher, row.url, context.today).catch(() => null);
       candidates.push(webCandidate(row.url, row.name || row.host, "news", "publishers", `Covered ${place(context.location)} in ${row.hits} news search results`, { feed: feed?.feed ?? null, kind: "news_report" }));
     }
@@ -386,14 +487,16 @@ const publishers: MethodDefinition = {
 };
 
 // --- LLM discovery ----------------------------------------------------------------------------
-const LLM_SECTIONS = ["events", "civic", "schools", "sports", "safety", "real_estate", "business", "obituaries", "community", "weather", "news"];
+const LLM_SECTIONS = list("general.prefer.suggestion_sections");
+const LLM_STORY_KINDS = table("general.evidence.suggestion_story_kinds");
 function llmPrompt(location: LocationProfile, links: string[]) {
-  const where = location.community ? `${location.community.name}, a neighbourhood of ${location.community.parent_name}, ${US_STATES[location.state] ?? location.state}` : `${townName(location)}, ${US_STATES[location.state] ?? location.state}`;
-  return `You are building a source map for a hyperlocal weekly newsletter about ${where}. Find 15 to 25 publicly accessible sources of local information for THIS place: the school district and individual schools, PTAs, youth sports leagues, police, fire and sheriff news pages, library and parks event calendars, community centres, chambers of commerce and business associations, community councils, local news sites and blogs, farmers markets, festivals, and local funeral homes. Prefer pages that list many items (news listings, calendars) and organisations located inside the place. Do not include Facebook, Nextdoor, Instagram, X/Twitter, Reddit, TikTok or Legacy.com. Reply with ONLY a JSON array; each item: {"name": str, "url": str, "section": one of ${pythonJson(LLM_SECTIONS)}, "located_inside": true or false, "why": str under 15 words}.${links.length ? `\nLinks found on the official city pages, for reference:\n${links.slice(0, 80).join("\n")}` : ""}`;
+  const state = US_STATES[location.state] ?? location.state;
+  const where = location.community ? fill(template("general.search.gemini_where_neighbourhood"), { place: location.community.name, parent: location.community.parent_name, state }) : fill(template("general.search.gemini_where_town"), { place: townName(location), state });
+  return fill(template("general.search.gemini_prompt"), { where, sections: pythonJson(LLM_SECTIONS), links: links.length ? fill(template("general.search.gemini_links"), { links: links.slice(0, limit("general.stop.suggestion_city_links")).join("\n") }) : "" });
 }
 const LLM_SCHEMA = { type: "object", properties: { sources: { type: "array", items: { type: "object", properties: { name: { type: "string" }, url: { type: "string" }, section: { type: "string" }, located_inside: { type: "boolean" }, why: { type: "string" } }, required: ["name", "url", "section", "located_inside", "why"] } } }, required: ["sources"] };
 const llm: MethodDefinition = {
-  method: "llm", label: "Gemini suggestions (checked)", refreshDays: 30,
+  method: "llm", label: "Gemini suggestions (checked)", refreshDays: REFRESH_DAYS.llm,
   async run(context) {
     if (!context.settings.llmDiscovery) return { candidates: [], detail: "LLM discovery is off (NEWSBEE_LLM_DISCOVERY)" };
     if (!(await canSpend(context.db, context.settings, 2))) throw new Error("Daily model-call cap reached; LLM discovery waits until tomorrow");
@@ -410,12 +513,24 @@ const llm: MethodDefinition = {
     const grounded = await groundedSearch(context.settings, prompt, context.transport, usageRecorder(context.db, context.settings, "discovery"));
     if (grounded?.text) raw = jsonArray(grounded.text);
     if (!raw.length && context.model) {
+      if (context.model.provider === "ollama") {
+        const health = await context.model.health();
+        if (health.status === "unavailable" || health.status === "not_configured") {
+          throw new Error(`Discovery model is not ready: ${health.detail}. Configure an installed model before retrying; no automatic download is attempted.`);
+        }
+      }
       const generated = await context.model.generateStructured(prompt, LLM_SCHEMA, { numPredict: 3000 });
       try { raw = ((JSON.parse(generated.response) as { sources?: unknown[] }).sources ?? []); } catch { raw = []; }
     }
     const candidates: SourceCandidate[] = [];
     const name = place(context.location);
-    for (const value of raw.slice(0, 30)) {
+    const navigationFetcher = new Fetcher(publicSourceTransport(context.transport));
+    const deadline = Date.now() + 150_000;
+    for (const value of raw.slice(0, limit("general.stop.suggestions_read"))) {
+      if (Date.now() >= deadline) {
+        await recordDecision({ stage: "source", actor: "rule", subject: "llm_navigation", decision: "not_reached", reason: "150-second source validation budget exhausted", rule: "deadline" });
+        break;
+      }
       const item = value as { name?: unknown; url?: unknown; section?: unknown; located_inside?: unknown; why?: unknown };
       const url = httpsLink(typeof item.url === "string" ? item.url.replace(/^http:/, "https:") : null);
       if (!url || typeof item.name !== "string" || aggregator(url)) continue;
@@ -429,19 +544,23 @@ const llm: MethodDefinition = {
         continue;
       }
       const section = (LLM_SECTIONS.includes(String(item.section)) ? item.section : "community") as SectionId;
-      // Inside the area only when the model says so AND the site itself names the place.
-      const inside = item.located_inside === true && (mentions(home, name) || (!!context.location.community && mentions(home, context.location.community.parent_name)));
-      candidates.push(webCandidate(url, item.name.slice(0, 120), section, "llm", `${typeof item.why === "string" ? item.why.slice(0, 120) : "Suggested by Gemini"}${grounded ? " (from search)" : ""}`, { inside, kind: section === "obituaries" ? "obituary" : section === "news" ? "news_report" : "local_news" }));
-      if (candidates.length >= 25) break;
+      // A model assertion or a Seattle mention is not proof that every item concerns
+      // this neighborhood. Keep item-level locality checks for all model suggestions.
+      const parent = webCandidate(url, item.name.slice(0, 120), section, "llm", `${typeof item.why === "string" ? item.why.slice(0, 120) : "Suggested by model"}${grounded ? " (from search)" : ""}`, { inside: false, kind: LLM_STORY_KINDS[section] ?? LLM_STORY_KINDS.default });
+      candidates.push(parent);
+      const linked = await linkedPages(navigationFetcher, parent, home, context.today, name, 3);
+      candidates.push(...linked.candidates);
+      for (const item of linked.rejected) await recordDecision({ stage: "source", actor: "rule", subject: item.url, decision: "rejected", reason: item.reason, rule: "linked_page_check" });
+      if (candidates.length >= limit("general.stop.suggestions_kept")) break;
     }
     return { candidates, detail: `${raw.length} suggestions; ${candidates.length} checked and kept` };
   },
 };
 
 // --- national readers -----------------------------------------------------------------------
-const READER_SECTIONS: Record<string, SectionId> = { hazards: "weather", trending: "news", homesafety: "weather", housing: "real_estate", justice: "safety", community: "community", remembrance: "obituaries", newssearch: "news", library: "events", meetings: "civic" };
+const READER_SECTIONS = table<SectionId>("general.prefer.reader_sections");
 const national: MethodDefinition = {
-  method: "national", label: "National public data and onboarding sources", refreshDays: 7,
+  method: "national", label: "National public data and onboarding sources", refreshDays: REFRESH_DAYS.national,
   async run(context) {
     const tasks = selectSources(context.location, context.settings);
     const candidates: SourceCandidate[] = tasks.filter((task) => !["web", "opendata"].includes(task.type)).map((task) => ({
@@ -455,10 +574,10 @@ const national: MethodDefinition = {
 };
 
 // --- operator search (agentic flow only) ----------------------------------------------------
-/** Query budget per run for the template families; the agent's rounds have their own. */
-export const DORK_QUERIES = 36;
+/** Query budget per run for the template families: six for each of ten topics, and six general. The agent's rounds have their own. */
+export const DORK_QUERIES = limit("general.stop.dork_queries");
 const dork: MethodDefinition = {
-  method: "dork", label: "Google operator search", refreshDays: 7,
+  method: "dork", label: "Google operator search", refreshDays: REFRESH_DAYS.dork,
   async run(context) {
     const options = currentOptions();
     const kit = await buildSearchKit(context);
@@ -473,6 +592,6 @@ const dork: MethodDefinition = {
   },
 };
 
-export const METHODS: MethodDefinition[] = [national, government, osm, meetings, opendata, newsrooms, athletics, publishers, llm, dork];
+export const METHODS: MethodDefinition[] = [national, government, directories, osm, meetings, opendata, newsrooms, athletics, schools, groups, publishers, llm, dork];
 export function methodDefinition(method: string) { return METHODS.find((definition) => definition.method === method); }
 export { hashId };

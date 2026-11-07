@@ -4,17 +4,19 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import LocationRemoval from "./location-removal";
+import { RunExecutionSummary } from "../../components/execution-policy";
+import type { ExecutionBinding } from "@/pipeline/accounts/execution";
 
 type Location = { id: string; name: string; state: string; removal_pending?: boolean; directory_edition?: string; systems?: { name: string; website?: string | null }[];
   government?: { status?: string; platform?: string | null } | null;
   source_coverage?: { status: string; gaps?: string[] } };
-type Run = { _id: string; status: string; created_at: number; completed_at: number | null;
+type Run = { _id: string; execution?: ExecutionBinding; status: string; created_at: number; completed_at: number | null;
   kind?: string; trigger: { by: string; kind: string }; published?: { items: number; held: number } | null;
   error?: string | null; diagnostics?: { issues: { message: string; severity: string }[] } | null };
 const PAGE_SIZE = 50;
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 
-export default function LocationDetail({ locationId, view = "history" }: { locationId: string; view?: "history" | "profile" }) {
+export default function LocationDetail({ locationId, view = "history", owner = false }: { locationId: string; view?: "history" | "profile"; owner?: boolean }) {
   const [location, setLocation] = useState<Location | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -70,7 +72,7 @@ export default function LocationDetail({ locationId, view = "history" }: { locat
       </dl>}
       {location?.source_coverage?.gaps?.length ? <ul>{location.source_coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul> : null}
     </section>}
-    {view === "profile" && location && <LocationRemoval locationId={locationId} name={location.name} pending={location.removal_pending} />}
+    {owner && view === "profile" && location && <LocationRemoval locationId={locationId} name={location.name} pending={location.removal_pending} />}
     {view === "history" && <section className="panel">
       <h2>Run history</h2>
       {runs.length === 0 && loaded && !busy && !error && <p>No runs for this location yet.</p>}
@@ -80,6 +82,7 @@ export default function LocationDetail({ locationId, view = "history" }: { locat
             {time(run.created_at)} · Inspect run</button> <span className="status-badge">{run.status.replaceAll("_", " ")}</span></div>
           <p className="chart-caption">{run.kind === "map" ? "Source map run · " : ""}{run.trigger.kind} by {run.trigger.by} · Finished: {time(run.completed_at)}
             {run.published && ` · ${run.published.items} published, ${run.published.held} held`}</p>
+          <RunExecutionSummary run={run} />
           {run.error && <p className="stage-error">{run.error}</p>}
           {run.diagnostics?.issues?.filter((issue) => issue.severity !== "info").map((issue, index) =>
             <p className="stage-error" key={index}>{issue.message}</p>)}

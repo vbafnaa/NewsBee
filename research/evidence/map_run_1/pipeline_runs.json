@@ -1,0 +1,76 @@
+[
+  {
+    "_id": "de205296-bceb-485f-9534-860024d17b57",
+    "planned": false,
+    "discovery": [
+      "national",
+      "government",
+      "osm",
+      "meetings",
+      "opendata",
+      "newsrooms",
+      "athletics",
+      "publishers",
+      "llm"
+    ],
+    "options": {
+      "mode": "manual",
+      "flow": "current",
+      "map_flow": "current",
+      "guardrails": "strict",
+      "guardrails_off": [],
+      "access": "respect",
+      "access_ignore": [],
+      "count_history": false,
+      "paid": {},
+      "external_off": [],
+      "search_provider": "serpapi",
+      "classifier": "off",
+      "topics": [
+        "crime",
+        "deaths",
+        "events",
+        "home_sales",
+        "sports"
+      ],
+      "story_limit": null
+    },
+    "kind": "map",
+    "location_id": "osm-r13915552-wa",
+    "location_name": "Wedgwood, Seattle, WA",
+    "trigger": {
+      "by": "local-admin@localhost",
+      "kind": "manual"
+    },
+    "status": "mapped",
+    "today": "2026-11-06",
+    "window": [
+      "2026-11-07",
+      "2026-11-13"
+    ],
+    "last_edition_day": null,
+    "sources": [],
+    "collection_tasks": [],
+    "draft_id": null,
+    "edition_id": null,
+    "published": null,
+    "error": null,
+    "created_at": 1794009591.112,
+    "updated_at": 1794009683.314,
+    "authoring_started_at": null,
+    "stage_started_at": 1794009591.112,
+    "stage_transitions": [
+      {
+        "status": "mapping",
+        "by": "local-admin@localhost",
+        "at": 1794009591.112
+      },
+      {
+        "status": "mapped",
+        "by": "worker",
+        "at": 1794009683.314
+      }
+    ],
+    "completed_at": 1794009683.314
+  }
+]

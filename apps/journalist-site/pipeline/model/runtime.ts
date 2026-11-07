@@ -4,12 +4,15 @@ import { logger, type Logger } from "../core/log";
 import { type HttpTransport, fetchTransport, text } from "../core/http";
 import { logApiCall, modelService, paidRefusal } from "../trace/gateway";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { ExecutionBlocked } from "../core/execution-errors";
+import { safeError } from "../core/redaction";
 
 export type ComponentStatus = "ok" | "degraded" | "unavailable" | "not_configured";
 export type ProviderHealth = { name: string; model: string | null; status: ComponentStatus | "failed"; detail: string };
 export type ComponentHealth = { status: ComponentStatus; detail: string; providers?: ProviderHealth[] };
 
 export class ModelUnavailableError extends Error {}
+export class ModelSafetyError extends Error {}
 export class ModelRateLimitError extends ModelUnavailableError {
   constructor(message: string, readonly retryAfterSeconds = 0) {
     super(message);
@@ -79,9 +82,15 @@ async function post(transport: HttpTransport, url: string, headers: Record<strin
   });
   if (response.status >= 400) {
     if (response.status === 429) {
-      throw new ModelRateLimitError(`Model request rate limited (429): ${text(response).slice(0, 300)}`, retryAfterSeconds(response.headers, text(response)));
+      throw new ModelRateLimitError("Model request rate limited (429)", retryAfterSeconds(response.headers, text(response)));
     }
-    throw new Error(`Model request failed (${response.status}): ${text(response).slice(0, 300)}`);
+    const body = text(response);
+    if (/provider_policy_refusal|content_policy_violation/.test(body)) throw new ModelSafetyError("The provider refused this request under its content policy. No fallback model was called.");
+    const hint = response.status === 400
+      ? /max_completion_tokens/.test(body) ? ": use max_completion_tokens"
+        : /temperature/.test(body) && /unsupported/i.test(body) ? ": temperature unsupported" : ""
+      : "";
+    throw new Error(`Model request failed (${response.status})${hint}`);
   }
   return JSON.parse(text(response)) as Record<string, unknown>;
 }
@@ -167,6 +176,7 @@ export function geminiSchema(schema: JsonSchema, definitions: Record<string, Jso
 
 type GeminiData = {
   candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+  promptFeedback?: { blockReason?: string };
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
 };
 
@@ -209,6 +219,7 @@ export class GeminiRuntime implements ModelRuntime {
 
   private static textOf(data: GeminiData) {
     const candidate = data.candidates?.[0];
+    if (data.promptFeedback?.blockReason || ["SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"].includes(candidate?.finishReason ?? "")) throw new ModelSafetyError("Gemini refused this request under its content policy. No fallback model was called.");
     if (!data.candidates?.length) throw new Error("Gemini returned no candidates");
     const parts = candidate?.content?.parts;
     if (!Array.isArray(parts)) throw new Error("Gemini returned an invalid generation response");
@@ -242,7 +253,7 @@ export class GeminiRuntime implements ModelRuntime {
 }
 
 type ChatData = {
-  choices?: Array<{ finish_reason?: string | null; message?: { content?: string | null } }>;
+  choices?: Array<{ finish_reason?: string | null; message?: { content?: string | null; refusal?: string | null } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
@@ -306,6 +317,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   }
 
   private static textOf(data: ChatData) {
+    if (data.choices?.[0]?.finish_reason === "content_filter" || data.choices?.[0]?.message?.refusal) throw new ModelSafetyError("The provider refused this request under its content policy. No fallback model was called.");
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== "string") throw new Error("Model returned no message content");
     return content;
@@ -385,8 +397,9 @@ export class FallbackRuntime implements ModelRuntime {
         if (failures.length) this.log.warn("model_fallback_served", { operation, provider: runtime.provider, failed: failures });
         return result;
       } catch (error) {
+        if (error instanceof ExecutionBlocked || error instanceof ModelSafetyError) throw error;
         if (error instanceof ModelRateLimitError) limits.push(error);
-        const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        const message = `${error instanceof Error ? `${error.name}: ` : ""}${safeError(error)}`;
         failures.push(`${runtime.provider}: ${message}`);
         this.cooldownUntil.set(index, this.now() + this.cooldownMs);
         this.log.warn("model_provider_failed", { operation, provider: runtime.provider, error: message });
@@ -412,7 +425,7 @@ export function providerRuntime(config: ProviderConfig, transport: HttpTransport
   return new OpenAICompatibleRuntime(config, transport);
 }
 
-export type ModelUsageContext = { location_id: string; run_id?: string };
+export type ModelUsageContext = { location_id: string; run_id?: string; sponsor_id?: string; credential_version?: number };
 const usageContext = new AsyncLocalStorage<ModelUsageContext>();
 
 export function withModelUsageContext<T>(context: ModelUsageContext, operation: () => T): T {
@@ -478,7 +491,7 @@ export class UsageRecordingRuntime implements ModelRuntime {
       await this.record({ operation, ok: true, status_code: null, rate_limited: false, input_tokens: input, output_tokens: output, duration_ms: this.clock() - started, error: null });
       return result;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = safeError(error);
       const code = statusCode(message);
       await this.record({
         operation,

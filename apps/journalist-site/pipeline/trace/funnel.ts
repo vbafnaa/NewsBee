@@ -7,7 +7,7 @@
  */
 import type { Db } from "mongodb";
 import { LEGACY_OPTIONS, type RunOptions } from "../core/run-options";
-import { topicOfItem } from "../discovery/topics";
+import { TOPIC_SECTIONS, topicOfItem } from "../discovery/topics";
 import { COLLECTED_ITEMS, type CollectedItem } from "../editions/assemble";
 import { editionMaps } from "../editions/edition-map";
 import { runs, type PipelineRun } from "../orchestration/runs";
@@ -110,7 +110,7 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
   const coverage: TopicCoverage[] = PRIORITY_TOPICS.map(({ id, label }) => {
     const scoped = itemsWithTopic.filter((row) => row.topic === id).map((row) => row.item);
     const decision = decisions.find((row) => row.stage === "topic" && row.subject === id);
-    const sources = snapshot.filter((source) => source.topics.includes(id) || ({ crime: "safety", deaths: "obituaries", events: "events", home_sales: "real_estate", sports: "sports" } as Record<string, string>)[id] === source.section).length;
+    const sources = snapshot.filter((source) => source.topics.includes(id) || TOPIC_SECTIONS[id] === source.section).length;
     const printedCount = new Set(scoped.filter((item) => item.status === "published").map((item) => item.story_id)).size;
     return {
       topic: id, label, queries: queries.filter((row) => row.topic === id).length, sources, items: scoped.length,
@@ -129,7 +129,7 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
   for (const source of snapshot.filter((entry) => entry.collected)) tiers.set(source.tier ?? "not labelled", (tiers.get(source.tier ?? "not labelled") ?? 0) + 1);
   return {
     run: { id: run._id, location_id: run.location_id, location_name: run.location_name, status: run.status, created_at: run.created_at, completed_at: run.completed_at, edition_id: run.edition_id, error: run.error, window: run.window, recorded, transitions: run.stage_transitions ?? [], by: run.trigger.by },
-    options, stages, coverage, costs: await costs(db, run), tiers: Object.fromEntries(tiers),
+    options, stages, coverage, categories: run.category_coverage ?? null, costs: await costs(db, run), tiers: Object.fromEntries(tiers),
     rules_tripped: [...rulesTripped].map(([rule, count]) => ({ rule, count })).sort((a, b) => b.count - a.count), access_overrides: [...overrides].map(([rule, count]) => ({ rule, count })),
     agent_plans: by("query", "planned").map((row) => ({ round: row.subject, reason: row.reason, queries: (row.evidence as { queries?: string[] } | null)?.queries ?? [], planned_by: (row.evidence as { planned_by?: string } | null)?.planned_by ?? null, model: row.model ?? null })),
   };

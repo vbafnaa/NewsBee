@@ -1,0 +1,28 @@
+# Weather and alerts. Not a target category: its rules are kept as they are, and it is left out of
+# gap and coverage assessments. See README.md for how to edit a rule.
+category: weather
+label: Weather and alerts
+target: false
+topic: null
+
+goal: []
+prefer: []
+reject: []
+evidence: []
+search_playbook: []
+
+page_words:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: weather.page.item_keywords
+        set: item_keywords
+        order: 3
+        text: Words that put a story in this section.
+        regex: 'weather|\bstorm|windstorm|flood|heat wave|\bsmoke\b|air quality|advisory|snow|king tide|earthquake|power outage'
+        flags: i
+      - { id: weather.page.story_kinds, set: story_kinds, text: Story kinds that default to this section., values: [earthquake, weather_alert, safety_notice] }
+      - { id: weather.page.fixed_kinds, set: fixed_kinds, text: Story kinds that always stay in this section., values: [earthquake, weather_alert, safety_notice] }
+
+when_to_stop: []
+examples: []

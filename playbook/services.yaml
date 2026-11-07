@@ -1,0 +1,46 @@
+# What each search service understands. Query patterns are written once, with Google operators.
+# Google-operator services run them as written. Non-Google services go through an adapter, which
+# follows the instructions below: `keep` sends the operator unchanged, `parameter` moves it to a
+# request field, and `drop` removes it.
+services:
+  serpapi:
+    consumer: google
+    label: SerpApi
+    from: apps/journalist-site/pipeline/search/provider.ts
+    operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+  searchapi:
+    consumer: google
+    label: SearchApi
+    from: apps/journalist-site/pipeline/search/provider.ts
+    operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+  brightdata:
+    consumer: google
+    label: Bright Data
+    from: apps/journalist-site/pipeline/search/provider.ts
+    operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+  tavily:
+    consumer: non_google
+    label: Tavily
+    from: apps/journalist-site/pipeline/search/provider.ts
+    note: >-
+      site: and after: become Tavily's parameters and the rest are stripped. Wildcard filters such
+      as site:.gov or site:.k12.xx.us start with a dot, which Tavily's domain lists can't hold, so
+      they are dropped and the search runs without that limit.
+    operators:
+      site: { parameter: include_domains, wildcards: drop }
+      -site: { parameter: exclude_domains, wildcards: drop }
+      after: { parameter: start_date }
+      inurl: drop
+      intitle: drop
+      filetype: drop
+      before: drop
+    strip: { match: after_space, ignore_case: true }
+    request: { max_results: 10, search_depth: basic }
+  exa:
+    consumer: non_google
+    label: Exa
+    from: apps/journalist-site/pipeline/search/provider.ts
+    note: Every operator is stripped and Exa gets the plain words. Used for coverage comparison.
+    operators: { site: drop, -site: drop, inurl: drop, intitle: drop, filetype: drop, after: drop, before: drop }
+    strip: { match: word_start, ignore_case: false }
+    request: { type: auto, numResults: 10, contents: { highlights: true } }

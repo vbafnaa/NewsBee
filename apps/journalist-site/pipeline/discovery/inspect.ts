@@ -12,12 +12,17 @@ import { parseIcal } from "../connectors/library/parsers";
 import { calendarLinks, mainText, parseSitemap, SKIP_PATH } from "../connectors/web/page";
 import { parseNewsFeed } from "../connectors/wider/adapters";
 import type { PriorityTopic } from "../core/run-values";
+import { limit, regex, ruleSet } from "../playbook";
 import { normaliseUrl } from "../sourcemap/store";
 
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml, text/calendar;q=0.9, */*;q=0.5";
 /** An endpoint or page with nothing newer than this isn't publishing. */
-export const RECENT_DAYS = 120;
-const MAX_ENDPOINT_TRIES = 5;
+export const RECENT_DAYS = limit("general.stop.recent_days");
+const MAX_ENDPOINT_TRIES = limit("general.stop.endpoint_tries");
+const DOCUMENT_LIST_MIN = limit("general.stop.document_list_min");
+const LOOKUP_MAX_DATES = limit("general.stop.lookup_max_dates");
+const LOOKUP_EMBED = regex("general.page.lookup_embed");
+const LOOKUP_FORM = regex("general.page.lookup_form");
 
 export type Endpoint = { url: string; format: "rss" | "ical"; latest: string; items: number };
 export type SourceKind = "feed" | "calendar" | "dataset" | "document_list" | "listing" | "lookup";
@@ -123,60 +128,119 @@ export function inspectPage(html: string, pageUrl: string, today: string, endpoi
   const fresh = Boolean(upcoming) || Boolean(latest && latest >= addDays(today, -RECENT_DAYS));
   const text = mainText(html) ?? "";
   const documents = (html.match(/href=["'][^"']*\.pdf\b/gi) ?? []).length + (html.match(/href=["'][^"']*(?:DocumentCenter\/View|AgendaCenter\/ViewFile)/gi) ?? []).length;
-  const embedded = /<iframe[^>]+(?:tableau|powerbi|arcgis)|experience\.arcgis|public\.tableau\.com|app\.powerbi\.com/i.test(html);
-  const form = /<form\b/i.test(html) && /\b(parcel|search by|look ?up|enter (?:an?|your)|account number)\b/i.test(`${pageUrl} ${text.slice(0, 3000)}`);
+  const embedded = LOOKUP_EMBED.test(html);
+  const form = /<form\b/i.test(html) && LOOKUP_FORM.test(`${pageUrl} ${text.slice(0, 3000)}`);
   const kind: SourceKind = endpoint ? (endpoint.format === "ical" ? "calendar" : "feed")
-    : embedded || (form && days.length < 3) ? "lookup"
-    : documents >= 3 ? "document_list" : "listing";
+    : embedded || (form && days.length < LOOKUP_MAX_DATES) ? "lookup"
+    : documents >= DOCUMENT_LIST_MIN ? "document_list" : "listing";
   return { kind, fresh, latest, upcoming, dated: days.length };
 }
 
-export type SiteLink = { url: string; title: string; topic: PriorityTopic | null; section: string };
+export type SiteLink = { url: string; title: string; topic: PriorityTopic | null; section: string; rank: number };
+/** Whose site it is: the same words mean different things on a council's site and a school's. */
+export type SiteKind = "government" | "school" | "organisation";
+type LinkRule = { topic: PriorityTopic | null; section: string; test: RegExp };
 
-/** What a section of a site offers, judged from its link text and address. */
-const LINK_TOPICS: Array<{ topic: PriorityTopic | null; section: string; test: RegExp }> = [
-  { topic: "crime", section: "safety", test: /\b(police|sheriff|blotter|crime|incidents?|public safety|fire department|911)\b/i },
-  { topic: "deaths", section: "obituaries", test: /\b(obituar(?:y|ies)|memorials?|tributes|recent services)\b/i },
-  { topic: "home_sales", section: "real_estate", test: /\b(permits?|land use|assessor|zoning|recorder|property sales|development notices?|public notices?)\b/i },
-  { topic: "sports", section: "sports", test: /\b(athletics?|sports|teams?|standings|scores|league|game schedule)\b/i },
-  { topic: "events", section: "events", test: /\b(calendar|events?|meetings?|programs|classes|recreation)\b/i },
-  { topic: null, section: "civic", test: /\b(agendas?|minutes|city council|councilmember|town hall|legislation)\b/i },
-  { topic: null, section: "news", test: /\b(news(?:letter|flash|room)?|press releases?|announcements?|alerts?|notices?|blog)\b/i },
-  { topic: null, section: "community", test: /\b(projects?|capital improvements?|transportation|service advisor(?:y|ies)|parks?|librar(?:y|ies)|community centers?)\b/i },
-];
+const linkRules = (set: string) => ruleSet(set).map((rule): LinkRule => ({ topic: rule.topic as PriorityTopic | null, section: rule.section, test: rule.test }));
+/** What a section of a site offers, judged from its link text and address. First match wins, and earlier rules are the better pages. */
+const LINK_TOPICS = linkRules("site_links");
+/** On a school or district site, meetings, calendars and news are all the school's. */
+const SCHOOL_LINK_TOPICS = linkRules("school_site_links");
+/** Pages that link on to the sections, worth reading for their links. */
+const HUB = regex("general.page.hub");
+/** One meeting, alert or event, not its listing. */
+const ONE_ITEM = regex("general.page.one_item");
+/** Hosted meeting portals a public body links out to. Most build their pages by script. */
+const MEETING_PLATFORM = regex("civic.page.meeting_platforms");
+/** Local groups a public body links out to, judged from the link text and the host. */
+const GROUP_LINKS = linkRules("group_links");
+const HUB_TITLE_MAX = limit("general.stop.hub_title_max");
+const GROUP_TITLE_MAX = limit("general.stop.group_title_max");
+const STORY_SLUG_HYPHENS = limit("general.stop.story_slug_hyphens");
+const LINK_CANDIDATES = limit("general.stop.link_candidates_default");
 const siteRoot = (host: string) => host.toLowerCase().replace(/^www\./, "").split(".").slice(-2).join(".");
 
-function classifyLink(url: URL, title: string): SiteLink | null {
+function classifyLink(url: URL, title: string, kind: SiteKind): SiteLink | null {
   const words = `${title} ${url.pathname.replace(/[/_-]+/g, " ")}`;
-  const match = LINK_TOPICS.find((entry) => entry.test.test(words));
-  return match ? { url: url.toString(), title: title.slice(0, 120), topic: match.topic, section: match.section } : null;
+  const rules = kind === "school" ? SCHOOL_LINK_TOPICS : LINK_TOPICS;
+  const rank = rules.findIndex((entry) => entry.test.test(words));
+  return rank < 0 ? null : { url: url.toString(), title: title.slice(0, 120), topic: rules[rank].topic, section: rules[rank].section, rank };
+}
+
+/** The best links, taking each section in turn so one busy section can't fill the list. */
+function spread(links: SiteLink[], cap: number) {
+  const sorted = [...links].sort((a, b) => a.rank - b.rank);
+  const sections = [...new Set(sorted.map((link) => link.section))].map((section) => sorted.filter((link) => link.section === section));
+  const out: SiteLink[] = [];
+  for (let turn = 0; out.length < cap && sections.some((list) => list[turn]); turn += 1) for (const list of sections) if (list[turn] && out.length < cap) out.push(list[turn]);
+  return out;
+}
+
+function anchors(html: string, pageUrl: string) {
+  return [...html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)].flatMap((match) => {
+    try { return [{ url: new URL(decodeHTML(match[1]), pageUrl), title: decodeHTML(match[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim() }]; }
+    catch { return []; }
+  });
+}
+
+/** Pages of the same site whose links are worth reading: a home page often stops at "Government". */
+export function hubLinks(html: string, pageUrl: string, cap = limit("general.stop.hub_pages")) {
+  const root = siteRoot(new URL(pageUrl).hostname);
+  const seen = new Set<string>([normaliseUrl(pageUrl)]);
+  const out: string[] = [];
+  for (const { url, title } of anchors(html, pageUrl)) {
+    if (url.protocol !== "https:" || siteRoot(url.hostname) !== root || title.length > HUB_TITLE_MAX || !HUB.test(title) || ONE_ITEM.test(url.search) || /\.(pdf|docx?|xlsx?|zip|jpe?g|png)$/i.test(url.pathname)) continue;
+    const key = normaliseUrl(`${url.origin}${url.pathname}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(url.toString());
+  }
+  return out.slice(0, cap);
+}
+
+export type OutsideLink = { url: string; title: string; kind: "platform" | "group"; topic: PriorityTopic | null; section: string };
+
+/** Links leaving a public body's site that are sources themselves: its meeting portal, and the groups it lists. */
+export function outsideLinks(html: string, pageUrl: string, site: SiteKind): OutsideLink[] {
+  const root = siteRoot(new URL(pageUrl).hostname);
+  const seen = new Set<string>();
+  const out: OutsideLink[] = [];
+  for (const { url, title } of anchors(html, pageUrl)) {
+    if (!/^https?:$/.test(url.protocol) || siteRoot(url.hostname) === root || blockedPlatform(url.toString())) continue;
+    url.protocol = "https:";
+    url.hash = "";
+    const key = normaliseUrl(url.toString());
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (MEETING_PLATFORM.test(url.hostname)) { out.push({ url: url.toString(), title: title.slice(0, 120), kind: "platform", topic: site === "school" ? "schools" : "government", section: site === "school" ? "schools" : "civic" }); continue; }
+    const rule = GROUP_LINKS.find((entry) => entry.test.test(`${title} ${url.hostname.replace(/[.-]/g, " ")}`));
+    if (rule && title.length <= GROUP_TITLE_MAX) out.push({ url: url.toString(), title: title.slice(0, 120), kind: "group", topic: rule.topic, section: rule.section });
+  }
+  return out;
 }
 
 /** Sections of a site worth checking as sources of their own, best-matched first. */
-export function siteLinks(html: string, pageUrl: string, cap = 8): SiteLink[] {
+export function siteLinks(html: string, pageUrl: string, cap = LINK_CANDIDATES, kind: SiteKind = "government"): SiteLink[] {
   const root = siteRoot(new URL(pageUrl).hostname);
   const seen = new Set<string>([normaliseUrl(pageUrl)]);
   const out: SiteLink[] = [];
-  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    let url: URL;
-    try { url = new URL(decodeHTML(match[1]), pageUrl); } catch { continue; }
-    if (url.protocol !== "https:" || siteRoot(url.hostname) !== root || blockedPlatform(url.toString()) || SKIP_PATH.test(url.pathname) || /\.(pdf|docx?|xlsx?|zip|jpe?g|png)$/i.test(url.pathname)) continue;
+  for (const { url, title } of anchors(html, pageUrl)) {
+    if (url.protocol !== "https:" || siteRoot(url.hostname) !== root || blockedPlatform(url.toString()) || SKIP_PATH.test(url.pathname) || ONE_ITEM.test(url.search) || /\.(pdf|docx?|xlsx?|zip|jpe?g|png)$/i.test(url.pathname)) continue;
     // One story isn't a source: its listing is.
-    if (/\/20\d{2}\/\d{1,2}\//.test(url.pathname) || (url.pathname.split("/").pop()?.match(/-/g) ?? []).length >= 6) continue;
+    if (/\/20\d{2}\/\d{1,2}\//.test(url.pathname) || (url.pathname.split("/").pop()?.match(/-/g) ?? []).length >= STORY_SLUG_HYPHENS) continue;
     url.hash = "";
     // One page per address: a calendar links to itself once for every day.
     const key = normaliseUrl(`${url.origin}${url.pathname}`);
     if (seen.has(key)) continue;
     seen.add(key);
-    const link = classifyLink(url, decodeHTML(match[2].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim());
+    const link = classifyLink(url, title, kind);
     if (link) out.push(link);
   }
-  // Priority topics first, then a spread of the rest.
-  return out.sort((a, b) => Number(Boolean(b.topic)) - Number(Boolean(a.topic))).slice(0, cap);
+  return spread(out, cap);
 }
 
 /** The same, from a site's sitemap, for sites whose links are built by script. */
-export async function sitemapLinks(fetcher: Fetcher, pageUrl: string, cap = 8): Promise<SiteLink[]> {
+export async function sitemapLinks(fetcher: Fetcher, pageUrl: string, cap = LINK_CANDIDATES, kind: SiteKind = "government"): Promise<SiteLink[]> {
   const listed = await fetcher.sitemaps(pageUrl).catch(() => [] as string[]);
   const sitemap = listed[0] ?? new URL("/sitemap.xml", pageUrl).toString();
   try {
@@ -187,9 +251,9 @@ export async function sitemapLinks(fetcher: Fetcher, pageUrl: string, cap = 8): 
       let url: URL;
       try { url = new URL(entry.loc); } catch { continue; }
       if (url.protocol !== "https:" || SKIP_PATH.test(url.pathname) || url.pathname.split("/").filter(Boolean).length > 3) continue;
-      const link = classifyLink(url, "");
+      const link = classifyLink(url, "", kind);
       if (link) out.push(link);
     }
-    return out.sort((a, b) => Number(Boolean(b.topic)) - Number(Boolean(a.topic))).slice(0, cap);
+    return spread(out, cap);
   } catch { return []; }
 }

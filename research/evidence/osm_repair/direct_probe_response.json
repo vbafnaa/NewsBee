@@ -1,0 +1,1143 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.4 2390de5a",
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-07T01:46:05Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+
+{
+  "type": "node",
+  "id": 1564279953,
+  "lat": 47.6906069,
+  "lon": -122.2901737,
+  "tags": {
+    "amenity": "pharmacy",
+    "brand": "Rite Aid",
+    "brand:wikidata": "Q3433273",
+    "check_date": "2024-09-28",
+    "check_date:opening_hours": "2024-09-28",
+    "healthcare": "pharmacy",
+    "name": "Rite Aid",
+    "opening_hours": "Mo-Fr 09:00-21:00; Sa 09:00-18:00; Su 10:00-18:00",
+    "website": "https://www.riteaid.com/locations/wa/seattle/8500-35th-avenue-ne.html",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "node",
+  "id": 1564280658,
+  "lat": 47.6893232,
+  "lon": -122.2901818,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8230",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "restaurant",
+    "check_date": "2025-03-05",
+    "cuisine": "steak_house",
+    "indoor_seating": "yes",
+    "name": "Wedgwood Broiler",
+    "outdoor_seating": "yes",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://wedgwoodbroiler.com"
+  }
+},
+{
+  "type": "node",
+  "id": 1704942157,
+  "lat": 47.6882320,
+  "lon": -122.2902351,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8050",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "alt_name": "Seattle Audubon Society",
+    "name": "Birds Connect Seattle",
+    "office": "association",
+    "website": "https://birdsconnectseattle.com"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987602,
+  "lat": 47.6933849,
+  "lon": -122.3038964,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "2304",
+    "addr:postcode": "98115",
+    "addr:street": "Northeast 89th Street",
+    "brand": "QuickBooks;Quicken",
+    "check_date:opening_hours": "2024-07-13",
+    "email": "abt@scn.org",
+    "it:sales": "consulting",
+    "it:type": "accounting",
+    "name": "Dr. Quick Books, Inc.",
+    "name:en": "Dr. QuickBooks & Quicken",
+    "office": "it",
+    "opening_hours:signed": "no",
+    "phone": "+1-206-789-8328",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.drqckbks.com"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987718,
+  "lat": 47.6831682,
+  "lon": -122.2902530,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7500",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "fast_food",
+    "check_date": "2026-03-10",
+    "cuisine": "mexican",
+    "delivery": "yes",
+    "drive_through": "no",
+    "indoor_seating": "yes",
+    "name": "Sophie's Tacos",
+    "opening_hours": "Mo-Sa 11:00-20:30; Su off",
+    "outdoor_seating": "no",
+    "phone": "+1-206-420-2579",
+    "source": "King County GIS;data.seattle.gov",
+    "takeaway": "yes",
+    "website": "https://sophiestacos.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987720,
+  "lat": 47.6832032,
+  "lon": -122.2902564,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7502",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "contact:instagram": "drenguis_construction",
+    "email": "info@drenguis.com",
+    "indoor_seating": "yes",
+    "name": "Drenguis Construction",
+    "office": "construction_company",
+    "outdoor_seating": "no",
+    "phone": "+1-206-422-8727",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.drenguis.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987722,
+  "lat": 47.6832694,
+  "lon": -122.2902580,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7506",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "check_date": "2025-05-23",
+    "name": "Rainglow Tanning",
+    "opening_hours": "\"by appointment\"",
+    "shop": "beauty",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "http://www.rainglowseattle.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987728,
+  "lat": 47.6833156,
+  "lon": -122.2906868,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7509",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "name": "Seattle Coin Shop",
+    "shop": "coin",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://seattlecoinshop.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 2463987849,
+  "lat": 47.6903199,
+  "lon": -122.2909358,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8501",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "check_date": "2025-03-05",
+    "check_date:opening_hours": "2024-09-28",
+    "leisure": "fitness_centre",
+    "name": "Body & Brain",
+    "opening_hours:signed": "no",
+    "phone": "+1-206-223-9642",
+    "source": "King County GIS;data.seattle.gov;survey",
+    "sport": "yoga",
+    "website": "https://www.bodynbrain.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 3532015690,
+  "lat": 47.6861580,
+  "lon": -122.2902295,
+  "tags": {
+    "addr:full": "7730 35th Avenue Northeast",
+    "emergency": "assembly_point",
+    "name": "Hunter Farm Emergency Hub",
+    "operator": "City of Seattle Emergency Management",
+    "website": "https://www.seattle.gov/emergency-management/working-together/community-emergency-hubs"
+  }
+},
+{
+  "type": "node",
+  "id": 3694521026,
+  "lat": 47.6913612,
+  "lon": -122.2904965,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "8606",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "addr:unit": "3",
+    "check_date:opening_hours": "2024-11-05",
+    "contact:facebook": "https://www.facebook.com/cloudgrooming",
+    "contact:phone": "+1-206-930-7332",
+    "contact:website": "https://www.cloudberry.dog/",
+    "name": "Cloudberry Pet Salon",
+    "opening_hours": "Su,Mo 09:00-16:00; Tu-Sa 08:00-18:00",
+    "opening_hours:signed": "no",
+    "shop": "pet_grooming",
+    "website:booking": "https://booking.moego.pet/ol/landing?name=CloudberryGrooming"
+  }
+},
+{
+  "type": "node",
+  "id": 4882323808,
+  "lat": 47.6919977,
+  "lon": -122.3062734,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8721",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "Lake City Way Northeast",
+    "amenity": "fast_food",
+    "building": "no",
+    "check_date": "2025-10-03",
+    "cuisine": "mexican",
+    "delivery": "no",
+    "description": "Mexican food truck serving authentic cuisine every day from this location. Picnic tables available.",
+    "drive_through": "no",
+    "name": "Monarca Express",
+    "opening_hours": "Mo-Sa 09:30-20:45; Su off",
+    "outdoor_seating": "yes",
+    "phone": "+1-206-931-7220",
+    "takeaway": "only",
+    "toilets": "no",
+    "website": "http://ordermonarcaexpressfoodtruck.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 4972916776,
+  "lat": 47.6832838,
+  "lon": -122.3005618,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7500",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "25th Avenue Northeast",
+    "addr:unit": "1",
+    "check_date": "2026-10-01",
+    "dance:teaching": "yes",
+    "leisure": "dance",
+    "name": "American Dance Institute",
+    "website": "https://www.americandanceinstitute.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 4972916778,
+  "lat": 47.6832828,
+  "lon": -122.3003532,
+  "tags": {
+    "amenity": "fast_food",
+    "check_date:opening_hours": "2026-10-01",
+    "contact:phone": "+1-206-525-2225",
+    "cuisine": "pizza",
+    "name": "Jet City Pizza",
+    "opening_hours": "Su-Th 11:00-21:00; Fr-Sa 11:00-22:00",
+    "website": "https://www.jetcitypizza.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 5129214036,
+  "lat": 47.6832071,
+  "lon": -122.2902007,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7500 1/2",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "email": "wedgwood@mendbicycles.com",
+    "name": "(mend)bicycles",
+    "note": "Access from parking lot in rear",
+    "opening_hours": "Mo, We-Sa 10:00-18:00; Su 12:00-17:00",
+    "phone": "+1-206-787-0670",
+    "service:bicycle:Bicycle_Sales_and_Service": "yes",
+    "service:bicycle:repair": "yes",
+    "service:bicycle:retail": "yes",
+    "shop": "bicycle",
+    "website": "https://www.mendbicycles.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 5972471986,
+  "lat": 47.6831482,
+  "lon": -122.2906970,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7501",
+    "addr:postcode": "98115",
+    "addr:street": "Northeast 75th Street",
+    "check_date": "2026-03-10",
+    "indoor_seating": "yes",
+    "name": "Grand Central Baking Company - Wedgwood",
+    "opening_hours": "Mo-Su 07:00-18:00",
+    "outdoor_seating": "yes",
+    "phone": "+1-206-582-2314",
+    "shop": "bakery",
+    "website": "https://www.grandcentralbakery.com/wedgwood"
+  }
+},
+{
+  "type": "node",
+  "id": 7498123031,
+  "lat": 47.6831645,
+  "lon": -122.2909060,
+  "tags": {
+    "addr:housenumber": "7501",
+    "addr:street": "35th Avenue Northeast",
+    "addr:unit": "B",
+    "name": "Blue Tulip Tailoring",
+    "opening_hours": "We-Fr 10:00-18:00; Sa 10:00-15:00",
+    "shop": "tailor",
+    "website": "https://www.bluetuliptailoring.com",
+    "wheelchair": "no"
+  }
+},
+{
+  "type": "node",
+  "id": 7571657299,
+  "lat": 47.6903134,
+  "lon": -122.2911470,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8507",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "check_date": "2025-03-05",
+    "indoor_seating": "yes",
+    "name": "Lovestruck in Seattle",
+    "outdoor_seating": "yes",
+    "shop": "books",
+    "website": "https://www.lovestruckinseattle.com/"
+  }
+},
+{
+  "type": "node",
+  "id": 8258789526,
+  "lat": 47.6882342,
+  "lon": -122.2903752,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8050",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "name": "The Nature Shop",
+    "operator": "Birds Connect Seattle",
+    "payment:cash": "yes",
+    "payment:credit_cards": "yes",
+    "payment:debit_cards": "yes",
+    "shop": "books",
+    "website": "https://seattleaudubon.org/thenatureshop"
+  }
+},
+{
+  "type": "node",
+  "id": 8572726872,
+  "lat": 47.6904083,
+  "lon": -122.2909395,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8505",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "theatre",
+    "check_date": "2025-03-05",
+    "name": "Seattle Off Book Productions",
+    "website": "https://seattleoffbook.com"
+  }
+},
+{
+  "type": "node",
+  "id": 12208453027,
+  "lat": 47.6906209,
+  "lon": -122.2909926,
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8515",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "pub",
+    "building": "yes",
+    "check_date": "2025-03-05",
+    "check_date:opening_hours": "2024-09-28",
+    "indoor_seating": "yes",
+    "name": "Wedgewood Public House",
+    "opening_hours:signed": "no",
+    "outdoor_seating": "yes",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.wedgwoodpublichouse.com"
+  }
+},
+{
+  "type": "way",
+  "id": 35535458,
+  "center": {
+    "lat": 47.6877987,
+    "lon": -122.3005850
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "8040",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "25th Avenue Northeast",
+    "landuse": "allotments",
+    "name": "Picardo Farm P-Patch",
+    "start_date": "1973",
+    "website": "https://www.seattle.gov/neighborhoods/p-patch-gardening/garden-list/picardo-farm",
+    "wikidata": "Q7190510",
+    "wikipedia": "en:Picardo Farm"
+  }
+},
+{
+  "type": "way",
+  "id": 51809162,
+  "center": {
+    "lat": 47.6852790,
+    "lon": -122.2993151
+  },
+  "tags": {
+    "ele": "73",
+    "gnis:feature_id": "1504313",
+    "leisure": "park",
+    "name": "Waldo J. Dahl Park",
+    "old_name": "Ravenna Swamp",
+    "opening_hours": "Mo-Su 04:00-23:30",
+    "operator": "Seattle Parks and Recreation",
+    "operator:type": "government",
+    "operator:wikidata": "Q7442147",
+    "website": "https://www.seattle.gov/parks/allparks/dahl-playfield",
+    "wikidata": "Q49481656"
+  }
+},
+{
+  "type": "way",
+  "id": 55174405,
+  "center": {
+    "lat": 47.6911018,
+    "lon": -122.2807021
+  },
+  "tags": {
+    "leisure": "park",
+    "name": "Inverness Ravine",
+    "operator": "Seattle Parks and Recreation",
+    "operator:type": "government",
+    "operator:wikidata": "Q7442147",
+    "website": "https://www.seattle.gov/parks/allparks/inverness-ravine-park"
+  }
+},
+{
+  "type": "way",
+  "id": 60517403,
+  "center": {
+    "lat": 47.6972042,
+    "lon": -122.3081702
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "1726",
+    "addr:postcode": "98115",
+    "addr:street": "Northeast 94th Street",
+    "leisure": "park",
+    "name": "Sacajawea Playground",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.seattle.gov/parks/allparks/sacajawea-playground"
+  }
+},
+{
+  "type": "way",
+  "id": 75210135,
+  "center": {
+    "lat": 47.6908379,
+    "lon": -122.2975934
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "2720",
+    "addr:postcode": "98115",
+    "addr:street": "Northeast 85th Street",
+    "amenity": "school",
+    "ele": "111",
+    "gnis:feature_id": "1531175",
+    "mascot": "Marmots",
+    "name": "Wedgwood Elementary School",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://wedgwoodelementary.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 221139927,
+  "center": {
+    "lat": 47.6855172,
+    "lon": -122.2977756
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "7727",
+    "addr:postcode": "98115",
+    "addr:street": "28th Avenue Northeast",
+    "building": "sports_centre",
+    "leisure": "sports_centre",
+    "name": "Wedgwood Swim Club",
+    "source": "King County GIS;data.seattle.gov",
+    "sport": "swimming",
+    "website": "http://www.wwpool.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 221140250,
+  "center": {
+    "lat": 47.6834620,
+    "lon": -122.2901699
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "7512",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "bank",
+    "brand": "Chase",
+    "brand:wikidata": "Q524629",
+    "building": "yes",
+    "check_date": "2024-09-17",
+    "check_date:opening_hours": "2024-09-17",
+    "name": "Chase",
+    "opening_hours": "Mo-Fr 09:00-17:00; Sa-Su closed",
+    "phone": "+1-206-461-4676",
+    "website": "https://locator.chase.com/wa/seattle/7512-35th-ave-ne"
+  }
+},
+{
+  "type": "way",
+  "id": 221140643,
+  "center": {
+    "lat": 47.6852176,
+    "lon": -122.2977260
+  },
+  "tags": {
+    "leisure": "swimming_pool",
+    "lit": "yes",
+    "name": "Wedgwood Swim Club",
+    "sport": "swimming",
+    "website": "http://www.wwpool.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 221145067,
+  "center": {
+    "lat": 47.6894964,
+    "lon": -122.2909681
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8401",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "brand": "Windermere Real Estate",
+    "brand:wikidata": "Q8024125",
+    "building": "yes",
+    "check_date:opening_hours": "2024-09-28",
+    "name": "Windermere Real Estate",
+    "office": "estate_agent",
+    "opening_hours:signed": "no",
+    "phone": "+1-206-522-9600",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.windermere.com/directory/offices/seattlewedgwood"
+  }
+},
+{
+  "type": "way",
+  "id": 221145069,
+  "center": {
+    "lat": 47.6897867,
+    "lon": -122.2911156
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "8405",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "bank",
+    "brand": "Bank of America",
+    "brand:wikidata": "Q487907",
+    "building": "commercial",
+    "check_date": "2025-03-05",
+    "name": "Bank of America",
+    "opening_hours": "Mo-Fr 10:00-16:00",
+    "website": "https://locators.bankofamerica.com/wa/seattle/financial-centers-seattle-11241.html"
+  }
+},
+{
+  "type": "way",
+  "id": 221147689,
+  "center": {
+    "lat": 47.6934725,
+    "lon": -122.2893710
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "3520",
+    "addr:postcode": "98115",
+    "addr:street": "Northeast 89th Street",
+    "amenity": "school",
+    "building": "yes",
+    "denomination": "catholic",
+    "ele": "88",
+    "gnis:feature_id": "1531218",
+    "name": "Our Lady of the Lake School",
+    "operator": "Our Lady of the Lake Church",
+    "religion": "christian",
+    "website": "https://school.ollseattle.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 221147752,
+  "center": {
+    "lat": 47.6934811,
+    "lon": -122.2901844
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8900",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "place_of_worship",
+    "building": "church",
+    "denomination": "catholic",
+    "ele": "91",
+    "gnis:feature_id": "2461872",
+    "name": "Our Lady of the Lake Church",
+    "religion": "christian",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "http://parish.ollseattle.org/"
+  }
+},
+{
+  "type": "way",
+  "id": 221149173,
+  "center": {
+    "lat": 47.6971237,
+    "lon": -122.2900797
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "9418",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "building": "yes",
+    "check_date": "2025-03-31",
+    "name": "Johnson's Auto Repair",
+    "opening_hours": "Mo-Th 07:00-17:00; Fr 07:00-16:00",
+    "shop": "car_repair",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.johnsonsautorepair.net/"
+  }
+},
+{
+  "type": "way",
+  "id": 221155021,
+  "center": {
+    "lat": 47.6969614,
+    "lon": -122.3053941
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "9406",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "Lake City Way Northeast",
+    "building": "retail",
+    "building:levels": "1",
+    "contact:phone": "+1-206-602-9542",
+    "contact:website": "https://www.admautosale.com/",
+    "name": "ADM Auto Sales",
+    "opening_hours": "Mo-Fr 09:00-19:00; Sa,Su 11:00-17:00",
+    "second_hand": "only",
+    "shop": "car"
+  }
+},
+{
+  "type": "way",
+  "id": 221155713,
+  "center": {
+    "lat": 47.6963903,
+    "lon": -122.2909374
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "9219",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "amenity": "pub",
+    "building": "retail",
+    "contact:phone": "+1-206-525-0752",
+    "indoor_seating": "yes",
+    "name": "Fiddler's Inn",
+    "opening_hours": "Tu-Th 14:00-22:00; Fr-Su 13:00-22:00",
+    "outdoor_seating": "yes",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.thefiddlersinn.com/",
+    "wheelchair": "yes"
+  }
+},
+{
+  "type": "way",
+  "id": 295927566,
+  "center": {
+    "lat": 47.6874014,
+    "lon": -122.2999949
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8000",
+    "addr:postcode": "98115",
+    "addr:street": "25th Avenue Northeast",
+    "amenity": "school",
+    "education": "school",
+    "ele": "76",
+    "gnis:feature_id": "1515686",
+    "name": "University Preparatory School",
+    "operator": "University Preparatory School",
+    "operator:type": "private",
+    "website": "https://www.universityprep.org/",
+    "wikidata": "Q7894883"
+  }
+},
+{
+  "type": "way",
+  "id": 348780585,
+  "center": {
+    "lat": 47.6906036,
+    "lon": -122.3072867
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8500",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "Lake City Way Northeast",
+    "amenity": "bar",
+    "brewery": "yes;various",
+    "building": "yes",
+    "check_date": "2026-02-18",
+    "cuisine": "american",
+    "internet_access": "wlan",
+    "name": "The Growler Guys",
+    "opening_hours": "Mo 14:00-22:00; Tu-Fr 14:00-23:00; Sa 12:00-23:00; Su 13:00-22:00",
+    "phone": "+1-206-522-2337",
+    "website": "https://www.thegrowlerguys.com/locations/seattle-northeast/"
+  }
+},
+{
+  "type": "way",
+  "id": 419546359,
+  "center": {
+    "lat": 47.6882136,
+    "lon": -122.2947582
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8126",
+    "addr:postcode": "98115",
+    "addr:street": "31st Avenue Northeast",
+    "leisure": "park",
+    "name": "Wedgwood Square",
+    "source": "King County GIS;data.seattle.gov",
+    "website": "https://www.seattle.gov/parks/allparks/wedgwood-square"
+  }
+},
+{
+  "type": "way",
+  "id": 600101654,
+  "center": {
+    "lat": 47.6912988,
+    "lon": -122.2902190
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "8606",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "35th Avenue Northeast",
+    "building": "apartments",
+    "name": "Jasper",
+    "website": "https://www.jasperseattle.com/"
+  }
+},
+{
+  "type": "way",
+  "id": 1085856692,
+  "center": {
+    "lat": 47.6952735,
+    "lon": -122.3060324
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:country": "US",
+    "addr:housenumber": "9105",
+    "addr:postcode": "98115",
+    "addr:state": "WA",
+    "addr:street": "Lake City Way Northeast",
+    "contact:email": "sportmotiveauto@gmail.com",
+    "contact:facebook": "https://www.facebook.com/sportmotiveautosales",
+    "contact:phone": "+1-206-801-9239",
+    "contact:website": "https://www.sportmotiveautosales.com/",
+    "contact:youtube": "https://www.youtube.com/@sportmotiveinventory7706",
+    "landuse": "retail",
+    "name": "Sport Motive Auto Sales",
+    "opening_hours": "Mo-Sa 10:00-19:00",
+    "second_hand": "only",
+    "shop": "car"
+  }
+},
+{
+  "type": "way",
+  "id": 1085864153,
+  "center": {
+    "lat": 47.6943911,
+    "lon": -122.3060164
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "9001",
+    "addr:postcode": "98115",
+    "addr:street": "Lake City Way Northeast",
+    "amenity": "social_facility",
+    "check_date": "2025-08-22",
+    "landuse": "residential",
+    "name": "Emerald City Senior Living",
+    "phone": "+1-833-287-7226",
+    "social_facility": "assisted_living",
+    "social_facility:for": "senior",
+    "website": "https://emeraldcityseniorliving.com/"
+  }
+},
+{
+  "type": "way",
+  "id": 1227092293,
+  "center": {
+    "lat": 47.6908466,
+    "lon": -122.3076730
+  },
+  "tags": {
+    "access": "permit",
+    "addr:city": "Seattle",
+    "addr:housenumber": "8531",
+    "addr:postcode": "98115",
+    "addr:street": "Lake City Way Northeast",
+    "amenity": "social_facility",
+    "check_date": "2025-10-03",
+    "landuse": "residential",
+    "name": "Maple Leaf Village",
+    "note": "Update website when a dedicated page becomes available at https://www.lihihousing.org/villages",
+    "opening_hours:office": "24/7",
+    "operator": "Low Income Housing Institute",
+    "operator:wikidata": "Q6692890",
+    "social_facility": "shelter",
+    "social_facility:for": "homeless",
+    "website": "https://www.lihihousing.org/post/new-tiny-house-village-coming-to-maple-leaf"
+  }
+},
+{
+  "type": "way",
+  "id": 1302142736,
+  "center": {
+    "lat": 47.6925701,
+    "lon": -122.3053702
+  },
+  "tags": {
+    "check_date": "2026-02-18",
+    "contact:facebook": "https://www.facebook.com/WildWestCars/",
+    "contact:phone": "+1-206-523-1400",
+    "contact:website": "https://www.wildwestcarsandtrucks.com/",
+    "landuse": "retail",
+    "name": "Wild West Cars and Trucks",
+    "opening_hours": "Mo-Fr 09:00-20:00; Sa 10:00-19:00; Su 10:00-18:00",
+    "shop": "car"
+  }
+},
+{
+  "type": "relation",
+  "id": 2923957,
+  "center": {
+    "lat": 47.6869013,
+    "lon": -122.2901806
+  },
+  "tags": {
+    "addr:city": "Seattle",
+    "addr:housenumber": "8008",
+    "addr:postcode": "98115",
+    "addr:street": "35th Avenue Northeast",
+    "building": "church",
+    "denomination": "presbyterian",
+    "ele": "92",
+    "gnis:feature_id": "2462148",
+    "name": "Wedgwood Presbyterian Church",
+    "source": "King County GIS;data.seattle.gov",
+    "type": "multipolygon",
+    "website": "http://www.wedgpres.org/"
+  }
+},
+{
+  "type": "relation",
+  "id": 8621553,
+  "center": {
+    "lat": 47.6996092,
+    "lon": -122.3049545
+  },
+  "tags": {
+    "fee": "yes",
+    "from": "Shoreline South/148th Station",
+    "gtfs:shape_id:US-WA-KCM": "20065009",
+    "name": "Route 65: University District",
+    "network": "King County Metro",
+    "network:short": "KCM",
+    "network:wikidata": "Q6411393",
+    "network:wikipedia": "en:King County Metro",
+    "opening_hours": "Mo-Fr 04:58-27:14; Sa 05:15-27:48; Su 05:14-27:13",
+    "operator": "King County Metro",
+    "operator:short": "KCM",
+    "operator:wikidata": "Q6411393",
+    "public_transport:version": "2",
+    "ref": "65",
+    "route": "bus",
+    "to": "University District",
+    "type": "route",
+    "website": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/065.html#weekday"
+  }
+},
+{
+  "type": "relation",
+  "id": 8660371,
+  "center": {
+    "lat": 47.7229704,
+    "lon": -122.2336230
+  },
+  "tags": {
+    "fee": "yes",
+    "from": "Roosevelt",
+    "gtfs:shape_id:US-WA-ST": "11522016",
+    "name": "Route 522: Woodinville",
+    "network": "Sound Transit Express",
+    "network:wikidata": "Q7564730",
+    "network:wikipedia": "en:Sound Transit Express",
+    "operator": "Sound Transit",
+    "operator:wikidata": "Q3965367",
+    "operator:wikipedia": "en:Sound Transit",
+    "public_transport:version": "2",
+    "ref": "522",
+    "route": "bus",
+    "to": "Woodinville",
+    "type": "route",
+    "website": "https://www.soundtransit.org/ride-with-us/routes-schedules/522?direction=0"
+  }
+},
+{
+  "type": "relation",
+  "id": 12561256,
+  "center": {
+    "lat": 47.7228105,
+    "lon": -122.2343855
+  },
+  "tags": {
+    "fee": "yes",
+    "from": "Woodinville",
+    "name": "Route 522: Roosevelt",
+    "network": "Sound Transit Express",
+    "network:wikidata": "Q7564730",
+    "network:wikipedia": "en:Sound Transit Express",
+    "operator": "Sound Transit",
+    "operator:wikidata": "Q3965367",
+    "operator:wikipedia": "en:Sound Transit",
+    "public_transport:version": "2",
+    "ref": "522",
+    "route": "bus",
+    "to": "Roosevelt",
+    "type": "route",
+    "website": "https://www.soundtransit.org/ride-with-us/routes-schedules/522?direction=1"
+  }
+},
+{
+  "type": "relation",
+  "id": 13328917,
+  "center": {
+    "lat": 47.6681436,
+    "lon": -122.2923634
+  },
+  "tags": {
+    "fee": "yes",
+    "fixme": "Add missing stops along NE 75th St",
+    "from": "University District",
+    "gtfs:shape_id:US-WA-KCM": "11079001",
+    "name": "Route 79: Green Lake",
+    "network": "King County Metro",
+    "network:short": "KCM",
+    "network:wikidata": "Q6411393",
+    "network:wikipedia": "en:King County Metro",
+    "opening_hours": "Mo-Fr 05:24-22:04",
+    "operator": "King County Metro",
+    "operator:short": "KCM",
+    "operator:wikidata": "Q6411393",
+    "public_transport:version": "2",
+    "ref": "79",
+    "route": "bus",
+    "to": "Green Lake",
+    "type": "route",
+    "website": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/079.html#weekday"
+  }
+},
+{
+  "type": "relation",
+  "id": 13328918,
+  "center": {
+    "lat": 47.6678826,
+    "lon": -122.2918089
+  },
+  "tags": {
+    "fee": "yes",
+    "fixme": "Add missing stops along NE 75th St",
+    "from": "Green Lake",
+    "gtfs:shape_id:US-WA-KCM": "20079002",
+    "name": "Route 79: University District",
+    "network": "King County Metro",
+    "network:short": "KCM",
+    "network:wikidata": "Q6411393",
+    "network:wikipedia": "en:King County Metro",
+    "opening_hours": "Mo-Fr 05:24-22:04",
+    "operator": "King County Metro",
+    "operator:short": "KCM",
+    "operator:wikidata": "Q6411393",
+    "public_transport:version": "2",
+    "ref": "79",
+    "route": "bus",
+    "to": "University District",
+    "type": "route",
+    "website": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/079.html#weekday-b"
+  }
+},
+{
+  "type": "relation",
+  "id": 13335678,
+  "center": {
+    "lat": 47.6936016,
+    "lon": -122.3049759
+  },
+  "tags": {
+    "fee": "yes",
+    "from": "University District",
+    "gtfs:shape_id:US-WA-KCM": "11065008",
+    "name": "Route 65: Shoreline South/148th Station",
+    "network": "King County Metro",
+    "network:short": "KCM",
+    "network:wikidata": "Q6411393",
+    "network:wikipedia": "en:King County Metro",
+    "opening_hours": "Mo-Fr 04:58-27:14; Sa 05:15-27:48; Su 05:14-27:13",
+    "operator": "King County Metro",
+    "operator:short": "KCM",
+    "operator:wikidata": "Q6411393",
+    "public_transport:version": "2",
+    "ref": "65",
+    "route": "bus",
+    "to": "Shoreline South/148th Station",
+    "type": "route",
+    "website": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/065.html#weekday-b"
+  }
+},
+{
+  "type": "relation",
+  "id": 19862835,
+  "center": {
+    "lat": 47.7170678,
+    "lon": -122.3078819
+  },
+  "tags": {
+    "fee": "yes",
+    "from": "University District",
+    "gtfs:shape_id:US-WA-KCM": "11065007",
+    "name": "Route 65: Shoreline South/148th Station",
+    "network": "King County Metro",
+    "network:short": "KCM",
+    "network:wikidata": "Q6411393",
+    "network:wikipedia": "en:King County Metro",
+    "opening_hours": "Mo-Fr 04:58-27:14; Sa 05:15-27:48; Su 05:14-27:13",
+    "operator": "King County Metro",
+    "operator:short": "KCM",
+    "operator:wikidata": "Q6411393",
+    "public_transport:version": "2",
+    "ref": "65",
+    "route": "bus",
+    "to": "Shoreline South/148th Station",
+    "type": "route",
+    "website": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/065.html#weekday-b"
+  }
+}
+
+  ]
+}

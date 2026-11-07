@@ -1,10 +1,12 @@
 import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { getLocation } from "@/pipeline/communities/locations";
 import { locationDiscovery, refreshDiscovery } from "@/pipeline/discovery/run";
-import { locationSources, METHOD_LABELS, setSourceStatus, setSourceWindow, type SourceStatus } from "@/pipeline/sourcemap/store";
+import { locationSources, MAX_REVIEW_REASON, METHOD_LABELS, saveSourceReview, setSourceStatus, setSourceWindow, sourceMap, type SourceDecision, type SourceStatus } from "@/pipeline/sourcemap/store";
+import { decisionOf, isOtherReason, type ReasonCode } from "@/pipeline/sourcemap/reasons";
 import { SECTIONS } from "@/pipeline/sourcemap/sections";
 import { CONNECTORS, windowOf } from "@/pipeline/connectors/registry";
 import { describeWindow, WINDOWS } from "@/pipeline/sourcemap/windows";
+import { redact } from "@/pipeline/core/redaction";
 
 type Context = { params: Promise<{ locationId: string }> };
 export const dynamic = "force-dynamic";
@@ -18,19 +20,42 @@ export async function GET(request: Request, context: Context) {
       const connector = CONNECTORS[source.reader];
       return { ...source, found_by_label: METHOD_LABELS[source.found_by.method] ?? source.found_by.method, window_label: connector ? describeWindow(windowOf(connector, { type: source.reader, source_id: source.source_id, name: source.name, params: { ...source.params, ...(source.window ? { window: source.window } : {}) } })) : null };
     });
-    return { sections: SECTIONS, sources, discovery: await locationDiscovery(db, locationId), windows: Object.entries(WINDOWS).map(([id, value]) => ({ id, label: value.label })) };
+    const windows = Object.entries(WINDOWS).map(([id, value]) => ({ id, label: value.label }));
+    // Redaction shortens anything called a reason. A review is a person's own words, so it is returned exactly as saved.
+    return Response.json({ sections: SECTIONS, sources: sources.map((source) => ({ ...redact(source) as object, review: source.review })), discovery: redact(await locationDiscovery(db, locationId)), windows });
   });
 }
 
-/** Change one source: { source_id, status?: active|pinned|paused|rejected, note?, window?: {back_days?, ahead_days?} | null }. */
+/**
+ * Change one source: { source_id, status?: active|pinned|paused, note?, window?: {back_days?, ahead_days?} | null },
+ * or label it: { source_id, decision?: accept|reject|null, reason_code?: code|null, reason?: string|null }. Text goes
+ * only with an Other code, sent together. Rejecting is always a label, so the reason and history are kept; a source
+ * with a Reject decision only changes status through its decision.
+ */
 export async function PATCH(request: Request, context: Context) {
   const { locationId } = await context.params;
-  return adminRoute(request, async ({ db }) => {
+  return adminRoute(request, async ({ db, principal }) => {
     await getLocation(db, locationId);
-    const body = await jsonBody<{ source_id?: unknown; status?: unknown; note?: unknown; window?: { back_days?: unknown; ahead_days?: unknown } | null }>(request);
+    const body = await jsonBody<{ source_id?: unknown; status?: unknown; note?: unknown; decision?: unknown; reason_code?: unknown; reason?: unknown; window?: { back_days?: unknown; ahead_days?: unknown } | null }>(request);
     if (typeof body.source_id !== "string") throw new Error("Invalid request: send a source_id");
+    if (body.decision !== undefined || body.reason_code !== undefined || body.reason !== undefined) {
+      if (body.status !== undefined || body.window !== undefined) throw new Error("Invalid request: send a label on its own");
+      if (body.decision !== undefined && body.decision !== null && body.decision !== "accept" && body.decision !== "reject") throw new Error("Invalid decision: send accept, reject or null");
+      if (body.reason !== undefined && body.reason !== null && typeof body.reason !== "string") throw new Error("Invalid reason: send text or null");
+      const reason = typeof body.reason === "string" ? body.reason.trim() || null : body.reason;
+      if (reason && reason.length > MAX_REVIEW_REASON) throw new Error(`Invalid reason: keep it to ${MAX_REVIEW_REASON} characters`);
+      const code = body.reason_code;
+      if (code !== undefined && code !== null && (typeof code !== "string" || !decisionOf(code))) throw new Error("Invalid reason code: send one from the list or null");
+      if (typeof code === "string" && body.decision !== undefined && body.decision !== decisionOf(code)) throw new Error("Invalid reason code: it doesn't belong to this decision");
+      if (reason && !(typeof code === "string" && isOtherReason(code))) throw new Error("Invalid reason: text goes only with an Other reason code");
+      if (!principal) throw new Error("Sign in as an approved journalist.");
+      const saved = await saveSourceReview(db, locationId, body.source_id, { decision: body.decision as SourceDecision | null | undefined, reason_code: code as ReasonCode | null | undefined, reason }, principal.email);
+      return Response.json({ updated: body.source_id, ...saved });
+    }
     if (typeof body.status === "string") {
-      if (!["active", "pinned", "paused", "rejected"].includes(body.status)) throw new Error("Invalid status");
+      if (!["active", "pinned", "paused"].includes(body.status)) throw new Error("Invalid status");
+      const current = await sourceMap(db).findOne({ _id: `${locationId}:${body.source_id}` }, { projection: { review: 1 } });
+      if (current?.review?.decision === "reject") throw new Error("Invalid status: this source is rejected, so change its Decision first");
       await setSourceStatus(db, locationId, body.source_id, body.status as SourceStatus, typeof body.note === "string" ? body.note.slice(0, 500) : undefined);
     }
     if (body.window !== undefined) {

@@ -1,0 +1,319 @@
+diff --git a/apps/journalist-site/pipeline/discovery/methods.ts b/apps/journalist-site/pipeline/discovery/methods.ts
+index bda2bfa..6f24e01 100644
+--- a/apps/journalist-site/pipeline/discovery/methods.ts
++++ b/apps/journalist-site/pipeline/discovery/methods.ts
+@@ -26,7 +26,8 @@ import type { HttpTransport } from "../core/http";
+ import type { Logger } from "../core/log";
+ import type { ModelRuntime } from "../model/runtime";
+ import type { ConnectorContext, LocationProfile } from "../connectors/types";
+-import { DiscoveryBlockedError, type Fetcher } from "../connectors/fetcher";
++import { DiscoveryBlockedError, Fetcher } from "../connectors/fetcher";
++import { publicSourceTransport } from "../connectors/public-http";
+ import { httpsLink } from "../connectors/common";
+ import { publicApiGet } from "../connectors/public-api";
+ import { locationCenter, townName, OVERPASS, OVERPASS_TIMEOUT_MS, TOWN_RADIUS_KM } from "../connectors/locality";
+@@ -46,6 +47,7 @@ import { recordDecision } from "../trace/decisions";
+ import { evaluateQueries, JOB_DEADLINE_MS } from "./evaluate";
+ import { OVERPASS_MIRRORS } from "./institutions";
+ import { buildSearchKit, stage1Queries } from "./topics";
++import { linkedPages } from "./linked-pages";
+ 
+ export type DiscoveryContext = {
+   db: Db;
+@@ -138,6 +140,15 @@ const government: MethodDefinition = {
+         candidates.push(...await civicPlusFeeds(context, county, facts.county, false));
+       }
+     }
++    // Root-site crawls otherwise spend their budget on unrelated municipal pages.
++    for (const parent of [...candidates].filter((item) => item.reader === "web" && !item.feed_url && !item.link_only).slice(0, 2)) {
++      try {
++        const [, html] = await context.fetcher.getText(parent.url!, 2 * 1024 * 1024, ACCEPT_HTML);
++        const linked = await linkedPages(new Fetcher(publicSourceTransport(context.transport)), parent, html, context.today, place(context.location), 6);
++        candidates.push(...linked.candidates);
++        for (const item of linked.rejected) await recordDecision({ stage: "source", actor: "rule", subject: item.url, decision: "rejected", reason: item.reason, rule: "linked_page_check" });
++      } catch (error) { context.log.info("government_navigation_unavailable", { url: parent.url, error: String(error) }); }
++    }
+     return { candidates, detail: `${city ? "city site" : "no city site"}${facts?.county ? `, ${facts.county}` : ""}; ${candidates.length} sources` };
+   },
+ };
+@@ -410,12 +421,24 @@ const llm: MethodDefinition = {
+     const grounded = await groundedSearch(context.settings, prompt, context.transport, usageRecorder(context.db, context.settings, "discovery"));
+     if (grounded?.text) raw = jsonArray(grounded.text);
+     if (!raw.length && context.model) {
++      if (context.model.provider === "ollama") {
++        const health = await context.model.health();
++        if (health.status === "unavailable" || health.status === "not_configured") {
++          throw new Error(`Discovery model is not ready: ${health.detail}. Configure an installed model before retrying; no automatic download is attempted.`);
++        }
++      }
+       const generated = await context.model.generateStructured(prompt, LLM_SCHEMA, { numPredict: 3000 });
+       try { raw = ((JSON.parse(generated.response) as { sources?: unknown[] }).sources ?? []); } catch { raw = []; }
+     }
+     const candidates: SourceCandidate[] = [];
+     const name = place(context.location);
++    const navigationFetcher = new Fetcher(publicSourceTransport(context.transport));
++    const deadline = Date.now() + 150_000;
+     for (const value of raw.slice(0, 30)) {
++      if (Date.now() >= deadline) {
++        await recordDecision({ stage: "source", actor: "rule", subject: "llm_navigation", decision: "not_reached", reason: "150-second source validation budget exhausted", rule: "deadline" });
++        break;
++      }
+       const item = value as { name?: unknown; url?: unknown; section?: unknown; located_inside?: unknown; why?: unknown };
+       const url = httpsLink(typeof item.url === "string" ? item.url.replace(/^http:/, "https:") : null);
+       if (!url || typeof item.name !== "string" || aggregator(url)) continue;
+@@ -429,10 +452,14 @@ const llm: MethodDefinition = {
+         continue;
+       }
+       const section = (LLM_SECTIONS.includes(String(item.section)) ? item.section : "community") as SectionId;
+-      // Inside the area only when the model says so AND the site itself names the place.
+-      const inside = item.located_inside === true && (mentions(home, name) || (!!context.location.community && mentions(home, context.location.community.parent_name)));
+-      candidates.push(webCandidate(url, item.name.slice(0, 120), section, "llm", `${typeof item.why === "string" ? item.why.slice(0, 120) : "Suggested by Gemini"}${grounded ? " (from search)" : ""}`, { inside, kind: section === "obituaries" ? "obituary" : section === "news" ? "news_report" : "local_news" }));
+-      if (candidates.length >= 25) break;
++      // A model assertion or a Seattle mention is not proof that every item concerns
++      // this neighborhood. Keep item-level locality checks for all model suggestions.
++      const parent = webCandidate(url, item.name.slice(0, 120), section, "llm", `${typeof item.why === "string" ? item.why.slice(0, 120) : "Suggested by model"}${grounded ? " (from search)" : ""}`, { inside: false, kind: section === "obituaries" ? "obituary" : section === "news" ? "news_report" : "local_news" });
++      candidates.push(parent);
++      const linked = await linkedPages(navigationFetcher, parent, home, context.today, name, 3);
++      candidates.push(...linked.candidates);
++      for (const item of linked.rejected) await recordDecision({ stage: "source", actor: "rule", subject: item.url, decision: "rejected", reason: item.reason, rule: "linked_page_check" });
++      if (candidates.length >= 60) break;
+     }
+     return { candidates, detail: `${raw.length} suggestions; ${candidates.length} checked and kept` };
+   },
+diff --git a/apps/journalist-site/pipeline/discovery/topics.ts b/apps/journalist-site/pipeline/discovery/topics.ts
+index 2e2c8ce..e7265e4 100644
+--- a/apps/journalist-site/pipeline/discovery/topics.ts
++++ b/apps/journalist-site/pipeline/discovery/topics.ts
+@@ -147,9 +147,11 @@ function stage2(kit: SearchKit, topic: PriorityTopic, after: string): Array<[str
+ 
+ const GENERAL: Array<[string, string, SectionId]> = [
+   ["city_records", 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")', "civic"],
+-  ["representative", 'site:{city_domain} (councilmember OR "town hall") "{place}"', "civic"],
+-  ["community_groups", 'site:.org "{place}" ("community council" OR "neighborhood association") meeting', "community"],
++  ["school_calendars", '"{place}" school (calendar OR announcements OR events)', "schools"],
+   ["school_groups", '"{place}" (PTA OR PTSA) newsletter', "schools"],
++  ["community_groups", 'site:.org "{place}" ("community council" OR "neighborhood association") meeting', "community"],
++  ["local_business_records", '"{city}" "{place}" ("business license" OR "new license" OR "grand opening")', "business"],
++  ["representative", 'site:{city_domain} (councilmember OR "town hall") "{place}"', "civic"],
+   ["street_projects", 'site:{city_domain} (transportation OR "capital projects" OR "current projects") "{place}"', "community"],
+   ["transit_alerts", '"{city}" (transit OR metro) "service advisories"', "community"],
+   ["parks", 'site:{city_domain} parks "{place}"', "community"],
+diff --git a/apps/journalist-site/pipeline/sourcemap/store.ts b/apps/journalist-site/pipeline/sourcemap/store.ts
+index f136648..2ccc18b 100644
+--- a/apps/journalist-site/pipeline/sourcemap/store.ts
++++ b/apps/journalist-site/pipeline/sourcemap/store.ts
+@@ -155,7 +155,9 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
+       const count = seenHosts.get(host) ?? await sourceMap(db).countDocuments({ location_id: locationId, reader: "web", url: { $regex: `^https://(www\\.)?${host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(/|$)` } });
+       seenHosts.set(host, count + 1);
+       // Agentic finds are specific pages, and one site can have many worth reading.
+-      if (count >= (candidate.status === "proposed" ? PROPOSED_PER_HOST : limits().newWebPerHost)) { await recordDecision({ stage: "source", actor: "rule", subject: candidate.url, decision: "not_added", reason: `${count} sources from ${host} are already on the map`, rule: "per_host_limit", topic: candidate.topics?.[0] ?? null }); continue; }
++      const specificPage = Boolean(candidate.source_kind && candidate.params.discovery_parent_url);
++      const cap = candidate.status === "proposed" || specificPage ? PROPOSED_PER_HOST : limits().newWebPerHost;
++      if (candidate.status !== "pinned" && count >= cap) { await recordDecision({ stage: "source", actor: "rule", subject: candidate.url, decision: "not_added", reason: `${count} sources from ${host} are already on the map`, rule: "per_host_limit", topic: candidate.topics?.[0] ?? null }); continue; }
+     }
+     // An agentic find never changes a source already on the map: current runs must stay a clean baseline.
+     if (existing && existing.status !== "proposed" && candidate.status === "proposed") {
+diff --git a/apps/journalist-site/pipeline/tests/discovery/local-queries.test.ts b/apps/journalist-site/pipeline/tests/discovery/local-queries.test.ts
+index bc6313c..b621d0e 100644
+--- a/apps/journalist-site/pipeline/tests/discovery/local-queries.test.ts
++++ b/apps/journalist-site/pipeline/tests/discovery/local-queries.test.ts
+@@ -23,6 +23,12 @@ describe("isLocalQuery", () => {
+ });
+ 
+ describe("generated queries", () => {
++  it("includes civic, schools, community and businesses within the normal 36-query budget", () => {
++    const planned = stage1Queries(kit("Northgate", "Lakeside"), [...TOPICS], 36);
++    expect(planned.length).toBeLessThanOrEqual(36);
++    for (const section of ["civic", "schools", "community", "business"]) expect(planned.some((query) => query.section === section)).toBe(true);
++    for (const topic of TOPICS) expect(planned.some((query) => query.topic === topic)).toBe(true);
++  });
+   it.each([["a neighbourhood", kit("Northgate", "Lakeside")], ["a town", kit("Northgate", null)]])("stay local for %s", (_, area) => {
+     const planned = [...stage1Queries(area, [...TOPICS], 200), ...TOPICS.flatMap((topic) => stage2Queries(area, topic, "2026-10-01", 20))];
+     expect(planned.length).toBeGreaterThan(20);
+diff --git a/apps/journalist-site/pipeline/discovery/linked-pages.ts b/apps/journalist-site/pipeline/discovery/linked-pages.ts
+new file mode 100644
+index 0000000..021ed16
+--- /dev/null
++++ b/apps/journalist-site/pipeline/discovery/linked-pages.ts
+@@ -0,0 +1,45 @@
++import type { Fetcher } from "../connectors/fetcher";
++import { mentions } from "../connectors/community";
++import { mainText } from "../connectors/web/page";
++import { normaliseUrl, webSourceId, type SourceCandidate } from "../sourcemap/store";
++import { isSection } from "../sourcemap/sections";
++import { inspectPage, siteLinks } from "./inspect";
++
++/** Follow observed navigation, never guessed paths. Keep each calendar/news/project page
++ * separate from its parent; a shared feed must not collapse distinct source pages. */
++export async function linkedPages(
++  fetcher: Pick<Fetcher, "getText">, parent: SourceCandidate, html: string,
++  today: string, place: string, cap = 4,
++): Promise<{ candidates: SourceCandidate[]; rejected: Array<{ url: string; reason: string }> }> {
++  const candidates: SourceCandidate[] = [], rejected: Array<{ url: string; reason: string }> = [];
++  if (!parent.url) return { candidates, rejected };
++  const links = siteLinks(html, parent.url, 40).sort((a, b) =>
++    Number(mentions(`${b.title} ${b.url}`, place)) - Number(mentions(`${a.title} ${a.url}`, place)));
++  const seen = new Set([normaliseUrl(parent.url)]);
++  for (const link of links.slice(0, cap)) {
++    try {
++      const [url, content] = await fetcher.getText(link.url, 2 * 1024 * 1024, "text/html, application/xhtml+xml");
++      const key = normaliseUrl(url);
++      if (seen.has(key)) continue;
++      seen.add(key);
++      // Soft errors and empty navigation shells are not useful endpoints.
++      if ((mainText(content) ?? "").length < 120) { rejected.push({ url, reason: "No substantive page text" }); continue; }
++      const inspection = inspectPage(content, url, today, null);
++      if (!inspection.fresh && inspection.dated >= 3 && inspection.kind !== "lookup") {
++        rejected.push({ url, reason: `No recent dates (latest ${inspection.latest ?? "unknown"})` }); continue;
++      }
++      const section = isSection(link.section) ? link.section : parent.section;
++      candidates.push({
++        source_id: webSourceId(url), name: `${parent.name}: ${link.title || section}`.slice(0, 120),
++        url, feed_url: null, reader: "web", section,
++        params: { url, section, inside_area: false, discovery_parent_url: parent.url,
++          kind: section === "obituaries" ? "obituary" : section === "sports" ? "school_sports" : "local_news" },
++        found_by: { method: parent.found_by.method, detail: `Navigation from ${parent.url}: ${link.title}` },
++        // Being linked by a local site does not make every event or story local.
++        inside_area: false, source_kind: inspection.kind, latest_day: inspection.latest,
++        link_only: inspection.kind === "lookup" || !inspection.fresh,
++      });
++    } catch (error) { rejected.push({ url: link.url, reason: String(error) }); }
++  }
++  return { candidates, rejected };
++}
+diff --git a/apps/journalist-site/pipeline/tests/discovery/linked-pages.test.ts b/apps/journalist-site/pipeline/tests/discovery/linked-pages.test.ts
+new file mode 100644
+index 0000000..28f4792
+--- /dev/null
++++ b/apps/journalist-site/pipeline/tests/discovery/linked-pages.test.ts
+@@ -0,0 +1,46 @@
++import { describe, expect, it, vi } from "vitest";
++import type { Db } from "mongodb";
++import { linkedPages } from "../../discovery/linked-pages";
++import { upsertCandidates, type SourceCandidate } from "../../sourcemap/store";
++
++const parent: SourceCandidate = { source_id: "root", name: "Community school", url: "https://school.example.org/", reader: "web", section: "schools", params: {}, inside_area: false, found_by: { method: "llm", detail: "checked model suggestion" } };
++const page = (date: string) => `<main><p>${"School and community announcements for neighbors. ".repeat(5)}</p><time datetime="${date}">${date}</time></main>`;
++
++describe("observed source navigation", () => {
++  it("preserves distinct pages, prioritizes the neighborhood and never inherits locality", async () => {
++    const fetcher = { getText: vi.fn(async (url: string): Promise<[string, string]> => [url, page("2026-11-06")]) };
++    const html = '<a href="/news">News</a><a href="/calendar">Calendar</a><a href="/wedgwood-newsletter">Wedgwood newsletter</a><a href="https://unrelated.org/events">Events</a>';
++    const result = await linkedPages(fetcher, { ...parent, inside_area: true }, html, "2026-11-06", "Wedgwood", 3);
++    expect(fetcher.getText.mock.calls[0][0]).toContain("wedgwood-newsletter");
++    expect(result.candidates).toHaveLength(3);
++    expect(new Set(result.candidates.map((x) => x.source_id)).size).toBe(3);
++    expect(result.candidates.every((x) => !x.inside_area && x.params.inside_area === false)).toBe(true);
++    expect(result.candidates.every((x) => x.params.discovery_parent_url === parent.url)).toBe(true);
++    expect(fetcher.getText.mock.calls.every(([url]) => !url.includes("unrelated"))).toBe(true);
++  });
++  it("does not turn blocked, thin, stale or redirected-to-root links into sources", async () => {
++    const fetcher = { getText: vi.fn(async (url: string): Promise<[string, string]> => {
++      if (url.endsWith("blocked-events")) throw new Error("robots blocked");
++      if (url.endsWith("thin-news")) return [url, "not found"];
++      if (url.endsWith("old-news")) return [url, page("2020-01-01") + page("2020-02-01") + page("2020-03-01")];
++      return [parent.url!, page("2026-11-06")];
++    }) };
++    const html = ["blocked-events", "thin-news", "old-news", "redirect-calendar"].map((p) => `<a href="/${p}">${p}</a>`).join("");
++    const result = await linkedPages(fetcher, parent, html, "2026-11-06", "Wedgwood", 4);
++    expect(result.candidates).toEqual([]);
++    expect(result.rejected).toHaveLength(3);
++  });
++  it("keeps undated lookup pages as link-only, not as collectible stories", async () => {
++    const result = await linkedPages({ getText: async (url) => [url, `<form>Search by parcel</form>${page("2020-01-01")}`] }, parent, '<a href="/assessor">Assessor</a>', "2026-11-06", "Wedgwood");
++    expect(result.candidates[0].link_only).toBe(true);
++  });
++});
++
++it("retains validated distinct pages and explicit editor additions beyond the root-host cap", async () => {
++  const updateOne = vi.fn(async () => ({}));
++  const db = { collection: () => ({ findOne: async () => null, countDocuments: async () => 2, updateOne }) } as unknown as Db;
++  expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "generic" }])).toBe(0);
++  expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "calendar", source_kind: "calendar", params: { discovery_parent_url: parent.url } }])).toBe(1);
++  expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "editor", status: "pinned", found_by: { method: "editor", detail: "verified registry entry" } }])).toBe(1);
++  expect(updateOne).toHaveBeenCalledTimes(2);
++});
+diff --git a/apps/journalist-site/pipeline/tests/discovery/model-readiness.test.ts b/apps/journalist-site/pipeline/tests/discovery/model-readiness.test.ts
+new file mode 100644
+index 0000000..95b6076
+--- /dev/null
++++ b/apps/journalist-site/pipeline/tests/discovery/model-readiness.test.ts
+@@ -0,0 +1,23 @@
++import { expect, it, vi } from "vitest";
++import { methodDefinition, type DiscoveryContext } from "../../discovery/methods";
++import { loadSettings } from "../../core/config";
++import { logger } from "../../core/log";
++
++vi.mock("../../model/budget", async (original) => ({ ...await original<object>(), canSpend: async () => true, groundedSearch: async () => null }));
++
++it("reports an uninstalled local model before generation or suggestion-page requests", async () => {
++  const generateStructured = vi.fn();
++  const getText = vi.fn();
++  const context = { settings: loadSettings({} as NodeJS.ProcessEnv), db: {}, location: { id: "test", name: "Example, WA", state: "WA", systems: [], government: null }, today: "2026-11-06", log: logger("test"), fetcher: { getText }, model: { provider: "ollama", health: async () => ({ status: "unavailable", detail: "model missing" }), generateStructured } } as unknown as DiscoveryContext;
++  await expect(methodDefinition("llm")!.run(context)).rejects.toThrow("Discovery model is not ready");
++  expect(generateStructured).not.toHaveBeenCalled();
++  expect(getText).not.toHaveBeenCalled();
++});
++
++it("requires item locality even when a model calls a parent-city source local", async () => {
++  const context = { settings: loadSettings({} as NodeJS.ProcessEnv), db: {}, location: { id: "test", name: "Wedgwood, WA", state: "WA", systems: [], government: null, community: { name: "Wedgwood", parent_name: "Seattle" } }, today: "2026-11-06", log: logger("test"), fetcher: { getText: async () => ["https://city.example.org/", "<main>Seattle news</main>"] }, model: { provider: "fake", generateStructured: async () => ({ response: JSON.stringify({ sources: [{ url: "https://city.example.org/", name: "Seattle news", section: "news", located_inside: true }] }) }) } } as unknown as DiscoveryContext;
++  const result = await methodDefinition("llm")!.run(context);
++  expect(result.candidates).toHaveLength(1);
++  expect(result.candidates[0].inside_area).toBe(false);
++  expect(result.candidates[0].params.inside_area).toBe(false);
++});
+diff --git a/research/validate_registry_sources.mjs b/research/validate_registry_sources.mjs
+new file mode 100644
+index 0000000..f45b96c
+--- /dev/null
++++ b/research/validate_registry_sources.mjs
+@@ -0,0 +1,49 @@
++// Human-assisted intake, explicitly NOT independent discovery. Local-only, no publication.
++// Run after saving the unseeded snapshot: node research/validate_registry_sources.mjs
++import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
++const base = 'http://127.0.0.1:3001';
++const location = 'osm-r13915552-wa';
++const read = path => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8'));
++const inventory = read('evidence/human_inventory.json');
++const machine = read('evidence/improved_independent/source_map.json');
++const output = new URL('evidence/assisted_validation/', import.meta.url);
++mkdirSync(output, { recursive: true });
++function key(raw) {
++  const u = new URL(raw); const host = u.hostname.replace(/^www\./, '');
++  const id = u.pathname.match(/\b([a-z0-9]{4}-[a-z0-9]{4})\b/);
++  return host + (id && host.startsWith('data.') ? '/dataset/' + id[1] : u.pathname.replace(/\/$/, '') + u.search);
++}
++const known = new Set(machine.flatMap(s => [s.url, s.feed_url].filter(Boolean).map(key)));
++const results = [], jobs = [];
++for (const row of inventory) {
++  const n = row.registry_rows[0];
++  const reason = row.Category.includes('Obituaries') ? 'No publisher permission documented for obituary intake; not fabricated'
++    : [129,134].includes(n) ? 'Physical notices/archive, not digitized contents'
++    : n === 136 ? 'Discussion-feed access not established'
++    : n === 135 ? 'Historical archive, not a current-news intake target'
++    : known.has(key(row.URL)) ? 'Already present in independent map; preserve automated provenance' : null;
++  if (reason) results.push({ registry_rows: row.registry_rows, url: row.URL, status: 'not_attempted', reason });
++  else jobs.push(row);
++}
++function save() { writeFileSync(new URL('results.json', output), JSON.stringify({ mode: 'human-assisted registry intake', base, location, updated_at: new Date().toISOString(), results }, null, 2)); }
++save();
++let next = 0;
++async function worker() {
++  while (next < jobs.length) {
++    const row = jobs[next++];
++    let section = row.Category.includes('Schools') ? 'schools' : row.Category.includes('Crime') ? 'safety' : row.Category.includes('Home sales') ? 'real_estate' : row.Category.includes('Businesses') ? 'business' : row.Category.includes('Government') ? 'civic' : row.Category.includes('Events') ? 'events' : row.Category.includes('Sports') ? 'sports' : 'community';
++    const dataset = /(?:data\.seattle\.gov|data\.kingcounty\.gov).*\b[a-z0-9]{4}-[a-z0-9]{4}\b/.test(row.URL);
++    const body = { name: row.Source.slice(0,120), url: row.URL, type: dataset ? 'opendata' : 'web', section, inside_area: false,
++      ...(dataset ? { topic: section === 'safety' ? 'police' : section === 'business' ? 'inspections' : 'permits', filter: 'radius' } : {}),
++      note: `Human-assisted comparison intake. Registry rows ${row.registry_rows.join(', ')}. Source candidate only; item locality and usefulness remain to be checked. No publication authorized.` };
++    try {
++      const response = await fetch(`${base}/api/admin/locations/${location}/links`, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(180000) });
++      const result = await response.json();
++      results.push({ registry_rows: row.registry_rows, url: row.URL, status: response.ok ? 'validated_and_saved' : 'rejected', http_status: response.status, input: body, result });
++      console.log(JSON.stringify({ url: row.URL, status: results.at(-1).status, events: result.link?.validated_events, detail: result.detail ?? result.link?.detail }));
++    } catch (error) { results.push({ registry_rows: row.registry_rows, url: row.URL, status: 'request_failed', reason: String(error) }); }
++    save();
++  }
++}
++await Promise.all(Array.from({ length: 3 }, worker));
++console.log(JSON.stringify({ completed: results.length, saved: results.filter(x => x.status === 'validated_and_saved').length }));

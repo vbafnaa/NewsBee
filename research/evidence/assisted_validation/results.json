@@ -1,0 +1,950 @@
+{
+  "mode": "human-assisted registry intake",
+  "base": "http://127.0.0.1:3001",
+  "location": "osm-r13915552-wa",
+  "updated_at": "2026-11-07T00:50:47.712Z",
+  "results": [
+    {
+      "registry_rows": [
+        54
+      ],
+      "url": "https://cascadememorial.com/obituaries/",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        55,
+        95
+      ],
+      "url": "https://www.elementalnw.com/obituaries/",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        56
+      ],
+      "url": "https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        73
+      ],
+      "url": "https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+      "status": "not_attempted",
+      "reason": "Already present in independent map; preserve automated provenance"
+    },
+    {
+      "registry_rows": [
+        94
+      ],
+      "url": "https://bonneywatson.com/obituaries/",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        96
+      ],
+      "url": "https://www.emmickfunerals.com/obituaries",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        97
+      ],
+      "url": "https://www.dignitymemorial.com/funeral-homes/washelli",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        99
+      ],
+      "url": "https://obituaries.seattletimes.com/",
+      "status": "not_attempted",
+      "reason": "No publisher permission documented for obituary intake; not fabricated"
+    },
+    {
+      "registry_rows": [
+        126
+      ],
+      "url": "https://www.wiaa.com/feed/",
+      "status": "not_attempted",
+      "reason": "Already present in independent map; preserve automated provenance"
+    },
+    {
+      "registry_rows": [
+        129
+      ],
+      "url": "https://www.spl.org/hours-and-locations/northeast-branch",
+      "status": "not_attempted",
+      "reason": "Physical notices/archive, not digitized contents"
+    },
+    {
+      "registry_rows": [
+        134
+      ],
+      "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-amenities-and-equipment",
+      "status": "not_attempted",
+      "reason": "Physical notices/archive, not digitized contents"
+    },
+    {
+      "registry_rows": [
+        135
+      ],
+      "url": "https://ravennablog.com/",
+      "status": "not_attempted",
+      "reason": "Historical archive, not a current-news intake target"
+    },
+    {
+      "registry_rows": [
+        136
+      ],
+      "url": "https://nextdoor.com/neighborhood/wedgwood--seattle--wa/",
+      "status": "not_attempted",
+      "reason": "Discussion-feed access not established"
+    },
+    {
+      "registry_rows": [
+        138
+      ],
+      "url": "https://seattlemedium.com/",
+      "status": "not_attempted",
+      "reason": "Already present in independent map; preserve automated provenance"
+    },
+    {
+      "registry_rows": [
+        36
+      ],
+      "url": "https://wedgwoodes.seattleschools.org/calendar/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Wedgwood Elementary calendar",
+        "url": "https://wedgwoodes.seattleschools.org/calendar/",
+        "type": "web",
+        "section": "schools",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 36. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:ca29ba4a38db",
+          "validated_events": 0,
+          "detail": "10 requests: feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        37
+      ],
+      "url": "https://www.wedgwoodpta.org/newsletter",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "Wedgwood PTA newsletter",
+        "url": "https://www.wedgwoodpta.org/newsletter",
+        "type": "web",
+        "section": "schools",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 37. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: site opts out of AI crawlers in robots.txt (ClaudeBot): https://www.wedgwoodpta.org/newsletter"
+      }
+    },
+    {
+      "registry_rows": [
+        38,
+        132
+      ],
+      "url": "https://www.wedgwoodpta.org/",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "Wedgwood PTA",
+        "url": "https://www.wedgwoodpta.org/",
+        "type": "web",
+        "section": "schools",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 38, 132. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: site opts out of AI crawlers in robots.txt (ClaudeBot): https://www.wedgwoodpta.org/"
+      }
+    },
+    {
+      "registry_rows": [
+        34,
+        127
+      ],
+      "url": "https://www.wedgwoodcc.org/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "WCC news / Wedgwood Community Council",
+        "url": "https://www.wedgwoodcc.org/",
+        "type": "web",
+        "section": "business",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 34, 127. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:f076ae9f4047",
+          "validated_events": 5,
+          "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        35
+      ],
+      "url": "https://www.wedgwoodcc.org/about/meetings/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "WCC meetings",
+        "url": "https://www.wedgwoodcc.org/about/meetings/",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 35. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:4f36215dc62f",
+          "validated_events": 5,
+          "detail": "9 requests: feed, 5 pages; 5 items kept, 10 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        39,
+        128
+      ],
+      "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Northeast Library events / Seattle Public Library — Northeast Branch events",
+        "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+        "type": "web",
+        "section": "events",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 39, 128. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:8341be3f9458",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        42
+      ],
+      "url": "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "New Wedgwood park",
+        "url": "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 42. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: Error: Homepage could not be read: https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development (TypeError)"
+      }
+    },
+    {
+      "registry_rows": [
+        43,
+        115
+      ],
+      "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "KC home sales / King County eSales residential search",
+        "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 43, 115. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:45520f28fcfc",
+          "validated_events": 0,
+          "detail": "5 requests: no feed, 0 pages; 0 items kept, 0 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        40
+      ],
+      "url": "https://seattle.gov/parks/parks/dahl-playfield",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Dahl Playfield",
+        "url": "https://seattle.gov/parks/parks/dahl-playfield",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 40. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:97c44319e271",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 1 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        45
+      ],
+      "url": "https://gis-kingcounty.opendata.arcgis.com/",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "KC open GIS data",
+        "url": "https://gis-kingcounty.opendata.arcgis.com/",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 45. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: crawl-delay of 60s is longer than 5s: https://gis-kingcounty.opendata.arcgis.com/"
+      }
+    },
+    {
+      "registry_rows": [
+        44
+      ],
+      "url": "https://kingcounty.gov/en/dept/assessor",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "KC property lookup",
+        "url": "https://kingcounty.gov/en/dept/assessor",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 44. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:40b13f61de21",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        41
+      ],
+      "url": "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Dahl restroom project",
+        "url": "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 41. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:52f9f986e298",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 0 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        46
+      ],
+      "url": "https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD crime maps",
+        "url": "https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 46. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:d05c151ee203",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        47,
+        89
+      ],
+      "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD incident reports / SPD Significant Incident Reports",
+        "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 47, 89. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:271a5f509c23",
+          "validated_events": 8,
+          "detail": "9 requests: feed, 5 pages; 8 items kept, 7 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        48
+      ],
+      "url": "https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD open data",
+        "url": "https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 48. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:d23662d87f90",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        49,
+        79
+      ],
+      "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD crime dashboard / Crime Dashboard",
+        "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 49, 79. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:3e4b8fe9b734",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        50
+      ],
+      "url": "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Roosevelt sports",
+        "url": "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+        "type": "web",
+        "section": "sports",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 50. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:f29c80a92710",
+          "validated_events": 0,
+          "detail": "9 requests: feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        53
+      ],
+      "url": "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "Roosevelt boosters",
+        "url": "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+        "type": "web",
+        "section": "sports",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 53. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: site opts out of AI crawlers in robots.txt (ClaudeBot): https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information"
+      }
+    },
+    {
+      "registry_rows": [
+        51
+      ],
+      "url": "https://halehs.seattleschools.org/student-life/athletics/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Nathan Hale sports",
+        "url": "https://halehs.seattleschools.org/student-life/athletics/",
+        "type": "web",
+        "section": "sports",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 51. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:2d78a92112e7",
+          "validated_events": 0,
+          "detail": "9 requests: feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        71
+      ],
+      "url": "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "King County Metro service alerts",
+        "url": "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 71. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:dce6dc6bac29",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        52
+      ],
+      "url": "https://www.seattleschools.org/departments/athletics/contacts/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Seattle schools athletics",
+        "url": "https://www.seattleschools.org/departments/athletics/contacts/",
+        "type": "web",
+        "section": "sports",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 52. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:a52c44253e0e",
+          "validated_events": 0,
+          "detail": "7 requests: feed, 3 pages; 0 items kept, 3 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        69
+      ],
+      "url": "https://seattle.gov/transportation/projects-and-programs/current-projects",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SDOT current projects",
+        "url": "https://seattle.gov/transportation/projects-and-programs/current-projects",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 69. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:69027324571b",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        80,
+        81,
+        87
+      ],
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Arrest Dashboard / Crisis Contact / SPD Arrest Data",
+        "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+        "type": "opendata",
+        "section": "safety",
+        "inside_area": false,
+        "topic": "police",
+        "filter": "radius",
+        "note": "Human-assisted comparison intake. Registry rows 80, 81, 87. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "opendata:data.seattle.gov:9bjs-7a7w",
+          "validated_events": 0,
+          "detail": "296 rows since 2026-10-30; 0 items kept, 296 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        78,
+        86
+      ],
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD Crime Data: 2008-Present (data.seattle.gov) / SPD Crime Data: 2008-Present",
+        "url": "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+        "type": "opendata",
+        "section": "safety",
+        "inside_area": false,
+        "topic": "police",
+        "filter": "radius",
+        "note": "Human-assisted comparison intake. Registry rows 78, 86. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "opendata:data.seattle.gov:tazs-3rd5",
+          "validated_events": 1,
+          "detail": "1000 rows since 2026-10-30; 1 items kept, 1000 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        88
+      ],
+      "url": "https://spdblotter.seattle.gov/feed/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "SPD Blotter RSS",
+        "url": "https://spdblotter.seattle.gov/feed/",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 88. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:f53d3b0bdc76",
+          "validated_events": 3,
+          "detail": "3 requests: feed, 0 pages; 3 items kept, 7 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        72
+      ],
+      "url": "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "WA LCB New License Actions",
+        "url": "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+        "type": "web",
+        "section": "business",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 72. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:a876b559d525",
+          "validated_events": 0,
+          "detail": "5 requests: no feed, 0 pages; 0 items kept, 0 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        92
+      ],
+      "url": "https://www.justice.gov/usao-wdwa/pr",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "U.S. Attorney Western District of Washington",
+        "url": "https://www.justice.gov/usao-wdwa/pr",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 92. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: crawl-delay of 10s is longer than 5s: https://www.justice.gov/usao-wdwa/pr"
+      }
+    },
+    {
+      "registry_rows": [
+        82,
+        90
+      ],
+      "url": "https://web.seattle.gov/sfd/realtime911/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Seattle Fire Real-Time 911",
+        "url": "https://web.seattle.gov/sfd/realtime911/",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 82, 90. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:4c691d431f1b",
+          "validated_events": 0,
+          "detail": "5 requests: no feed, 0 pages; 0 items kept, 0 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        114
+      ],
+      "url": "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "King County Assessor sales extracts",
+        "url": "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 114. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:f0fd7b9545e7",
+          "validated_events": 0,
+          "detail": "5 requests: no feed, 0 pages; 0 items kept, 0 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        116
+      ],
+      "url": "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "King County eReal Property",
+        "url": "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 116. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: Site opts out of reuse (noindex, noai or a mining reservation)"
+      }
+    },
+    {
+      "registry_rows": [
+        118
+      ],
+      "url": "https://gisdata.kingcounty.gov/",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "King County GIS parcel data",
+        "url": "https://gisdata.kingcounty.gov/",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 118. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: crawl-delay of 60s is longer than 5s: https://gisdata.kingcounty.gov/"
+      }
+    },
+    {
+      "registry_rows": [
+        91
+      ],
+      "url": "https://kingcounty.gov/en/legacy/depts/prosecutor",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "King County Prosecuting Attorney official updates",
+        "url": "https://kingcounty.gov/en/legacy/depts/prosecutor",
+        "type": "web",
+        "section": "safety",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 91. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:df89efa28dcb",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        130
+      ],
+      "url": "https://seattlereconomy.org/events/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Seattle REconomy / NE Seattle Tool Library",
+        "url": "https://seattlereconomy.org/events/",
+        "type": "web",
+        "section": "events",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 130. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:0a8fb066f354",
+          "validated_events": 25,
+          "detail": "3 requests: feed, 0 pages; 25 items kept, 12 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        117
+      ],
+      "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "King County Recorder's Office",
+        "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+        "type": "web",
+        "section": "real_estate",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 117. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:81b4eccf293c",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        137
+      ],
+      "url": "https://northeastdistrictcouncil.wordpress.com/about/",
+      "status": "rejected",
+      "http_status": 422,
+      "input": {
+        "name": "Northeast District Council",
+        "url": "https://northeastdistrictcouncil.wordpress.com/about/",
+        "type": "web",
+        "section": "civic",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 137. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "detail": "Link is not usable: Error: Homepage could not be read: https://northeastdistrictcouncil.wordpress.com/about/ (Error)"
+      }
+    },
+    {
+      "registry_rows": [
+        131
+      ],
+      "url": "https://www.lifetimelearningcenter.org/classschedule",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Lifetime Learning Center",
+        "url": "https://www.lifetimelearningcenter.org/classschedule",
+        "type": "web",
+        "section": "events",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 131. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:cb0079ea9653",
+          "validated_events": 0,
+          "detail": "10 requests: no feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    },
+    {
+      "registry_rows": [
+        133
+      ],
+      "url": "https://ecksteinms.seattleschools.org/news/",
+      "status": "validated_and_saved",
+      "http_status": 200,
+      "input": {
+        "name": "Eckstein (school source; endpoint unconfirmed)",
+        "url": "https://ecksteinms.seattleschools.org/news/",
+        "type": "web",
+        "section": "schools",
+        "inside_area": false,
+        "note": "Human-assisted comparison intake. Registry rows 133. Source candidate only; item locality and usefulness remain to be checked. No publication authorized."
+      },
+      "result": {
+        "link": {
+          "source_id": "web:44c083029fa8",
+          "validated_events": 0,
+          "detail": "9 requests: feed, 5 pages; 0 items kept, 5 left out"
+        }
+      }
+    }
+  ]
+}

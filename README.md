@@ -26,9 +26,16 @@ run side by side, and share everything from assembly onward:
 
 | Step | `current` flow | `agentic` flow |
 | --- | --- | --- |
-| **Stage 1:** find and save sources | Nine fixed discovery methods; new sources go live | Those, plus Google operator search (`dork`) and a mapping agent; new sources are `proposed` with evidence, and only agentic runs read them |
+| **Stage 1:** find and save sources | Eleven fixed discovery methods; new sources go live | Those, plus Google operator search (`dork`) and a mapping agent; new sources are `proposed` with evidence, and only agentic runs read them |
 | **Stage 2:** read sources for the window | The readers | The readers, plus topic sweeps, tracing stories to original records, and agent extraction for pages the readers can't parse |
 | Assemble, rank, write, publish | Shared | Shared; the primary source leads a merged story |
+
+## Scraping rules
+
+Every kind of scraper reads one set of editable rules in [playbook/](playbook/README.md): the fixed
+discovery methods, the mapping agent, the Google-operator search services, and Tavily and Exa through
+an adapter. [playbook/rules-overview.html](playbook/rules-overview.html) is the readable copy. Safety
+and legal rules stay locked in code. Each run records the rules' version.
 
 ## Run locally
 
@@ -111,7 +118,7 @@ on the run, so a resumed run keeps them.
 | `NEWSBEE_EXTERNAL_OFF` | Service ids | Free external APIs to switch off |
 | `NEWSBEE_SEARCH_PROVIDER` | `serpapi`, `searchapi`, `brightdata`, `exa`, `tavily`, `fixture` | The search behind the agentic flow; `fixture` is a free, local-only test that answers from the location's own source map |
 | `NEWSBEE_URL_CLASSIFIER` | `off`, `shadow`, `jev` | Whether Jev scores are ignored, recorded or used |
-| `NEWSBEE_PRIORITY_TOPICS` | `crime`, `deaths`, `events`, `home_sales`, `sports` | Topics that drive search and the coverage report; default all |
+| `NEWSBEE_PRIORITY_TOPICS` | `crime`, `deaths`, `events`, `home_sales`, `sports`, `government`, `schools`, `business`, `community`, `news` | Topics that drive search and the coverage report; default all |
 | Story limit (kick-off panel only) | A number | Write at most this many stories, for quick test runs on a local model |
 
 **Exploration** flags items instead of dropping them, and each records what strict would have
@@ -159,7 +166,7 @@ from third-party references and summaries.
 
 ## Priority topics
 
-Each location should pull five topics. They drive query generation in both stages, each with a
+Each location should pull ten topics. They drive query generation in both stages, each with a
 guaranteed share of the query budget, and each run reports its coverage of them.
 
 | Topic | Sources | Prints as |
@@ -169,8 +176,20 @@ guaranteed share of the query budget, and each run reports its coverage of them.
 | Local events | Venue, parks, library, school and neighbourhood calendars | Events |
 | Home sales and permits | County sales files and datasets (`property` reader), city permits, ATTOM if ticked | Compact list; strict leaves out buyer and seller names |
 | Local sports | School athletics, state associations, local teams and leagues | New Sports section; scores as a compact list |
+| Council and government | Agendas and minutes, hearing notices, boards and commissions, meeting platforms | Stories |
+| Schools, boards and PTAs | District sites, school board meetings and calendars, PTA, PTSA and PTO pages | Stories |
+| Business openings, closings and offers | Chambers, downtown groups, city business pages, licences, news of openings and closings | Stories |
+| Community groups and volunteering | Neighbourhood councils, nonprofits, service clubs, volunteer centres | Stories |
+| Other local news | Local papers, neighbourhood blogs, city news pages | Stories |
 
-Each county publishes sales differently, so home sales coverage varies most.
+Each county publishes sales differently, so home sales coverage varies most. Merchant discounts
+have no public feed: the fixed methods can reach a chamber or downtown group's pages, but only
+search can look for offers themselves.
+
+A map run ends by counting sources for the ten editorial categories (events, council, schools,
+sports, safety, real estate, business, community, other news, obituaries) and naming any that came
+up empty. National readers are counted apart, so they can't hide a gap. See **Sources by category**
+in the Run funnel. Weather stays a section outside that list.
 
 ## How sources are found and read
 
@@ -181,16 +200,18 @@ community overrides and connector defaults are not an exhaustive location/source
 
 | Discovery method | Finds |
 | --- | --- |
-| City and county websites | Official sites (location profile, OpenStreetMap) and their CivicPlus feeds |
-| OpenStreetMap places | Websites of town halls, libraries, community centres, schools, venues, museums, markets, associations and funeral homes inside the area |
+| City and county websites | Official sites (checked city site, OpenStreetMap, Wikidata), their CivicPlus feeds, their category pages (agendas, hearings, boards, police and fire, permits, business, parks, volunteering), and the groups they link to |
+| OpenStreetMap places | Websites of town halls, police and fire stations, courts, libraries, community centres, schools, venues, museums, markets, newspapers, nonprofits, associations and funeral homes inside the area |
 | Meeting platforms | Legistar, CivicClerk and PrimeGov accounts for the city and county |
 | Open-data portals | Socrata datasets for police and fire calls, permits, inspections, licences and 311 |
 | Newsrooms and athletics | Wikidata outlets published nearby with a current feed; the state athletic association |
+| School districts | The districts covering the place (Census, NCES directory), their board meetings, calendars and news, and local schools' PTA, PTSA or PTO pages |
+| Local groups | Chambers, downtown and neighbourhood groups at their usual addresses, each fetched and checked, and funeral homes' obituary pages |
 | News publishers | Outlets that news search keeps finding covering the place |
 | LLM discovery | Gemini (Flash-Lite) suggestions: schools, PTAs, leagues, funeral homes, business groups; each fetched and checked |
 | National | NWS, USGS, EPA, Census, Justice Department, Wikipedia, library systems, reader stories, family notices |
 | Google operator search (agentic flow) | Narrow `site:`, `inurl:` and `filetype:` queries per priority topic. Each query names the place, its city or a local institution, or stays on a confirmed site, so nothing searches a whole county, state or region. Each result is fetched and checked before it becomes a source |
-| Mapping agent (agentic flow) | Works outward from the city's checked website and local institutions, then each good site's other sections, then planned queries for the thinnest topics. Stops when leads run out and new primary sources dry up. Its instructions are in [skills/map-sources/SKILL.md](skills/map-sources/SKILL.md), which it loads at run time |
+| Mapping agent (agentic flow) | Works outward from the city's checked website and local institutions, then each good site's other sections, then planned queries for the thinnest topics. Stops when leads run out and new primary sources dry up. Its instructions are in [skills/map-sources/SKILL.md](skills/map-sources/SKILL.md), whose category section is generated from the [playbook](playbook/README.md) |
 
 Sources carry a `source_tier`: `official`, `organisation`, `business`, `local_reporting` or
 `repost`. Primary sources lead merged stories, rank higher in each section, and lead the edition,

@@ -1,0 +1,127 @@
+# Schools and youth. School sports belong under sports. See README.md for how to edit a rule.
+category: schools
+label: Schools and youth
+target: true
+topic: schools
+
+goal:
+  - consumers: [agent]
+    from: apps/journalist-site/pipeline/core/run-values.ts
+    rules:
+      - { id: schools.goal.boards_ptas, text: "Schools, boards and PTAs." }
+
+prefer:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: schools.prefer.school_pages, text: School pages. }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: schools.prefer.osm_school, set: osm_kinds, order: 9, text: Schools with a website., osm: { kind: school, tag: amenity, priority: 3 } }
+      - { id: schools.prefer.osm_college, set: osm_kinds, order: 10, text: Colleges with a website., osm: { kind: college, tag: amenity, priority: 4 } }
+      - { id: schools.prefer.osm_university, set: osm_kinds, order: 11, text: Universities with a website., osm: { kind: university, tag: amenity, priority: 4 } }
+      - { id: schools.prefer.linked_group_sections, text: The groups worth following from a school's site., values: [schools] }
+
+reject: []
+
+evidence:
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: schools.evidence.item_kind, set: item_kinds, text: Items found by this topic's sweeps are filed as local news., value: local_news }
+
+search_playbook:
+  - consumers: [agent, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: schools.general.school_calendars, stage: general, order: 1, pattern: '"{place}" school (calendar OR announcements OR events)' }
+      - { id: schools.general.school_groups, stage: general, order: 2, pattern: '"{place}" (PTA OR PTSA) newsletter' }
+      - { id: schools.stage1.board_meetings, stage: stage1, source_type: School boards, pattern: '"{city}" "{state}" "school board" (agenda OR minutes OR meetings)' }
+      - { id: schools.stage1.district, stage: stage1, source_type: School districts, pattern: '"{city}" "{state}" ("school district" OR "public schools") calendar' }
+      - { id: schools.stage1.board_platforms, stage: stage1, source_type: School boards, pattern: '"{city}" "school district" (boarddocs OR simbli OR "board meetings")' }
+      - { id: schools.stage1.school_groups, stage: stage1, source_type: Parent groups, pattern: '"{place}" (PTA OR PTSA OR PTO) (meeting OR calendar OR newsletter)' }
+      - { id: schools.stage1.school_pta, stage: stage1, source_type: Parent groups, for_each: { list: schools, limit: 2 }, pattern: '"{school}" (PTA OR PTSA OR PTO)' }
+      - { id: schools.stage2.school_news, stage: stage2, source_type: School sites, for_each: { list: school_hosts, limit: 2 }, pattern: 'site:{host} (board OR PTA OR PTSA OR news) after:{after}' }
+      - { id: schools.stage2.board_sweep, stage: stage2, source_type: School boards, pattern: '"{city}" "school board" (voted OR approved OR meeting) after:{after}' }
+  - consumers: [google, non_google]
+    from: apps/journalist-site/pipeline/agent/map-sources.ts
+    rules:
+      - { id: schools.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: school board meetings PTA }
+
+page_words:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/inspect.ts
+    rules:
+      - id: schools.page.school_site_links_board
+        set: school_site_links
+        order: 0
+        text: "Links to the school board, its agendas and minutes, on a school site."
+        reason: On a school or district site, meetings, calendars and news are all the school's.
+        regex: '\b(school board|board of (?:directors|education|trustees)|board (?:meetings?|agendas?|minutes|docs)|boarddocs|agendas?|minutes)\b'
+        flags: i
+      - id: schools.page.school_site_links_parents
+        set: school_site_links
+        order: 1
+        text: Links to parent groups and arts boosters on a school site. Other boosters are under sports.
+        reason: On a school or district site, meetings, calendars and news are all the school's.
+        regex: '\b(ptsa|ptso|pta|pto|parent[- ]teacher|(?:band|music|choir|drama|theat(?:er|re)|arts?) boosters?)\b'
+        flags: i
+      - id: schools.page.school_site_links_news
+        set: school_site_links
+        order: 3
+        text: "Links to calendars, events, news and bulletins on a school site."
+        reason: On a school or district site, meetings, calendars and news are all the school's.
+        regex: '\b(calendars?|events?|news(?:letters?)?|announcements?|bulletins?)\b'
+        flags: i
+      - id: schools.page.group_links
+        set: group_links
+        order: 0
+        text: Parent groups and districts a public body links out to.
+        regex: '\b(?:PTSA|PTSO|PTA|PTO)\b|parent[- ]teacher|\b(?:school district|public schools)\b'
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - id: schools.page.osm_group_names
+        set: osm_group_names
+        order: 1
+        text: Names that move an OpenStreetMap group into this section.
+        reason: Groups OpenStreetMap files as one kind of office, sorted by what their name says they are.
+        regex: '\bPTS?A\b|\bPTO\b|parent[- ]teacher'
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/schools.ts
+    rules:
+      - { id: schools.page.school_title, text: Link text that is a school's name., regex: '\b(?:elementary|middle|high|k-8|k-12|academy)(?: school)?$', flags: i }
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/discovery/topics.ts
+    rules:
+      - { id: schools.page.kit_school_name, text: Names on the source map that are a school., regex: '(?:high|middle|junior|prep\w*|academy|school)\b', flags: i }
+  - consumers: [manual, google, non_google]
+    from: apps/journalist-site/pipeline/sourcemap/sections.ts
+    rules:
+      - id: schools.page.item_keywords
+        set: item_keywords
+        order: 6
+        text: Words that put a story in this section.
+        regex: '\bschool|student|teacher|\bpta\b|ptsa|graduat|scholar|national merit|homecoming|\byouth\b|\bkids?\b'
+        flags: i
+
+when_to_stop:
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/site-pages.ts
+    rules:
+      - { id: schools.stop.pages_per_site, set: pages_per_site, text: Pages kept for this section on one site., value: 5 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/methods.ts
+    rules:
+      - { id: schools.stop.districts, text: School districts read per place., value: 3 }
+      - { id: schools.stop.schools, text: Schools read per place., value: 6 }
+      - { id: schools.stop.school_hub_pages, text: Hub pages read on one school's site., value: 1 }
+      - { id: schools.stop.school_pages, text: Pages kept from one school's site., value: 2 }
+      - { id: schools.stop.school_best_rank, text: "On a school's site, keep only board and parent group pages, apart from its athletics pages.", reason: "Keep only links this good, a school's PTA page, not every calendar.", value: 1 }
+  - consumers: [manual]
+    from: apps/journalist-site/pipeline/discovery/schools.ts
+    rules:
+      - { id: schools.stop.school_title_max, text: Longest link text read as a school's name., value: 60 }
+
+examples: []

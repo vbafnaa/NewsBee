@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { redact } from "./redaction";
 
 /** Structured JSON-line logging; Vercel and local terminals both show one event per line. */
 
@@ -50,7 +51,7 @@ export type Logger = {
 
 export function logger(component: string, base: LogFields = {}): Logger {
   const emit = (level: LogLevel, event: string, fields: LogFields = {}) => {
-    const record = { level, component, event, time: new Date().toISOString(), ...base, ...errorFields(fields) };
+    const record = { level, component, event, time: new Date().toISOString(), ...redact({ ...base, ...errorFields(fields) }) as LogFields };
     scopedSink.getStore()?.(record);
     if (ORDER[level] >= threshold()) sink(record);
   };

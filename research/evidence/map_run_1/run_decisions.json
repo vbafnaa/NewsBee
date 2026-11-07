@@ -1,0 +1,533 @@
+[
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f81",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "newssearch:gdelt",
+    "decision": "added",
+    "reason": "GDELT news search for the place (Gemini grounded search optional); headlines and links, each checked against the article before use",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "News search (GDELT)"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.862
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f82",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "meetings:legistar:seattle",
+    "decision": "added",
+    "reason": "Legistar and CivicClerk tenant APIs; official city council HTML/PDF agendas and minutes",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Seattle public meetings affecting Wedgwood"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.864
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f83",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "hazards:nws",
+    "decision": "added",
+    "reason": "National Weather Service alerts and USGS earthquake feeds",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "National Weather Service alerts"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.865
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f84",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "hazards:usgs",
+    "decision": "added",
+    "reason": "National Weather Service alerts and USGS earthquake feeds",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "USGS earthquakes nearby"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.866
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f85",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "trending:wikipedia",
+    "decision": "added",
+    "reason": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Wikipedia-discovered local reporting"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.868
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f86",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "trending:bluesky",
+    "decision": "added",
+    "reason": "Automated community, coverage-term and selected-venue searches on Bluesky, discovered community RSS/Atom feeds, and optional Wikipedia attention discovery; recent reporting with explicit community evidence required",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Community reporting links"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.869
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f87",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "homesafety:sdwis",
+    "decision": "added",
+    "reason": "EPA Safe Drinking Water health-based violations for community water systems serving the county",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Drinking water safety (EPA)"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.871
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f88",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "remembrance:family",
+    "decision": "added",
+    "reason": "Family-submitted death notices approved by an editor, and editor-added funeral-home feeds with a recorded republication permission",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Family-submitted remembrances"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.872
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f89",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "justice:doj",
+    "decision": "added",
+    "reason": "U.S. Department of Justice press releases for the state's U.S. Attorney's Offices, and editor-added county prosecutor or attorney general feeds",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "U.S. Attorney's Office announcements"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.873
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f8a",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "community:neighbours",
+    "decision": "added",
+    "reason": "Stories readers submit on the reader site, published only after an editor approves them",
+    "topic": null,
+    "evidence": {
+      "method": "national",
+      "query": null,
+      "tier": null,
+      "name": "Stories shared by Wedgwood neighbours"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.875
+  },
+  {
+    "_id": "6aee69f7c457b8c2dbbc7f8b",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:national",
+    "decision": "ran",
+    "reason": "10 national and onboarding sources",
+    "evidence": {
+      "found": 10,
+      "added": 10
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009591.904
+  },
+  {
+    "_id": "6aee69fac457b8c2dbbc7f8e",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://kingcounty.legistar.com/",
+    "decision": "added",
+    "reason": "legistar account 'kingcounty' matched by name; confirm it is King County",
+    "topic": null,
+    "evidence": {
+      "method": "meetings",
+      "query": null,
+      "tier": null,
+      "name": "King County public meetings"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009594.887
+  },
+  {
+    "_id": "6aee69fac457b8c2dbbc7f8f",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:meetings",
+    "decision": "ran",
+    "reason": "Seattle and King County: 1 accounts found",
+    "evidence": {
+      "found": 1,
+      "added": 1
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009594.888
+  },
+  {
+    "_id": "6aee69fac457b8c2dbbc7f90",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:publishers",
+    "decision": "ran",
+    "reason": "0 publishers with 2+ results; 0 added",
+    "evidence": {
+      "found": 0,
+      "added": 0
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009594.934
+  },
+  {
+    "_id": "6aee69fbc457b8c2dbbc7f92",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:llm",
+    "decision": "failed",
+    "reason": "Error: Model request failed (404): {\"error\":\"model 'qwen3:4b' not found\"}",
+    "evidence": {
+      "found": 0,
+      "added": 0
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009595.131
+  },
+  {
+    "_id": "6aee69fcc457b8c2dbbc7f94",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://seattle.gov/",
+    "decision": "added",
+    "reason": "The city's official website",
+    "topic": null,
+    "evidence": {
+      "method": "government",
+      "query": null,
+      "tier": null,
+      "name": "City of Seattle"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009596.211
+  },
+  {
+    "_id": "6aee69fcc457b8c2dbbc7f95",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://kingcounty.gov/",
+    "decision": "added",
+    "reason": "The county's official website (OpenStreetMap)",
+    "topic": null,
+    "evidence": {
+      "method": "government",
+      "query": null,
+      "tier": null,
+      "name": "King County"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009596.213
+  },
+  {
+    "_id": "6aee69fcc457b8c2dbbc7f96",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:government",
+    "decision": "ran",
+    "reason": "city site, King County; 2 sources",
+    "evidence": {
+      "found": 2,
+      "added": 2
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009596.215
+  },
+  {
+    "_id": "6aee6a00c457b8c2dbbc7fb4",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://cos-data.seattle.gov/d/kzjm-xkqj",
+    "decision": "added",
+    "reason": "fire 911 on the city portal cos-data.seattle.gov",
+    "topic": null,
+    "evidence": {
+      "method": "opendata",
+      "query": null,
+      "tier": null,
+      "name": "Seattle Real Time Fire 911 Calls (City of Seattle)"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009600.853
+  },
+  {
+    "_id": "6aee6a00c457b8c2dbbc7fb5",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://cos-data.seattle.gov/d/76t5-zqzr",
+    "decision": "added",
+    "reason": "building permits on the city portal cos-data.seattle.gov",
+    "topic": null,
+    "evidence": {
+      "method": "opendata",
+      "query": null,
+      "tier": null,
+      "name": "Building Permits (City of Seattle)"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009600.854
+  },
+  {
+    "_id": "6aee6a00c457b8c2dbbc7fb6",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://data.kingcounty.gov/d/r878-4sxa",
+    "decision": "added",
+    "reason": "food inspections on the county portal data.kingcounty.gov",
+    "topic": null,
+    "evidence": {
+      "method": "opendata",
+      "query": null,
+      "tier": null,
+      "name": "Food Establishment Inspection Data (Public Health - Seattle & King County)"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009600.856
+  },
+  {
+    "_id": "6aee6a00c457b8c2dbbc7fb7",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:opendata",
+    "decision": "ran",
+    "reason": "4 portals (cos-data.seattle.gov, performance.seattle.gov, data.kingcounty.gov, data.wa.gov); 3 datasets",
+    "evidence": {
+      "found": 3,
+      "added": 3
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009600.857
+  },
+  {
+    "_id": "6aee6a01c457b8c2dbbc7fb8",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://www.wiaa.com/",
+    "decision": "added",
+    "reason": "Wikidata http://www.wikidata.org/entity/Q7971987",
+    "topic": null,
+    "evidence": {
+      "method": "athletics",
+      "query": null,
+      "tier": null,
+      "name": "Washington Interscholastic Activities Association"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009601.408
+  },
+  {
+    "_id": "6aee6a01c457b8c2dbbc7fb9",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:athletics",
+    "decision": "ran",
+    "reason": "1 associations with a current feed",
+    "evidence": {
+      "found": 1,
+      "added": 1
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009601.409
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fbb",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://www.seattleweekly.com/",
+    "decision": "added",
+    "reason": "Published in Seattle (http://www.wikidata.org/entity/Q861430)",
+    "topic": null,
+    "evidence": {
+      "method": "newsrooms",
+      "query": null,
+      "tier": null,
+      "name": "Seattle Weekly"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.299
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fbc",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://www.thestranger.com/",
+    "decision": "added",
+    "reason": "Published in Seattle (http://www.wikidata.org/entity/Q3522886)",
+    "topic": null,
+    "evidence": {
+      "method": "newsrooms",
+      "query": null,
+      "tier": null,
+      "name": "The Stranger"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.307
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fbd",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://crosscut.com/",
+    "decision": "added",
+    "reason": "Published in Seattle (http://www.wikidata.org/entity/Q5188530)",
+    "topic": null,
+    "evidence": {
+      "method": "newsrooms",
+      "query": null,
+      "tier": null,
+      "name": "Crosscut"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.313
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fbe",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://iexaminer.org/",
+    "decision": "added",
+    "reason": "Published in Seattle (http://www.wikidata.org/entity/Q6050327)",
+    "topic": null,
+    "evidence": {
+      "method": "newsrooms",
+      "query": null,
+      "tier": null,
+      "name": "International Examiner"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.319
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fbf",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "https://seattlemedium.com/",
+    "decision": "added",
+    "reason": "Published in Seattle (http://www.wikidata.org/entity/Q7442135)",
+    "topic": null,
+    "evidence": {
+      "method": "newsrooms",
+      "query": null,
+      "tier": null,
+      "name": "Seattle Medium"
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.324
+  },
+  {
+    "_id": "6aee6a1ac457b8c2dbbc7fc0",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:newsrooms",
+    "decision": "ran",
+    "reason": "5 newsrooms with a current feed",
+    "evidence": {
+      "found": 5,
+      "added": 5
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009626.327
+  },
+  {
+    "_id": "6aee6a36c457b8c2dbbc7fc2",
+    "stage": "source",
+    "actor": "rule",
+    "subject": "method:osm",
+    "decision": "failed",
+    "reason": "TimeoutError: The operation was aborted due to timeout",
+    "evidence": {
+      "found": 0,
+      "added": 0
+    },
+    "run_id": "de205296-bceb-485f-9534-860024d17b57",
+    "location_id": "osm-r13915552-wa",
+    "at": 1794009654.588
+  }
+]

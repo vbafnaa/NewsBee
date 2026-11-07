@@ -18,6 +18,9 @@ import { collectionCandidateCount, ensureRunIndexes, getRun, newRun, runs, type 
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
 import { FakeModel } from "../support/fake-model";
+import { saveCredentialProfile } from "../../accounts/credentials";
+import { prepareBinding } from "../../accounts/execution";
+import { resolveRunOptions } from "../../core/run-options";
 
 const runtime = vi.hoisted(() => ({
   deps: null as OrchestratorDeps | null,
@@ -27,6 +30,7 @@ const runtime = vi.hoisted(() => ({
 vi.mock("next/server", () => ({ after: (callback: () => Promise<void>) => runtime.callbacks.push(callback) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ host: "portal.example.org" }) }));
 vi.mock("@/auth", () => ({
+  getMongoDatabase: async () => runtime.deps!.db,
   auth: async () => runtime.email ? { user: { email: runtime.email } } : null,
   isAdminEmail: async () => true,
 }));
@@ -55,11 +59,16 @@ beforeEach(async () => {
   await db.dropDatabase();
   root = await mkdtemp(path.join(os.tmpdir(), "newsbee-empty-collection-"));
   vi.stubEnv("NEWSBEE_MODE", "cloud");
+  vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", JSON.stringify({ fixture: Buffer.alloc(32, 7).toString("base64") }));
+  vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "fixture");
   runtime.email = "editor@example.org";
   runtime.callbacks = [];
   model = new FakeModel(() => { throw new Error("Empty collection must not call a model"); });
   deps = { db, store: new LocalArtifacts(root), settings: loadSettings({ NEWSBEE_ROOT: root }), model };
   runtime.deps = deps;
+  const principal = { id: "fixture-editor", email: "editor@example.org", role: "editor" as const };
+  await db.collection("journalist_admins").insertOne({ email: principal.email, principalId: principal.id, enabled: true, role: principal.role });
+  await saveCredentialProfile(db, principal, { source: "personal", config: { modelProviders: [{ name: "gemini", kind: "gemini", model: "fixture", apiKey: "fixture-not-live" }] } });
   await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).insertOne({ ...location, _id: location.id });
   await ensureRunIndexes(db);
   await ensureJobIndexes(db);
@@ -71,7 +80,9 @@ afterEach(async () => {
 afterAll(async () => { await client?.close(); await server?.stop(); });
 
 async function seed(status: RunStatus = "awaiting_authoring", tasks: SourceTask[] = []) {
-  const run = newRun(location, { kind: "manual", by: "editor@example.org" }, "2099-11-01", ["2099-11-01", "2099-11-08"], tasks);
+  const choices = resolveRunOptions({ mode: "manual", paid: { gemini: 200 } });
+  const run = newRun(location, { kind: "manual", by: "editor@example.org" }, "2099-11-01", ["2099-11-01", "2099-11-08"], tasks, null, null, choices);
+  run.execution = await prepareBinding(db, deps.settings, { id: "fixture-editor", email: "editor@example.org", role: "editor" }, location.id, "edition", choices);
   run.status = status;
   await runs(db).insertOne(run);
   return run;

@@ -1,3 +1,4 @@
+import { HttpStatusError } from "../core/http";
 /**
  * MongoDB job queue: port of orchestration/jobs.py for serverless execution. Each job is one
  * bounded step (one connector source, one authoring step) that fits one function call.
@@ -10,6 +11,7 @@ import type { Db, Filter } from "mongodb";
 import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { ModelRateLimitError } from "../model/runtime";
+import { safeError } from "../core/redaction";
 
 export const JOB_KINDS = ["discover", "agent_round", "finish_map", "plan_sources", "collect_source", "author_start", "author_rank", "author_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
@@ -291,15 +293,16 @@ export async function complete(db: Db, job: Job, result: Record<string, unknown>
 
 /** Retry with 2^attempts seconds backoff when retryable and attempts remain; else fail. */
 export async function fail(db: Db, job: Job, error: unknown, retryable: boolean): Promise<"retry" | "failed"> {
-  const limited = error instanceof ModelRateLimitError;
+  const limited = error instanceof ModelRateLimitError || (error instanceof HttpStatusError && error.status === 429);
+  const retryAfter = limited ? error.retryAfterSeconds ?? 60 : 0;
   const limitRetries = job.rate_limit_retries ?? 0;
   const retry = retryable && (limited
-    ? limitRetries < MAX_RATE_LIMIT_RETRIES && error.retryAfterSeconds <= 3600
+    ? limitRetries < MAX_RATE_LIMIT_RETRIES && retryAfter <= 3600
     : job.attempts < MAX_ATTEMPTS);
   const delay = limited
-    ? Math.max(Math.min(15 * 2 ** limitRetries, 300), error.retryAfterSeconds)
+    ? Math.max(Math.min(15 * 2 ** limitRetries, 300), retryAfter)
     : 2 ** job.attempts;
-  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  const detail = safeError(error);
   const current = now();
   const updated = await jobs(db).updateOne(
     { _id: job._id, claim_token: job.claim_token, status: "running" },

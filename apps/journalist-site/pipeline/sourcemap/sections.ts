@@ -3,8 +3,11 @@
  * section, and the reader edition map groups sources and items by section.
  *
  * A section comes from, in order: an explicit section on the item, the source's section
- * hint, the story kind's default, then keyword rules (first match wins).
+ * hint, the story kind's default, then keyword rules (first match wins). The kinds and keywords
+ * are in the playbook, in each category's file.
  */
+import { ruleSet } from "../playbook";
+
 export const SECTIONS = [
   { id: "events", label: "Events and things to do" },
   { id: "civic", label: "Council and government" },
@@ -20,6 +23,8 @@ export const SECTIONS = [
 ] as const;
 
 export type SectionId = typeof SECTIONS[number]["id"];
+/** The categories a map run must cover. Weather stays a section, outside this list. */
+export const CATEGORIES = ["events", "civic", "schools", "sports", "safety", "real_estate", "business", "community", "news", "obituaries"] as const satisfies readonly SectionId[];
 export const SECTION_IDS = new Set<string>(SECTIONS.map((section) => section.id));
 export const SECTION_LABELS: Record<SectionId, string> = Object.fromEntries(SECTIONS.map((section) => [section.id, section.label])) as Record<SectionId, string>;
 
@@ -42,47 +47,10 @@ export function sectionLabel(id: string | null | undefined) {
 }
 
 /** The default section for each story kind. */
-export const KIND_SECTIONS: Record<string, SectionId> = {
-  event: "events",
-  meeting_preview: "civic",
-  meeting_outcome: "civic",
-  state_news: "civic",
-  earthquake: "weather",
-  weather_alert: "weather",
-  safety_notice: "weather",
-  trending_topic: "news",
-  social_trend: "news",
-  housing_market: "real_estate",
-  development: "real_estate",
-  home_sale: "real_estate",
-  building_permit: "real_estate",
-  school_sports: "sports",
-  game_result: "sports",
-  court_case: "safety",
-  safety_incident: "safety",
-  local_news: "news",
-  news_report: "news",
-  business_opening: "business",
-  public_record: "civic",
-  obituary: "obituaries",
-  reader_story: "community",
-};
+export const KIND_SECTIONS: Record<string, SectionId> = Object.fromEntries(ruleSet("story_kinds").flatMap((rule) => rule.values!.map((kind) => [kind, rule.section as SectionId])));
 
-/** Keyword rules (from the exploration app, extended); the first match wins. */
-const RULES: Array<[SectionId, RegExp]> = [
-  // Event roundups ("things to do this weekend", "your agenda this week") before topic words in their listings.
-  ["events", /things to do|this weekend|\bevents (in|this|to)\b|agenda this week|what'?s happening|weekend guide|\bcalendar\b/i],
-  ["obituaries", /obituar|passed away|celebration of life|memorial service|in loving memory|\bfuneral\b|\bdied\b|\bwedding anniversary\b|\bturns 100\b/i],
-  ["safety", /\bpolice\b|sheriff|arrest|\bcrash|collision|\bfire\b|shooting|stabb|burglar|theft|robber|\b911\b|\bmedics?\b|aid response|rescue|\bcrime|missing person|suspect|charged with|\bcourt\b/i],
-  ["weather", /weather|\bstorm|windstorm|flood|heat wave|\bsmoke\b|air quality|advisory|snow|king tide|earthquake|power outage/i],
-  ["sports", /athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\bdefeated\b|\bleague\b.*\b(game|match|season)\b/i],
-  ["real_estate", /real estate|home sale|\bsold for\b|listing|\bpermit|zoning|rezone|land use|development|construction|housing|apartment|townhome|\bparcel|demolition|single-family/i],
-  ["schools", /\bschool|student|teacher|\bpta\b|ptsa|graduat|scholar|national merit|athlet|varsity|football|soccer|basketball|volleyball|swim meet|playoff|homecoming|\byouth\b|\bkids?\b/i],
-  ["civic", /council|commission|\bboard\b|ordinance|\bcity\b|county|\blevy\b|budget|\bvote|election|hearing|mayor|legislat|agenda|public comment|311|code enforcement/i],
-  ["business", /now open|grand opening|\bopens\b|opening|closing|\bcloses\b|restaurant|\bcafe|bakery|brewery|\bshop\b|\bstore\b|business|liquor|licen[cs]e|inspection|layoff|ribbon cutting/i],
-  ["events", /festival|concert|\bmarket\b|\bfair\b|\bclass\b|workshop|storytime|\btour\b|exhibit|screening|\bwalk\b|fun run|meetup|celebrat|\bevent|parade|cleanup|volunteer/i],
-  ["community", /neighbou?r|community council|association|volunteer|good deed|local hero|club\b/i],
-];
+/** Keyword rules; the first match wins. */
+const RULES = ruleSet("item_keywords").map((rule): [SectionId, RegExp] => [rule.section as SectionId, rule.test]);
 
 export function keywordSection(text: string): SectionId | null {
   for (const [section, pattern] of RULES) if (pattern.test(text)) return section;
@@ -93,7 +61,7 @@ export function keywordSection(text: string): SectionId | null {
  * The item's section. Kinds with a fixed meaning (meetings, alerts, obituaries, incidents)
  * keep their kind's section; general news and posts follow the keywords, then the source.
  */
-const FIXED_KINDS = new Set(["meeting_preview", "meeting_outcome", "earthquake", "weather_alert", "safety_notice", "court_case", "safety_incident", "housing_market", "development", "home_sale", "building_permit", "game_result", "business_opening", "obituary", "school_sports", "reader_story", "event"]);
+const FIXED_KINDS = new Set(ruleSet("fixed_kinds").flatMap((rule) => rule.values!));
 export function sectionFor(item: { kind?: string; title: string; description?: string | null; section_id?: unknown }, sourceHint?: string | null): SectionId {
   if (isSection(item.section_id)) return item.section_id;
   const kind = item.kind ?? "event";

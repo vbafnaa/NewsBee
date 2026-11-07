@@ -37,7 +37,7 @@ describe("shared internal-map password", () => {
 });
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), allowlist: vi.fn(), headers: vi.fn(), cookies: vi.fn(), deps: vi.fn(), database: vi.fn() }));
-vi.mock("@/auth", () => ({ auth: mocks.auth, isAdminEmail: mocks.allowlist }));
+vi.mock("@/auth", () => ({ auth: mocks.auth, isAdminEmail: mocks.allowlist, getMongoDatabase: mocks.database }));
 vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: mocks.deps }));
 vi.mock("@/pipeline/storage/mongo", async (original) => ({ ...await original<object>(), getDatabase: mocks.database }));
@@ -78,6 +78,7 @@ beforeEach(async () => {
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.database.mockResolvedValue(db);
   await db.dropDatabase();
+  await db.collection("journalist_admins").insertOne({ email: "fixture@example.test", enabled: true });
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.resetAllMocks(); });
 afterAll(async () => { await client?.close(); await server?.stop(); });
@@ -185,11 +186,15 @@ it("keeps admin model usage bounded and permits authenticated source editing wit
   expect(mocks.cookies).not.toHaveBeenCalled();
 });
 
-it("keeps deletion same-origin and admin-only, while allowing an admin to remove an idle fixture", async () => {
+it("keeps deletion same-origin and owner-only, while allowing the owner to remove an idle fixture", async () => {
   mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
   mocks.allowlist.mockResolvedValue(true);
   const context = { params: Promise.resolve({ locationId: "fixture-wa" }) };
   const request = (origin: string) => new Request("https://workspace.example.test/api/admin/locations/fixture-wa", { method: "DELETE", headers: { origin } });
+  vi.stubEnv("NEWSBEE_OWNER_EMAIL", "owner@example.test");
+  expect((await removeLocation(request("https://workspace.example.test"), context)).status).toBe(403);
+  expect(mocks.deps).not.toHaveBeenCalled();
+  vi.stubEnv("NEWSBEE_OWNER_EMAIL", "fixture@example.test");
   expect((await removeLocation(request("https://untrusted.example.test"), context)).status).toBe(403);
   expect(mocks.deps).not.toHaveBeenCalled();
   vi.stubEnv("NEWSBEE_READER_DRIVE_FOLDER_ID", "fixture-reader-root");

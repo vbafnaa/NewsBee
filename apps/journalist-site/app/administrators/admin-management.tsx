@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-type AdminAccount = { email: string; enabled: boolean };
+type AdminAccount = { email: string; enabled: boolean; role: "owner" | "editor" };
 
 export default function AdminManagement() {
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
@@ -44,7 +44,7 @@ export default function AdminManagement() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-      setNotice(`Admin access enabled for ${data.account.email}.`);
+      setNotice(`Editor access enabled for ${data.account.email}.`);
       form.reset();
       await load();
     } catch (caught) {
@@ -61,8 +61,8 @@ export default function AdminManagement() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <h2>Administrator access</h2>
-            <p>Only listed accounts can sign in to this journalist workspace.</p>
+            <h2>Approved users</h2>
+            <p>New users are editors. Sign-in requires an enabled, verified Google account. The configured owner cannot be disabled.</p>
           </div>
         </div>
         <form className="admin-form" onSubmit={(event) => void addAdmin(event)}>
@@ -71,15 +71,24 @@ export default function AdminManagement() {
             <input id="admin-email" name="admin-email" type="email" autoComplete="email"
               placeholder="editor@example.com" required maxLength={254} />
           </label>
-          <button type="submit" disabled={busy}>Add administrator</button>
+          <button type="submit" disabled={busy}>Add or reenable</button>
         </form>
         <div className="admin-list" aria-live="polite">
           {accounts.map((account) => (
             <div className="admin-row" key={account.email}>
-              <span>{account.email}</span>
+              <span>{account.email} · {account.role}</span>
               <span className={account.enabled ? "state active" : "state"}>
                 {account.enabled ? "Can sign in" : "Disabled"}
               </span>
+              {account.role !== "owner" && <button className="secondary" type="button" disabled={busy} onClick={async () => {
+                setBusy(true); setError(""); setNotice("");
+                try {
+                  const response = await fetch("/api/journalist-admins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: account.email, enabled: !account.enabled }) });
+                  if (!response.ok) throw new Error((await response.json()).detail ?? "Unable to update user");
+                  setNotice(`Editor access ${account.enabled ? "disabled" : "enabled"} for ${account.email}.`);
+                  await load();
+                } catch (error) { setError(error instanceof Error ? error.message : "Unable to update user"); } finally { setBusy(false); }
+              }}>{account.enabled ? "Disable" : "Reenable"}</button>}
             </div>
           ))}
           {accounts.length === 0 && (
