@@ -7,16 +7,15 @@ import LocationRemoval from "./location-removal";
 import { RunExecutionSummary } from "../../components/execution-policy";
 import type { ExecutionBinding } from "@/pipeline/accounts/execution";
 
-type Location = { id: string; name: string; state: string; removal_pending?: boolean; directory_edition?: string; systems?: { name: string; website?: string | null }[];
-  government?: { status?: string; platform?: string | null } | null;
-  source_coverage?: { status: string; gaps?: string[] } };
+type Location = { id: string; name: string; state: string; removal_pending?: boolean; directory_edition?: string; systems?: { name: string; website?: string | null }[] };
 type Run = { _id: string; execution?: ExecutionBinding; status: string; created_at: number; completed_at: number | null;
   kind?: string; trigger: { by: string; kind: string }; published?: { items: number; held: number } | null;
   error?: string | null; diagnostics?: { issues: { message: string; severity: string }[] } | null };
 const PAGE_SIZE = 50;
 const time = (value: number | null) => value ? new Date(value * 1000).toLocaleString() : "—";
 
-export default function LocationDetail({ locationId, view = "history", owner = false }: { locationId: string; view?: "history" | "profile"; owner?: boolean }) {
+/** `kind` keeps a step's history to its own runs: source map runs, or editions. */
+export default function LocationDetail({ locationId, view = "history", owner = false, kind }: { locationId: string; view?: "history" | "profile"; owner?: boolean; kind?: "map" | "edition" }) {
   const [location, setLocation] = useState<Location | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -56,6 +55,7 @@ export default function LocationDetail({ locationId, view = "history", owner = f
     return () => window.removeEventListener("newsbee:runs-changed", refresh);
   }, [loadPage]);
 
+  const shown = kind ? runs.filter((run) => (run.kind === "map") === (kind === "map")) : runs;
   return <>
     {error && <p role="alert" className="alert">{error}</p>}
     {view === "profile" && <section className="panel">
@@ -66,18 +66,14 @@ export default function LocationDetail({ locationId, view = "history", owner = f
         <dt>Directory edition</dt><dd>{location.directory_edition ?? "—"}</dd>
         <dt>Library systems</dt><dd>{location.systems?.length ? <ul>{location.systems.map((system, index) =>
           <li key={index}>{system.website ? <a href={system.website} target="_blank" rel="noopener noreferrer">{system.name}</a> : system.name}</li>)}</ul> : "None"}</dd>
-        <dt>Government source</dt><dd>{location.government?.status ?? "None"}{location.government?.platform && ` · ${location.government.platform}`}</dd>
-        <dt>Source coverage</dt><dd>{location.source_coverage?.status?.replaceAll("_", " ") ?? "Not assessed"}</dd>
-        <dt>Manage</dt><dd><a href={`/locations/${encodeURIComponent(locationId)}?tab=sources`}>Source map</a></dd>
       </dl>}
-      {location?.source_coverage?.gaps?.length ? <ul>{location.source_coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul> : null}
     </section>}
     {owner && view === "profile" && location && <LocationRemoval locationId={locationId} name={location.name} pending={location.removal_pending} />}
     {view === "history" && <section className="panel">
-      <h2>Run history</h2>
-      {runs.length === 0 && loaded && !busy && !error && <p>No runs for this location yet.</p>}
+      <h2>{kind === "map" ? "Source map run history" : kind === "edition" ? "Edition run history" : "Run history"}</h2>
+      {shown.length === 0 && loaded && !busy && !error && <p>No runs yet.</p>}
       <ol className="location-run-history">
-        {runs.map((run) => <li key={run._id}>
+        {shown.map((run) => <li key={run._id}>
           <div><button className="run-inspect-link" type="button" onClick={() => window.dispatchEvent(new CustomEvent("newsbee:inspect-run", { detail: { runId: run._id } }))}>
             {time(run.created_at)} · Inspect run</button> <span className="status-badge">{run.status.replaceAll("_", " ")}</span></div>
           <p className="chart-caption">{run.kind === "map" ? "Source map run · " : ""}{run.trigger.kind} by {run.trigger.by} · Finished: {time(run.completed_at)}

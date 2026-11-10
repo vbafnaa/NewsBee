@@ -21,16 +21,23 @@ export async function collectionCandidateCount(db: Db, runId: string): Promise<n
   return collectedItems(db).countDocuments({ run_id: runId, status: { $ne: "dropped" }, facts: { $ne: null } });
 }
 
-export type RunStatus = "mapping" | "mapped" | "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "published" | "failed" | "cancelled";
+export type RunStatus = "mapping" | "mapped" | "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "built" | "published" | "failed" | "cancelled";
 export const PROCESSING_RUN_STATUSES: RunStatus[] = ["mapping", "collecting", "authoring", "finishing", "publishing"];
 export const ACTIVE_RUN_STATUSES: RunStatus[] = [...PROCESSING_RUN_STATUSES, "awaiting_authoring", "awaiting_finish"];
 export const CANCELLABLE_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter((status) => status !== "publishing");
+/**
+ * Runs that finished: a map run is `mapped`; an edition run is `built` (written, waiting for someone to
+ * publish it) and `published` once a person published it to the reader.
+ */
+export const FINISHED_RUN_STATUSES: RunStatus[] = ["mapped", "built", "published"];
+/** Runs that may be restarted as a new run. */
+export const RESTARTABLE_RUN_STATUSES: RunStatus[] = [...FINISHED_RUN_STATUSES, "failed", "cancelled"];
 
 /** The jobs each stage may run. Discovery stays under collecting for runs started before map runs. */
 const STAGE_KINDS: Partial<Record<RunStatus, JobKind[]>> = {
-  mapping: ["discover", "agent_round", "finish_map"],
+  mapping: ["discover", "agent_round", "review_map", "finish_map"],
   collecting: ["discover", "agent_round", "plan_sources", "collect_source"],
-  authoring: ["author_start", "author_rank", "author_story"],
+  authoring: ["author_start", "author_rank", "author_story", "image_story", "stock_story"],
   finishing: ["author_finish"],
   publishing: ["author_finish"],
 };
@@ -106,6 +113,8 @@ export type PipelineRun = {
   collection_tasks?: SourceTask[];
   /** False until the source map has been read into collection tasks (after discovery). */
   planned?: boolean;
+  /** A test-mode map run (NEWSBEE_SOURCE_RUNS_ISOLATED): its sources are in its own store, not the source map. */
+  isolated?: boolean;
   /** Map runs: the discovery methods this run refreshes. */
   discovery?: string[];
   /** Edition runs: the version of the source map this run read. */
@@ -295,6 +304,12 @@ export async function failRun(db: Db, runId: string, error: string) {
     { _id: runId, status: { $in: ACTIVE_RUN_STATUSES } },
     { $set: { status: "failed", error, completed_at: now(), updated_at: now() } },
   );
+  await cancelRunJobs(db, runId);
+}
+
+/** Runs that are still open, for counting only the work that can still happen. */
+export async function openRunIds(db: Db) {
+  return (await runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES } }, { projection: { _id: 1 } }).toArray()).map((run) => run._id);
 }
 
 export class RunConflict extends Error {}

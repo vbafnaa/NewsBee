@@ -5,20 +5,17 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import type { RunOptions } from "@/pipeline/core/run-values";
 import type { ExecutionBinding } from "@/pipeline/accounts/execution";
-import PipelineApprovals from "./pipeline-approvals";
 
 export function RunExecutionSummary({ run }: { run?: { execution?: ExecutionBinding; trigger?: { by: string } } }) {
   if (!run) return null;
   const binding = run.execution;
   if (!binding) return <p className="notice">Legacy run: no credential sponsor is bound. Paid work is blocked until explicit owner recovery.</p>;
-  return <aside className={binding.approvalId ? "alert" : "notice"} aria-label="Persisted run funding">
-    <p><strong>{binding.purpose === "final" ? "Final" : binding.purpose === "training" ? "Training" : "Test"}</strong> · Sponsor {binding.sponsorEmail ?? run.trigger?.by ?? binding.sponsorId} · API version {binding.credentialVersion}
-      {binding.source === "environment" ? " · Owner deployment defaults" : " · Personal provider profile"}</p>
-    {binding.approvalId && <p><strong>Final-run Admin backup may consume Admin tokens.</strong> Personal models first; valid approval and an enabled account required. Eligibility only; inspect funding records for actual use.</p>}
+  return <aside className="notice" aria-label="Whose keys this run uses">
+    <p>Started by <strong>{binding.sponsorEmail ?? run.trigger?.by ?? binding.sponsorId}</strong> · {binding.source === "environment" ? "deployment default keys" : "their own API keys"} · API settings version {binding.credentialVersion}</p>
   </aside>;
 }
 
-export type RunPermission = { canSpend: boolean; canRestart: boolean; restartReason: string | null; canReconnect: boolean; canRequestBackup: boolean; canClaim: boolean; reason: string | null; paused: string | null };
+export type RunPermission = { canSpend: boolean; canRestart: boolean; restartReason: string | null; canReconnect: boolean; canClaim: boolean; reason: string | null; paused: string | null };
 export type ExecutionPolicy = {
   principal: { id: string; email: string; role: "owner" | "editor" };
   reasons: string[]; editionReasons: string[]; mapReasons: string[]; canStart: boolean; canStartEdition: boolean; canStartMap: boolean; permissions: Record<string, RunPermission>;
@@ -34,7 +31,7 @@ export function executionDisabledReason(policy: ExecutionPolicy | null, error: s
       : permission.canSpend ? null : permission.reason ?? "Paid work is unavailable for this run. Inspect its execution notice.";
   }
   const reasons = [...(action === "map" ? policy.mapReasons : policy.editionReasons)];
-  if (policy.blocker) reasons.push(`Newsroom slot held by ${policy.blocker.locationName} (${policy.blocker.paused ? "paused" : policy.blocker.status.replaceAll("_", " ")}). Open /locations/${encodeURIComponent(policy.blocker.locationId)}?tab=runs&run=${policy.blocker.id}; finish or cancel it first.`);
+  if (policy.blocker) reasons.push(`Newsroom slot held by ${policy.blocker.locationName} (${policy.blocker.paused ? "paused" : policy.blocker.status.replaceAll("_", " ")}). Open /locations/${encodeURIComponent(policy.blocker.locationId)}?tab=edition&run=${policy.blocker.id}; finish or cancel it first.`);
   return reasons.join(" ") || null;
 }
 export function useExecutionPolicy(options?: RunOptions | null) {
@@ -72,13 +69,12 @@ export function ExecutionNotice({ policy, error, runId, refresh }: { policy: Exe
   return <section className="notice" aria-label="Execution access">
     {error && <p role="alert">{error}</p>}
     {!policy && !error && <p role="status">Checking execution access...</p>}
-    {policy?.blocker && <p>Newsroom slot held by <Link href={`/locations/${encodeURIComponent(policy.blocker.locationId)}?tab=runs&run=${policy.blocker.id}`}>{policy.blocker.locationName}</Link>: {policy.blocker.paused ? "paused" : policy.blocker.status.replaceAll("_", " ")}. Queued and editor-waiting work also holds the slot.</p>}
+    {policy?.blocker && <p>Newsroom slot held by <Link href={`/locations/${encodeURIComponent(policy.blocker.locationId)}?tab=edition&run=${policy.blocker.id}`}>{policy.blocker.locationName}</Link>: {policy.blocker.paused ? "paused" : policy.blocker.status.replaceAll("_", " ")}. Queued and editor-waiting work also holds the slot.</p>}
     {!!policy?.reasons.length && <p>{policy.reasons.join(" ")} <Link href="/account">My API settings</Link></p>}
-    <p>{policy?.principal.role === "owner" ? "Owner deployment defaults apply automatically unless overridden or revoked. Editors never inherit these keys." : "Use your own API keys; editors never inherit deployment keys."} Admin-token backup requires approval for an exact final-run plan, never tests or training.{policy?.principal.role === "owner" && <> <Link href="/approvals">Review requests</Link>.</>}</p>
+    <p>{policy?.principal.role === "owner" ? "The configured owner may use deployment defaults or personal API keys." : "Your runs require your own API keys from Account & API settings; deployment keys are owner-only."} Provider-backed actions stay blocked until their required credentials are configured.</p>
     {permission?.reason && <p>{permission.reason}</p>}
     {permission?.restartReason && permission.restartReason !== permission.reason && <p>Restart: {permission.restartReason}</p>}
-    {permission?.canReconnect && <button className="secondary" disabled={busy} onClick={() => void reconnect("reconnect")}>Reconnect this run to my current API settings (no Admin backup)</button>}
-    {permission?.canReconnect && permission.canRequestBackup && <PipelineApprovals targetRunId={runId} onStarted={async () => { await refresh?.(); }} />}
+    {permission?.canReconnect && <button className="secondary" disabled={busy} onClick={() => void reconnect("reconnect")}>Reconnect this run to my current API settings</button>}
     {permission?.canClaim && <button className="secondary" disabled={busy} onClick={() => void reconnect("claim")}>Owner: explicitly claim this legacy run</button>}
     {actionError && <p role="alert">{actionError}</p>}
   </section>;

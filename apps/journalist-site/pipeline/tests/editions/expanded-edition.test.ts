@@ -6,6 +6,7 @@ import { authorNextStory, finishAuthoring, rankSection, type AuthoringDeps, type
 import { COLLECTIONS } from "../../storage/mongo";
 import { CANDIDATES_PER_SECTION, MAX_PER_SOURCE_IN_SECTION, MAX_WIDER_ITEMS, PUBLISHED_PER_SECTION, RATED_PER_SECTION } from "../../sourcemap/sections";
 import { FakeModel } from "../support/fake-model";
+import { resolveRunOptions, withRunContext } from "../../core/run-options";
 
 vi.mock("../../editions/edition-map", () => ({ writeEditionMap: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../model/story-writer", async (importOriginal) => ({
@@ -80,6 +81,7 @@ it("publishes ten passed stories, excludes held results, and carries reviewed ph
   expect(result.edition?.items).toHaveLength(10);
   expect(result.edition?.items.map((item) => item.story_id)).toEqual(Array.from({ length: 10 }, (_, index) => `story-${index + 1}`));
   expect(result.edition?.items[0]).toMatchObject({ blurb: "Complete authored story.", image_caption: "Garden", image_credit: "A neighbour" });
+  expect(result.edition?.items[0]).not.toHaveProperty("image"); // An unaudited URL never follows the saved credit.
   const again = await finishAuthoring(deps, "run");
   expect(again.edition?.items).toHaveLength(10);
 });
@@ -88,4 +90,22 @@ it("does not keep authoring a section after ten stories pass", async () => {
   for (let index = 0; index < 10; index++) await entry(index);
   expect(await authorNextStory(deps, "run")).toEqual({ more: false, done: true });
   expect(deps.model).toHaveProperty("calls", []);
+});
+it("publishes distinct illustration references and retains story text without photographer attribution", async () => {
+  await seed("ready", [candidate(0), candidate(1), candidate(2)]);
+  for (let index = 0; index < 3; index++) {
+    await entry(index);
+    await db.collection(COLLECTIONS.editionEntries).updateOne({ story_id: `story-${index}` }, { $set: {
+      "result.draft.headline": index < 2 ? `Mime workshop ${index}` : "New bus service", "result.story.kind": "local_news",
+    } });
+  }
+  const result = await withRunContext({ db, runId: "run", locationId: "fixture-wa", options: resolveRunOptions({ image_mode: "illustrated", paid: {} }, {}) },
+    () => finishAuthoring(deps, "run"));
+  const payload = result.edition as any;
+  expect(payload.media_mode).toBe("illustrated"); expect(payload.items).toHaveLength(3);
+  expect(payload.items.map((item: any) => item.illustration_id)).toEqual(["performance", undefined, "transit"]);
+  expect(payload.items.every((item: any) => item.blurb === "Complete authored story." && !item.image && !item.image_credit)).toBe(true);
+  expect(payload.items[0].illustration_policy).toBe("newsbee-watercolor-v1");
+  expect(await db.collection(COLLECTIONS.editions).findOne({ id: payload.id })).toMatchObject({ status: "built" });
+  expect(await db.collection(COLLECTIONS.publishedStories).countDocuments()).toBe(0);
 });

@@ -14,7 +14,7 @@ prefer:
   - consumers: [agent]
     from: skills/map-sources/SKILL.md
     rules:
-      - { id: obituaries.prefer.funeral_homes, text: Funeral homes. }
+      - { id: obituaries.prefer.funeral_homes, text: "Funeral homes serving the place, which publish their own death notices." }
   - consumers: [manual]
     from: apps/journalist-site/pipeline/discovery/methods.ts
     rules:
@@ -42,10 +42,6 @@ search_playbook:
       - { id: obituaries.stage1.institution, stage: stage1, source_type: Funeral homes, for_each: { list: institutions, kinds: [funeral_directors], limit: 2 }, pattern: '"{name}" "{state}" obituaries' }
       - { id: obituaries.stage2.funeral_sweep, stage: stage2, source_type: Funeral homes, for_each: { list: funeral_hosts, limit: 2 }, pattern: 'site:{host} (obituary OR "in loving memory") after:{after}' }
       - { id: obituaries.stage2.place_sweep, stage: stage2, source_type: Obituary pages, pattern: '"{place}" "{state}" obituary after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: obituaries.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: obituaries funeral }
 
 page_words:
   - consumers: [manual]

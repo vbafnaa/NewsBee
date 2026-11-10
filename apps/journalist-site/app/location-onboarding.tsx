@@ -60,7 +60,7 @@ export default function LocationOnboarding({ busy, enrolled, onAdd }: {
   }
   const added = selected ? enrolled.includes(selected.id) : false;
   return <section className="panel onboarding-panel" aria-labelledby="onboarding-title">
-    <div className="section-heading"><h2 id="onboarding-title">Add a community</h2></div>
+    <div className="section-heading"><h2 id="onboarding-title">Add a location</h2></div>
     <p>Search a US community, select it, then add. It appears on the reader site after its first edition. Missing sources won&rsquo;t prevent onboarding.</p>
     <form className="onboarding-form" onSubmit={(event) => { event.preventDefault(); if (selected && !added && !busy) void onAdd(selected); }}>
       <div className="town-combobox">

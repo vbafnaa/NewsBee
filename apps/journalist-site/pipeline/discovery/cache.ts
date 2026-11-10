@@ -3,8 +3,14 @@
  * of discovered items for one scope (a location id or a state code) and kind. Good results
  * are reused for `ttlDays`; failed or empty discoveries are retried after an hour, so a
  * temporary outage never leaves a location without sources for long.
+ *
+ * A test-mode run (NEWSBEE_SOURCE_RUNS_ISOLATED) reuses only the entries that describe the place
+ * itself (PLACE_KINDS: its boundary and landmarks, institutions, city website, school districts and
+ * nearby topics). Lists of sources (newsrooms, athletics feeds) are found again, and not saved, so
+ * every run does that work itself.
  */
 import type { Db } from "mongodb";
+import { isolatedRunId } from "../core/run-options";
 
 export const DISCOVERED_SOURCES = "discovered_sources";
 export const RETRY_MS = 3600_000;
@@ -13,9 +19,20 @@ export type DiscoveryEntry<T> = { _id: string; scope: string; kind: string; item
 
 export function discoveredSources<T>(db: Db) { return db.collection<DiscoveryEntry<T>>(DISCOVERED_SOURCES); }
 
+/** What a test-mode run may reuse: facts about the place, not the sources found in it. */
+export const PLACE_KINDS = ["area", "institutions", "city_site", "school_districts", "topics"];
+
 export async function cachedDiscovery<T>(db: Db, scope: string, kind: string, ttlDays: number, build: () => Promise<{ items: T[]; detail?: string | null }>): Promise<DiscoveryEntry<T>> {
   const collection = discoveredSources<T>(db);
   const _id = `${scope}:${kind}`;
+  if (isolatedRunId() && !PLACE_KINDS.includes(kind)) {
+    try {
+      const { items, detail } = await build();
+      return { _id, scope, kind, items, refreshed_at: new Date().toISOString(), ok: true, detail: detail ?? null };
+    } catch (error) {
+      return { _id, scope, kind, items: [], refreshed_at: new Date().toISOString(), ok: false, detail: error instanceof Error ? error.message : String(error) };
+    }
+  }
   const cached = await collection.findOne({ _id });
   const age = cached ? Date.now() - Date.parse(cached.refreshed_at) : Infinity;
   const fresh = cached && (cached.ok && cached.items.length ? age < ttlDays * 86400_000 : age < RETRY_MS);

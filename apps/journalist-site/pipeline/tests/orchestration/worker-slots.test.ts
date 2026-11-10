@@ -27,6 +27,17 @@ async function seedRun(id: string, status: "collecting" | "mapping" = "collectin
 }
 const jobsFor = (runId: string, kind: JobKind, count: number) => Array.from({ length: count }, (_, index) => ({ _id: `${runId}-${kind}-${index}`, kind, run_id: runId, location_id: "a", payload: {}, dedupe_key: `${runId}:${kind}:${index}` }));
 
+it.each(["image_story", "stock_story"] as const)("dispatches %s in authoring without running a second serial image job", async kind => {
+  const run = await seedRun("images");
+  await runs(db).updateOne({ _id: run._id }, { $set: { status: "authoring" } });
+  await enqueueMany(db, jobsFor(run._id, kind, 2));
+  expect(stageKinds({ status: "authoring" })).toContain(kind);
+  expect((await workableRuns(db)).map(item => item._id)).toContain(run._id);
+  expect((await dispatchPlan(db, 4)).send).toBe(1);
+  expect(await claim(db, [kind], undefined, run._id)).not.toBeNull();
+  expect((await dispatchPlan(db, 4)).send).toBe(0);
+});
+
 it("gives out only as many worker slots as allowed, and removal waits for them", async () => {
   const first = await acquireSlot(db, 2), second = await acquireSlot(db, 2);
   expect(first).toBeTruthy();

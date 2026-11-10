@@ -3,12 +3,15 @@ import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
 import { communityName, matchingCommunities, onboardedCommunities, type Community } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
-import { readerDriveFolderId } from "../../../../shared/reader-folder";
+import { resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
+import { uniquePhotoItems } from "../../../../shared/photo-identity";
+import { photoStoryMismatch } from "../../../../shared/photo-story-match";
 import { ARTIFACTS_COLLECTION, usesMongoArtifacts } from "../../../../shared/artifact-store";
 import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
 import { recordReaderSignup } from "./signup-storage";
+import { normalizeStoryImage, type StoryImage } from "../../../../shared/story-image";
 
-export type EditionItem = {
+export type EditionItem = Omit<Partial<StoryImage>, "image" | "image_caption" | "image_credit"> & {
   story_id?: string | null;
   headline: string;
   blurb: string;
@@ -18,7 +21,11 @@ export type EditionItem = {
   rank?: number | null;
   kind?: "event" | "meeting_preview" | "meeting_outcome" | "state_news" | "earthquake" | "trending_topic" | "social_trend" | "safety_notice" | "housing_market" | "development" | "school_sports" | "game_result" | "home_sale" | "building_permit" | "weather_alert" | "court_case" | "local_news" | "business_opening" | "obituary" | "reader_story" | "safety_incident" | "news_report" | "public_record";
   source_name?: string;
+  illustration_id?: string;
+  illustration_asset_id?: string;
+  illustration_policy?: string;
   section?: string | null;
+  section_id?: string | null;
   local?: boolean;
   image?: string | null;
   image_caption?: string | null;
@@ -26,6 +33,7 @@ export type EditionItem = {
 };
 
 export type Edition = {
+  media_mode?: "illustrated" | "photos" | "none";
   id: string;
   location_id: string;
   location_name: string;
@@ -91,9 +99,11 @@ async function readerMongoClient() {
   return { client: await mongo.promise, databaseName, mongo };
 }
 
-/** The reader folder the pipeline publishes to (no output channels). */
-export function readerFolderId() {
-  return readerDriveFolderId();
+/** Resolve the existing channel first, falling back only when it is absent. */
+export async function readerFolderId() {
+  const db = await readerDatabase();
+  return resolveReaderDriveFolderId((id) => db.collection<ReaderChannel>("output_channels")
+    .findOne({ _id: id }, { projection: { _id: 1, enabled: 1, drive_folder_id: 1 } }));
 }
 
 function base64Url(bytes: Uint8Array) {
@@ -196,7 +206,7 @@ function parseLocation(value: unknown): Location | null {
   };
 }
 
-function parseEdition(value: unknown): Edition | null {
+export function parseEdition(value: unknown): Edition | null {
   if (!isRecord(value) || !Array.isArray(value.items)) return null;
   if (
     typeof value.id !== "string" ||
@@ -212,10 +222,23 @@ function parseEdition(value: unknown): Edition | null {
     if (!isRecord(item) || typeof item.headline !== "string" ||
       typeof item.blurb !== "string" || typeof item.when_where !== "string" ||
       typeof item.event_date !== "string" ||
-      !(typeof item.source_url === "string" || item.source_url === null) ||
-      ["image", "image_caption", "image_credit"].some((key) => item[key] !== undefined && item[key] !== null && typeof item[key] !== "string")) return null;
+      !(typeof item.source_url === "string" || item.source_url === null)) return null;
   }
-  return value as Edition;
+  // Malformed optional media must never make a published edition unreadable.
+  return {
+    ...value,
+    media_mode: ["illustrated", "photos", "none"].includes(String(value.media_mode)) ? value.media_mode : undefined,
+    items: uniquePhotoItems(value.items.map((item) => {
+      const { image, image_credit, image_source_url, image_alt, image_width, image_height,
+        image_role, image_place, image_subject, image_caption, image_date, image_license, image_license_url, image_asset_id,
+        image_catalog_id, image_catalog_revision, ...story } = item;
+      const credited = typeof image_credit === "string" && Boolean(image_credit.trim());
+      // The published payload owns image selection. A display fallback must not
+      // replace a photo withheld by rights, quality or visual-review checks.
+      const media = normalizeStoryImage({ ...item, image: credited ? image : null }, item);
+      return { ...story, ...(media && !photoStoryMismatch(story, media) ? media : null) };
+    })),
+  } as Edition;
 }
 
 type FolderReader = { list(): Promise<DriveFile[]>; read(file: DriveFile): Promise<unknown> };
@@ -327,7 +350,7 @@ async function loadDriveData(folderId: string) {
 
 export async function readerData(folderId?: string) {
   const state = cache();
-  const selectedFolderId = folderId ?? readerFolderId();
+  const selectedFolderId = folderId ?? await readerFolderId();
   if (state.data?.folderId === selectedFolderId && state.data.expiresAt > Date.now()) {
     return state.data;
   }
@@ -367,7 +390,7 @@ export function searchLocations(locations: Location[], query: string) {
     .slice(0, 10);
 }
 
-async function readerDatabase() {
+export async function readerDatabase() {
   const { client, databaseName } = await readerMongoClient();
   return client.db(databaseName);
 }

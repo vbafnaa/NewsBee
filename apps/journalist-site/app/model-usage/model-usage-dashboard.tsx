@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
-import type { DetailedModelUsage, UsageMetrics, UsagePeriod } from "@/pipeline/model/usage";
+import type { DetailedModelUsage, ModelUse, UsageMetrics, UsagePeriod } from "@/pipeline/model/usage";
 
 const number = (value: number) => value.toLocaleString();
 const usd = (value: number | null) => value === null ? "Not estimated" : new Intl.NumberFormat("en-US", {
@@ -17,6 +17,11 @@ function Cost({ metrics }: { metrics: UsageMetrics }) {
 
 function TokenCounts({ metrics }: { metrics: UsageMetrics }) {
   return <>{number(metrics.input_tokens)} / {number(metrics.output_tokens)}{metrics.calls_without_tokens > 0 && <small className="activity-time">{number(metrics.calls_without_tokens)} without complete token counts</small>}</>;
+}
+
+/** The models a person or run used, most calls first. */
+export function ModelList({ models }: { models: ModelUse[] }) {
+  return <>{models.map((row) => <small key={JSON.stringify([row.provider, row.model])} className="activity-time">{row.model ?? "Unspecified model"} · {row.provider} · {number(row.calls)} call{row.calls === 1 ? "" : "s"}{row.failures ? `, ${number(row.failures)} failed` : ""}</small>)}</>;
 }
 
 function DailyChart({ daily }: { daily: DetailedModelUsage["daily"] }) {
@@ -69,7 +74,7 @@ export default function ModelUsageDashboard() {
     <section className="panel workspace-toolbar">
       <div className="field"><span>Reporting window</span><div className="period-switch" aria-label="Usage window">{([1, 7, 30] as const).map((period) => <button key={period} className="secondary" aria-pressed={days === period} onClick={() => setDays(period)}>{period === 1 ? "24 hours" : `${period} days`}</button>)}</div></div>
       <label className="field">Location<select value={location} onChange={(event) => setLocation(event.target.value)}><option value="">All locations and unassigned calls</option>{location && !data?.location_options.some((option) => option.id === location) && <option value={location}>{selectedName}</option>}{data?.location_options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
-      <button className="secondary" onClick={() => setRefresh((value) => value + 1)}>Refresh</button><Link href="/health">System health &amp; provider readiness</Link>
+      <button className="secondary" onClick={() => setRefresh((value) => value + 1)}>Refresh</button>
     </section>
     {error && <p className="alert" role="alert">Model usage unavailable: {error}{data ? " Displayed data is from the last successful update and may be stale." : ""}</p>}
     {!data && !error && <p role="status">Loading model usage...</p>}
@@ -84,7 +89,7 @@ export default function ModelUsageDashboard() {
       {data.totals.unpriced_calls > 0 && <p className="notice">{number(data.totals.unpriced_calls)} call(s) are not included in the cost estimate: either token counts or exact model pricing are unavailable. Unknown costs are never treated as free.</p>}
       {!data.totals.calls && <section className="panel empty-state"><h2>No recorded calls for this selection</h2><p>Change the location or time window. Usage appears after a provider attempt is recorded; no historical usage is invented.</p></section>}
       {data.totals.calls > 0 && <>
-      <section className="panel"><div className="section-heading"><div><h2>Usage by model</h2><p>Actual provider and model identifiers, not just the configured primary. Output includes separately reported Gemini reasoning tokens.</p></div></div>
+      <section className="panel"><div className="section-heading"><div><h2>Usage by model</h2><p>Actual provider and model identifiers, not just the configured primary. Output includes separately reported reasoning tokens (such as Gemini's thoughts).</p></div></div>
         <div className="table-wrap"><table><thead><tr><th>Provider / model</th><th>Calls</th><th>Failed / rate-limited</th><th>Tokens in / out</th><th>Est. cost (USD)</th><th>Input / output price per 1M</th><th>Avg latency</th></tr></thead><tbody>
           {data.models.map((row) => <tr key={JSON.stringify([row.provider, row.model])}><td><strong>{row.model ?? "Unspecified model"}</strong><small className="activity-time">{row.provider}</small></td><td>{number(row.calls)}</td><td>{number(row.failures)} / {number(row.rate_limited)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td><td>{row.pricing ? `${usd(row.pricing.input_per_mtok)} / ${usd(row.pricing.output_per_mtok)}` : "Pricing not configured for this model"}</td><td>{row.average_duration_ms === null ? "-" : `${(row.average_duration_ms / 1000).toFixed(2)} s`}</td></tr>)}
         </tbody></table></div>
@@ -93,13 +98,25 @@ export default function ModelUsageDashboard() {
       <section className="panel"><div className="section-heading"><div><h2>Usage by location</h2><p>Pipeline jobs and manual discovery are attributed to their community. Older calls without context stay unassigned.</p></div>{location && <button className="secondary" onClick={() => setLocation("")}>Show all locations</button>}</div>
         <div className="table-wrap"><table><thead><tr><th>Location</th><th>Models</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Est. cost (USD)</th><th>Workspace</th></tr></thead><tbody>{data.locations.map((row) => <tr key={row.id}><td><button className="run-inspect-link" onClick={() => setLocation(row.id)}>{row.name}</button></td><td>{number(row.models)}</td><td>{number(row.calls)}</td><td>{number(row.failures)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td><td>{row.onboarded ? <Link href={`/locations/${encodeURIComponent(row.id)}`}>Open workspace</Link> : row.attributed ? "Not currently onboarded" : "Attribution unavailable"}</td></tr>)}</tbody></table></div>
       </section>
+      <section className="panel"><div className="section-heading"><div><h2>Usage by person</h2><p>Each run uses the models and keys of the person who started it, in their configured order, so people can use different providers. Calls outside a run are not attributed to a person.</p></div></div>
+        {data.people.length ? <div className="table-wrap"><table><thead><tr><th>Person</th><th>Models used</th><th>Runs</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Est. cost (USD)</th></tr></thead><tbody>{data.people.map((row) => <tr key={row.sponsor_id}>
+          <td><strong>{row.email ?? row.sponsor_id}</strong></td><td><ModelList models={row.models} /></td><td>{number(row.runs)}</td><td>{number(row.calls)}</td><td>{number(row.failures)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td>
+        </tr>)}</tbody></table></div> : <p className="empty-state">No calls in this selection were made in a run with a known starter.</p>}
+      </section>
+      <section className="panel"><div className="section-heading"><div><h2>Usage by run</h2><p>The latest runs in this window (up to 50): which models served each one, and whose keys they were on.</p></div></div>
+        {data.runs.length ? <div className="table-wrap"><table><thead><tr><th>Run</th><th>Started by</th><th>Models used</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Est. cost (USD)</th></tr></thead><tbody>{data.runs.map((row) => <tr key={row.run_id}>
+          <td>{row.location_id ? <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs&run=${encodeURIComponent(row.run_id)}`}>{row.location_name ?? row.location_id}</Link> : <strong>{row.run_id}</strong>}<small className="activity-time">{row.kind === "map" ? "Source map run" : row.kind === "edition" ? "Edition run" : "Run"}{row.started_at ? ` · ${stamp(row.started_at)}` : ""}{row.status ? ` · ${row.status.replaceAll("_", " ")}` : ""}</small></td>
+          <td>{row.started_by ?? "Unknown"}<small className="activity-time">{row.credential_source === "environment" ? "Deployment default keys" : row.credential_source === "personal" ? "Their own keys" : ""}</small></td>
+          <td><ModelList models={row.models} /></td><td>{number(row.calls)}</td><td>{number(row.failures)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td>
+        </tr>)}</tbody></table></div> : <p className="empty-state">No runs made model calls in this selection.</p>}
+      </section>
       <section className="panel"><h2>Usage by pipeline role</h2><div className="table-wrap"><table><thead><tr><th>Role</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Est. cost (USD)</th></tr></thead><tbody>{data.roles.map((row) => <tr key={row.role}><td>{row.role}</td><td>{number(row.calls)}</td><td>{number(row.failures)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td></tr>)}</tbody></table></div></section>
       <details className="panel"><summary>Daily usage data (UTC)</summary><div className="table-wrap"><table><thead><tr><th>Date</th><th>Calls</th><th>Failed</th><th>Tokens in / out</th><th>Est. cost (USD)</th></tr></thead><tbody>{data.daily.map((row) => <tr key={row.day}><td>{row.day}</td><td>{number(row.calls)}</td><td>{number(row.failures)}</td><td><TokenCounts metrics={row} /></td><td><Cost metrics={row} /></td></tr>)}</tbody></table></div></details>
       {data.recent_failures.length > 0 && <details className="panel"><summary>Recent failed attempts ({data.recent_failures.length}, up to 20)</summary><div className="table-wrap"><table><thead><tr><th>Time</th><th>Provider / model</th><th>Location / role</th><th>Error</th></tr></thead><tbody>{data.recent_failures.map((row, index) => <tr key={index}><td>{stamp(row.at)}</td><td>{row.provider} / {row.model ?? "unspecified"}</td><td>{row.location} / {row.role}</td><td>{row.status_code ? `${row.status_code}: ` : ""}{row.message}</td></tr>)}</tbody></table></div></details>}
       </>}
       <details className="panel"><summary>Pricing, quotas and data coverage</summary>
         <p>These are estimates, not provider invoices. Prices are USD per million input/output tokens. Only attempts with both token counts and configured rates are priced; cached-token discounts, batch discounts and other provider billing adjustments are not modeled. Configured zero prices are supported for free/local models.</p>
-        <p>Configure <code>NEWSBEE_MODEL_&lt;NAME&gt;_INPUT_COST_PER_MTOK</code> and <code>NEWSBEE_MODEL_&lt;NAME&gt;_OUTPUT_COST_PER_MTOK</code> for the current model. Gemini light uses <code>GEMINI_LIGHT</code>, not the writing model's price. Exact historical or other model prices can be set with <code>NEWSBEE_MODEL_PRICING</code>; see deployment documentation. Current prices are applied to the selected history; they are not historical billing-rate snapshots.</p>
+        <p>Configure <code>NEWSBEE_MODEL_&lt;NAME&gt;_INPUT_COST_PER_MTOK</code> and <code>NEWSBEE_MODEL_&lt;NAME&gt;_OUTPUT_COST_PER_MTOK</code> for the current model. A provider's light model uses <code>&lt;NAME&gt;_LIGHT</code> (for example <code>GEMINI_LIGHT</code>), not its main model's price. Exact historical or other model prices can be set with <code>NEWSBEE_MODEL_PRICING</code>; see deployment documentation. Current prices are applied to the selected history; they are not historical billing-rate snapshots.</p>
         <p>Usage records are retained for {data.retention_days} days; this dashboard supports up to 30 days. Calls predating location attribution remain unassigned. Provider metadata can omit token usage, especially on failed requests. No prompts or responses are returned by this dashboard. Provider health probes are not generation calls.</p>
         <div className="table-wrap"><table><caption>Configured quota reference (not a live quota balance)</caption><thead><tr><th>Provider / model</th><th>Requests / minute</th><th>Requests / day</th></tr></thead><tbody>{data.models.map((row) => <tr key={JSON.stringify([row.provider, row.model])}><td>{row.provider} / {row.model ?? "unspecified"}</td><td>{row.limits.requests_per_minute === null ? "Not configured" : number(row.limits.requests_per_minute)}</td><td>{row.limits.requests_per_day === null ? "Not configured" : number(row.limits.requests_per_day)}</td></tr>)}</tbody></table></div>
       </details>

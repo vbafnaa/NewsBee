@@ -8,6 +8,7 @@ import type { Db } from "mongodb";
 import type { ModelRuntime } from "../model/runtime";
 import { relaxedContentAllowed } from "../core/run-options";
 import { pythonJson } from "../model/newsworthiness";
+import { normalizeStoryImage, type StoryImageMetadata } from "../../../../shared/story-image";
 
 export const ITEM_TEXTS = "item_texts";
 export const TEXT_TTL_SECONDS = 30 * 86400;
@@ -16,7 +17,7 @@ export const MIN_FACTS = 3;
 const DETAIL_FIELDS = ["people", "organisations", "places", "when", "numbers", "what", "why", "next_step"] as const;
 export type FactSupport = { field: typeof DETAIL_FIELDS[number]; value: string; quote: string };
 
-export type Details = {
+export type Details = StoryImageMetadata & {
   people: string[];
   organisations: string[];
   places: string[];
@@ -55,6 +56,7 @@ function unique(values: Array<string | null | undefined>, limit = 8) {
 export function mergeDetails(...all: Array<Partial<Details> | null | undefined>): Details {
   const parts = all.filter((value): value is Partial<Details> => Boolean(value));
   const first = <K extends keyof Details>(key: K) => parts.map((part) => part[key]).find((value) => value !== null && value !== undefined && value !== "") as Details[K] | undefined;
+  const image = parts.map((part) => normalizeStoryImage(part)).find(Boolean);
   const merged: Details = {
     people: unique(parts.flatMap((part) => part.people ?? [])),
     organisations: unique(parts.flatMap((part) => part.organisations ?? [])),
@@ -65,7 +67,7 @@ export function mergeDetails(...all: Array<Partial<Details> | null | undefined>)
     why: first("why") ?? null,
     quote: first("quote") ?? null,
     next_step: first("next_step") ?? null,
-    image: first("image") ?? null,
+    image: null, ...image,
     links: unique(parts.flatMap((part) => part.links ?? []), 6),
     extracted: parts.some((part) => part.extracted),
     support: parts.flatMap((part) => part.support ?? []).filter((item, index, list) => list.findIndex((other) => other.field === item.field && other.value === item.value && other.quote === item.quote) === index).slice(0, 24),

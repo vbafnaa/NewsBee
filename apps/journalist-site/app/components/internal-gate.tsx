@@ -8,7 +8,7 @@ export default async function InternalGate({ returnTo, error, children }: { retu
   return <section className="panel internal-gate">
     <p className="eyebrow">Protected · Read-only access</p>
     <h2>Unlock internal maps</h2>
-    <p>Source review and interest and usage share one password. No journalist account is needed. Access expires after eight hours; editing and pipeline controls remain administrator-only.</p>
+    <p>Signed-in journalists open these maps directly. Without an account, use the shared password; access lasts eight hours. The maps are read-only: sources are edited in each location&rsquo;s workspace.</p>
     {!configured ? <p className="alert" role="alert">Internal maps are locked. Configure NEWSBEE_INTERNAL_PASSWORD on the server to enable access.</p> :
       <form method="post" action="/api/internal-access" className="unlock-form">
         <input type="hidden" name="returnTo" value={internalReturnPath(returnTo)} />

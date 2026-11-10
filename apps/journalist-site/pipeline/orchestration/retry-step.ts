@@ -19,6 +19,10 @@ export async function retryFailedStep(db: Db, runId: string, jobId: string, by: 
     throw new RunConflict("Only a failed or interrupted step can be retried");
   }
   const stage = stageFor(job, run.kind === "map");
+  if (["image_story", "stock_story"].includes(job.kind) && run.draft_id) {
+    const draft = await db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id });
+    if (Number(draft?.image_revision ?? 0) !== Number(job.payload.revision ?? 0)) throw new RunConflict("This image step belongs to an earlier draft; resume the current image stage instead");
+  }
   const lastProcessingStage = run.stage_transitions?.filter((transition) =>
     ["mapping", "collecting", "authoring", "finishing", "publishing"].includes(transition.status)).at(-1)?.status;
   if (run.status === "failed") {
@@ -26,7 +30,8 @@ export async function retryFailedStep(db: Db, runId: string, jobId: string, by: 
       throw new RunConflict("This step belongs to an earlier stage; start a new run instead");
     }
   } else if (!(run.status === stage && (stage !== "collecting" || !run.draft_id)) &&
-    !(stage === "collecting" && !run.draft_id && run.status === "awaiting_authoring")) {
+    !(stage === "collecting" && !run.draft_id && run.status === "awaiting_authoring") &&
+    !(["image_story", "stock_story"].includes(job.kind) && run.status === "awaiting_finish")) {
     throw new RunConflict("This run has moved past that step; start a new run instead");
   }
   if ((await db.collection<Job>(COLLECTIONS.jobs).countDocuments({ run_id: runId, status: "running" })) > 0) {

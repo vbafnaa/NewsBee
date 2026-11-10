@@ -10,7 +10,7 @@ import type { ComponentHealth, ModelRuntime } from "../model/runtime";
 import { modelUsageSummary } from "../model/usage";
 import { COLLECTIONS } from "../storage/mongo";
 import { diagnoseRuns, type RunDiagnostics } from "./diagnostics";
-import { collectionCandidateCount, runs, type PipelineRun, type RunSource } from "./runs";
+import { openRunIds, collectionCandidateCount, runs, type PipelineRun, type RunSource } from "./runs";
 import { schedulerState } from "./scheduler";
 import { SOURCE_HEALTH, type SourceHealth } from "./source-health";
 
@@ -110,8 +110,9 @@ export async function healthSummary(db: Db, model: ModelRuntime | null, settings
     rows.push(await locationHealth(db, latest, location, { diagnostics: latest ? diagnostics.get(latest._id) ?? null : null }));
   }
   const scheduler = await schedulerState(db);
+  const open = await openRunIds(db);
   const counts = await db.collection(COLLECTIONS.jobs).aggregate<{ _id: string; count: number }>([
-    { $match: { status: { $in: ["pending", "running", "failed"] } } },
+    { $match: { $or: [{ status: "failed" }, { status: { $in: ["pending", "running"] }, run_id: { $in: open } }] } },
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]).toArray();
   const queue = Object.fromEntries(["pending", "running", "failed"].map((status) => [status, counts.find((item) => item._id === status)?.count ?? 0]));
@@ -122,7 +123,8 @@ export async function healthSummary(db: Db, model: ModelRuntime | null, settings
   // At a glance: failed when no model provider can write stories or queued work cannot advance;
   // warning when the scheduler is stale or erroring, a fallback provider is in use, or usage is
   // near configured limits.
-  const modelReady = modelHealth?.status === "ok" || modelHealth?.status === "degraded";
+  // With keys set per account there is no shared provider to check, which isn't a failure.
+  const modelReady = !modelHealth || ["ok", "degraded", "not_configured"].includes(modelHealth.status);
   const warning = schedulerProblem || modelHealth?.status === "degraded" || modelUsage.providers.some((item) => item.warnings.length > 0);
   return {
     generated_at: Date.now() / 1000,

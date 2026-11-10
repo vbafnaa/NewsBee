@@ -22,6 +22,9 @@ const PART_LABELS = { goal: "Goal", prefer: "Prefer", reject: "Reject", evidence
 export const CONSUMERS = { manual: "Manual scrapers", agent: "AI agent", google: "Google-operator services", non_google: "Non-Google services" };
 export const BEGIN = "<!-- BEGIN GENERATED: category rules. Edit playbook/*.yaml, then run `npm run playbook` in apps/journalist-site. -->";
 export const END = "<!-- END GENERATED: category rules -->";
+/** The skill's tool steps, for a harness agent that has the newsbee-tools MCP server. The pipeline agent never gets them. */
+export const HARNESS_BEGIN = "<!-- BEGIN HARNESS ONLY";
+export const HARNESS_END = "<!-- END HARNESS ONLY -->";
 
 /** What query patterns may ask for, beyond what a `for_each` list adds. */
 const KIT_PLACEHOLDERS = ["place", "parent", "city", "state", "county", "city_domain", "zip"];
@@ -32,7 +35,7 @@ const scalar = z.union([z.string(), z.number()]);
 const rule = z.strictObject({
   id: z.string().regex(/^[a-z_]+\.[a-z0-9_]+\.[a-z0-9_]+$/), text: z.string().min(1).optional(), reason: z.string().min(1).optional(),
   consumers: z.array(z.enum(Object.keys(CONSUMERS))).min(1).optional(), from: z.string().optional(), set: z.string().optional(), order: z.number().int().min(0).optional(),
-  stage: z.enum(["stage1", "stage2", "general", "agent_fallback", "lookup"]).optional(), source_type: z.string().optional(), pattern: z.string().min(1).optional(),
+  stage: z.enum(["stage1", "stage2", "general", "lookup"]).optional(), source_type: z.string().optional(), pattern: z.string().min(1).optional(),
   regex: z.string().min(1).optional(), flags: z.enum(["i"]).optional(), value: scalar.optional(), values: z.array(z.string()).min(1).optional(), map: z.record(z.string(), z.unknown()).optional(),
   osm: z.strictObject({ kind: z.string(), tag: z.enum(["amenity", "tourism", "office", "shop", "leisure"]), priority: z.number().int(), story_kind: z.string().optional() }).optional(),
   opendata: z.strictObject({ topic: z.string(), query: z.string(), state_level: z.boolean() }).optional(),
@@ -46,7 +49,7 @@ const service = z.strictObject({
   consumer: z.enum(["google", "non_google"]), label: z.string(), from: z.string(), note: z.string().optional(),
   operators: z.strictObject(Object.fromEntries(["site", "-site", "inurl", "intitle", "filetype", "after", "before"].map((name) => [name, operator]))),
   strip: z.strictObject({ match: z.enum(["after_space", "word_start"]), ignore_case: z.boolean() }).optional(), request: z.record(z.string(), z.unknown()).optional(),
-}).refine((value) => value.consumer === "google" ? !value.strip : Boolean(value.strip && value.request), "a non-Google service needs `strip` and `request`; a Google one needs neither");
+}).refine((value) => value.consumer === "google" ? !value.strip : Boolean(value.strip && value.request), "a non-Google service needs `strip` and `request`; a Google one has no `strip`");
 const services = z.strictObject({ services: z.record(z.string(), service) });
 
 function parseFile(file, schema, dir) {
@@ -153,25 +156,42 @@ export function withSkillSection(text, section) {
 
 const skillBody = (text) => text.replace(/\r\n/g, "\n").replace(/^---[\s\S]*?---\s*/, "").trim();
 
-/** Compiled rules. The version changes with any rule or the skill's text, and not with a comment. */
+/** The skill as the pipeline agent reads it: everything but the harness's tool steps. */
+export function pipelineSkill(body) {
+  const start = body.indexOf(HARNESS_BEGIN), end = body.indexOf(HARNESS_END);
+  if (start < 0 && end < 0) return body;
+  if (start < 0 || end < start) throw new Error("skills/map-sources/SKILL.md has a broken harness-only section");
+  return `${body.slice(0, start).trimEnd()}\n\n${body.slice(end + HARNESS_END.length).trimStart()}`.trim();
+}
+
+/** Compiled rules. The version changes with any rule or the skill's text, including its harness part, and not with a comment. */
 export function compile(playbook, skill) {
   const body = skillBody(skill);
   const version = createHash("sha256").update(JSON.stringify({ categories: playbook.categories, rules: playbook.rules, services: playbook.services, skill: body })).digest("hex").slice(0, 16);
-  return { version, categories: playbook.categories, rules: playbook.rules, services: playbook.services, skill: body };
+  return { version, categories: playbook.categories, rules: playbook.rules, services: playbook.services, skill: pipelineSkill(body) };
 }
 
 // --- The readable copy ---------------------------------------------------------------------------
 
-/** Rules kept in code on purpose: nothing here can be changed by editing the playbook. */
+/** Rules kept in code on purpose: nothing here can be changed by editing the playbook. Each names its check group. */
 export const LOCKED = [
-  ["Robots checks", "A site's robots.txt is obeyed, and a site that turns away AI crawlers is skipped.", "pipeline/connectors/fetcher.ts"],
-  ["Rights handling", "A page that opts out of reuse is skipped or kept only as a link.", "pipeline/connectors/web/page.ts"],
-  ["Site terms check", "A site's terms page is checked for limits on scraping.", "pipeline/discovery/evaluate.ts"],
-  ["DO_NOT_SCRAPE", "Facebook, Nextdoor, Instagram, X, Twitter, Reddit, TikTok and Legacy.com are never fetched.", "pipeline/connectors/fetcher.ts"],
-  ["The locality check", "A source or item must show a real tie to the place, and a query must name the place, its city or a local institution, or stay inside a confirmed site.", "pipeline/connectors/locality.ts, pipeline/discovery/evaluate.ts, pipeline/discovery/topics.ts"],
-  ["Private address checks", "No fetch may reach a private network address, on any hop.", "pipeline/connectors/public-http.ts"],
-  ["AI never sets inside_area", "Only the page's own title naming the place sets it, because that field skips the locality filter.", "pipeline/discovery/evaluate.ts"],
-  ["Sensitive agent queries", "The agent's queries for login pages, admin pages, passwords and exposed data files are thrown away.", "pipeline/agent/map-sources.ts"],
+  ["Private address checks", "No fetch may reach a private network address, on any hop.", "pipeline/connectors/public-http.ts", "Safety"],
+  ["Crawl delays", "A site's crawl delay is always followed, and our fetcher reads one page at a time per site.", "pipeline/connectors/fetcher.ts", "Safety"],
+  ["Robots checks", "A site's robots.txt is obeyed, and a site that turns away AI crawlers is skipped.", "pipeline/connectors/fetcher.ts", "Access"],
+  ["Rights handling", "A page that opts out of reuse (noai) is skipped, or kept only as a link (nosnippet).", "pipeline/connectors/web/page.ts", "Access"],
+  ["Site terms check", "A site's terms page is checked for limits on scraping.", "pipeline/discovery/evaluate.ts", "Access"],
+  ["DO_NOT_SCRAPE", "The never-read list: Facebook, Nextdoor, Instagram, X, Twitter, Reddit, TikTok and Legacy.com aren't fetched.", "pipeline/connectors/fetcher.ts", "Access"],
+  ["The locality check", "A source or item must show a real tie to the place, and a query must name the place, its city or a local institution, or stay inside a confirmed site.", "pipeline/connectors/locality.ts, pipeline/discovery/checks.ts, pipeline/discovery/topics.ts", "Quality and Evidence"],
+  ["AI never sets inside_area", "Only the page's own title naming the place sets it, because that field skips the locality filter.", "pipeline/discovery/evaluate.ts", "Evidence"],
+  ["Sensitive agent queries", "The agent's queries for login pages, admin pages, passwords and exposed data files are thrown away.", "pipeline/agent/map-sources.ts", "Safety"],
+];
+
+/** The four groups the page checks fall into, and whether each can be switched off. */
+export const CHECK_GROUPS = [
+  ["Safety", "Never open private addresses, and always follow crawl delays.", "No, always on."],
+  ["Quality", "Reject known repost and aggregator sites, and pages clearly about another place.", "No, always on in Pipeline 1 discovery, whatever the run's guardrails."],
+  ["Access", "Robots, AI opt-outs, noai and nosnippet tags, the terms check, and the never-read list.", "Yes, by the Access setting: Respect follows them, and Relaxed skips the ones ticked (none ticked means all). Relaxed is local only."],
+  ["Evidence", "Locality and freshness facts: names, official site, addresses, and the dates found with where each came from.", "Not a pass-or-fail rule. Code decides only clear cases and marks the rest unclear, for the Gemini check."],
 ];
 
 const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -206,6 +226,7 @@ function ruleCard(rule) {
   if (rule.value !== undefined) rows.push(`<p class="value">${escape(rule.value)}</p>`);
   if (rule.osm) rows.push(`<p class="note">OpenStreetMap ${code(`${rule.osm.tag}=${rule.osm.kind}`)}, priority ${rule.osm.priority}</p>`);
   if (rule.map) rows.push(`<p class="chips">${Object.entries(rule.map).map(([key, value]) => code(`${key}: ${typeof value === "object" ? Object.values(value).join(", ") : value}`)).join(" ")}</p>`);
+  if (rule.set === "hard_limits") rows.push('<p class="tag locked">Hard limit, enforced in code</p>');
   const reason = rule.reason ? `<p class="reason"><b>Why:</b> ${escape(rule.reason)}</p>` : "";
   const meta = `<p class="meta"><span>${rule.consumers.map((id) => escape(CONSUMERS[id])).join(" · ")}</span><span>${escape(rule.from.replace("apps/journalist-site/", ""))}</span><span>${code(rule.id)}</span></p>`;
   return `<article class="rule"><h4>${escape(title)}</h4>${rows.join("")}${reason}${meta}</article>`;
@@ -246,7 +267,8 @@ export function overview(compiled) {
     return `<section id="${entry.id}"><h3>${escape(entry.label)}</h3>${lead}${parts}</section>`;
   }).join("");
   const gapList = gaps(compiled).map((entry) => `<article class="rule"><h4>${escape(entry.label)}</h4><ul>${entry.notes.map((note) => `<li>${escape(note)}</li>`).join("")}</ul></article>`).join("");
-  const locked = LOCKED.map(([name, what, where]) => `<article class="rule"><h4>${escape(name)} <span class="tag locked">Locked</span></h4><p>${escape(what)}</p><p class="meta"><span>${escape(where)}</span></p></article>`).join("");
+  const locked = LOCKED.map(([name, what, where, group]) => `<article class="rule"><h4>${escape(name)} <span class="tag locked">Locked</span></h4><p>${escape(what)}</p><p class="meta"><span>${escape(group)}</span><span>${escape(where)}</span></p></article>`).join("");
+  const groups = CHECK_GROUPS.map(([name, what, off]) => `<article class="rule"><h4>${escape(name)}</h4><p>${escape(what)}</p><p class="note"><b>Can it be switched off?</b> ${escape(off)}</p></article>`).join("");
   const operators = ["site", "-site", "inurl", "intitle", "filetype", "after", "before"];
   const describe = (value) => value === "keep" ? "Sent as written" : value === "drop" ? "Dropped" : `Becomes ${value.parameter}${value.wildcards ? ", wildcards dropped" : ""}`;
   const serviceRows = Object.values(serviceList).map((item) => `<article class="rule"><h4>${escape(item.label)}</h4><p class="tag">${escape(CONSUMERS[item.consumer])}</p>${item.note ? `<p>${escape(item.note)}</p>` : ""}<ul>${operators.map((name) => `<li>${code(`${name}:`)} ${escape(describe(item.operators[name]))}</li>`).join("")}</ul></article>`).join("");
@@ -267,7 +289,7 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; } h2 { margin: 40px 0
 a { color: var(--accent); } p { margin: 6px 0; } .lede, .meta, .note, .empty { color: var(--muted); } .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .8rem; margin-top: 8px; }
 .table { overflow-x: auto; } table { border-collapse: collapse; width: 100%; font-size: .92rem; } th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: right; } th:first-child { text-align: left; font-weight: 500; } thead th { font-weight: 600; vertical-align: bottom; }
 details { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; padding: 0 12px; } summary { cursor: pointer; padding: 10px 0; font-weight: 600; } .count { color: var(--muted); font-weight: 400; }
-.rule { background: var(--panel); border-top: 1px solid var(--line); padding: 12px 0; } section > .rule, #gaps .rule, #locked .rule, #services .rule { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
+.rule { background: var(--panel); border-top: 1px solid var(--line); padding: 12px 0; } section > .rule, #gaps .rule, #locked .rule, #services .rule, #checks ~ .rule { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
 code, pre { font: .86em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code); border-radius: 4px; } code { padding: 1px 5px; overflow-wrap: anywhere; } pre { padding: 8px 10px; margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chips { line-height: 2; } .value { font-size: 1.2rem; font-weight: 600; } .tag { display: inline-block; font-size: .78rem; color: var(--accent); margin: 0 0 4px; } .accepted { color: var(--good); } .rejected, .locked { color: var(--bad); } ul { margin: 6px 0; padding-left: 20px; }
 </style>
@@ -287,6 +309,9 @@ ${serviceRows}
 <h2 id="gaps">Weak or missing rules</h2>
 <p class="note">Facts only, for the ${targets} target categories. Weather is left out.</p>
 ${gapList}
+<h2 id="checks">Page checks</h2>
+<p class="note">Every page discovery finds goes through these four groups of checks.</p>
+${groups}
 <h2 id="locked">Locked rules</h2>
 <p class="note">Safety and legal rules stay in code, and editing the playbook can't change them.</p>
 ${locked}

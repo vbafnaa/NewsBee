@@ -28,7 +28,21 @@ export function validInternalToken(token: string | undefined, password: string |
 }
 
 export function internalReturnPath(value: unknown) {
-  if (typeof value !== "string" || !/^\/(?:source-map|interest-usage)(?:\?|$)/.test(value)) return "/source-map";
+  if (typeof value !== "string" || !/^\/(?:source-map|edition-map|interest-usage)(?:\?|$)/.test(value)) return "/source-map";
   const url = new URL(value, "http://internal");
   return `${url.pathname}${url.search}`;
+}
+
+/**
+ * Where an old Source map address now lives. Its Run funnel (`mode=edition`) and Compare runs
+ * (`view=compare`) moved to the Edition map as Edition funnel and Compare editions. Null when the
+ * address is still the Source map's.
+ */
+export function editionRedirect(query: Record<string, string | string[] | undefined>) {
+  const value = (key: string) => typeof query[key] === "string" ? query[key] as string : null;
+  if (value("mode") !== "edition" && value("view") !== "compare") return null;
+  const params = new URLSearchParams();
+  for (const key of ["location", "run"]) if (value(key)) params.set(key, value(key)!);
+  if (value("view") === "compare") params.set("view", "compare");
+  return `/edition-map${params.size ? `?${params}` : ""}`;
 }

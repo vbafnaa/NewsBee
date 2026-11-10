@@ -13,6 +13,7 @@ import { describeWindow } from "../sourcemap/windows";
 import { floorFlags } from "../editorial/floor";
 import { enqueue, runJobs } from "./jobs";
 import { getRun, RunConflict, runs } from "./runs";
+import { IMAGE_RESULTS, imageResultId, type ImageResult } from "../images/pipeline";
 import { getLocation } from "../communities/locations";
 
 const now = () => Date.now() / 1000;
@@ -42,6 +43,10 @@ export async function itemTrace(db: Db, runId: string, itemId: string) {
   const entry = item.story_id && run?.draft_id ? await db.collection(COLLECTIONS.editionEntries).findOne({ edition_id: run.draft_id, story_id: item.story_id }) : null;
   const details = item.story_id ? await db.collection(STORY_DETAILS).findOne({ _id: `${item.location_id}:${item.story_id}:${EXTRACTION_POLICY}` as never }) : null;
   const text = await textFor(db, item.url);
+  const image = item.story_id && run?.draft_id ? await db.collection<ImageResult>(IMAGE_RESULTS).findOne({ _id: imageResultId(run.draft_id, item.story_id) }) : null;
+  const shadow = item.story_id && run?.draft_id ? await db.collection<ImageResult>("story_image_shadow_results").findOne({ _id: imageResultId(run.draft_id, item.story_id) }) : null;
+  const agentId = shadow?.agent?.state_id ?? image?.agent?.state_id;
+  const imageAgent = agentId ? await db.collection("image_agent_states").findOne({ _id: agentId as never }, { projection: { steps: 0 } }) : null;
   return {
     item, window, source: source ? { name: source.name, url: source.url, reader: source.reader, found_by: source.found_by, status: source.status, inside_area: source.inside_area, section: source.section } : null,
     siblings, details: details?.details ?? entry?.result?.details ?? item.facts?.details ?? null,
@@ -49,6 +54,9 @@ export async function itemTrace(db: Db, runId: string, itemId: string) {
     writing: entry ? { disposition: entry.disposition, draft: entry.result?.draft ?? null, errors: entry.result?.validation_errors ?? [], error: entry.result?.error ?? null, attempts: entry.result?.attempts ?? 0, rejected_first: entry.result?.rejected_first ?? null, ranking: entry.result?.ranking ?? null } : null,
     text_excerpt: text ? text.slice(0, 1200) : null,
     overrides: run?.overrides ?? {},
+    image,
+    image_agent: imageAgent,
+    image_shadow: shadow,
   };
 }
 
@@ -84,9 +92,13 @@ export async function reassemble(db: Db, runId: string, by: string) {
   if (run.draft_id) {
     await db.collection(COLLECTIONS.editions).deleteOne({ id: run.draft_id, status: { $ne: "published" } });
     await db.collection(COLLECTIONS.editionEntries).deleteMany({ edition_id: run.draft_id });
+    await db.collection(IMAGE_RESULTS).deleteMany({ edition_id: run.draft_id });
+    await db.collection("edition_photo_claims").deleteMany({ edition_id: run.draft_id });
+    await db.collection("story_image_shadow_results").deleteMany({ edition_id: run.draft_id });
+    await db.collection("image_agent_states").deleteMany({ run_id: runId });
   }
-  await db.collection(COLLECTIONS.jobs).updateMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story"] }, status: { $in: ["pending", "running"] } }, { $set: { status: "cancelled" } });
-  await db.collection(COLLECTIONS.jobs).deleteMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story"] } });
+  await db.collection(COLLECTIONS.jobs).updateMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story", "image_story", "stock_story"] }, status: { $in: ["pending", "running"] } }, { $set: { status: "cancelled" } });
+  await db.collection(COLLECTIONS.jobs).deleteMany({ run_id: runId, kind: { $in: ["author_start", "author_rank", "author_story", "image_story", "stock_story"] } });
   await collectedItems(db).updateMany({ run_id: runId, step: { $ne: "reader" } }, { $set: { status: "collected", reason: null, step: "reader", section: null, rank: null, score: null, why: null } });
   await runs(db).updateOne({ _id: runId }, { $set: { status: "awaiting_authoring", draft_id: null, error: null, updated_at: at }, $push: { stage_transitions: { status: "awaiting_authoring", by, at } } });
   return { reassemble: true };
@@ -113,7 +125,8 @@ export async function rewriteStory(db: Db, runId: string, storyId: string, by: s
   await db.collection(COLLECTIONS.editionEntries).deleteOne({ edition_id: run.draft_id, story_id: storyId });
   await db.collection(STORY_DETAILS).deleteOne({ _id: `${run.location_id}:${storyId}:${EXTRACTION_POLICY}` as never });
   await db.collection(COLLECTIONS.storyCache).deleteMany({ location_id: run.location_id, "result.story.id": storyId });
-  await db.collection(COLLECTIONS.editions).updateOne({ id: run.draft_id }, { $set: { status: "drafting" } });
+  await db.collection(COLLECTIONS.editions).updateOne({ id: run.draft_id }, { $set: { status: "drafting" }, $inc: { image_revision: 1 } });
+  await db.collection(COLLECTIONS.jobs).updateMany({ run_id: runId, kind: { $in: ["image_story", "stock_story"] }, status: { $in: ["pending", "running"] } }, { $set: { status: "cancelled" } });
   const at = now();
   await runs(db).updateOne({ _id: runId }, { $set: { status: "authoring", updated_at: at, stage_started_at: at }, $push: { stage_transitions: { status: "authoring", by, at } } });
   const steps = (await runJobs(db, runId)).filter((job) => job.kind === "author_story").map((job) => Number(job.payload.step ?? 0));

@@ -16,6 +16,7 @@ import { logger } from "@/pipeline/core/log";
 import { PRIORITY_TOPICS } from "@/pipeline/core/run-values";
 import type { PriorityTopic } from "@/pipeline/core/run-values";
 import { personalRequestDeps } from "@/pipeline/accounts/runtime";
+import { ExecutionBlocked } from "@/pipeline/core/execution-errors";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -33,7 +34,8 @@ export async function POST(request: Request) {
   return adminRoute(request, async (deps) => {
     if (isDeployed()) return Response.json({ detail: "Agent tools are local only." }, { status: 403 });
     const { tool, args = {}, location_id: locationId } = await request.json() as { tool: string; args?: Record<string, unknown>; location_id: string };
-    if (["search", "classify"].includes(tool)) deps = await personalRequestDeps(deps, deps.principal!, undefined, tool === "search");
+    if (["search", "classify"].includes(tool)) deps = await personalRequestDeps(deps, deps.principal!, undefined, tool === "search", false);
+    if (tool === "classify" && !(deps.settings.integrations.typesafeKey || deps.settings.integrations.openrouterKey)) throw new ExecutionBlocked("Add your TypeSafe or OpenRouter API key in Environment & API settings to classify sources.");
     const location = await getLocation(deps.db, locationId);
     const options = resolveRunOptions({ flow: "agentic" });
     const transport = deps.transport ?? publicOnlyTransport(fetchTransport);

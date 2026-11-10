@@ -28,10 +28,10 @@ it("explains loading, readiness errors and the actual global blocking run", () =
   data.blocker = { id: "busy-run", locationId: "other-place", locationName: "Other place", status: "awaiting_authoring", paused: "API version changed" };
   const reason = executionDisabledReason(data, "", "edition");
   expect(reason).toContain("Other place (paused)");
-  expect(reason).toContain("/locations/other-place?tab=runs&run=busy-run");
+  expect(reason).toContain("/locations/other-place?tab=edition&run=busy-run");
   expect(reason).not.toContain("serpapi");
 });
-it.each(["Missing model key.", "Approval is pending.", "API settings changed. Request fresh approval.", "Only the original requester may start this plan."])("makes disabled reasons hoverable and keyboard-described: %s", (reason) => {
+it.each(["Missing model key.", "Newsroom busy.", "API settings changed. Reconnect the run.", "Only the person who started this run can continue it."])("makes disabled reasons hoverable and keyboard-described: %s", (reason) => {
   const markup = renderToStaticMarkup(createElement(ExplainedButton, { disabledReason: reason }, "Run pipeline"));
   const { document } = parseHTML(markup);
   const wrapper = document.querySelector(".explained-action")!;

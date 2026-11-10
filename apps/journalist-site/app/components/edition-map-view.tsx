@@ -37,7 +37,7 @@ export default function EditionMapView({ map, internal = false, onTrace }: { map
   })).filter((item) => item.sources.length);
   return <>
     <Funnel steps={map.funnel} selected={step} onSelect={setStep} />
-    <p className="chart-caption">Funnel totals count distinct stories after merging; rows show the contributing source items. Stage filters use recorded final outcomes, not a replay of every intermediate state. Snapshots show up to 60 items per source. Open the run&rsquo;s item explorer for a full search and editorial overrides.</p>
+    <p className="chart-caption">Totals count stories after merging. Up to 60 items per source.</p>
     <button className="secondary" type="button" onClick={() => { setSection(""); setType(""); setStatus(""); setFound(""); setQuery(""); setStep(null); }}>Clear all filters</button>
     {map.held_by_floor > 0 && <p className="chart-caption">{map.held_by_floor} item{map.held_by_floor === 1 ? " was" : "s were"} held to protect a minor or a victim and {map.held_by_floor === 1 ? "is" : "are"} not listed.</p>}
     <div className="filters">
@@ -65,7 +65,7 @@ export default function EditionMapView({ map, internal = false, onTrace }: { map
           {entry.why && internal && <small> · {entry.why}</small>}
           {internal && onTrace && <> <button type="button" className="run-inspect-link" onClick={() => onTrace(entry.id)}>Trace</button></>}
         </li>)}</ul>
-        {source.items_pulled > source.items.length && <p className="chart-caption">Showing a limited snapshot; held safety items are also omitted. Use run controls and the item explorer to inspect all recorded items.</p>}
+        {source.items_pulled > source.items.length && <p className="chart-caption">A snapshot; held safety items are left out.</p>}
       </details>)}
     </section>)}
     {!sections.length && <p>No sources match these filters.</p>}

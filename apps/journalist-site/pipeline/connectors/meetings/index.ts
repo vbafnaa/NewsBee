@@ -1,3 +1,4 @@
+import { localityFor, quickEvidence, type Locality } from "../locality";
 import { createHash } from "node:crypto";
 import { FeedFormatError, addDays } from "../common";
 import type { CollectedEvent, CollectedSource, Connector, ConnectorContext, GovernmentSource, LocationProfile, LookupWindow, SourceResult, SourceTask } from "../types";
@@ -23,12 +24,13 @@ function day(value: { year: number; month: number; day: number }) {
 }
 function jurisdiction(location: LocationProfile) { return location.community?.parent_name ?? location.name.split(",")[0]; }
 function sourceName(location: LocationProfile) { return `${jurisdiction(location)} public meetings${location.community ? ` affecting ${location.community.name}` : ""}`; }
-export function scopeMeeting(meeting: Meeting, location: LocationProfile): Meeting {
+export function scopeMeeting(meeting: Meeting, location: LocationProfile, locality?: Locality | null): Meeting {
   if (!location.community) return meeting;
   // The meeting's venue (often City Hall) is not evidence of neighborhood impact.
-  const items = meeting.items.filter((item) => communityEvidence(location, [meeting.body, item.title]));
+  const evidenceFor = (title: string) => communityEvidence(location, [title]) ?? (locality ? quickEvidence(locality, [title]) : null);
+  const items = meeting.items.filter((item) => evidenceFor(item.title));
   return { ...meeting, items, community_relevance: items.flatMap((item) => {
-    const evidence = communityEvidence(location, [meeting.body, item.title]);
+    const evidence = evidenceFor(item.title);
     return evidence ? [evidence] : [];
   }) };
 }
@@ -55,7 +57,7 @@ function compareStart(a: { year: number; month: number; day: number; hour?: numb
   const right = `${day(b)}T${String(b.hour ?? 0).padStart(2, "0")}:${String(b.minute ?? 0).padStart(2, "0")}`;
   return left < right ? -1 : left > right ? 1 : 0;
 }
-async function collectLegistar(fetcher: Fetcher, tenant: string, location: LocationProfile, today: string, window: [string, string], pastFrom: string): Promise<PlatformData> {
+async function collectLegistar(fetcher: Fetcher, tenant: string, location: LocationProfile, today: string, window: [string, string], pastFrom: string, locality?: Locality | null): Promise<PlatformData> {
   const first = pastFrom, last = window[1], upcomingFrom = window[0];
   const url = legistar.eventsUrl(tenant, first, last);
   const content = await bytesFetcher(fetcher)(url);
@@ -69,7 +71,7 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, location: Locat
     if (legistar.isCancelled(event)) { skipped.cancelled = (skipped.cancelled ?? 0) + 1; continue; }
     if (fetched >= MAX_MEETINGS) { skipped.over_limit = (skipped.over_limit ?? 0) + 1; continue; }
     fetched += 1;
-    const meeting = scopeMeeting(await legistar.meeting(tenant, event, bytesFetcher(fetcher)), location);
+    const meeting = scopeMeeting(await legistar.meeting(tenant, event, bytesFetcher(fetcher)), location, locality);
     if (location.community && !meeting.items.length) { skipped.outside_community = (skipped.outside_community ?? 0) + 1; continue; }
     const place = jurisdiction(location);
     const made = day(start) < today ? outcome(meeting, place) : preview(meeting, place);
@@ -80,7 +82,7 @@ async function collectLegistar(fetcher: Fetcher, tenant: string, location: Locat
   }
   return { events: facts, skipped: Object.fromEntries(Object.entries(skipped).filter(([, count]) => count > 0)), content, url };
 }
-async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: LocationProfile, window: [string, string]): Promise<PlatformData> {
+async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: LocationProfile, window: [string, string], locality?: Locality | null): Promise<PlatformData> {
   const first = window[0], last = window[1];
   const url = civicclerk.eventsUrl(tenant, first, addDays(last, 1));
   const content = await bytesFetcher(fetcher)(url);
@@ -96,7 +98,7 @@ async function collectCivicclerk(fetcher: Fetcher, tenant: string, location: Loc
     if (!civicclerk.usable(event)) { inc("agenda_not_posted"); continue; }
     if (fetched >= MAX_MEETINGS) { inc("over_limit"); continue; }
     fetched++;
-    const meeting = scopeMeeting(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), location);
+    const meeting = scopeMeeting(await civicclerk.meeting(tenant, event, bytesFetcher(fetcher)), location, locality);
     if (location.community && !meeting.items.length) { inc("outside_community"); continue; }
     const made = preview(meeting, jurisdiction(location));
     if (!made) inc("no_substantive_agenda");
@@ -122,12 +124,12 @@ function ordinaryFailure(government: GovernmentSource, location: LocationProfile
   const message = error instanceof Error ? error.message : String(error);
   return { result: sourceResult(sourceId(government), sourceName(location), status, `${errorName(error)}: ${message}`, { website: government.website, feed_kind: government.platform, pages_checked: government.pages_checked ?? [] }), events: [] };
 }
-async function attempt(government: GovernmentSource, location: LocationProfile, fetcher: Fetcher, today: string, window: [string, string], pastFrom = addDays(today, -PAST_DAYS)): Promise<Attempt> {
+async function attempt(government: GovernmentSource, location: LocationProfile, fetcher: Fetcher, today: string, window: [string, string], pastFrom = addDays(today, -PAST_DAYS), locality?: Locality | null): Promise<Attempt> {
   if (!usablePlatform(government)) return { result: initialResult(location, government), events: [] };
   try {
     const data = government.platform === "legistar"
-      ? await collectLegistar(fetcher, government.tenant, location, today, window, pastFrom)
-      : await collectCivicclerk(fetcher, government.tenant, location, window);
+      ? await collectLegistar(fetcher, government.tenant, location, today, window, pastFrom, locality)
+      : await collectCivicclerk(fetcher, government.tenant, location, window, locality);
     return { result: sourceResultFromData(government, location, data), events: data.events };
   } catch (error) {
     if (error instanceof HttpStatusError && retryable(error)) throw error;
@@ -170,7 +172,7 @@ function attachMethod(attempted: Attempt, method: "cache" | "rules" | "ai") {
 
 /** Query a supplied, supported platform without rediscovering or changing the location's primary source. */
 export async function collectMeetingLink(context: Parameters<Connector["collect"]>[1], government: GovernmentSource) {
-  const result = await attempt(government, context.location, new Fetcher(context.transport, USER_AGENT), context.today, context.window, pastFrom(context));
+  const result = await attempt(government, context.location, new Fetcher(context.transport, USER_AGENT), context.today, context.window, pastFrom(context), await localityFor(context, { geocodes: 0, articles: 0 }).catch(() => null));
   return { result: result.result, events: result.events };
 }
 
@@ -238,7 +240,7 @@ export const meetingsConnector: Connector = {
         return { result: skipped, events: [] };
       }
     }
-    let first = await attempt(government, context.location, fetcher, context.today, context.window, pastFrom(context));
+    let first = await attempt(government, context.location, fetcher, context.today, context.window, pastFrom(context), await localityFor(context, { geocodes: 0, articles: 0 }).catch(() => null));
     first = attachMethod(first, method);
     if (first.events.length > 0) {
       await cacheEntry(context, task, government, method === "ai" || (method === "cache" && cached?.method === "ai") ? "ai" : "rules");
@@ -266,7 +268,7 @@ export const meetingsConnector: Connector = {
     }
     const retryMethod = discovered.discovery_method ?? "rules";
     await cacheEntry(context, task, discovered, retryMethod);
-    const retried = attachMethod(await attempt(discovered, context.location, fetcher, context.today, context.window, pastFrom(context)), retryMethod);
+    const retried = attachMethod(await attempt(discovered, context.location, fetcher, context.today, context.window, pastFrom(context), await localityFor(context, { geocodes: 0, articles: 0 }).catch(() => null)), retryMethod);
     if (retried.events.length === 0) await context.linkCache.invalidate(context.location.id, task.source_id);
     else await cacheEntry(context, task, discovered, retryMethod);
     context.log.info("government_meetings_result", { source_id: retried.result.source_id, status: retried.result.status, meetings: retried.events.length, skipped: retried.result.skipped_unusable, detail: retried.result.detail });

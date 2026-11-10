@@ -2,7 +2,7 @@
 import type { ProviderConfig, Settings } from "../core/config";
 import { logger, type Logger } from "../core/log";
 import { type HttpTransport, fetchTransport, text } from "../core/http";
-import { logApiCall, modelService, paidRefusal } from "../trace/gateway";
+import { logApiCall, modelLimit, modelService, paidRefusal } from "../trace/gateway";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { ExecutionBlocked } from "../core/execution-errors";
 import { safeError } from "../core/redaction";
@@ -44,7 +44,14 @@ export type StructuredGeneration = {
   eval_duration?: number | null;
 };
 
-export type StructuredOptions = { numCtx?: number; numPredict?: number; keepAlive?: string | number };
+export type StructuredOptions = { numCtx?: number; numPredict?: number; keepAlive?: string | number; timeoutMs?: number };
+export type VisionInput = { id: string; mimeType: "image/jpeg" | "image/png" | "image/webp"; data: string };
+
+function checkVisionInputs(images: readonly VisionInput[]) {
+  if (!images.length || images.length > 6 || images.some(image => !image.id || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)
+    || image.data.length > 3 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(image.mimeType)))
+    throw new Error("Invalid or oversized vision inputs");
+}
 
 export interface ModelRuntime {
   readonly provider: string;
@@ -55,6 +62,8 @@ export interface ModelRuntime {
   generate(prompt: string): Promise<string>;
   generateWithUsage?(prompt: string): Promise<StructuredGeneration>;
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions): Promise<StructuredGeneration>;
+  readonly supportsVision?: boolean;
+  generateVisionStructured?(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options?: StructuredOptions): Promise<StructuredGeneration>;
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -72,13 +81,13 @@ function listedModelIds(body: Uint8Array): string[] | null {
   });
 }
 
-async function post(transport: HttpTransport, url: string, headers: Record<string, string>, body: unknown) {
+async function post(transport: HttpTransport, url: string, headers: Record<string, string>, body: unknown, timeoutMs = 300_000) {
   const response = await transport({
     url,
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
-    timeoutMs: 300_000,
+    timeoutMs,
   });
   if (response.status >= 400) {
     if (response.status === 429) {
@@ -98,7 +107,7 @@ async function post(transport: HttpTransport, url: string, headers: Record<strin
 export class OllamaRuntime implements ModelRuntime {
   readonly provider = "ollama";
 
-  constructor(readonly url: string, readonly model: string | null, private readonly transport: HttpTransport = fetchTransport) {}
+  constructor(readonly url: string, readonly model: string | null, private readonly transport: HttpTransport = fetchTransport, readonly supportsVision = false) {}
 
   async health(): Promise<ComponentHealth> {
     const response = await this.transport({ url: `${this.url}/api/tags`, timeoutMs: 10_000 });
@@ -131,6 +140,7 @@ export class OllamaRuntime implements ModelRuntime {
 
   async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
     if (!this.model) throw new ModelUnavailableError("Select NEWSBEE_OLLAMA_MODEL before requesting inference");
+    if (this.supportsVision) return this.chatStructured(prompt, schema, options);
     const data = await post(this.transport, `${this.url}/api/generate`, {}, {
       model: this.model,
       prompt,
@@ -139,11 +149,31 @@ export class OllamaRuntime implements ModelRuntime {
       format: schema,
       keep_alive: options.keepAlive ?? 0,
       options: { num_ctx: options.numCtx ?? 2048, num_predict: options.numPredict ?? 512, temperature: 0, seed: 42 },
-    });
+    }, options.timeoutMs);
     if (typeof data.response !== "string" || typeof data.done !== "boolean") {
       throw new Error("Ollama returned an invalid structured generation");
     }
     return data as unknown as StructuredGeneration;
+  }
+
+  async generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options: StructuredOptions = {}): Promise<StructuredGeneration> {
+    if (!this.supportsVision || !this.model) throw new ModelUnavailableError("Ollama vision capability is not configured");
+    checkVisionInputs(images);
+    return this.chatStructured(prompt, schema, options, images);
+  }
+
+  private async chatStructured(prompt: string, schema: JsonSchema, options: StructuredOptions, images?: readonly VisionInput[]): Promise<StructuredGeneration> {
+    const data = await post(this.transport, `${this.url}/api/chat`, {}, {
+      model: this.model, stream: false, think: false, format: schema, keep_alive: options.keepAlive ?? 0,
+      messages: [{ role: "user", content: images ? `${prompt}\nImage order: ${images.map(image => image.id).join(", ")}` : prompt,
+        ...(images ? { images: images.map(image => image.data) } : {}) }],
+      options: { num_ctx: options.numCtx ?? 8192, num_predict: options.numPredict ?? 1800, temperature: 0 },
+    }, options.timeoutMs ?? 25_000);
+    const message = data.message as { content?: unknown } | undefined;
+    if (typeof message?.content !== "string" || data.done !== true) throw new Error("Invalid or incomplete Ollama vision response");
+    return { response: message.content, done: true, done_reason: typeof data.done_reason === "string" ? data.done_reason : null,
+      prompt_eval_count: typeof data.prompt_eval_count === "number" ? data.prompt_eval_count : null,
+      eval_count: typeof data.eval_count === "number" ? data.eval_count : null };
   }
 }
 
@@ -183,7 +213,7 @@ type GeminiData = {
 export class GeminiRuntime implements ModelRuntime {
   readonly provider = "gemini";
 
-  constructor(private readonly apiKey: string | null, readonly model: string, private readonly transport: HttpTransport = fetchTransport) {}
+  constructor(private readonly apiKey: string | null, readonly model: string, private readonly transport: HttpTransport = fetchTransport, readonly supportsVision = true) {}
 
   async health(): Promise<ComponentHealth> {
     if (!this.apiKey) {
@@ -203,7 +233,7 @@ export class GeminiRuntime implements ModelRuntime {
     return { status: "ok", detail: `Gemini model available: ${this.model}` };
   }
 
-  private async call(prompt: string, schema?: JsonSchema, maxOutputTokens?: number): Promise<GeminiData> {
+  private async call(prompt: string, schema?: JsonSchema, maxOutputTokens?: number, images?: readonly VisionInput[], timeoutMs = images ? 25_000 : 300_000): Promise<GeminiData> {
     if (!this.apiKey) throw new ModelUnavailableError("Set NEWSBEE_GEMINI_API_KEY before requesting inference");
     const generationConfig: Record<string, unknown> = { temperature: 0 };
     if (maxOutputTokens !== undefined) generationConfig.maxOutputTokens = maxOutputTokens;
@@ -212,9 +242,11 @@ export class GeminiRuntime implements ModelRuntime {
       generationConfig.responseJsonSchema = geminiSchema(schema, (schema.$defs ?? {}) as Record<string, JsonSchema>);
     }
     return await post(this.transport, `${GEMINI_ROOT}/models/${this.model}:generateContent`, { "x-goog-api-key": this.apiKey }, {
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [{ text: prompt }, ...(images ?? []).flatMap(image => [
+        { text: `Image ID: ${image.id}` }, { inlineData: { mimeType: image.mimeType, data: image.data } },
+      ])] }],
       generationConfig,
-    }) as GeminiData;
+    }, timeoutMs) as GeminiData;
   }
 
   private static textOf(data: GeminiData) {
@@ -247,8 +279,14 @@ export class GeminiRuntime implements ModelRuntime {
   }
 
   async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
-    const data = await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096));
+    const data = await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096), undefined, options.timeoutMs);
     return this.generation(data);
+  }
+
+  async generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options: StructuredOptions = {}) {
+    if (!this.supportsVision) throw new ModelUnavailableError("Gemini vision is disabled");
+    checkVisionInputs(images);
+    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images));
   }
 }
 
@@ -263,6 +301,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
 
   get provider() { return this.config.name; }
   get model() { return this.config.model; }
+  get supportsVision() { return this.config.vision === true; }
 
   private keyVariable() { return `NEWSBEE_LLM_${this.config.name.toUpperCase()}_API_KEY`; }
 
@@ -289,9 +328,13 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   private maxTokensParam = this.config.maxTokensParam;
   private temperature = this.config.temperature;
 
-  private async call(prompt: string, schema?: JsonSchema, maxTokens?: number): Promise<ChatData> {
+  private async call(prompt: string, schema?: JsonSchema, maxTokens?: number, images?: readonly VisionInput[], timeoutMs = images ? 25_000 : 300_000): Promise<ChatData> {
         for (let attempt = 0; ; attempt += 1) {
-          const body: Record<string, unknown> = { model: this.config.model, messages: [{ role: "user", content: prompt }] };
+          const content = images ? [{ type: "text", text: prompt }, ...images.flatMap(image => [
+            { type: "text", text: `Image ID: ${image.id}` },
+            { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}`, detail: "high" } },
+          ])] : prompt;
+          const body: Record<string, unknown> = { model: this.config.model, messages: [{ role: "user", content }] };
           if (this.temperature !== null) body.temperature = this.temperature;
           if (maxTokens !== undefined) body[this.maxTokensParam] = maxTokens;
           if (schema) {
@@ -300,7 +343,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
               : { type: "json_schema", json_schema: { name: "response", schema, strict: false } };
           }
           try {
-            return await post(this.transport, `${this.config.baseUrl}/chat/completions`, this.headers(), body) as ChatData;
+            return await post(this.transport, `${this.config.baseUrl}/chat/completions`, this.headers(), body, timeoutMs) as ChatData;
           } catch (error) {
             // Newer models reject legacy request parameters; adapt once per parameter instead of requiring config.
             const message = error instanceof Error ? error.message : "";
@@ -332,7 +375,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   }
 
   async generateStructured(prompt: string, schema: JsonSchema, options: StructuredOptions = {}) {
-    return this.generation(await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096)));
+    return this.generation(await this.call(prompt, schema, Math.max(options.numPredict ?? 512, 4096), undefined, options.timeoutMs));
   }
 
   private generation(data: ChatData) {
@@ -344,6 +387,12 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
       prompt_eval_count: data.usage?.prompt_tokens ?? null,
       eval_count: data.usage?.completion_tokens ?? null,
     };
+  }
+
+  async generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options: StructuredOptions = {}) {
+    if (!this.supportsVision) throw new ModelUnavailableError("Image-input capability is not configured for this provider");
+    checkVisionInputs(images);
+    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images));
   }
 }
 
@@ -367,6 +416,7 @@ export class FallbackRuntime implements ModelRuntime {
 
   get provider() { return this.runtimes.map((runtime) => runtime.provider).join(">"); }
   get model() { return this.runtimes[0].model; }
+  get supportsVision() { return this.runtimes.some(runtime => runtime.supportsVision && runtime.generateVisionStructured); }
 
   async health(): Promise<ComponentHealth> {
     const providers = await Promise.all(this.runtimes.map(async (runtime): Promise<ProviderHealth> => {
@@ -381,9 +431,9 @@ export class FallbackRuntime implements ModelRuntime {
     return { status, detail, providers };
   }
 
-  private async attempt<T>(operation: string, call: (runtime: ModelRuntime) => Promise<T>): Promise<T> {
+  private async attempt<T>(operation: string, call: (runtime: ModelRuntime) => Promise<T>, accepts: (runtime: ModelRuntime) => boolean = () => true): Promise<T> {
     const time = this.now();
-    const order = this.runtimes.map((runtime, index) => ({ runtime, index }));
+    const order = this.runtimes.map((runtime, index) => ({ runtime, index })).filter(({ runtime }) => accepts(runtime));
     const available = order.filter(({ index }) => (this.cooldownUntil.get(index) ?? 0) <= time);
     const cooling = order.filter(({ index }) => (this.cooldownUntil.get(index) ?? 0) > time);
     const failures: string[] = [];
@@ -417,11 +467,16 @@ export class FallbackRuntime implements ModelRuntime {
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions) {
     return this.attempt("generate_structured", (runtime) => runtime.generateStructured(prompt, schema, options));
   }
+
+  generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options?: StructuredOptions) {
+    return this.attempt("generate_vision_structured", runtime => runtime.generateVisionStructured!(prompt, images, schema, options),
+      runtime => Boolean(runtime.supportsVision && runtime.generateVisionStructured));
+  }
 }
 
 export function providerRuntime(config: ProviderConfig, transport: HttpTransport = fetchTransport): ModelRuntime {
-  if (config.kind === "gemini") return new GeminiRuntime(config.apiKey, config.model ?? "", transport);
-  if (config.kind === "ollama") return new OllamaRuntime(config.baseUrl, config.model, transport);
+  if (config.kind === "gemini") return new GeminiRuntime(config.apiKey, config.model ?? "", transport, config.vision !== false);
+  if (config.kind === "ollama") return new OllamaRuntime(config.baseUrl, config.model, transport, config.vision === true);
   return new OpenAICompatibleRuntime(config, transport);
 }
 
@@ -437,7 +492,7 @@ export type ModelCall = Partial<ModelUsageContext> & {
   provider: string;
   model: string | null;
   role: string;
-  operation: "generate" | "generate_structured";
+  operation: "generate" | "generate_structured" | "generate_vision_structured";
   ok: boolean;
   status_code: number | null;
   rate_limited: boolean;
@@ -467,6 +522,7 @@ export class UsageRecordingRuntime implements ModelRuntime {
   get model() { return this.inner.model; }
 
   health() { return this.inner.health(); }
+  get supportsVision() { return this.inner.supportsVision === true; }
 
   private async record(call: Omit<ModelCall, "provider" | "model" | "role">) {
     try {
@@ -479,20 +535,23 @@ export class UsageRecordingRuntime implements ModelRuntime {
   private async measure<T>(operation: ModelCall["operation"], run: () => Promise<T>, tokens: (result: T) => [number | null, number | null]) {
     // A hosted provider the run hasn't ticked is skipped, so the fallback chain moves on.
     const service = modelService(this.provider, this.usage.role);
+    const source = service ? { limit: modelLimit(this.provider, service), provider: this.provider, model: this.model } : {};
     if (service) {
-      const refused = await paidRefusal(service);
+      // Gemini's hard limits count every Gemini call, whichever role or budget it is under.
+      const refused = await paidRefusal(service, { limits: source.limit, provider: this.provider });
       if (refused) throw new ModelUnavailableError(refused);
     }
     const started = this.clock();
     try {
       const result = await run();
-      if (service) await logApiCall(service, true, "ok", this.usage.role);
+      if (service) await logApiCall(service, true, "ok", this.usage.role, null, 1, source);
       const [input, output] = tokens(result);
       await this.record({ operation, ok: true, status_code: null, rate_limited: false, input_tokens: input, output_tokens: output, duration_ms: this.clock() - started, error: null });
       return result;
     } catch (error) {
       const message = safeError(error);
       const code = statusCode(message);
+      if (service) await logApiCall(service, true, "failed", `${code ? `HTTP ${code}: ` : ""}${message}`.slice(0, 300));
       await this.record({
         operation,
         ok: false,
@@ -522,6 +581,11 @@ export class UsageRecordingRuntime implements ModelRuntime {
 
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions) {
     return this.measure("generate_structured", () => this.inner.generateStructured(prompt, schema, options), (result) => this.tokenCounts(result));
+  }
+
+  generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options?: StructuredOptions) {
+    if (!this.inner.supportsVision || !this.inner.generateVisionStructured) return Promise.reject(new ModelUnavailableError("Provider does not support image input"));
+    return this.measure("generate_vision_structured", () => this.inner.generateVisionStructured!(prompt, images, schema, options), result => this.tokenCounts(result));
   }
 }
 

@@ -57,21 +57,15 @@ search_playbook:
   - consumers: [agent, google, non_google]
     from: apps/journalist-site/pipeline/discovery/topics.ts
     rules:
-      - { id: civic.general.city_records, stage: general, order: 0, pattern: 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")' }
-      - { id: civic.general.representative, stage: general, order: 5, pattern: 'site:{city_domain} (councilmember OR "town hall") "{place}"' }
       - { id: civic.stage1.agendas, stage: stage1, source_type: Council records, pattern: 'site:{city_domain} (agenda OR minutes) ("city council" OR "town council" OR "county commissioners")' }
       - { id: civic.stage1.hearing_notices, stage: stage1, source_type: Public notices, pattern: 'site:{city_domain} ("public hearing" OR "hearing notice" OR "legal notice")' }
       - { id: civic.stage1.boards, stage: stage1, source_type: Boards, pattern: 'site:{city_domain} ("boards and commissions" OR "planning commission")' }
       - { id: civic.stage1.meeting_platforms, stage: stage1, source_type: Meeting portals, pattern: '"{city}" "{state}" "city council" agenda (legistar OR civicclerk OR primegov OR granicus)' }
       - { id: civic.stage1.city_records, stage: stage1, source_type: Council records, pattern: 'site:{city_domain} (agenda OR minutes OR "public hearing" OR "city council")' }
       - { id: civic.stage1.representative, stage: stage1, source_type: Representatives, pattern: 'site:{city_domain} (councilmember OR "town hall") "{place}"' }
-      - { id: civic.general.other_agencies, stage: general, order: 11, source_type: Other agencies, pattern: 'site:.gov "{place}" "{state}" (permit OR notice)' }
+      - { id: civic.general.other_agencies, stage: general, order: 8, source_type: Other agencies, pattern: 'site:.gov "{place}" "{state}" (permit OR notice)' }
       - { id: civic.stage2.record_sweep, stage: stage2, source_type: Council records, pattern: 'site:{city_domain} (agenda OR "public hearing" OR ordinance) after:{after}' }
       - { id: civic.stage2.place_sweep, stage: stage2, source_type: Council records, pattern: '"{place}" ("city council" OR "town council") (voted OR approved OR hearing) after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: civic.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: city council agendas minutes }
   - consumers: [manual, google, non_google]
     from: apps/journalist-site/pipeline/discovery/city-site.ts
     rules:
@@ -151,4 +145,9 @@ when_to_stop:
       - { id: civic.stop.confident_score, text: "A score this high means no search is needed.", value: 6 }
       - { id: civic.stop.city_site_results, text: Search results checked when looking for the city's site., value: 4 }
 
-examples: []
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: civic.example.agenda_centre, verdict: accepted, text: "A city's agenda centre or meeting-system account listing council and commission meetings, with new agendas each month." }
+      - { id: civic.example.home_page_only, verdict: rejected, text: "A city's home page with only navigation and a welcome message: the agenda, notice and news pages behind it are the sources." }

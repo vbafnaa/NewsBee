@@ -31,9 +31,6 @@ __pycache__/
 .env.*
 !.env.example
 
-# Muse receiver's persistent local development data
-/apps/muse-receiver/data/
-
 # Frontend dependencies and generated output
 node_modules/
 dist/
@@ -46,3 +43,8 @@ test-results/
 *.tsbuildinfo
 .vercel
 .env*
+
+# Research evidence from free-source reruns: run snapshots and logs, kept locally, not committed.
+/research/evidence/free_sources_rerun/
+/research/wedgwood_free_source_stories.json
+/research/wedgwood_free_sources_rerun.md

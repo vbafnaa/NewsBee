@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { FeedFormatError, checkCount, checkSize, plainText, rejectUnsafeXml, httpsLink, scheduleText, type EventFacts } from "../common";
 import { point, type Point } from "../../../../../shared/geography";
+import { MIN_STORY_IMAGE_HEIGHT, MIN_STORY_IMAGE_WIDTH, normalizeStoryImage, type StoryImage } from "../../../../../shared/story-image";
+import { Parser } from "htmlparser2";
 
 export type Tier = "local" | "region" | "nearby";
 export type NewsKind = "earthquake" | "state_news" | "trending_topic" | "social_trend";
@@ -36,7 +38,47 @@ function textOf(value: unknown): string | null {
 }
 function itemArray<T>(value: T | T[] | undefined): T[] { return value === undefined ? [] : Array.isArray(value) ? value : [value]; }
 
-export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null; categories: string[]; coordinates?: Point };
+export type FeedItem = { id: string; title: string; link: string; published: Date; published_day: string; summary: string | null; categories: string[]; coordinates?: Point; image?: StoryImage };
+
+function feedImage(node: Record<string, unknown>, sourceUrl: string): StoryImage | null {
+  const groups = [node, ...itemArray(node["media:group"])].filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  const candidates: Record<string, unknown>[] = [];
+  for (const group of groups) {
+    for (const field of ["media:content", "media:thumbnail", "enclosure", "link"]) {
+      for (const raw of itemArray(group[field])) {
+        if (!raw || typeof raw !== "object") continue;
+        const media = raw as Record<string, unknown>;
+        const type = textOf(media["@_type"]) ?? "";
+        if (field === "link" && textOf(media["@_rel"]) !== "enclosure") continue;
+        if ((field === "enclosure" || field === "link") && !type.startsWith("image/")) continue;
+        const medium = textOf(media["@_medium"]);
+        if (field === "media:content" && ((type && !type.startsWith("image/")) || (medium && medium !== "image"))) continue;
+        const url = textOf(media["@_url"]) ?? textOf(media["@_href"]);
+        if (!url) continue;
+        const width = Number(media["@_width"]), height = Number(media["@_height"]);
+        if ((width > 0 && width < MIN_STORY_IMAGE_WIDTH) || (height > 0 && height < MIN_STORY_IMAGE_HEIGHT)) continue;
+        candidates.push({ image: url, image_source_url: sourceUrl,
+          image_credit: textOf(media["media:credit"]) ?? textOf(group["media:credit"]),
+          image_alt: textOf(media["media:description"]) ?? textOf(group["media:description"]),
+          image_width: media["@_width"], image_height: media["@_height"] });
+      }
+    }
+  }
+  // Some publishers put their article photo only inside the feed's HTML content.
+  for (const field of ["content:encoded", "content", "description", "summary"]) {
+    const content = textOf(node[field]);
+    if (!content) continue;
+    const parser = new Parser({ onopentag(tag, attrs) {
+      if (tag !== "img" || candidates.length >= 20) return;
+      const width = Number(attrs.width), height = Number(attrs.height);
+      if ((width > 0 && width < MIN_STORY_IMAGE_WIDTH) || (height > 0 && height < MIN_STORY_IMAGE_HEIGHT)) return;
+      candidates.push({ image: attrs.src, image_source_url: sourceUrl, image_alt: attrs.alt,
+        image_width: attrs.width, image_height: attrs.height });
+    } }, { decodeEntities: true });
+    parser.write(content.slice(0, 64000)); parser.end();
+  }
+  return candidates.map((candidate) => normalizeStoryImage(candidate)).find(Boolean) ?? null;
+}
 export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
   checkSize(bytes); rejectUnsafeXml(bytes);
   const xml = new TextDecoder().decode(bytes);
@@ -82,7 +124,8 @@ export function parseNewsFeed(bytes: Uint8Array): FeedItem[] {
     const coordinates = [longitude, latitude];
     const categories = itemArray(node.category as unknown).map((entry) => textOf(entry) ?? (entry && typeof entry === "object" ? textOf((entry as Record<string, unknown>)["@_term"]) ?? textOf((entry as Record<string, unknown>)["@_label"]) : null))
       .filter((value): value is string => Boolean(value));
-    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary, categories,
+    const image = feedImage(node, link);
+    items.push({ id, title, link, published: new Date(millis), published_day: publishedDay, summary, categories, ...(image ? { image } : {}),
       ...(point(coordinates) ? { coordinates } : {}) });
   }
   return items.sort((a, b) => b.published.getTime() - a.published.getTime());

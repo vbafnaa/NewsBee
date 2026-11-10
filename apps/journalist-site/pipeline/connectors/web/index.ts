@@ -1,3 +1,5 @@
+import { distanceKm, withinArea, type Point } from "../../../../../shared/geography";
+import { locationCenter } from "../locality";
 /**
  * The website reader: one source on the map (a newsroom, a city site, a school, a venue, a
  * funeral home...) read with every method the site offers, within a budget of
@@ -19,7 +21,7 @@
  */
 import pLimit from "p-limit";
 import { addDays, httpsLink, MAX_FEED_BYTES, plainText } from "../common";
-import { DiscoveryBlockedError } from "../fetcher";
+import { DiscoveryBlockedError, FetchDeadlineExceededError, Fetcher } from "../fetcher";
 import { advertisedFeeds } from "../feeds";
 import { parseIcal, parseJsonLd, parseTrumba } from "../library/parsers";
 import { parseNewsFeed, publishedText, sha256, sponsoredItem } from "../wider/adapters";
@@ -33,9 +35,12 @@ import { recordDecision } from "../../trace/decisions";
 import { WEB_WINDOW, effectiveWindow } from "../../sourcemap/windows";
 import { saveText, type Details } from "../../editions/details";
 import { jinaRead } from "./jina";
-import { articleMeta, calendarLinks, trumbaFeeds, FEED_GUESSES, mainText, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
+import { normalizeStoryImage } from "../../../../../shared/story-image";
+import { articleMeta, venuePoint, calendarLinks, trumbaFeeds, FEED_GUESSES, imagesAllowed, mainText, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
 
-/** Agent extractions per site per run: each is a model call, and a site's undated pages can be many. */
+export const SOURCE_BUDGET_MS = 120_000;
+export const SOURCE_REQUEST_TIMEOUT_MS = 15_000;
+
 const MAX_EXTRACTIONS = 2;
 /** Pages of one site read at once; each host's pacing still applies. */
 const PAGES_AT_ONCE = 3;
@@ -45,20 +50,27 @@ const ACCEPT_HTML = "text/html, application/xhtml+xml";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml, text/calendar;q=0.9, */*;q=0.5";
 const ACCEPT_XML = "application/xml, text/xml";
 
-export type WebParams = { url: string; feed_url?: string | null; kind?: string; section?: string; inside_area?: boolean; window?: unknown };
+export type WebParams = { url: string; feed_url?: string | null; kind?: string; section?: string; inside_area?: boolean; window?: unknown; calendar_urls?: string[] };
 
-type Budget = { used: number; max: number };
+type Budget = { used: number; max: number; deadline: number; limited: boolean };
+
+function budgetAvailable(budget: Budget) {
+  if (Date.now() >= budget.deadline) budget.limited = true;
+  return !budget.limited;
+}
 type Fetched = { url: string; body: Uint8Array; headers: Record<string, string> };
 
 async function fetchWithin(context: ConnectorContext, budget: Budget, record: SourceResult, url: string, accept: string): Promise<Fetched | null> {
-  if (budget.used >= budget.max) return null;
-  if (context.deadline && Date.now() >= context.deadline) { record.out_of_time = true; return null; }
+  if (budget.used >= budget.max || !budgetAvailable(budget)) return null;
+  if (context.deadline && Date.now() >= context.deadline) { record.out_of_time = true; budget.limited = true; return null; }
   budget.used += 1;
   try {
     const response = await context.fetcher.getResponse(url, MAX_FEED_BYTES, accept);
     record.pages_checked.push(url);
     return response;
   } catch (error) {
+    if (error instanceof FetchDeadlineExceededError) budget.limited = true;
+    budgetAvailable(budget);
     if (transient(error)) throw error;
     const reason = error instanceof DiscoveryBlockedError ? error.message : error instanceof Error ? error.constructor.name : "error";
     record.pages_checked.push(`${url} (${reason})`);
@@ -101,11 +113,22 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   const kind = params.kind ?? "local_news";
   const local = Boolean(params.inside_area);
   const caps = limits();
-  const budget: Budget = { used: 0, max: caps.webPageBudget };
+
   const MAX_ITEMS = caps.webMaxItems, MAX_PAGES = caps.webMaxPages, PAGE_BUDGET = caps.webPageBudget;
+  const budget: Budget = { used: 0, max: caps.webPageBudget, deadline: Math.min(context.deadline ?? Infinity, Date.now() + SOURCE_BUDGET_MS), limited: false };
+  const transport = context.fetcher.transport ?? context.transport;
+  // Apply the remaining site budget to robots, redirects and response-body reads too.
+  // Fetcher continues to enforce the publisher's full crawl delay before each request.
+  context = { ...context, fetcher: new Fetcher(async (request) => {
+    if (!budgetAvailable(budget)) throw new FetchDeadlineExceededError("Website collection time budget reached");
+    return transport({ ...request, timeoutMs: Math.min(request.timeoutMs ?? SOURCE_REQUEST_TIMEOUT_MS,
+      SOURCE_REQUEST_TIMEOUT_MS, budget.deadline - Date.now()) });
+  }, context.fetcher.userAgent, context.fetcher.pace, budget.deadline) };
   const items: CollectedEvent[] = [];
   const seen = new Set<string>();
   let siteRights: RightsAction = "ok";
+  let siteImages = true;
+  let verifiedVenue: { url: string; point: Point; km: number; inside: boolean } | null = null;
 
   const base = (title: string, url: string, day: string, extra: Partial<CollectedEvent>): CollectedEvent => ({
     source_event_id: sha256(url + (extra.event_date ?? day)).slice(0, 16), title, event_date: day, schedule_text: publishedText(day),
@@ -119,10 +142,19 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     if (seen.has(key) || items.length >= MAX_ITEMS) return;
     seen.add(key);
     if (siteRights === "link-only") { item.description = null; item.link_only = true; }
+    if (!siteImages || item.link_only) item.image_blocked = true;
+    if (item.image_blocked && item.details) {
+      const { image: _image, image_credit: _credit, image_source_url: _source, image_alt: _alt, image_width: _width, image_height: _height,
+        image_candidates: _candidates, ...details } = item.details as Partial<Details> & { image_candidates?: unknown };
+      item.details = details;
+    }
     items.push(item);
   };
 
-  const readFeed = (body: Uint8Array) => {
+  const readFeed = (body: Uint8Array, headers: Record<string, string> = {}) => {
+    const flags = pageRights(headers);
+    const action = rightsAction(flags);
+    if (action === "skip") return false;
     if (looksLikeIcal(body)) { readCalendar(body, record.feed_url ?? site); return true; }
     if (!looksLikeFeed(body)) return false;
     let parsed;
@@ -132,9 +164,11 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
       if (entry.published_day < since || entry.published_day > context.today) { drop(id, entry.title, entry.link, "outside_window", entry.published_day); continue; }
       if (sponsoredItem(entry)) { drop(id, entry.title, entry.link, "sponsored", entry.published_day); continue; }
       add(base(entry.title, entry.link, entry.published_day, {
-        source_event_id: id, description: entry.summary,
+        source_event_id: id, description: action === "ok" ? entry.summary : null,
+        ...(action === "link-only" ? { link_only: true } : {}),
+        ...(!imagesAllowed(flags) ? { image_blocked: true } : {}),
         ...(entry.coordinates ? { coordinates: entry.coordinates } : {}),
-        details: { links: [entry.link] } as Partial<Details>,
+        details: { links: [entry.link], ...(imagesAllowed(flags) && entry.image ? normalizeStoryImage(entry.image, { source_url: entry.link, source_name: task.name }) : {}) } as Partial<Details>,
       }));
     }
     return true;
@@ -153,8 +187,11 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
         drop(id, event.title, event.source_url, "different_or_unknown_branch", event.event_date); continue;
       }
       if (event.event_date < from || event.event_date > until) { drop(id, event.title, event.source_url, "outside_window", event.event_date); continue; }
+      const venueEvidence = verifiedVenue && event.venue_url && new URL(event.venue_url).href.replace(/\/$/, "") === verifiedVenue.url.replace(/\/$/, "") && verifiedVenue.km <= 3 ? verifiedVenue : null;
       add({ ...event, source_event_id: id, venue: event.venue, kind: "event", source_name: task.name,
         ...(local ? { tier: "local", locality: { method: "local_site", matches: [site] } } : { needs_locality: true }),
+        ...(venueEvidence ? { needs_locality: false, tier: venueEvidence.inside ? "local" : "nearby", coordinates: venueEvidence.point,
+          locality: { method: "verified_venue", matches: [venueEvidence.url], distance_km: venueEvidence.km }, serves_community: true } : {}),
         section_hint: params.section ?? null, details: { places: [event.venue].filter(Boolean), when: event.schedule_text, links: [event.source_url] } } as CollectedEvent);
     }
     return events.length > 0;
@@ -164,13 +201,14 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     const page = await fetchWithin(context, budget, record, url, ACCEPT_HTML);
     if (!page) return;
     const html = decode(page.body);
-    const action = rightsAction(pageRights(page.headers, html));
+    const flags = pageRights(page.headers, html);
+    const action = rightsAction(flags);
     if (action === "skip") { drop(sha256(url).slice(0, 16), url, url, "page opts out of reuse"); return; }
     if (/application\/ld\+json/i.test(html) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(html) && readCalendar(page.body, page.url)) return;
-    let article: PageArticle | null = articleMeta(html);
+    let article: PageArticle | null = articleMeta(html, page.url);
     let body = mainText(html);
     const undated = () => !article || !article.date;
-    const withDate = (date: string, title: string | null, text: string | null): PageArticle => ({ title: article?.title ?? title ?? url, date, description: article?.description ?? plainText(text, 600), authors: article?.authors ?? [], image: article?.image ?? null, section: article?.section ?? null, keywords: article?.keywords ?? [] });
+    const withDate = (date: string, title: string | null, text: string | null): PageArticle => ({ ...article, title: article?.title ?? title ?? url, date, description: article?.description ?? plainText(text, 600), authors: article?.authors ?? [], image: article?.image ?? null, section: article?.section ?? null, keywords: article?.keywords ?? [] });
     // A parser first, then a free reader for pages built by script. The model is the last resort.
     if (undated() && action === "ok") {
       const readable = readablePage(html);
@@ -204,23 +242,35 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     add(base(article.title, page.url, day, {
       source_event_id: id, description: action === "ok" ? article.description ?? plainText(text, 600) : null, found_by: how,
       ...(action === "link-only" ? { link_only: true } : {}),
-      details: { people: article.authors.map((name) => `${name}, author`), image: article.image, links: [page.url] } as Partial<Details>,
+      ...(!imagesAllowed(flags) ? { image_blocked: true } : {}),
+      details: { people: article.authors.map((name) => `${name}, author`), links: [page.url],
+        ...(imagesAllowed(flags) ? { ...normalizeStoryImage(article, { source_url: page.url, source_name: task.name }),
+          ...(article.image_candidates ? { image_candidates: article.image_candidates } : {}) } : {}) } as Partial<Details>,
     }));
   };
 
   // 1. Homepage: usage signals, advertised feed, calendars, structured data.
   const home = await fetchWithin(context, budget, record, site, ACCEPT_HTML);
-  if (!home) throw new Error(`Homepage could not be read: ${record.pages_checked.at(-1) ?? site}`);
+  if (!home) throw new Error(`${budget.limited ? "Website collection time budget reached before homepage completed" : "Homepage could not be read"}: ${record.pages_checked.at(-1) ?? site}`);
   const homeHtml = decode(home.body);
   siteRights = rightsAction(pageRights(home.headers, homeHtml));
+  siteImages = imagesAllowed(pageRights(home.headers, homeHtml));
   if (siteRights === "skip") {
     record.status = "blocked";
     record.detail = "Site opts out of reuse (noindex, noai or a mining reservation)";
     return [];
   }
+  const branchPath = new URL(site).pathname.match(/^\/hours-and-locations\/[^/]+-branch/)?.[0];
+  if (branchPath && trumbaFeeds(homeHtml).length) {
+    const venueUrl = new URL(branchPath, home.url).toString();
+    const venue = venueUrl === home.url ? home : await fetchWithin(context, budget, record, venueUrl, ACCEPT_HTML);
+    const point = venue && rightsAction(pageRights(venue.headers, decode(venue.body))) !== "skip" ? venuePoint(decode(venue.body)) : null;
+    const { center, area } = locationCenter(context.location);
+    if (point && center) verifiedVenue = { url: venueUrl, point, km: distanceKm(center, point), inside: area ? withinArea(area, center, point) : distanceKm(center, point) <= 8 };
+  }
   let calendarRead = false;
   // Explicit calendars precede guesses so a small request budget still reaches dated events.
-  for (const url of [...trumbaFeeds(homeHtml), ...calendarLinks(homeHtml, home.url)].slice(0, 2)) {
+  for (const url of [...new Set([...trumbaFeeds(homeHtml), ...calendarLinks(homeHtml, home.url), ...(params.calendar_urls ?? []).filter(url => Boolean(httpsLink(url)))])].slice(0, 2)) {
     const calendar = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
     if (!calendar || rightsAction(pageRights(calendar.headers, "")) === "skip") continue;
     const trumba = new URL(url).hostname === "www.trumba.com";
@@ -235,26 +285,33 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   let feedRead = false;
   for (const url of [...new Set(feeds)].slice(0, 2)) {
     const feed = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
-    if (feed && readFeed(feed.body)) { feedRead = true; record.feed_url = feed.url; break; }
+    if (feed && readFeed(feed.body, feed.headers)) { feedRead = true; record.news_feed_url = feed.url; if (!calendarRead) record.feed_url = feed.url; break; }
   }
-  if (!feedRead && !looksLikeFeed(home.body)) {
+  if (!calendarRead && !feedRead && !looksLikeFeed(home.body)) {
     for (const path of FEED_GUESSES.slice(0, 2)) {
       const guess = await fetchWithin(context, budget, record, new URL(path, home.url).toString(), ACCEPT_FEED);
-      if (guess && readFeed(guess.body)) { feedRead = true; record.feed_url = guess.url; break; }
+      if (guess && readFeed(guess.body, guess.headers)) { feedRead = true; record.news_feed_url = guess.url; record.feed_url = guess.url; break; }
     }
-  } else if (looksLikeFeed(home.body)) feedRead = readFeed(home.body);
+  } else if (looksLikeFeed(home.body)) feedRead = readFeed(home.body, home.headers);
   if (/application\/ld\+json/i.test(homeHtml) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(homeHtml)) readCalendar(home.body, home.url);
+
+  if (calendarRead || feedRead) {
+    record.requests_used = budget.used;
+    record.structured_read = true;
+    record.detail = `${budget.used} requests: ${calendarRead ? "calendar" : "feed"}; ${items.length} dated items kept; stopped before speculative page crawling`;
+    return items;
+  }
 
   // 2. Recent pages from the sitemap, then story-like links from the homepage.
   const pages: Array<[string, string]> = [];
   // A section of a large site reads that section, not the whole site's sitemap.
   const sitePath = new URL(site).pathname.replace(/[^/]*$/, "");
   const inScope = (url: string) => { try { return new URL(url).pathname.startsWith(sitePath); } catch { return false; } };
-  if (budget.used < PAGE_BUDGET - 2 && items.length < MAX_ITEMS) {
+  if (budgetAvailable(budget) && budget.used < PAGE_BUDGET - 2 && items.length < MAX_ITEMS) {
     const sitemaps = [...(await context.fetcher.sitemaps(home.url).catch(() => [])), ...SITEMAP_GUESSES.map((path) => new URL(path, home.url).toString())];
     const queue = [...new Set(sitemaps)];
     let reads = 0;
-    while (queue.length && reads < 2 && budget.used < PAGE_BUDGET - 1) {
+    while (queue.length && reads < 2 && budget.used < PAGE_BUDGET - 1 && budgetAvailable(budget)) {
       const url = queue.shift()!;
       const sitemap = await fetchWithin(context, budget, record, url, ACCEPT_XML);
       reads += 1;
@@ -275,7 +332,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   const atOnce = pLimit(PAGES_AT_ONCE);
   const reading: Array<Promise<void>> = [];
   for (const [url, how] of pages) {
-    if (read >= MAX_PAGES || budget.used + reading.length >= PAGE_BUDGET || items.length >= MAX_ITEMS) break;
+    if (read >= MAX_PAGES || budget.used + reading.length >= PAGE_BUDGET || items.length >= MAX_ITEMS || !budgetAvailable(budget)) break;
     if (known.has(url)) continue;
     known.add(url);
     read += 1;
@@ -283,6 +340,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   }
   await Promise.all(reading);
 
+  if (budget.limited) record.out_of_time = true;
   if (record.out_of_time) record.status = "partial";
   record.detail = `${budget.used} requests: ${calendarRead ? "calendar" : feedRead ? "feed" : "no feed"}, ${read} pages; ${items.length} items kept, ${dropped.length} left out${siteRights === "link-only" ? "; headline and link only (site's rule)" : ""}${record.out_of_time ? "; stopped at its time budget" : ""}`;
   return items;

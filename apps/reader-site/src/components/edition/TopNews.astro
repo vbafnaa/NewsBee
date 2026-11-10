@@ -1,4 +1,5 @@
 ---
+import StoryMedia from "./StoryMedia.astro";
 import type { DataSource, Story } from "../../lib/edition-view";
 import SavedNote from "./SavedNote.astro";
 
@@ -14,6 +15,7 @@ const sides = [rest.slice(0, 2), rest.slice(2, 4)];
   {lead && (
     <div class="grid">
       <article class="card lead">
+        <StoryMedia photo={lead.photo} illustration={lead.illustration} lead />
         <a class="nb-card-link" href={lead.href} data-story-id={lead.storyId ?? undefined}>
         <div class="body" data-match-title>
           <span class="nb-label">{lead.category} · {lead.date}</span>
@@ -26,6 +28,7 @@ const sides = [rest.slice(0, 2), rest.slice(2, 4)];
         <div class={`side ${index === 0 ? "left" : "right"}`}>
           {side.map((story) => (
             <article class="card">
+              <StoryMedia photo={story.photo} illustration={story.illustration} />
               <a class="nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}>
               <div class="body">
                 <span class="nb-label">{story.category} · {story.date}</span>

@@ -1,0 +1,178 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { MongoClient, type Db } from "mongodb";
+import { MongoMemoryServer } from "mongodb-memory-server";
+import type { ArtifactStore } from "../../storage/artifacts";
+import { COLLECTIONS } from "../../storage/mongo";
+import {
+  createOutputChannel,
+  createOutputChannelEdition,
+  clearOutputChannelEditions,
+  clearOutputChannelFeed,
+  listOutputChannelEditions,
+  listOutputChannels,
+  outputChannels,
+  publishToOutputChannels,
+  removeLocationFromOutputChannels,
+  syncOutputChannelLocations,
+} from "../../orchestration/output-channels";
+
+const LOCATION = "town-wa";
+let server: MongoMemoryServer, client: MongoClient, db: Db;
+let saved: Array<{ folder: string; name: string; value: unknown }>;
+let removed: Array<{ folder: string; name: string }>;
+const store: ArtifactStore = {
+  kind: "local", ensureFolder: async () => "folder", saveText: async () => "file",
+  saveJson: async (folder: string, name: string, value: unknown) => { saved.push({ folder, name, value }); return name; },
+  readText: async () => "", readJson: async <T>() => ({} as T), list: async () => [], findFolder: async () => null,
+  removeFile: async (folder: string, name: string) => { removed.push({ folder, name }); return 1; },
+};
+
+beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("output-channels"); });
+beforeEach(async () => {
+  await db.dropDatabase(); saved = []; removed = [];
+  await db.collection(COLLECTIONS.locations).insertOne({ _id: LOCATION, id: LOCATION, name: "Town, WA", state: "WA", systems: [] } as never);
+});
+afterAll(async () => { await client?.close(); await server?.stop(); });
+
+describe("journalist output channels", () => {
+  it("keeps each journalist's settings private", async () => {
+    await createOutputChannel(db, "journalist-1", "1".repeat(32), "folder-1", { name: "First", destinations: [{ type: "reader", url: "https://first.example" }], enabled: true, selectedLocationIds: [] });
+    await createOutputChannel(db, "journalist-2", "2".repeat(32), "folder-2", { name: "Second", destinations: [{ type: "reader", url: "https://second.example" }], enabled: true, selectedLocationIds: [] });
+
+    expect(await listOutputChannels(db, "journalist-1")).toMatchObject([{ name: "First", driveFolderId: "folder-1" }]);
+    expect(await listOutputChannels(db, "journalist-2")).toMatchObject([{ name: "Second", driveFolderId: "folder-2" }]);
+  });
+
+  it("writes curated channel editions as reader-compatible per-location editions", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "7".repeat(32), "channel-folder", {
+      name: "Weekly digest", destinations: [{ type: "reader", url: "" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+    const document = await outputChannels(db).findOne({ _id: channel.id })!;
+    const edition = await createOutputChannelEdition(db, store, document!, "journalist-1", "Town this week", [{
+      location_id: LOCATION, location_name: "Town, WA", edition_id: "source-edition", story_id: "story-1",
+      headline: "Local update", blurb: "A brief update", event_date: "2026-11-09", source_url: null,
+    }], ["reader"], [], [{
+      id: `${channel.id}-1`, location_id: LOCATION, location_name: "Town, WA",
+      window_start: "2026-11-02", window_end: "2026-11-09", published_at: 1_800_000_000,
+      headline: "Town this week", intro: "A curated edition prepared for Weekly digest.",
+      items: [{ story_id: "story-1", headline: "Local update", blurb: "A brief update", when_where: "", event_date: "2026-11-09", source_url: null, rank: 1 }],
+      coverage: [], corrections: [],
+    }]);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      folder: "channel-folder",
+      name: `channel-edition-${edition._id}-1.json`,
+      value: {
+        id: edition.edition_ids[0],
+        location_id: LOCATION,
+        headline: "Town this week",
+        items: [{ story_id: "story-1", source_url: null }],
+      },
+    });
+    expect(await listOutputChannelEditions(db, "journalist-1", channel.id)).toMatchObject([
+      { title: "Town this week", output_modes: ["reader"], edition_ids: [edition.edition_ids[0]] },
+    ]);
+    expect(await listOutputChannelEditions(db, "journalist-2", channel.id)).toEqual([]);
+  });
+
+  it("removes curated edition files when a channel loses Reader output", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "8".repeat(32), "channel-folder", {
+      name: "Weekly digest", destinations: [{ type: "reader", url: "" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+    const document = await outputChannels(db).findOne({ _id: channel.id });
+    const edition = await createOutputChannelEdition(db, store, document!, "journalist-1", "Town this week", [], ["reader"], [], [{
+      id: `${channel.id}-1`, location_id: LOCATION, location_name: "Town, WA",
+      window_start: "2026-11-02", window_end: "2026-11-09", published_at: 1_800_000_000,
+      headline: "Town this week", intro: "", items: [], coverage: [], corrections: [],
+    }]);
+
+    await clearOutputChannelEditions(db, store, document!);
+
+    expect(removed).toContainEqual({ folder: "channel-folder", name: `channel-edition-${edition._id}-1.json` });
+    expect(await listOutputChannelEditions(db, "journalist-1", channel.id)).toEqual([]);
+  });
+
+  it("supports video-only channel editions with selected stories for video generation", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "9".repeat(32), "video-folder", {
+      name: "Video desk", destinations: [{ type: "video", url: "" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+    const document = await outputChannels(db).findOne({ _id: channel.id });
+    const edition = await createOutputChannelEdition(db, store, document!, "journalist-1", "Town videos", [{
+      location_id: LOCATION, location_name: "Town, WA", edition_id: "source-edition", story_id: "story-1",
+      headline: "Local update", blurb: "A brief update", event_date: "", source_url: null,
+    }], ["video"], [{ location_id: LOCATION, story_id: "story-1" }], []);
+
+    expect(saved).toEqual([]);
+    expect(edition).toMatchObject({ output_modes: ["video"], edition_ids: [], video_stories: [{ location_id: LOCATION, story_id: "story-1" }] });
+  });
+
+  it("publishes only to enabled channels that selected the edition's location", async () => {
+    await outputChannels(db).insertMany([
+      { _id: "selected", owner_id: "one", name: "Selected", url: "https://selected.example", drive_folder_id: "selected-folder", enabled: true, selected_location_ids: [LOCATION], published_location_ids: [] },
+      { _id: "other-location", owner_id: "one", name: "Other", url: "https://other.example", drive_folder_id: "other-folder", enabled: true, selected_location_ids: ["other-wa"], published_location_ids: [] },
+      { _id: "paused", owner_id: "two", name: "Paused", url: "https://paused.example", drive_folder_id: "paused-folder", enabled: false, selected_location_ids: [LOCATION], published_location_ids: [] },
+      { _id: "video-only", owner_id: "one", name: "Video only", destination: "video", url: "", drive_folder_id: "video-folder", enabled: true, selected_location_ids: [LOCATION], published_location_ids: [] },
+    ]);
+
+    await expect(publishToOutputChannels(db, store, { id: "edition-1", location_id: LOCATION, headline: "Local story" })).resolves.toEqual(["selected"]);
+    expect(saved.map(({ folder, name }) => [folder, name])).toEqual([
+      ["selected-folder", "edition-1.json"],
+      ["selected-folder", "locations.json"],
+    ]);
+    expect(saved[1].value).toEqual({ locations: [{ id: LOCATION, name: "Town, WA", system_count: 0, branch_count: 0 }] });
+  });
+
+  it("copies the latest selected edition and removes deleted locations from channel feeds", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "3".repeat(32), "channel-folder", {
+      name: "Neighbourhoods", destinations: [{ type: "reader", url: "https://news.example" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+    await syncOutputChannelLocations(db, store, "journalist-1", channel.id, [LOCATION], async (id) => ({
+      id: "edition-2", location_id: id, headline: "Latest",
+    }));
+
+    expect(saved.map(({ name }) => name)).toEqual(["edition-2.json", "locations.json"]);
+    expect(await outputChannels(db).findOne({ _id: channel.id })).toMatchObject({ published_location_ids: [LOCATION] });
+    await removeLocationFromOutputChannels(db, store, LOCATION);
+    expect(await outputChannels(db).findOne({ _id: channel.id })).toMatchObject({ selected_location_ids: [], published_location_ids: [] });
+    expect(saved.at(-1)?.value).toEqual({ locations: [] });
+  });
+
+  it("allows video channels without a website and does not write reader edition feeds to them", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "4".repeat(32), "video-folder", {
+      name: "Short videos", destinations: [{ type: "video", url: "" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+
+    await expect(publishToOutputChannels(db, store, { id: "edition-video", location_id: LOCATION })).resolves.toEqual([]);
+    await expect(syncOutputChannelLocations(db, store, "journalist-1", channel.id, [LOCATION], async () => ({
+      id: "edition-video", location_id: LOCATION,
+    }))).resolves.toEqual([]);
+    expect(saved).toEqual([]);
+    expect(await listOutputChannels(db, "journalist-1")).toMatchObject([{ destinations: [{ type: "video", url: "" }] }]);
+  });
+
+  it("publishes editions to a reader destination on a multi-destination channel", async () => {
+    await createOutputChannel(db, "journalist-1", "6".repeat(32), "mixed-folder", {
+      name: "Reader and video", destinations: [{ type: "reader", url: "" }, { type: "video", url: "" }],
+      enabled: true, selectedLocationIds: [LOCATION],
+    });
+
+    await expect(publishToOutputChannels(db, store, { id: "edition-mixed", location_id: LOCATION })).resolves.toEqual(["6".repeat(32)]);
+    expect(saved.map(({ name }) => name)).toEqual(["edition-mixed.json", "locations.json"]);
+  });
+
+  it("removes a channel's old edition feed when reader delivery is removed", async () => {
+    const channel = await createOutputChannel(db, "journalist-1", "5".repeat(32), "reader-folder", {
+      name: "Community reader", destinations: [{ type: "reader", url: "" }, { type: "video", url: "" }],
+      enabled: true, selectedLocationIds: [LOCATION],
+    });
+    await outputChannels(db).updateOne({ _id: channel.id }, { $set: { published_location_ids: [LOCATION] } });
+    await db.collection(COLLECTIONS.editions).insertOne({ id: "old-edition", location_id: LOCATION });
+
+    await clearOutputChannelFeed(db, store, await outputChannels(db).findOne({ _id: channel.id })!);
+
+    expect(saved).toEqual([]);
+    expect(removed).toEqual([["reader-folder", "old-edition.json"], ["reader-folder", "locations.json"]].map(([folder, name]) => ({ folder, name })));
+    expect(await outputChannels(db).findOne({ _id: channel.id })).toMatchObject({ published_location_ids: [] });
+  });
+});

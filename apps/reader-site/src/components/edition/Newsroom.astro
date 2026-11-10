@@ -1,4 +1,5 @@
 ---
+import StoryMedia from "./StoryMedia.astro";
 // One section per reader topic that has stories (shared/topics.ts: Housing & Development,
 // Transit, Business & Food, Policy, Groups & Communities, Culture), each opened by its own
 // label and divider: a lead story on the left, the rest listed on the right.
@@ -19,6 +20,7 @@ const SIDE_STORIES = 3;
       <div class="panel">
         {lead && (
           <article class="lead" data-match-title>
+            <StoryMedia photo={lead.photo} illustration={lead.illustration} />
             <span class="nb-label">{lead.date}</span>
             <h3>
               <a class="nb-card-link" href={lead.href} data-story-id={lead.storyId ?? undefined}><span class="nb-title">{lead.title}</span></a>
@@ -31,6 +33,7 @@ const SIDE_STORIES = 3;
         <ol class="list">
           {rest.slice(0, SIDE_STORIES).map((story) => (
             <li>
+              <StoryMedia photo={story.photo} illustration={story.illustration} />
               <a class="item nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}>
                 <span class="nb-label">{story.date}</span>
                 <span class="nb-title item-title">{story.title}</span>

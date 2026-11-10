@@ -8,11 +8,16 @@
   "scripts": {
     "local": "node scripts/local-stack.mjs",
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
-    "prebuild": "node scripts/playbook.mjs --check",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3000",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "photos:catalog": "vite-node scripts/photo-catalog.ts",
+    "photos:inspect": "vite-node scripts/inspect-photo-catalog.ts",
+    "photos:preview": "vite-node scripts/preview-image-pipeline.ts",
+    "illustrations:test": "vitest run pipeline/tests/editions/illustrations.test.ts pipeline/tests/editions/reader-view.test.ts pipeline/tests/editions/expanded-edition.test.ts pipeline/tests/editions/image-pipeline.test.ts --maxWorkers=1 --fileParallelism=false",
+    "photos:test": "vitest run pipeline/tests/editions/photo-catalog.test.ts pipeline/tests/editions/photo-editor.test.ts pipeline/tests/editions/photo-uniqueness.test.ts pipeline/tests/editions/image-pipeline.test.ts pipeline/tests/editions/story-images.test.ts pipeline/tests/editions/photo-context.test.ts pipeline/tests/editions/reader-view.test.ts pipeline/tests/connectors/article-images.test.ts pipeline/tests/workspace/photo-assets-delivery.test.ts pipeline/tests/workspace/published-image-decisions.test.ts pipeline/tests/workspace/image-delivery.test.ts pipeline/tests/workspace/internal-access.test.ts pipeline/tests/communities/removal.test.ts pipeline/tests/editions/photo-supply.test.ts pipeline/tests/workspace/photo-supply-routes.test.ts --maxWorkers=1 --fileParallelism=false",
+    "prebuild": "node scripts/playbook.mjs --check",
     "playbook": "node scripts/playbook.mjs"
   },
   "dependencies": {
@@ -31,7 +36,8 @@
     "pdfjs-dist": "^4.10.38",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "robots-parser": "^3.0.1"
+    "robots-parser": "^3.0.1",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
@@ -39,6 +45,7 @@
     "@types/react-dom": "^19.1.0",
     "mongodb-memory-server": "^10.4.3",
     "typescript": "^5.9.0",
+    "vite-node": "3.2.4",
     "vitest": "^3.2.7",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"

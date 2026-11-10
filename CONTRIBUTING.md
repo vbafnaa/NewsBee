@@ -33,7 +33,6 @@ Before opening a PR, run the checks for what you changed:
 |---|---|
 | `apps/journalist-site` | `npm run lint && npm test` |
 | `apps/reader-site` | `npm run check && npm run build` |
-| `apps/muse-receiver` | `npm run lint && npm test` |
 
 `npm run local` in `apps/journalist-site` starts the full local stack; see the README for details.
 

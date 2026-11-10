@@ -14,8 +14,9 @@ export function matching(story: Pick<Story, "id" | "occurrences">, decisions: Re
 export async function withdraw(db: Db, editionId: string, storyId: string, reason: string) {
   reason = reason.trim();
   if (reason.length < 10 || reason.length > 500) throw new Error("A public correction reason must be 10-500 characters");
-  const edition = await db.collection(COLLECTIONS.editions).findOne({ id: editionId, status: "published" });
-  if (!edition) throw new Error(`No published edition: ${editionId}`);
+  // A built edition can lose a story before it is published, as a published one can after.
+  const edition = await db.collection(COLLECTIONS.editions).findOne({ id: editionId, status: { $in: ["built", "published"] } });
+  if (!edition) throw new Error(`No finished edition: ${editionId}`);
   const entry = await db.collection(COLLECTIONS.editionEntries).findOne({ edition_id: editionId, disposition: { $ne: "held" }, "result.story.id": storyId });
   if (!entry) throw new Error(`No published story ${storyId} in edition ${editionId}`);
   const existing = await db.collection<Withdrawal>(COLLECTIONS.withdrawals).findOne({ location_id: edition.location_id, story_id: storyId });

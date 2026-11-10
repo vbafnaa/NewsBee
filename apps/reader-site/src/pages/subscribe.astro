@@ -1,5 +1,6 @@
 ---
 import "../../../../shared/design-tokens.css";
+import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import SignupForm from "../components/SignupForm.astro";
 import { directoryTown, type Location } from "../lib/reader-data";
 
@@ -30,6 +31,7 @@ const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <GoogleAnalytics />
     <title>{town ? `Weekly updates for ${town.name} | Newsbee` : "Weekly updates | Newsbee"}</title>
   </head>
   <body>

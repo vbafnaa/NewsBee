@@ -4,6 +4,13 @@
 import { readerData, type Edition, type EditionItem, type Location } from "./reader-data";
 import { TOPICS, topicOf, topicShort } from "../../../../shared/topics";
 
+import { normalizeStoryImage, type StoryImage } from "../../../../shared/story-image";
+import { allowsContextPhoto } from "../../../../shared/photo-presentation";
+import { photoStoryMismatch } from "../../../../shared/photo-story-match";
+import { planIllustrations, type EditorialIllustration } from "../../../../shared/editorial-illustrations";
+import { readerMediaMode } from "./reader-media-mode";
+export type ArticlePhoto = StoryImage & { src: string };
+
 const EVENT_KINDS = ["event", "meeting_preview"];
 const TOP_STORIES = 5;
 
@@ -32,21 +39,21 @@ export const TIME_ZONE = "America/Los_Angeles";
 export type DataSource = "live" | "saved" | "pipeline" | "fallback";
 
 /** storyId: the edition item's id, for the reading signals (api/engagement.ts); feeds have none. */
-export type Story = { title: string; dek: string; category: string; date: string; href: string; storyId?: string | null };
+export type Story = { title: string; dek: string; category: string; date: string; href: string; storyId?: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration };
 /** dek and where: the edition's summary and venue (events pages); feeds leave them out. */
-export type EventItem = { title: string; category: string | null; time: string; href: string | null; dek?: string; where?: string | null; storyId?: string | null };
+export type EventItem = { title: string; category: string | null; time: string; href: string | null; dek?: string; where?: string | null; storyId?: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration };
 export type EventDay = { date: string; weekday: string; dayOfMonth: number; isToday: boolean; events: EventItem[] };
 export type NewsroomTab = {
   id: string;
   label: string;
   source: DataSource;
-  stories: { title: string; dek: string; date: string; sourceName: string; href: string; storyId?: string | null }[];
+  stories: { title: string; dek: string; date: string; sourceName: string; href: string; storyId?: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration }[];
 };
 /** One event before grouping by day. `start` is Pacific wall-clock "YYYY-MM-DD HH:MM" or a bare date. */
-export type RawEvent = { title: string; start: string; timeKnown: boolean; category: string | null; href: string | null; dek?: string; where?: string | null; storyId?: string | null };
+export type RawEvent = { title: string; start: string; timeKnown: boolean; category: string | null; href: string | null; dek?: string; where?: string | null; storyId?: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration };
 
-export type PipelineStory = { title: string; dek: string; category: string; isoDate: string; sourceName: string; href: string; storyId: string | null };
-export type PipelineEvent = { title: string; isoDate: string; time: string | null; category: string | null; href: string | null; dek: string; where: string | null; storyId: string | null };
+export type PipelineStory = { title: string; dek: string; category: string; isoDate: string; sourceName: string; href: string; storyId: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration };
+export type PipelineEvent = { title: string; isoDate: string; time: string | null; category: string | null; href: string | null; dek: string; where: string | null; storyId: string | null; photo?: ArticlePhoto; illustration?: EditorialIllustration };
 export type PipelineEdition = {
   id: string;
   publishedAt: number;
@@ -83,7 +90,21 @@ function articleHref(edition: Edition, item: EditionItem) {
   return `${base}?${params}`;
 }
 
-function toStory(item: EditionItem, edition: Edition): PipelineStory {
+/** Preserve reader-photo approval/withdrawal routes; proxy other edition photos safely. */
+function editionPhoto(item: EditionItem, edition: Edition): ArticlePhoto | null {
+  if (readerMediaMode(edition.media_mode) !== "photos") return null;
+  if (!item.image_credit?.trim()) return null;
+  const media = normalizeStoryImage(item, item);
+  if (!media?.image_source_url) return null;
+  if (!allowsContextPhoto(item.kind, media.image_role)) return null;
+  if (photoStoryMismatch(item, media)) return null;
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+  const params = new URLSearchParams({ edition: edition.id, item: String(edition.items.indexOf(item)) });
+  return { ...media, src: item.kind === "reader_story" && !media.image_asset_id ? media.image : base + "/api/images/" + encodeURIComponent(edition.location_id) + "?" + params };
+}
+
+function toStory(item: EditionItem, edition: Edition, illustration?: EditorialIllustration): PipelineStory {
+  const photo = editionPhoto(item, edition);
   return {
     title: item.headline,
     dek: item.blurb,
@@ -92,6 +113,8 @@ function toStory(item: EditionItem, edition: Edition): PipelineStory {
     sourceName: sourceName(item),
     href: articleHref(edition, item),
     storyId: item.story_id ?? null,
+    ...(illustration ? { illustration } : {}),
+    ...(photo ? { photo } : {}),
   };
 }
 
@@ -109,7 +132,8 @@ function venue(whenWhere: string) {
   return whenWhere.match(/Where:\s*([^,.]+)/)?.[1]?.trim() || null;
 }
 
-function toEvent(item: EditionItem, edition: Edition): PipelineEvent {
+function toEvent(item: EditionItem, edition: Edition, illustration?: EditorialIllustration): PipelineEvent {
+  const photo = editionPhoto(item, edition);
   const library = /library/i.test(item.source_name ?? "");
   return {
     title: item.headline,
@@ -120,10 +144,16 @@ function toEvent(item: EditionItem, edition: Edition): PipelineEvent {
     dek: item.blurb,
     where: venue(item.when_where),
     storyId: item.story_id ?? null,
+    ...(illustration ? { illustration } : {}),
+    ...(photo ? { photo } : {}),
   };
 }
 
-function pipelineEdition(edition: Edition): PipelineEdition {
+function editionIllustrations(edition: Edition) {
+  return readerMediaMode(edition.media_mode) === "illustrated" ? planIllustrations(edition.items, edition.location_id) : new Map<number, EditorialIllustration>();
+}
+
+function pipelineEdition(edition: Edition, illustrations = editionIllustrations(edition)): PipelineEdition {
   const items = [...edition.items].sort(byRank);
   const news = items.filter((item) => !EVENT_KINDS.includes(item.kind ?? ""));
   return {
@@ -131,9 +161,9 @@ function pipelineEdition(edition: Edition): PipelineEdition {
     publishedAt: edition.published_at,
     windowStart: edition.window_start,
     // The front is the best-ranked news of any topic; sections leave those out.
-    topStories: news.slice(0, TOP_STORIES).map((item) => toStory(item, edition)),
-    events: items.filter((item) => EVENT_KINDS.includes(item.kind ?? "")).map((item) => toEvent(item, edition)),
-    sections: Object.fromEntries(TOPICS.map(({ id }) => [id, news.filter((item) => topic(item) === id).map((item) => toStory(item, edition))])),
+    topStories: news.slice(0, TOP_STORIES).map((item) => toStory(item, edition, illustrations.get(edition.items.indexOf(item)))),
+    events: items.filter((item) => EVENT_KINDS.includes(item.kind ?? "")).map((item) => toEvent(item, edition, illustrations.get(edition.items.indexOf(item)))),
+    sections: Object.fromEntries(TOPICS.map(({ id }) => [id, news.filter((item) => topic(item) === id).map((item) => toStory(item, edition, illustrations.get(edition.items.indexOf(item))))])),
   };
 }
 
@@ -214,7 +244,7 @@ export function groupByDay(events: RawEvent[], firstDay: string, todayDate: stri
           href: event.href,
           dek: event.dek,
           where: event.where,
-          storyId: event.storyId,
+          storyId: event.storyId, ...(event.photo ? { photo: event.photo } : {}), ...(event.illustration ? { illustration: event.illustration } : {}),
         })),
     };
   });
@@ -230,7 +260,7 @@ export function editionEvents(edition: PipelineEdition): RawEvent[] {
     href: event.href,
     dek: event.dek,
     where: event.where,
-    storyId: event.storyId,
+    storyId: event.storyId, ...(event.photo ? { photo: event.photo } : {}), ...(event.illustration ? { illustration: event.illustration } : {}),
   }));
 }
 
@@ -239,7 +269,7 @@ export function editionSections(edition: PipelineEdition, onFront: (href: string
   return TOPICS.map(({ id, label }) => ({
     id, label, source: "pipeline" as DataSource,
     stories: (edition.sections[id] ?? []).filter((story) => !onFront(story.href)).map((story) => ({
-      title: story.title, dek: story.dek, sourceName: story.sourceName, href: story.href, storyId: story.storyId,
+      title: story.title, dek: story.dek, sourceName: story.sourceName, href: story.href, storyId: story.storyId, ...(story.photo ? { photo: story.photo } : {}), ...(story.illustration ? { illustration: story.illustration } : {}),
       date: shortDate(new Date(`${story.isoDate}T12:00:00Z`)),
     })),
   })).filter((section) => section.stories.length > 0);
@@ -247,7 +277,7 @@ export function editionSections(edition: PipelineEdition, onFront: (href: string
 
 export const frontStories = (edition: PipelineEdition): Story[] => edition.topStories.map((story) => ({
   title: story.title, dek: story.dek, category: story.category,
-  date: shortDate(new Date(`${story.isoDate}T12:00:00Z`)), href: story.href, storyId: story.storyId,
+  date: shortDate(new Date(`${story.isoDate}T12:00:00Z`)), href: story.href, storyId: story.storyId, ...(story.photo ? { photo: story.photo } : {}), ...(story.illustration ? { illustration: story.illustration } : {}),
 }));
 
 const linkKey = (href: string) => href.replace(/\/$/, "");
@@ -264,7 +294,7 @@ export type EditionPage = {
   /** Other published neighborhoods, for the footer. */
   neighborhoods: Location[];
   today: string;
-  edition: { id: string; publishedAt: number; windowStart: string; windowEnd: string; coverage: string[]; corrections: { reason: string; created_at: number }[] };
+  edition: { id: string; publishedAt: number; windowStart: string; windowEnd: string; mediaMode?: "illustrated" | "photos" | "none"; coverage: string[]; corrections: { reason: string; created_at: number }[] };
   sources: Pick<EditionItem, "source_url" | "source_name" | "headline" | "story_id">[];
   articles: Article[];
   topStories: Story[];
@@ -289,6 +319,7 @@ export type Article = {
   image: string | null;
   imageCaption: string | null;
   imageCredit: string | null;
+  photo?: ArticlePhoto; illustration?: EditorialIllustration;
 };
 
 function publicUrl(value: string | null | undefined) {
@@ -305,8 +336,9 @@ export async function loadEditionPage(locationId: string, editionId?: string | n
   const location = locations.find((candidate) => candidate.id === locationId);
   const published = new Set(editions.map((edition) => edition.location_id));
   const latest = selectEdition(editions, locationId, editionId);
-  const edition = location && latest ? pipelineEdition(latest) : null;
-  if (!location || !latest || !edition) return null;
+  if (!location || !latest) return null;
+  const illustrations = editionIllustrations(latest);
+  const edition = pipelineEdition(latest, illustrations);
 
   const todayDate = pacificDate(now);
   const topStories = frontStories(edition);
@@ -327,20 +359,26 @@ export async function loadEditionPage(locationId: string, editionId?: string | n
     today: longDate(now),
     edition: {
       id: latest.id, publishedAt: latest.published_at, windowStart: latest.window_start, windowEnd: latest.window_end,
+      mediaMode: readerMediaMode(latest.media_mode),
       coverage: latest.coverage ?? [], corrections: latest.corrections ?? [],
     },
     sources: [...latest.items].sort(byRank).map(({ source_url, source_name, headline, story_id }) => ({
       source_url, source_name, headline, story_id,
     })),
-    articles: latest.items.map((item, index) => ({
+    articles: latest.items.map((item, index) => {
+      const photo = editionPhoto(item, latest);
+      const illustration = illustrations.get(index);
+      return ({
       key: articleKey(item, index), storyId: item.story_id ?? null,
+      ...(illustration ? { illustration } : {}),
+    ...(photo ? { photo } : {}),
       headline: item.headline, text: item.blurb, whenWhere: item.when_where,
       date: shortDate(new Date(`${item.event_date}T12:00:00Z`)),
       category: topicShort(topic(item)) ?? KIND_LABELS[item.kind ?? ""] ?? (EVENT_KINDS.includes(item.kind ?? "") ? "Events" : "News"),
       href: articleHref(latest, item), sourceName: sourceName(item), sourceUrl: publicUrl(item.source_url),
-      image: item.image_credit ? publicUrl(item.image) : null,
+      image: photo?.src ?? null,
       imageCaption: item.image_caption ?? null, imageCredit: item.image_credit ?? null,
-    })),
+    }); }),
     topStories,
     eventDays,
     sections,

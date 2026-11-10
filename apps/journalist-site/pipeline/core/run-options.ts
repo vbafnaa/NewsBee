@@ -12,7 +12,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Db } from "mongodb";
 import {
-  ACCESS_RULES, CLASSIFIER_MODES, FREE_SERVICES, GUARDRAIL_GROUPS, PAID_SERVICE_IDS, PAID_SERVICES, PRIORITY_TOPICS, SEARCH_PROVIDERS,
+  ACCESS_RULES, CLASSIFIER_MODES, FREE_SERVICES, GUARDRAIL_GROUPS, LEGACY_MODEL_SERVICES, PAID_SERVICE_IDS, PAID_SERVICES, PRIORITY_TOPICS, SEARCH_PROVIDERS,
   type AccessRule, type FreeService, type GuardrailGroup, type PaidService, type PriorityTopic, type RunOptions,
 } from "./run-values";
 
@@ -35,14 +35,21 @@ function guardrailsOff(value: string | undefined) {
   if (value.trim().toLowerCase() === "none") return [];
   return within<GuardrailGroup>(value, GUARDRAIL_GROUPS, "NEWSBEE_GUARDRAILS_OFF");
 }
+/** A paid service id, with the old per-provider model budgets read as the one model budget. */
+export function paidId(id: string): string {
+  return (LEGACY_MODEL_SERVICES as readonly string[]).includes(id) ? "model" : id;
+}
+const SEARCH_DEPTHS = ["exhaustive", "enough"] as const;
 const BUDGETS = Object.fromEntries(PAID_SERVICES.map((service) => [service.id, service.budget])) as Record<PaidService, number>;
 
 /** The defaults from the environment, before any kick-off choice. */
 export function defaultRunOptions(env: NodeJS.ProcessEnv = process.env): RunOptions {
-  const budgets = Object.fromEntries(list(env.NEWSBEE_PAID_BUDGETS).map((item) => { const [id, calls] = item.split(":"); return [id, Number(calls)]; }));
-  const allowed = within<PaidService>(env.NEWSBEE_PAID_ALLOW, PAID_SERVICE_IDS, "NEWSBEE_PAID_ALLOW");
+  const budgets = Object.fromEntries(list(env.NEWSBEE_PAID_BUDGETS).map((item) => { const [id, calls] = item.split(":"); return [paidId(id), Number(calls)]; }));
+  const allowed = [...new Set(list(env.NEWSBEE_PAID_ALLOW).map(paidId))];
+  for (const id of allowed) if (!PAID_SERVICE_IDS.includes(id as PaidService)) throw new Error(`Unknown NEWSBEE_PAID_ALLOW value: ${id}`);
   return {
-    purpose: "test",
+    image_mode: choice(env.NEWSBEE_IMAGE_MODE, ["illustrated", "current", "shadow", "agentic"] as const, "illustrated", "NEWSBEE_IMAGE_MODE"),
+    image_call_budget: Math.min(200, Math.max(0, Number(env.NEWSBEE_IMAGE_CALL_BUDGET ?? 40) || 0)),
     mode: choice(env.NEWSBEE_RUN_MODE, ["autopilot", "manual"] as const, "autopilot", "NEWSBEE_RUN_MODE"),
     flow: choice(env.NEWSBEE_PIPELINE_FLOW, ["current", "agentic"] as const, "current", "NEWSBEE_PIPELINE_FLOW"),
     map_flow: choice(env.NEWSBEE_MAP_FLOW ?? env.NEWSBEE_PIPELINE_FLOW, ["current", "agentic"] as const, "current", "NEWSBEE_MAP_FLOW"),
@@ -51,7 +58,7 @@ export function defaultRunOptions(env: NodeJS.ProcessEnv = process.env): RunOpti
     access: choice(env.NEWSBEE_ACCESS_POLICY, ["respect", "relaxed"] as const, "respect", "NEWSBEE_ACCESS_POLICY"),
     access_ignore: within<AccessRule>(env.NEWSBEE_ACCESS_IGNORE, ACCESS_RULES, "NEWSBEE_ACCESS_IGNORE"),
     count_history: !["0", "off", "false", "no"].includes((env.NEWSBEE_COUNT_HISTORY ?? "on").trim().toLowerCase()),
-    paid: Object.fromEntries(allowed.map((id) => [id, Number.isFinite(budgets[id]) ? budgets[id] : BUDGETS[id]])),
+    paid: Object.fromEntries(allowed.map((id) => [id, Number.isFinite(budgets[id]) ? budgets[id] : BUDGETS[id as PaidService]])),
     external_off: within<FreeService>(env.NEWSBEE_EXTERNAL_OFF, FREE_SERVICES.map((service) => service.id), "NEWSBEE_EXTERNAL_OFF"),
     search_provider: choice(env.NEWSBEE_SEARCH_PROVIDER, SEARCH_PROVIDERS, "serpapi", "NEWSBEE_SEARCH_PROVIDER"),
     classifier: choice(env.NEWSBEE_URL_CLASSIFIER, CLASSIFIER_MODES, "off", "NEWSBEE_URL_CLASSIFIER"),
@@ -65,6 +72,17 @@ export function isDeployed(env: NodeJS.ProcessEnv = process.env) {
   return (env.NEWSBEE_MODE ?? "local").trim().toLowerCase() === "cloud" || Boolean(env.VERCEL);
 }
 
+/**
+ * NEWSBEE_SOURCE_RUNS_ISOLATED, for the testing phase (on by default): every source map run starts
+ * from scratch and keeps its results to itself. It reads every fixed reader again into its own store
+ * (`source_run_<run id>`, see sourcemap/store.ts), reuses no search results or source-finding caches
+ * from earlier runs, and leaves the source map, and so editions, untouched. Off restores runs that
+ * write into the source map.
+ */
+export function sourceRunsIsolated(env: NodeJS.ProcessEnv = process.env) {
+  return !["0", "off", "false", "no"].includes((env.NEWSBEE_SOURCE_RUNS_ISOLATED ?? "on").trim().toLowerCase());
+}
+
 /** Merge kick-off choices over the defaults, and refuse what this environment does not allow. */
 export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = process.env): RunOptions {
   const base = defaultRunOptions(env);
@@ -72,16 +90,18 @@ export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = proce
   let options: RunOptions;
   try {
     const paid: Partial<Record<PaidService, number>> = {};
-    for (const [id, calls] of Object.entries((choices.paid as Record<string, unknown> | undefined) ?? base.paid)) {
-      if (!PAID_SERVICE_IDS.includes(id as PaidService)) throw new Error(`Unknown paid service: ${id}`);
+    for (const [given, calls] of Object.entries((choices.paid as Record<string, unknown> | undefined) ?? base.paid)) {
+      const id = paidId(given);
+      if (!PAID_SERVICE_IDS.includes(id as PaidService)) throw new Error(`Unknown paid service: ${given}`);
       const budget = Number(calls);
-      if (!Number.isFinite(budget) || budget < 0) throw new Error(`The budget for ${id} must be a non-negative number`);
-      paid[id as PaidService] = budget;
+      if (!Number.isFinite(budget) || budget < 0) throw new Error(`The budget for ${given} must be a non-negative number`);
+      // The old Gemini and OpenAI-compatible budgets become one model budget, the larger of the two.
+      paid[id as PaidService] = Math.max(paid[id as PaidService] ?? 0, budget);
     }
     options = {
-      purpose: choice(choices.purpose, ["test", "training", "final"] as const, "test", "Run purpose"),
+      image_mode: choice(choices.image_mode, ["illustrated", "current", "shadow", "agentic"] as const, base.image_mode ?? "illustrated", "Story visuals"),
+      image_call_budget: Math.min(200, Math.max(0, Math.floor(Number(choices.image_call_budget ?? base.image_call_budget ?? 40) || 0))),
       rebuild: choices.rebuild === true,
-      ...(typeof choices.admin_approval_id === "string" ? { admin_approval_id: choices.admin_approval_id } : {}),
       mode: choice(choices.mode, ["autopilot", "manual"] as const, base.mode, "Run mode"),
       flow: choice(choices.flow, ["current", "agentic"] as const, base.flow, "Flow"),
       map_flow: choice(choices.map_flow, ["current", "agentic"] as const, base.map_flow ?? base.flow, "Source map method"),
@@ -95,11 +115,15 @@ export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = proce
       search_provider: choice(choices.search_provider, SEARCH_PROVIDERS, base.search_provider, "Search provider"),
       classifier: choice(choices.classifier, CLASSIFIER_MODES, base.classifier, "Classifier"),
       topics: choices.topics === undefined ? base.topics : within<PriorityTopic>(choices.topics, PRIORITY_TOPICS.map((topic) => topic.id), "Priority topics"),
+      gemini_check: choices.gemini_check === undefined ? true : choices.gemini_check !== false,
       story_limit: Number(choices.story_limit) > 0 ? Math.floor(Number(choices.story_limit)) : null,
+      // Every run is exhaustive now; a run that recorded a search depth keeps it, so its saved plan and display stay as they were.
+      ...(choices.search_depth === undefined ? {} : { search_depth: choice(choices.search_depth, SEARCH_DEPTHS, "enough", "Search depth") }),
     };
   } catch (error) {
     throw new RunOptionsError(error instanceof Error ? error.message : String(error));
   }
+  // Relaxed access and the model check off are test options that work anywhere; the run records them. Only the fixture can't work deployed.
   if (isDeployed(env) && options.search_provider === "fixture") throw new RunOptionsError("The fixture search provider is local only.");
   return options;
 }
@@ -107,7 +131,7 @@ export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = proce
 /** What a run created before run options existed behaves like: today's manual, unrestricted flow. */
 export const LEGACY_OPTIONS: RunOptions = {
   mode: "manual", flow: "current", guardrails: "strict", guardrails_off: [], access: "respect", access_ignore: [], count_history: true,
-  paid: Object.fromEntries(["gemini", "openai_compatible", "tavily"].map((id) => [id, Number.MAX_SAFE_INTEGER])), external_off: [], search_provider: "serpapi", classifier: "off", topics: [],
+  paid: Object.fromEntries(["model", "tavily"].map((id) => [id, Number.MAX_SAFE_INTEGER])), external_off: [], search_provider: "serpapi", classifier: "off", topics: [],
 };
 
 export type RunContext = {
@@ -117,6 +141,12 @@ export type RunContext = {
   runId: string;
   locationId: string;
   options: RunOptions;
+  /** A source map run (Pipeline 1) or an edition; per-run hard limits apply to map runs. */
+  runKind?: "map" | "edition";
+  /** When the run started, in seconds, for the whole-run time limit. */
+  startedAt?: number;
+  /** A test-mode map run: it writes its own store, not the source map, and reuses nothing from earlier runs. */
+  isolated?: boolean;
   /** Access rules this job actually skipped, written onto what it collects. */
   overrides: Set<AccessRule>;
 };
@@ -127,6 +157,11 @@ export function withRunContext<T>(value: Omit<RunContext, "overrides">, operatio
 }
 export function runContext() { return context.getStore() ?? null; }
 export function currentOptions(): RunOptions { return context.getStore()?.options ?? LEGACY_OPTIONS; }
+/** The run id of the test-mode map run this job belongs to, or null. */
+export function isolatedRunId() {
+  const store = context.getStore();
+  return store?.isolated && store.runKind === "map" ? store.runId : null;
+}
 
 /** Whether a guardrail group is off for the current run. */
 export function rulesOff(group: GuardrailGroup) {

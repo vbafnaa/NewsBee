@@ -1,5 +1,6 @@
 ---
 import "../../../../shared/design-tokens.css";
+import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import { approvedReaderStory, directoryTown, type Location } from "../lib/reader-data";
 import { STORY_MAX, STORY_MIN, HEADLINE_MAX, STORY_IMAGE_MAX_BYTES } from "../../../../shared/reader-stories";
 
@@ -31,6 +32,7 @@ const today = new Date().toISOString().slice(0, 10);
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <GoogleAnalytics />
     <title>{shared ? `${shared.headline} | Newsbee` : town ? `Share your story with ${town.name} | Newsbee` : "Share your story | Newsbee"}</title>
   </head>
   <body>

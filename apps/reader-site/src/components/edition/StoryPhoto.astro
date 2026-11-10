@@ -1,0 +1,51 @@
+---
+import type { ArticlePhoto } from "../../lib/edition-view";
+import { photoCredit } from "../../../../../shared/photo-presentation";
+interface Props { photo: ArticlePhoto; lead?: boolean }
+const { photo, lead = false } = Astro.props;
+const hasDetails = Boolean(photo.image_role || photo.image_license);
+const variants = photo.image_asset_id ? [480, 960, 1200, 1800, 2400].filter(width => width <= (photo.image_width ?? 1200)) : [];
+const srcset = (mobile = false) => variants.filter(width => !mobile || width <= 1200).map(width => `${photo.src}&width=${width}${mobile ? "&layout=mobile" : ""} ${width}w`).join(", ");
+---
+<figure class="story-photo" data-story-photo data-article-photo>
+  <picture>
+    {variants.length > 0 && <source media="(max-width: 40rem)" srcset={srcset(true)} sizes="calc(100vw - 2rem)" />}
+    <img src={photo.src} srcset={variants.length ? srcset() : undefined} sizes={lead ? "(max-width: 40rem) calc(100vw - 2rem), 800px" : "(max-width: 40rem) calc(100vw - 2rem), 480px"} alt={photo.image_alt ?? photo.image_caption ?? ""}
+    width={photo.image_width ?? 1200} height={photo.image_height ?? 800}
+    loading={lead ? "eager" : "lazy"} decoding="async" referrerpolicy="no-referrer" />
+  </picture>
+  <figcaption>
+    <span class="photo-credit">{photo.image_role === "stock" ? "Stock Photo" : <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">{photoCredit(photo)}</a>}</span>
+    {hasDetails && <details>
+      <summary aria-label="Photo details and license" title="Photo details and license">ⓘ</summary>
+      <div class="photo-details-body">
+        <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">Photo: {photo.image_credit}</a>
+        {photo.image_license_url && <> · <a href={photo.image_license_url} target="_blank" rel="noopener noreferrer">{photo.image_license}</a></>}
+        {!photo.image_license_url && photo.image_license && <> · {photo.image_license}</>}
+        {photo.image_date && <> · Taken {photo.image_date}.</>}
+        <> Cropped for layout. {photo.image_role === "stock" ? "Stock image; not the event, venue or participants." : photo.image_role === "area" ? "Area context; not the permitted work or its progress." : photo.image_role === "venue" ? "Location context; not the event." : ""}</>
+      </div>
+    </details>}
+  </figcaption>
+</figure>
+<script>
+  for (const photo of document.querySelectorAll<HTMLImageElement>("[data-story-photo] img")) {
+    const hide = () => photo.closest("figure")?.remove();
+    photo.addEventListener("error", hide, { once: true });
+    photo.addEventListener("load", () => { if (photo.naturalWidth < 240 || photo.naturalHeight < 120) hide(); }, { once: true });
+    if (photo.complete && (!photo.naturalWidth || photo.naturalWidth < 240 || photo.naturalHeight < 120)) hide();
+  }
+</script>
+<style>
+  .story-photo { margin: 0; min-width: 0; }
+  picture { display: block; }
+  img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; border-radius: var(--radius-sm); background: var(--color-cream); }
+  figcaption { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-top: var(--space-2); color: var(--color-muted); font: 400 var(--text-xs)/var(--leading-body) var(--font-body); }
+  figcaption a { color: inherit; text-decoration: none; text-underline-offset: 3px; }
+  figcaption a:hover { text-decoration: underline; }
+  details { position: relative; }
+  summary { cursor: pointer; font-size: 0.6875rem; text-underline-offset: 3px; }
+  summary:hover { text-decoration: underline; }
+  .photo-details-body { padding-top: var(--space-2); max-width: 38ch; font-size: var(--text-xs); line-height: var(--leading-body); }
+  @media (max-width: 40rem) { picture:has(source) img { aspect-ratio: 4 / 3; } }
+</style>

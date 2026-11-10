@@ -9,6 +9,12 @@ Astro Vercel adapter; it is not a static-only build.
 
 ## Google Drive files
 
+New agent-reviewed photos use `image_asset_id` to serve archived originals' reviewed
+derivatives from MongoDB through the edition-scoped `/api/images/<location>` endpoint.
+The component uses responsive desktop/mobile variants. Legacy URL-only photos retain
+the origin cache. Reader-submitted derivatives still require current approval and are
+served with `Cache-Control: no-store`. Both apps must use the same MongoDB database.
+
 Share the Drive folder with the service account email as a Viewer. Place one `.json` file
 for each published edition and a `locations.json` directory index in that folder. Use the
 edition format validated in [`src/lib/reader-data.ts`](src/lib/reader-data.ts). The
@@ -72,12 +78,17 @@ development when needed):
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`: service account email with Viewer access to the folder.
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`: service account private key in PEM format. Store
   it as a secret; escaped `\n` newlines are supported.
-- `NEWSBEE_READER_DRIVE_FOLDER_ID`: Drive folder the journalist site publishes editions
-  to. Defaults to `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`; set the same value on both sites.
+- `NEWSBEE_OUTPUT_CHANNEL_ID`: MongoDB `output_channels` document ID, default `reader-site`.
+  Both reader and publisher first use this document's `drive_folder_id`. It must have a
+  boolean `enabled: true` and a valid folder ID. Disabled/malformed documents, missing
+  MongoDB configuration and database failures surface as errors, without fallback.
+- `NEWSBEE_READER_DRIVE_FOLDER_ID`: Fallback only when the selected channel document is
+  absent. Defaults to `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`; match both sites' settings
+  and grant the reader MongoDB identity read access to `output_channels`.
 - `NEWSBEE_MODE=cloud`: read Google Drive in Vercel. Local mode is the default and reads
   the local Drive stand-in instead; credentials alone do not switch it to cloud mode.
 - `NEWSBEE_LOCAL_DRIVE_DIR` (optional, local only): local Drive root. The reader folder is
-  a subfolder named by `NEWSBEE_READER_DRIVE_FOLDER_ID`; the local launcher sets this root.
+  a subfolder named by the resolved channel/fallback folder ID; the local launcher sets this root.
 - `NEWSBEE_ARTIFACT_STORE=mongo` (optional): read editions from the journalist service's
   MongoDB `artifacts` collection instead of Drive; the Google variables above are then not needed.
 - `MONGODB_URI`: private MongoDB Atlas connection string.
@@ -144,7 +155,14 @@ shared local MongoDB; see [Run locally](../../README.md#run-locally).
 
 ## API routes
 
+Story photos use a source-credited image pipeline with public-HTTPS validation, bounded
+delivery/cache, event venue photos and an optional last-resort stock pass. Missing or
+failed photos leave text-only stories. No additional configuration is required;
+see [the image pipeline](../../Docs/image-pipeline.md).
+
 - `GET /api/editions`: lists towns and their latest edition metadata.
+- `GET /api/images/<location_id>?edition=<id>&item=<index>`: serves the approved raster
+  image for an item in that community's published edition. Arbitrary image URLs are not accepted.
 - `GET /api/editions/<location_id>[?edition=<id>]`: returns the latest or a specific
   published edition for that town; IDs from other locations are not served.
 - `GET /api/locations/search?q=<prefix>[,%20ST]`: searches Census towns, reviewed communities,

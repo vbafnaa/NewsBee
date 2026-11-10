@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "location_id": "moses-lake-wa",
+  "sources": [
+    {
+      "id": "dmla-tree-lighting-2026",
+      "name": "Downtown Moses Lake Association: Tree Lighting",
+      "kind": "supplied",
+      "status": "pending",
+      "reviewed_on": "2026-11-03",
+      "expires_on": "2026-12-03",
+      "evidence_url": "https://www.downtownmoseslake.org/event-details/tree-lighting-1-3",
+      "permission": { "editorial": false, "archive": false, "crop": false },
+      "photos": [],
+      "scope": {
+        "kind": "event",
+        "name": "Downtown Tree Lighting",
+        "city": "Moses Lake",
+        "aliases": ["Downtown Tree Lighting PINK FRIDAY"],
+        "event_date": "2026-11-20",
+        "source_urls": ["https://www.downtownmoseslake.org/event-details/tree-lighting-1-3"]
+      }
+    },
+    {
+      "id": "cbaa-booker-t-jones-2026",
+      "name": "Columbia Basin Allied Arts: Booker T. Jones",
+      "kind": "supplied",
+      "status": "pending",
+      "reviewed_on": "2026-11-03",
+      "expires_on": "2026-12-03",
+      "evidence_url": "https://www.cba-arts.org/",
+      "permission": { "editorial": false, "archive": false, "crop": false },
+      "photos": [],
+      "scope": {
+        "kind": "event",
+        "name": "Booker T. Jones",
+        "city": "Moses Lake",
+        "aliases": [],
+        "event_date": "2026-11-21",
+        "source_urls": []
+      }
+    }
+  ]
+}

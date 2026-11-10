@@ -6,6 +6,7 @@ import EventsWeek from "./EventsWeek.astro";
 import SubscribeBox from "./SubscribeBox.astro";
 import Newsroom from "./Newsroom.astro";
 import ShareStory from "./ShareStory.astro";
+import NeighborhoodWelcome from "./NeighborhoodWelcome.astro";
 import { neighborhoodLinks, type EditionPage } from "../../lib/edition-view";
 
 interface Props { page: EditionPage }
@@ -14,10 +15,12 @@ const { location, town } = page;
 const links = neighborhoodLinks(page);
 ---
 <NeighborhoodPage page={page} title={`${town} | Newsbee`}>
+  <div class="edition-intro"><NeighborhoodWelcome locationId={location.id} mediaMode={page.edition.mediaMode} />
   {page.articles.length === 0 && (
     <p class="empty">Nothing in {town}'s edition this week yet. Sign up below and we'll send the next one.</p>
   )}
   {page.articles.length > 0 && <p><a class="nb-link" href={links.section("all")}>Read all {page.articles.length} stories in this edition</a></p>}
+  </div>
   {page.topStories.length > 0 && <TopNews stories={page.topStories} source="pipeline" />}
   {page.visible.includes("events") && <EventsWeek town={town} days={page.eventDays} source="pipeline" dayHref={links.events} />}
   <SubscribeBox town={town} location={{ id: location.id, name: location.name }} />
@@ -26,5 +29,8 @@ const links = neighborhoodLinks(page);
 </NeighborhoodPage>
 
 <style>
+  .edition-intro { display: grid; gap: var(--space-6); }
+  :global(main.nb-container:has(.edition-intro)) { gap: var(--space-16); }
+  @media (max-width: 40rem) { :global(main.nb-container:has(.edition-intro)) { gap: var(--space-12); } }
   .empty { font: var(--weight-heading) var(--text-h2)/var(--leading-h2) var(--font-display); letter-spacing: var(--tracking-h2); max-width: 36rem; text-wrap: balance; }
 </style>

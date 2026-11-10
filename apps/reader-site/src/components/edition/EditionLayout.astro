@@ -3,6 +3,7 @@
 // (Docs/design-style-guide.html, tokens only) and the summary-width script. Used by
 // the neighborhood pages (components/edition/NeighborhoodPage.astro).
 import "../../../../../shared/design-tokens.css";
+import GoogleAnalytics from "../GoogleAnalytics.astro";
 interface Props { title: string; noindex?: boolean }
 const { title, noindex = false } = Astro.props;
 ---
@@ -11,6 +12,7 @@ const { title, noindex = false } = Astro.props;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <GoogleAnalytics />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <title>{title}</title>
   </head>

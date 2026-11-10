@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { MongoServerError, type Db } from "mongodb";
 import type { Integrations, ProviderConfig } from "../core/config";
-import { DEFAULT_LIGHT_MODEL, DEFAULT_MODEL_DAILY_CALLS } from "../core/config";
-import { blockSponsoredRuns, isConfiguredOwner, isOwner, principalById, type Principal } from "./identity";
+import { DEFAULT_LIGHT_MODEL, DEFAULT_MODEL_DAILY_CALLS, loadSettings } from "../core/config";
+import { blockSponsoredRuns, isConfiguredOwner, principalById, type Principal } from "./identity";
 import { ExecutionBlocked } from "../core/execution-errors";
 
 export type PersonalConfig = {
@@ -29,15 +29,16 @@ type Stored = {
 };
 export class CredentialValidationError extends Error {}
 const invalid = (message: string): never => { throw new CredentialValidationError(message); };
-const integrationKeys = ["serpapiKey", "searchapiKey", "brightdataKey", "brightdataZone", "exaKey", "scrapingbeeKey", "typesafeKey", "openrouterKey", "attomKey", "jinaKey"] as const;
+const integrationKeys = ["serpapiKey", "searchapiKey", "brightdataKey", "brightdataZone", "brightdataUnlockerZone", "exaKey", "scrapingbeeKey", "typesafeKey", "openrouterKey", "attomKey", "jinaKey", "falKey"] as const;
 export function emptyPersonalConfig(): PersonalConfig {
+  const defaults = loadSettings({ NODE_ENV: process.env.NODE_ENV, NEWSBEE_MODE: "cloud" });
   return {
     modelProviders: [], tavilySearchApiKey: null, lightModel: DEFAULT_LIGHT_MODEL,
     modelDailyCalls: DEFAULT_MODEL_DAILY_CALLS,
     integrations: {
-      serpapiKey: null, searchapiKey: null, brightdataKey: null, brightdataZone: null,
+      serpapiKey: null, searchapiKey: null, brightdataKey: null, brightdataZone: null, brightdataUnlockerZone: null,
       exaKey: null, scrapingbeeKey: null, typesafeKey: null, openrouterKey: null,
-      attomKey: null, jinaKey: null, typesafeBase: "https://api.typesafe.ai", jevModel: "jev-1.13",
+      attomKey: null, jinaKey: null, falKey: null, typesafeBase: defaults.integrations.typesafeBase, jevModel: defaults.integrations.jevModel,
     },
   };
 }
@@ -65,14 +66,14 @@ const project = (row: Stored): CredentialProfile => ({
 export async function credentialProfile(db: Db, principal: Principal): Promise<CredentialProfile | null> {
   const row = await db.collection<Stored>("journalist_credentials").findOne({ _id: principal.id });
   if (!row) return null;
-  if (row.source === "environment" && !isOwner(principal)) return { ...project({ ...row, revoked: true }), revoked: true };
+  if (row.source === "environment" && !isConfiguredOwner(principal)) return project({ ...row, revoked: true });
   return project(row);
 }
 export async function effectiveCredentialProfile(db: Db, principal: Principal): Promise<CredentialProfile | null> {
   const current = await principalById(db, principal.id);
   if (!current) throw new ExecutionBlocked("The sponsoring account is disabled. Further paid work is blocked.");
   const stored = await credentialProfile(db, current);
-  if (stored) return stored.source === "environment" && !isConfiguredOwner(current) ? { ...stored, revoked: true } : stored;
+  if (stored) return stored;
   return isConfiguredOwner(current)
     ? { userId: current.id, version: 0, source: "environment", config: null, revoked: false, automatic: true }
     : null;
@@ -130,10 +131,13 @@ function configFor(input: CredentialInput["config"], previous: PersonalConfig | 
       if (!["max_tokens", "max_completion_tokens"].includes(maxTokensParam) || !["json_object", "json_schema"].includes(jsonMode)) return invalid("Invalid provider options");
       const authHeader = p.authHeader === null ? null : p.authHeader === undefined ? old?.authHeader ?? null : text(p.authHeader, "", "auth header");
       if (authHeader && (!/^[A-Za-z0-9-]+$/.test(authHeader) || ["host", "cookie", "content-length"].includes(authHeader.toLowerCase()))) return invalid("Invalid auth header");
+      if (p.vision !== undefined && typeof p.vision !== "boolean") return invalid("Invalid image-input capability");
       return {
         name: p.name, kind: p.kind, model: p.model === null ? null : text(p.model, old?.model ?? "", "model"),
         baseUrl: url(p.baseUrl, old?.baseUrl ?? (p.kind === "gemini" ? "https://generativelanguage.googleapis.com" : p.kind === "ollama" ? "http://127.0.0.1:11434" : "https://api.openai.com/v1")),
         apiKey: secret(p.apiKey, old?.apiKey ?? null), authHeader, maxTokensParam, temperature, jsonMode, usage,
+        vision: p.vision ?? old?.vision,
+        lightModel: p.lightModel === null ? null : p.lightModel === undefined ? old?.lightModel ?? null : text(p.lightModel, "", "light model") || null,
       };
     });
   }
@@ -196,7 +200,7 @@ export function safeProfile(profile: CredentialProfile | null, resolvedConfig?: 
       model: Boolean(capabilities?.modelProviders.some((p) => p.model && p.apiKey)),
       readyProviders: capabilities?.modelProviders.filter((p) => p.model && p.apiKey).map(({ name, kind, model }) => ({ name, kind, model })) ?? [],
       paidSearch: Boolean(capabilities && (capabilities.tavilySearchApiKey || capabilities.integrations.serpapiKey || capabilities.integrations.searchapiKey || capabilities.integrations.exaKey || (capabilities.integrations.brightdataKey && capabilities.integrations.brightdataZone))),
-      integrations: capabilities ? integrationKeys.filter((key) => key !== "brightdataZone" && capabilities.integrations[key]).map((key) => key.replace(/Key$/, "")) : [],
+      integrations: capabilities ? integrationKeys.filter((key) => key !== "brightdataZone" && key !== "brightdataUnlockerZone" && capabilities.integrations[key]).map((key) => key.replace(/Key$/, "")) : [],
     },
   };
 }

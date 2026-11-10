@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "location_id": "osm-r13915552-wa",
+  "sources": [
+    {
+      "id": "wedgwood-car-show-2026",
+      "name": "19th Annual Wedgwood Car Show",
+      "kind": "commons_category",
+      "category": "Category:19th Annual Wedgwood Car Show",
+      "status": "active",
+      "reviewed_on": "2026-11-03",
+      "expires_on": "2026-12-03",
+      "evidence_url": "https://www.wedgwoodcarshow.com/",
+      "scope": {
+        "kind": "event",
+        "name": "Wedgwood Car Show",
+        "city": "Seattle",
+        "aliases": ["19th Annual Wedgwood Car Show"],
+        "event_date": "2026-08-23",
+        "source_urls": []
+      }
+    }
+  ]
+}

@@ -192,7 +192,7 @@ async function verifiedTrend(context: ConnectorContext, topic: string, place: Re
 }
 function topicFacts(topic: WikiTopic, place: Region, report: TrendContext): CollectedEvent {
   const views = topic.recent_daily_views, ratio = topic.ratio;
-  const tier = trendTier(place, report.headline, report.excerpt)!;
+  const tier = report.locality ? "local" : trendTier(place, report.headline, report.excerpt)!;
   const day = report.published_at.slice(0, 10);
   return createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline, event_date: day, schedule_text: publishedText(day), venue: report.publisher,
     source_url: report.url, description: reportedDescription(report), kind: "trending_topic", tier, section: section(place, tier),
@@ -305,12 +305,12 @@ async function collectBluesky(task: SourceTask, context: ConnectorContext): Prom
   const { reports, errors, rejected } = await discoverReports(context, place, searches, feeds);
   let distantHazards = 0;
   for (const report of reports) {
-    const tier = trendTier(place, report.headline, report.excerpt)!;
+    const tier = report.locality ? "local" : trendTier(place, report.headline, report.excerpt)!;
     if (distantHazard(tier, report.headline, report.excerpt)) { distantHazards++; continue; }
     facts.push(createNewsFacts({ source_event_id: sha256(report.url).slice(0, 16), title: report.headline,
       event_date: report.published_at.slice(0, 10), schedule_text: publishedText(report.published_at.slice(0, 10)),
       venue: report.publisher, source_url: report.url, description: reportedDescription(report), kind: "social_trend",
-      tier, section: section(place, tier), trend_context: report, signals: { discovery: "community_reporting" },
+      tier, ...(report.locality ? { locality: report.locality } : {}), section: section(place, tier), trend_context: report, signals: { discovery: "community_reporting" },
       ...(place.community_location ? { community_relevance: trendEvidence(place, [report.headline, report.excerpt]) } : {}) }));
   }
   facts.sort((a, b) => {

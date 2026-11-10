@@ -18,11 +18,13 @@
  */
 import type { Db } from "mongodb";
 import type { CollectedEvent, ConnectorContext, LocationProfile } from "../connectors/types";
-import { addressEvidence, articleText, localityFor, quickEvidence, type Locality, type LocalityEvidence } from "../connectors/locality";
+import { addressEvidence, articleText, localityFor, outsideEventVenue, quickEvidence, type Locality, type LocalityEvidence } from "../connectors/locality";
 import { townName } from "../connectors/locality";
 import { ruleTier } from "../search/classifier";
 import { mentions } from "../connectors/community";
 import type { Fetcher } from "../connectors/fetcher";
+import { reviewedLocationSources } from "../sourcemap/store";
+import { reviewAllowsCollection } from "../sourcemap/source-review";
 import type { Logger } from "../core/log";
 import type { Settings } from "../core/config";
 import type { HttpTransport } from "../core/http";
@@ -32,7 +34,7 @@ import { collapse, storyId, type SourceEvent, type Story } from "./stories";
 import { ledgerDecision, ledgerHistory, storyTokens } from "./ledger";
 import { factCount, mergeDetails, textFor, type Details } from "./details";
 import { NEWS_KINDS } from "../editorial/kinds";
-import { limits, rulesOff } from "../core/run-options";
+import { currentOptions, limits, rulesOff } from "../core/run-options";
 import { SECTIONS, sectionFor, WIDER_SECTIONS, type SectionId } from "../sourcemap/sections";
 import { sourceMap } from "../sourcemap/store";
 import type { EvidencePacket } from "./evidence";
@@ -112,6 +114,11 @@ function groupItems(items: CollectedEvent[]) {
   items.forEach((item, index) => {
     const kind = String(item.kind ?? "event");
     const headline = headlineKey(item.title);
+    // Calendar and public-record URLs may identify a whole list, not one occurrence.
+    if (["local_news", "news_report", "social_trend"].includes(kind) && item.source_url) {
+      try { const url = new URL(item.source_url); url.hash = ""; for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$)/.test(key)) url.searchParams.delete(key);
+        link(`url:${url.toString()}:${item.event_date}`, index); } catch { /* invalid URL cannot identify a story */ }
+    }
     if (headline.length >= 12) link(kind === "event" || kind === "meeting_preview" ? `h:${headline}:${item.event_date}` : `h:${headline}`, index);
     const incident = item.incident as { block?: string } | undefined;
     if (kind === "safety_incident" && incident?.block) link(`incident:${incident.block.toLowerCase()}:${item.event_date}`, index);
@@ -164,20 +171,50 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
   // 1. Locality for items not yet placed by their reader.
   const connectorContext = { ...context, window: ingestWindow(today), linkCache: new MongoLinkCache(db), transport: context.transport } as unknown as ConnectorContext;
   const locality: Locality = await localityFor(connectorContext, { ...LOCALITY_BUDGET });
+  const records = await sourceMap(db).find({ location_id: location.id }, { projection: { source_id: 1, section: 1, score: 1, status: 1, source_tier: 1, url: 1, name: 1, "found_by.method": 1, params: 1 } }).toArray();
+  const bySource = new Map(records.map((record) => [record.source_id, record]));
   const kept: CollectedItem[] = [];
   const localNames = [location.community?.name, location.community?.parent_name, townName(location)].filter((name): name is string => Boolean(name));
+  const sourceReviews = await reviewedLocationSources(db, location.id);
+  const reviewHolds = new Map(sourceReviews.filter((source) => !reviewAllowsCollection(source.access_review, new Date().toISOString().slice(0, 10)))
+    .map((source) => [source.source_id, source.access_review!.reason]));
   for (const item of items) {
     const facts = item.facts!;
+    if (reviewHolds.has(item.source_id)) {
+      await decide(item._id, { status: "dropped", reason: `Source access review: ${reviewHolds.get(item.source_id)}`, step: "reader" });
+      continue;
+    }
+    // A source may have been rejected or paused after its reader queued these items.
+    const source = bySource.get(item.source_id);
+    const unapproved = source?.status === "proposed" && (context.settings.proposedUntilApproved || currentOptions().flow !== "agentic");
+    if (source?.status === "rejected" || source?.status === "paused" || unapproved) {
+      await decide(item._id, { status: "dropped", reason: `source is ${source.status}; not eligible for this edition`, step: "source_review" }); continue;
+    }
     if (overrides.exclude?.includes(item._id)) { await decide(item._id, { status: "dropped", reason: "excluded by an editor", step: "editor" }); continue; }
     if (overrides.include?.includes(item._id)) { facts.tier = facts.tier ?? "local"; facts.locality = facts.locality ?? { method: "editor", matches: [] }; kept.push(item); continue; }
     if (!facts.needs_locality) { kept.push(item); continue; }
+    // A no-school notice in an authority-selected local school's calendar applies to
+    // its pupils even without a physical venue. This does not localize district events.
+    const school = bySource.get(item.source_id);
+    if (facts.kind === "event" && /\bno school\b|\bschool (?:is )?closed\b/i.test(facts.title) &&
+        school?.section === "schools" && school.found_by?.method === "directories" &&
+        school.params?.directory_selection === `School name matches ${location.community?.name}` &&
+        typeof school.params?.authority_directory_url === "string") {
+      facts.tier = "local"; facts.needs_locality = false;
+      facts.locality = { method: "school_calendar_scope", matches: [school.url, school.params.authority_directory_url] };
+      await decide(item._id, { locality: facts.locality }); kept.push(item); continue;
+    }
+    const outsideVenue = facts.kind === "event" ? await outsideEventVenue(locality, facts.description as string | null).catch(() => null) : null;
+    if (outsideVenue) {
+      await decide(item._id, { status: "dropped", reason: `event venue outside neighborhood: ${outsideVenue}`, step: "locality" }); continue;
+    }
     // Headline, summary and venue first; the article body counts only near its start and only
     // with two mentions (a sidebar or menu naming the place once is not evidence).
     const head = [facts.title, facts.description as string | null, facts.venue, facts.source_url];
     const coordinates = Array.isArray(facts.coordinates) ? facts.coordinates as [number, number] : undefined;
     let evidence: LocalityEvidence | null = quickEvidence(locality, head, coordinates) ?? await addressEvidence(locality, head.slice(0, 2)).catch(() => null);
     if (!evidence) {
-      const body = (await textFor(db, facts.source_url)) ?? (facts.link_only ? null : await articleText(locality, facts.source_url));
+      const body = (await textFor(db, facts.source_url)) ?? (facts.link_only || facts.no_page_fetch ? null : await articleText(locality, facts.source_url));
       const opening = body?.slice(0, BODY_CHARS) ?? "";
       const names = placeNames(location);
       const count = names.reduce((sum, name) => sum + countMentions(opening, name), 0);
@@ -276,8 +313,6 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
   stories = survivors;
 
   // 4 and 5. Sections and rule order.
-  const records = await sourceMap(db).find({ location_id: location.id }, { projection: { source_id: 1, section: 1, score: 1, status: 1, source_tier: 1, url: 1, name: 1, "found_by.method": 1 } }).toArray();
-  const bySource = new Map(records.map((record) => [record.source_id, record]));
   // Primary sources rank first, so every source needs a tier, including those found before tiers existed.
   for (const story of stories) {
     const record = bySource.get(story.first.source_id);
@@ -290,7 +325,10 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
     const section = sectionFor({ kind: story.kind, title: story.title, description: story.description, section_id: story.facts.section_id }, (story.facts.section_hint as string | null) ?? record?.section ?? null);
     story.facts.section_id = section;
     const wider = ["region", "nearby"].includes(String(story.facts.tier ?? "local"));
-    if (wider && !WIDER_SECTIONS.has(section)) {
+    const servingVenue = story.kind === "event" && story.facts.serves_community === true &&
+      (story.facts.locality as { method?: string; distance_km?: number } | undefined)?.method === "verified_venue" &&
+      Number((story.facts.locality as { distance_km?: number }).distance_km) <= 3;
+    if (wider && !WIDER_SECTIONS.has(section) && !servingVenue) {
       const reason = `city-wide item outside ${[...WIDER_SECTIONS].join(", ")}`;
       if (rulesOff("caps") || rulesOff("quality")) await collectedItems(db).updateMany({ run_id: runId, story_id: story.id }, { $set: { reason, would_have_blocked: ["city_wide_limit"] } });
       else {

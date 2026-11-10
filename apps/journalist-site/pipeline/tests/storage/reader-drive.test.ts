@@ -59,3 +59,32 @@ it.each(["list", "read"])("surfaces Shared-drive permission errors during %s", a
   fetchMock.mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
   await expect(readerData("channel-folder-123")).rejects.toThrow("Google Drive request failed (403)");
 });
+
+it("preserves credited legacy photos while discarding unsafe, malformed or uncredited optional images", async () => {
+  const story = { headline: "A new park", blurb: "The park opens this week.", when_where: "Seattle",
+    event_date: "2026-10-19", source_url: "https://news.example.com/park", source_name: "Local paper" };
+  fetchMock.mockImplementation(async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/drive/v3/files") return Response.json({ files: [
+      { id: "directory", name: "locations.json" }, { id: "edition", name: "edition.json" },
+    ] });
+    if (path.endsWith("/directory")) return Response.json({ locations: [location] });
+    return Response.json({ ...edition, items: [
+      { ...story, image: "https://cdn.example.com/park.jpg", image_credit: "Local paper" },
+      { ...story, image: "/photos/park.jpg", image_alt: "The park entrance", image_credit: "City parks", image_width: 1200, image_height: 800 },
+      { ...story, image: "https://127.0.0.1/private.png", image_credit: "Unusable" },
+      { ...story, image: { url: "invalid" } },
+      story,
+      { ...story, image: "https://cdn.example.com/uncredited.jpg" },
+    ] });
+  });
+  const data = await readerData("image-reader-folder");
+  expect(data.editions[0].items).toHaveLength(6);
+  expect(data.editions[0].items[0]).toMatchObject({ image: "https://cdn.example.com/park.jpg", image_source_url: story.source_url, image_credit: "Local paper" });
+  expect(data.editions[0].items[1]).toMatchObject({ image: "https://news.example.com/photos/park.jpg", image_alt: "The park entrance", image_width: 1200, image_height: 800 });
+  for (const item of data.editions[0].items.slice(2)) {
+    expect(item).not.toHaveProperty("image");
+    expect(item).not.toHaveProperty("image_credit");
+    expect(item.headline).toBe(story.headline);
+  }
+});

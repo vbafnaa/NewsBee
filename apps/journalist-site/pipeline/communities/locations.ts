@@ -184,9 +184,14 @@ const LOCATION_COLLECTIONS = [
   ["link_cache", COLLECTIONS.linkCache], ["jobs", COLLECTIONS.jobs], ["runs", COLLECTIONS.runs],
   ["source_results", COLLECTIONS.sourceResults], ["source_shortlists", COLLECTIONS.shortlists],
   ["editions", COLLECTIONS.editions], ["edition_entries", COLLECTIONS.editionEntries],
+  ["video_packages", COLLECTIONS.videoPackages], ["video_jobs", COLLECTIONS.videoJobs],
+  ["youtube_location_settings", COLLECTIONS.youtubeLocationSettings],
   ["story_cache", COLLECTIONS.storyCache], ["withdrawals", COLLECTIONS.withdrawals],
   ["source_map", "source_map"], ["discovery_state", "discovery_state"], ["collected_items", "collected_items"],
   ["edition_maps", "edition_maps"], ["news_publishers", "news_publishers"], ["source_suggestions", "source_suggestions"],
+  ["photo_catalog_sources", "photo_catalog_sources"], ["photo_catalog_cache", "photo_catalog_cache"],
+  ["photo_supply_invites", "photo_supply_invites"], ["photo_supply_submissions", "photo_supply_submissions"],
+  ["edition_photo_claims", "edition_photo_claims"],
 ] as const;
 
 export async function assertLocationIdle(db: Db, id: string) {
@@ -194,10 +199,20 @@ export async function assertLocationIdle(db: Db, id: string) {
   if (running) throw new LocationBusy(`${id} has a running job; wait for it to finish`);
   const active = await db.collection(COLLECTIONS.runs).countDocuments({ location_id: id, status: { $in: ACTIVE_RUN_STATUSES } });
   if (active) throw new LocationBusy(`${id} has an active run; cancel it before removal`);
+  const activeVideos = await db.collection(COLLECTIONS.videoJobs).countDocuments({
+    location_id: id,
+    $or: [
+      { status: { $in: ["submitting", "queued", "processing"] } },
+      { status: "uploading", updated_at: { $gte: Date.now() - 10 * 60_000 } },
+    ],
+  });
+  if (activeVideos) throw new LocationBusy(`${id} has an active video generation; wait for it to finish before removal`);
 }
 
 export async function removeLocationRecords(db: Db, id: string, editionIds: string[]): Promise<Record<string, number>> {
   const counts: Record<string, number> = {};
+  // A test-mode map run's own sources go with its run.
+  for (const run of await db.collection<{ _id: string }>(COLLECTIONS.runs).find({ location_id: id, kind: "map" }, { projection: { _id: 1 } }).toArray()) await db.collection(`source_run_${run._id}`).drop().catch(() => undefined);
   for (const [name, collectionName] of LOCATION_COLLECTIONS) {
     const filter = collectionName === COLLECTIONS.editionEntries
       ? { $or: [{ location_id: id }, { location_id: { $exists: false }, edition_id: { $in: editionIds } }] }

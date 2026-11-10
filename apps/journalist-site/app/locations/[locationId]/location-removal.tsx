@@ -16,7 +16,7 @@ export default function LocationRemoval({ locationId, name, pending = false }: {
     <p>Keeps shared folders (including empty location folders), other locations, shared caches and configuration, geographic/library directories,
       reader submissions, problem reports, subscriptions, interest and usage/model history.
       Untracked files and files in old or unconfigured folders are not purged. The location may still appear in geographic search.</p>
-    <p>Cancel active runs in <a href={`/locations/${encodeURIComponent(locationId)}?tab=runs`}>Pipeline &amp; logs</a> first and wait for any executing worker to finish.
+    <p>Cancel active runs in <a href={`/locations/${encodeURIComponent(locationId)}?tab=edition`}>Collect stories</a> or <a href={`/locations/${encodeURIComponent(locationId)}?tab=collect-sources`}>Collect sources</a> first and wait for any executing worker to finish.
       A run already publishing must finish. No email is sent.</p>
     {pending && <p className="alert" role="alert">Removal is incomplete. This workspace is retained for cleanup only, not new runs or source edits. Retry below to finish; already deleted files are safe to retry.</p>}
     {error && <p className="alert" role="alert">{error}</p>}

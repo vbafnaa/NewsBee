@@ -15,7 +15,7 @@ export type StoryReport = { _id: string; location_id: string; edition_id: string
 export function storyReports(db: Db) { return db.collection<StoryReport>(STORY_REPORTS); }
 
 export async function inbox(db: Db, locationId?: string) {
-  const recent = await runs(db).find({ ...(locationId ? { location_id: locationId } : {}), draft_id: { $ne: null }, status: { $in: ["awaiting_finish", "published", "authoring"] }, created_at: { $gte: Date.now() / 1000 - 14 * 86400 } }).sort({ created_at: -1 }).limit(40).toArray();
+  const recent = await runs(db).find({ ...(locationId ? { location_id: locationId } : {}), draft_id: { $ne: null }, status: { $in: ["awaiting_finish", "built", "published", "authoring"] }, created_at: { $gte: Date.now() / 1000 - 14 * 86400 } }).sort({ created_at: -1 }).limit(40).toArray();
   const latestByLocation = new Map<string, (typeof recent)[number]>();
   for (const run of recent) if (!latestByLocation.has(run.location_id)) latestByLocation.set(run.location_id, run);
   const held = [];

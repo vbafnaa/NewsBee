@@ -104,6 +104,39 @@ describe("Drive service-account configuration", () => {
     expect(driveCalls.every((input) => new URL(input).searchParams.get("supportsAllDrives") === "true")).toBe(true);
   });
 
+  it("uploads binary video content through the Shared Drive adapter", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    fetchMock.mockImplementation(async (input) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      if (typeof input === "string" && input.includes("/upload/")) return Response.json({});
+      if (typeof input === "string" && input.includes("fields=id,name")) return Response.json({ id: "created-video-id" });
+      return Response.json({ files: [] });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const fileId = await new DriveArtifacts().saveBinary("shared-drive-root", "video.mp4", new Uint8Array([1, 2, 3]), "video/mp4");
+    expect(fileId).toBe("created-video-id");
+    const [url, init] = fetchMock.mock.calls.find(([input]) => typeof input === "string" && input.includes("/upload/"))!;
+    expect(new URL(url as string).searchParams.get("supportsAllDrives")).toBe("true");
+    expect(init?.headers).toMatchObject({ "Content-Type": "video/mp4" });
+    expect(Array.from(new Uint8Array(init?.body as ArrayBuffer))).toEqual([1, 2, 3]);
+  });
+
+  it("reads a bounded binary video from a Shared Drive", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    fetchMock.mockImplementation(async (input) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      return new Response(new Uint8Array([4, 5, 6]), { headers: { "content-type": "video/mp4" } });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    await expect(new DriveArtifacts().readBinary("shared-drive-video"))
+      .resolves.toEqual(new Uint8Array([4, 5, 6]));
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
+      "https://www.googleapis.com/drive/v3/files/shared-drive-video?alt=media&supportsAllDrives=true",
+    );
+  });
+
   it("explains that a Shared Drive is required for service-account quota errors", async () => {
     vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
     vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);

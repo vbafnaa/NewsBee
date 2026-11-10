@@ -5,8 +5,14 @@ import { readSite } from "../../connectors/web";
 import { newsSearchConnector } from "../../connectors/newssearch";
 import { sourceResult, type ConnectorContext, type SourceTask } from "../../connectors/types";
 import { reserveHost, deferHost } from "../../connectors/fetch-state";
-vi.mock("../../connectors/fetch-state", () => ({ reserveHost: vi.fn(async () => 0), deferHost: vi.fn(async () => {}) }));
+import type { HttpTransport } from "../../core/http";
+vi.mock("../../connectors/fetch-state", async original => ({ ...await original<object>(), reserveHost: vi.fn(async () => 0), deferHost: vi.fn(async () => {}) }));
 const bytes = (s: string) => new TextEncoder().encode(s);
+function fixtureTransport(fetcher: ConnectorContext["fetcher"]): HttpTransport {
+  return async request => request.url.endsWith("robots.txt")
+    ? { url: request.url, status: 200, headers: {}, body: bytes("User-agent: *\nAllow: /\n") }
+    : { status: 200, ...await fetcher.getResponse(request.url) };
+}
 const ics = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
@@ -32,8 +38,10 @@ describe("reader repairs", () => {
     const ctx = context();
     ctx.settings = { integrations: {} } as ConnectorContext["settings"];
     ctx.fetcher = { getResponse: vi.fn(async (url: string) => ({ url, headers: {}, body: bytes(url.endsWith('/ics/') ? ics : '<a href="/events/ics/">Calendar</a>') })), sitemaps: async () => [] } as unknown as ConnectorContext["fetcher"];
+    ctx.transport = fixtureTransport(ctx.fetcher);
     const events = await readSite({ ...task, type: "web", params: { url: "https://school.example/", inside_area: false } }, ctx, sourceResult("test", "test", "ingested", ""));
     expect(events).toHaveLength(1);
+    expect(ctx.fetcher.getResponse).toHaveBeenCalledTimes(2); // homepage plus the advertised calendar, no speculative crawling
     expect(events[0]).toMatchObject({ event_date: "2026-11-11", venue: "", needs_locality: true });
   });
   it("marks non-JSON provider refusals failed, never successful empty", async () => {
@@ -84,6 +92,7 @@ it("rejects other library branches even if a filtered Trumba export includes the
   const site = "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events";
   const item = (branch: string) => `<item><title>Story time</title><guid>${branch}</guid><link>https://www.spl.org/events/${branch}</link><category>2026/11/10</category><description><![CDATA[Tuesday, November 10, 2026, 10am<br/><b>Location Link</b>: <a href="https://www.spl.org/hours-and-locations/${branch}">${branch}</a><br/>]]></description></item>`;
   ctx.fetcher = { getResponse: vi.fn(async (url: string) => ({ url, headers: {}, body: bytes(url.includes('trumba.com') ? `<rss><channel>${item('northeast-branch')}${item('ballard-branch')}</channel></rss>` : url === site ? '<script>$Trumba.addSpud({webName:"kalendaro",url:{filterview:"LocationNET"}});</script>' : '<html/>') })), sitemaps: async () => [] } as unknown as ConnectorContext["fetcher"];
+  ctx.transport = fixtureTransport(ctx.fetcher);
   const dropped: import("../../connectors/types").DroppedItem[] = [];
   const events = await readSite({ ...task, type: "web", params: { url: site, inside_area: false } }, ctx, sourceResult("test", "test", "ingested", ""), dropped);
   expect(events).toHaveLength(1);

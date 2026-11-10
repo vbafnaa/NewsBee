@@ -1,5 +1,6 @@
 ---
 import "../../../../shared/design-tokens.css";
+import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import { approvedRemembrance, directoryTown, type Location } from "../lib/reader-data";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -29,6 +30,7 @@ const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <GoogleAnalytics />
     <title>{notice ? `In memory: ${notice.person_name} | Newsbee` : town ? `Share a remembrance in ${town.name} | Newsbee` : "Remembrances | Newsbee"}</title>
   </head>
   <body>

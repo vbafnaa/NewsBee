@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ auth: vi.fn(), headers: vi.fn(), database: vi.
 vi.mock("@/auth", () => ({ auth: mocks.auth, getMongoDatabase: mocks.database, listAdminAccounts: mocks.list, enableAdminAccount: mocks.enable, disableAdminAccount: mocks.disable }));
 vi.mock("next/headers", () => ({ headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
-import { currentPrincipal, localAdminAllowed, ownerGuard } from "../../../lib/admin-session";
+import { adminGuard, currentPrincipal, localAdminAllowed, ownerGuard } from "../../../lib/admin-session";
 import { GET, PUT, DELETE } from "../../../app/api/account/settings/route";
 import { GET as users, POST as updateUser } from "../../../app/api/journalist-admins/route";
 import { GET as clearPreview, POST as clearData } from "../../../app/api/admin/usage-map/clear/route";
@@ -93,6 +93,7 @@ describe("approved stable identities", () => {
   });
   it("rechecks membership and owner role for guards, with same-origin writes", async () => {
     await signedIn();
+    expect(await adminGuard(request("GET"))).toBeNull();
     expect((await ownerGuard(request("DELETE")))?.status).toBe(403);
     mocks.auth.mockResolvedValue({ user: { email: owner.email } });
     expect(await ownerGuard(request("DELETE"))).toBeNull();
@@ -128,7 +129,7 @@ describe("approved stable identities", () => {
 });
 
 describe("encrypted versioned personal profiles", () => {
-  it("stores no implicit profile and never overlays deployment integrations on personal profiles", async () => {
+  it("stores no implicit profile and keeps personal override values separate from deployment defaults", async () => {
     vi.stubEnv("NEWSBEE_TAVILY_API_KEY", testKey);
     vi.stubEnv("NEWSBEE_SERPAPI_API_KEY", testKey);
     expect(await credentialProfile(db, owner)).toBeNull();
@@ -153,6 +154,14 @@ describe("encrypted versioned personal profiles", () => {
     expect(kept.config?.integrations.exaKey).toBe(testKey);
     const removed = await saveCredentialProfile(db, editor, { source: "personal", config: { tavilySearchApiKey: null, integrations: { exaKey: null } } });
     expect(removed.config?.tavilySearchApiKey).toBeNull(); expect(removed.config?.integrations.exaKey).toBeNull();
+  });
+  it("preserves explicit personal image-input capability and rejects invalid flags", async () => {
+    await saveCredentialProfile(db, editor, { source: "personal", config: { modelProviders: [{ ...provider, vision: true }] } });
+    const saved = await saveCredentialProfile(db, editor, personal);
+    expect(saved.config?.modelProviders[0].vision).toBe(true);
+    const disabled = await saveCredentialProfile(db, editor, { source: "personal", config: { modelProviders: [{ ...provider, vision: false }] } });
+    expect(disabled.config?.modelProviders[0].vision).toBe(false);
+    await expect(saveCredentialProfile(db, editor, { source: "personal", config: { modelProviders: [{ ...provider, vision: "true" as never }] } })).rejects.toThrow("image-input capability");
   });
   it("increments replacement/revocation versions atomically under concurrency", async () => {
     const values = await Promise.all(Array.from({ length: 8 }, () => saveCredentialProfile(db, editor, personal)));
@@ -223,13 +232,26 @@ describe("encrypted versioned personal profiles", () => {
 });
 
 describe("settings API", () => {
-  it("restricts the approval inbox page to the owner while editors retain their settings access", async () => {
-    await expect(ApprovalsPage()).rejects.toThrow("redirect:/login");
+  it("does not expose deployment defaults or report inherited capabilities to editors", async () => {
     await signedIn();
-    await expect(ApprovalsPage()).rejects.toThrow("redirect:/locations");
+    vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
+    vi.stubEnv("NEWSBEE_SERPAPI_API_KEY", testKey);
+    expect(await (await GET(request("GET"))).json()).toMatchObject({ profile: null });
+    await saveCredentialProfile(db, editor, { source: "personal", config: {} });
+    const data = await (await GET(request("GET"))).json();
+    expect(data).not.toHaveProperty("environmentDefaults");
+    expect(data.profile.capabilities).toMatchObject({ model: false, paidSearch: false, readyProviders: [], integrations: [] });
+    expect(JSON.stringify(data)).not.toContain(testKey);
+    vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "openai");
+    vi.stubEnv("NEWSBEE_LLM_OPENAI_MODEL", "");
+    expect((await GET(request("GET"))).status).toBe(200);
+  });
+  it("sends old approval-inbox links to the workspace while editors keep their settings access", async () => {
+    expect(() => ApprovalsPage()).toThrow("redirect:/locations");
+    await signedIn();
     expect((await GET(request("GET"))).status).toBe(200);
     mocks.auth.mockResolvedValue({ user: { email: owner.email } });
-    expect(await ApprovalsPage()).toMatchObject({ props: { page: "approvals", title: "Admin-token approvals" } });
+    expect(() => ApprovalsPage()).toThrow("redirect:/locations");
   });
   it("persists an explicit owner deployment selection across PUT/GET without an encryption keyring and returns only real masked readiness", async () => {
     await signedIn(owner);

@@ -51,6 +51,23 @@ function ModelUsagePanel({ usage }: { usage: Usage }) {
   </section>;
 }
 
+/** Which models served each recent run, and whose keys they were on: each run uses its starter's models. */
+function RunModelsPanel({ usage }: { usage: Usage }) {
+  return <section className="panel">
+    <div className="section-heading"><div><h2>Models by run</h2><p className="chart-caption">The last 7 days. Each run uses the models of the person who started it, in their configured order. <a href="/health?view=usage">Model usage</a> breaks this down by person and run.</p></div></div>
+    {!usage.runs?.length ? <p>No run made model calls in the last 7 days.</p> : <div className="table-wrap"><table>
+      <thead><tr><th>Run</th><th>Started by</th><th>Models (calls)</th><th>Calls / failed</th><th>Est. cost</th></tr></thead>
+      <tbody>{usage.runs.map((run) => <tr key={run.run_id}>
+        <td><a href={run.location_id ? `/locations/${encodeURIComponent(run.location_id)}?tab=runs&run=${encodeURIComponent(run.run_id)}` : "#"}>{run.location_name ?? run.run_id}</a><br /><small>{run.kind === "map" ? "Source map" : "Edition"}{run.started_at ? ` · ${time(run.started_at)}` : ""}</small></td>
+        <td>{run.started_by ?? "Unknown"}<br /><small>{run.credential_source === "environment" ? "deployment default keys" : run.credential_source === "personal" ? "own keys" : ""}</small></td>
+        <td>{run.models.map((model) => `${model.model ?? model.provider} (${count(model.calls)})`).join(", ")}</td>
+        <td>{count(run.calls)} / {count(run.failures)}</td>
+        <td>{usd(run.estimated_cost_usd)}</td>
+      </tr>)}</tbody>
+    </table></div>}
+  </section>;
+}
+
 function TrendChart({ title, days, series, unit = "" }: { title: string; days: HealthDay[]; series: Series[]; unit?: string }) {
   const width = 640, height = 180, baseline = 145, left = 40;
   const totals = days.map((day) => series.reduce((sum, item) => sum + (day[item.key] ?? 0), 0));
@@ -152,14 +169,15 @@ export default function HealthDashboard({ mode = "health" }: { mode?: "health" |
         </ul>
       </section>}
       </>}
-      <section className="panel">
-        <div className="section-heading"><h2>Model providers</h2><span className={`status-badge tone-${snapshot.model?.status ?? "idle"}`}>{snapshot.model?.status ?? "not configured"}</span></div>
+      {mode === "models" && <section className="panel">
+        <div className="section-heading"><h2>Model providers</h2><span className={`status-badge tone-${snapshot.model?.status === "not_configured" ? "idle" : snapshot.model?.status ?? "idle"}`}>{!snapshot.model || snapshot.model.status === "not_configured" ? "set per account" : snapshot.model.status}</span></div>
         <div className="provider-grid">{providers ? providers.map((provider) =>
           <div className="provider-card" key={provider.name}><span className={`status-badge tone-${provider.status}`}>{provider.status}</span><h3>{provider.name}</h3><p>{provider.model}</p><small>{provider.detail}</small></div>) :
           <p>{snapshot.model?.detail ?? "No model configured"}</p>}</div>
         <p className="chart-caption">Live checks only. Historical provider uptime and queue depth were not recorded.</p>
-      </section>
+      </section>}
       {mode === "models" && <ModelUsagePanel usage={snapshot.model_usage} />}
+      {mode === "health" && snapshot.model_usage && <RunModelsPanel usage={snapshot.model_usage} />}
       {mode === "health" && <section className="panel">
         <div className="section-heading"><div><h2>Sources needing attention</h2><p className="chart-caption">Failing: 3 or more collections in a row failed or were blocked. Quiet: 4 or more successful collections in a row found nothing.</p></div>
           <span className={`status-badge tone-${snapshot.source_attention.length ? "warning" : "ok"}`}>{snapshot.source_attention.length ? `${snapshot.source_attention.length} source(s)` : "all healthy"}</span></div>
@@ -201,7 +219,7 @@ export default function HealthDashboard({ mode = "health" }: { mode?: "health" |
         {row.empty_sources.map((source) => <p key={source.source_id}>{source.name}: {source.detail ?? "No events collected"}</p>)}
         {Object.entries(row.held_reasons).map(([reason, count]) => <p key={reason}>{count} held: {reason}</p>)}
         {row.model_errors.map((detail, index) => <p className="stage-error" key={index}>{detail}</p>)}
-        {row.run_id && <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=runs&run=${encodeURIComponent(row.run_id)}`}>Inspect run and stories</Link>}
+        {row.run_id && <Link href={`/locations/${encodeURIComponent(row.location_id)}?tab=edition&run=${encodeURIComponent(row.run_id)}`}>Inspect run and stories</Link>}
       </details>)}</div>
       {snapshot && !rows.length && <p>No locations in this view.</p>}
     </section>}

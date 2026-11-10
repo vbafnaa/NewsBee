@@ -5,6 +5,7 @@ import { httpsLink } from "../connectors/common";
 import { publicSourceTransport } from "../connectors/public-http";
 import { mainText, pageRights, rightsAction, supportingLinks } from "../connectors/web/page";
 import type { HttpTransport } from "../core/http";
+import { relaxedContentAllowed } from "../core/run-options";
 import type { Logger } from "../core/log";
 import { itemTexts, mergeDetails, saveText, type Details, type FactSupport } from "./details";
 import type { Story } from "./stories";
@@ -98,7 +99,7 @@ export class EvidenceReader {
     if (!httpsLink(url) || /\.(docx?|xlsx?|zip)$/i.test(new URL(url).pathname)) {
       source.reason = "Only permitted HTTPS HTML and text PDFs are supported"; return result;
     }
-    const cached = await itemTexts(this.db).findOne({ _id: url, reuse_allowed: true, fetched_at: { $gte: new Date(Date.now() - EVIDENCE_CACHE_MS) } });
+    const cached = await itemTexts(this.db).findOne({ _id: url, reuse_allowed: true, ...(!relaxedContentAllowed() ? { relaxed: { $ne: true } } : {}), fetched_at: { $gte: new Date(Date.now() - EVIDENCE_CACHE_MS) } });
     if (cached) {
       source.status = "cached"; source.final_url = cached.canonical_url ?? url;
       source.content_hash = contentHash(cached.text); source.fetched_at = cached.fetched_at.toISOString();
@@ -155,7 +156,7 @@ export class EvidenceReader {
     for (const story of stories) {
       const packet: EvidencePacket = { policy: EVIDENCE_POLICY, sources: [], text_quality: "none", extraction: "not_requested", extraction_error: null, missing: missingDetails(mergeDetails(story.facts.details as Details | undefined)) };
       story.facts.evidence = packet;
-      if (story.facts.link_only) {
+      if (story.facts.link_only || story.facts.no_page_fetch) {
         packet.sources.push({ url: story.first.source_url, final_url: null, status: "blocked", reason: "Source is link-only; do not enrich or author from its body", content_hash: null, fetched_at: null, passages: [] });
         continue;
       }

@@ -1,30 +1,46 @@
 /**
- * Discovery methods: each finds one kind of source for a location and returns candidates
- * for the source map. They run as separate jobs at the start of a run when due (each has
- * its own refresh period), so a slow method never blocks the others.
+ * The fixed pipeline: code that goes where we already know to look, run once before the agent.
+ * Each method finds one kind of source for a location and returns candidates for the source map.
+ * They run as separate jobs at the start of a run when due (each has its own refresh period), so
+ * a slow method never blocks the others. `FIXED_READERS` is the one list, by reader:
  *
- *   government  the city's and county's own websites (the checked city site, OpenStreetMap
- *               via Nominatim), the feeds they publish (CivicPlus news, calendar, agendas,
- *               alerts), their category pages (agendas, hearings, boards, police and fire,
- *               permits, business, parks, volunteering), and the groups they link to
- *   osm         websites of town halls, police and fire stations, courts, libraries, community
- *               centres, schools, colleges, arts venues, theatres, museums, markets, newspapers,
- *               nonprofits and associations inside the area
- *   meetings    Legistar, CivicClerk and PrimeGov accounts for the city and county
- *   opendata    Socrata portals for the city, county and state and their police, fire,
- *               permit, inspection, licence and 311 datasets
- *   newsrooms   Wikidata outlets published nearby with a current feed
- *   athletics   the state's school athletic association (Wikidata)
- *   schools     the school districts covering the place (Census, NCES), their board
- *               meetings, calendars and news, and each local school's PTA, PTSA or PTO
- *   groups      chambers, downtown and neighbourhood groups at their usual addresses, each
- *               fetched and checked, and funeral homes' obituary pages
- *   publishers  outlets news search keeps finding covering the place
- *   llm         Gemini suggestions (school district, PTAs, leagues, funeral homes,
- *               business groups, community councils), each fetched and checked
- *   national    the national public-data readers (NWS, USGS, EPA, Census, Justice
- *               Department, Wikipedia), library systems, the city's meetings, news
- *               search, reader stories and family notices
+ *   City and county
+ *     government    the city's and county's own websites (the checked city site, OpenStreetMap
+ *                   via Nominatim), read in depth: their category pages (agendas, hearings,
+ *                   boards, police and fire, permits, business, parks, volunteering), their
+ *                   CivicPlus feeds (news, calendar, agendas, alerts), and the groups they link to
+ *     meetings      Legistar, CivicClerk and PrimeGov accounts for the city and county
+ *   Open data
+ *     opendata      Socrata portals for the city, county and state and their police, fire,
+ *                   permit, inspection, licence and 311 datasets
+ *   Schools
+ *     schools       the school districts covering the place (Census, NCES), their board
+ *                   meetings, calendars and news, and each local school's PTA, PTSA or PTO
+ *   Local groups
+ *     groups        chambers, downtown and neighbourhood groups at their usual addresses, and
+ *                   funeral homes' obituary pages
+ *   Local institutions
+ *     institutions  libraries, police and fire stations and community centres, and the clubs and
+ *                   high schools serving the place from just outside it, read in depth; every
+ *                   other place with a website on OpenStreetMap inside the area by its home page
+ *   News and wider sources
+ *     newsrooms     Wikidata outlets published nearby with a current feed
+ *     publishers    outlets news search keeps finding covering the place
+ *     athletics     the state's school athletic association (Wikidata)
+ *     national      the national public-data readers (NWS, USGS, EPA, Census, Justice
+ *                   Department, Wikipedia), library systems, the city's meetings, news
+ *                   search, reader stories and family notices
+ *   Home sales
+ *     homesales     ATTOM sale prices for the place's postal code, only when a key is set
+ *
+ * Every page a fixed reader adds goes through `evaluateLeads`, with the same check groups and
+ * evidence facts as any other page (./checks.ts), and every source from every route then goes
+ * through the shared Model check when it is saved (./gemini-check.ts, from ./run.ts). Structured sources keep their own checks: open
+ * data datasets, meeting-system accounts, CivicPlus feeds the official site lists, the national
+ * readers and ATTOM. Gemini suggestions (`llm`) are no longer part of it: the agent replaces them.
+ * The agentic flow adds the agent after it (../agent/map-sources.ts), whose tools include operator
+ * search: there is no fixed batch of template searches. The query patterns stay in the playbook,
+ * where the agent's skill shows them as examples.
  */
 import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
@@ -44,24 +60,22 @@ import { newsPublishers, aggregator } from "../connectors/newssearch";
 import { TOPIC_SECTION, type Topic } from "../connectors/opendata";
 import { distanceKm, US_STATES, withinArea, type Point } from "../../../../shared/geography";
 import { areaFacts, discoveredAthletics, discoveredNewsrooms } from "./area";
-import { findFeed } from "./feeds";
 import { hashId, hostOf, normaliseUrl, webSourceId, type DiscoveryMethod, type SourceCandidate } from "../sourcemap/store";
 import type { SectionId } from "../sourcemap/sections";
 import { canSpend, groundedSearch, jsonArray, usageRecorder } from "../model/budget";
 import { pythonJson } from "../model/newsworthiness";
-import { currentOptions, itemCap } from "../core/run-options";
+import { itemCap } from "../core/run-options";
 import { fill, limit, list, regex, ruleSet, setting, table, template } from "../playbook";
 import { recordDecision } from "../trace/decisions";
 import { verifiedCitySite } from "./city-site";
-import { evaluateLeads, evaluateQueries, JOB_DEADLINE_MS } from "./evaluate";
-import { localInstitutions, OVERPASS_MIRRORS } from "./institutions";
+import { evaluateLeads, JOB_DEADLINE_MS, type Lead } from "./evaluate";
+import { localInstitutions, OVERPASS_MIRRORS, type Institution } from "./institutions";
 import { districtSites, localSchools, schoolLinks } from "./schools";
 import type { OutsideLink } from "./inspect";
-import { checkGroups, pageKey, scanSite, type Site } from "./site-pages";
+import { checkGroups, scanSite, type Site } from "./site-pages";
 import { queryOverpass, QUERY_SECONDS } from "../connectors/overpass";
-import { buildSearchKit, stage1Queries } from "./topics";
+import { buildSearchKit, postcode } from "./topics";
 import { linkedPages } from "./linked-pages";
-import { directories } from "./directories";
 
 export type DiscoveryContext = {
   db: Db;
@@ -73,6 +87,8 @@ export type DiscoveryContext = {
   log: Logger;
   /** The light model (Flash-Lite first), for LLM discovery. */
   model?: ModelRuntime | null;
+  /** The model check's model, when it isn't `model` (the agent's model is never its judge). */
+  judgeModel?: ModelRuntime | null;
 };
 
 export type MethodDefinition = { method: DiscoveryMethod; label: string; refreshDays: number; run(context: DiscoveryContext): Promise<{ candidates: SourceCandidate[]; detail: string }> };
@@ -109,8 +125,14 @@ async function countyWebsite(context: DiscoveryContext, county: string): Promise
   } catch (error) { context.log.info("county_website_unavailable", { county, error: String(error) }); }
   return null;
 }
-async function civicPlusFeeds(context: DiscoveryContext, site: string, label: string, inside: boolean): Promise<SourceCandidate[]> {
+/**
+ * A CivicPlus site's feeds, from the feed directory the official site publishes: structured
+ * sources, like a meeting system's account. Its Agenda Center is a page, so it comes back as a
+ * lead for the page checks.
+ */
+async function civicPlusFeeds(context: DiscoveryContext, site: string, label: string, inside: boolean, scope: Site["scope"]): Promise<{ feeds: SourceCandidate[]; leads: Lead[] }> {
   const out: SourceCandidate[] = [];
+  const leads: Lead[] = [];
   const root = site.replace(/\/+$/, "");
   try {
     const [url, html] = await context.fetcher.getText(`${root}/rss.aspx`, 2 * 1024 * 1024, ACCEPT_HTML);
@@ -128,9 +150,9 @@ async function civicPlusFeeds(context: DiscoveryContext, site: string, label: st
   } catch { /* not CivicPlus, or not allowed */ }
   try {
     const [url, html] = await context.fetcher.getText(`${root}/AgendaCenter`, 2 * 1024 * 1024, ACCEPT_HTML);
-    if (/agendacenter/i.test(html)) out.push({ ...webCandidate(url, `${label}: Agenda Center`, "civic", "government", "CivicPlus Agenda Center (agendas are PDFs: listed with a link)", { inside, linkOnly: true }), section_page: true });
+    if (/agendacenter/i.test(html)) leads.push({ url, title: `${label}: Agenda Center`, snippet: "", topic: "government", family: "civicplus_agenda_center", section: "civic", scope });
   } catch { /* none */ }
-  return out;
+  return { feeds: out, leads };
 }
 /** What a county adds for a place: its sheriff, its assessor and its commissioners' meetings. */
 const COUNTY_SECTIONS = list("civic.prefer.county_sections") as SectionId[];
@@ -147,25 +169,20 @@ const government: MethodDefinition = {
     const cityInside = !context.location.community;
     const seen = new Set<string>();
     const outside: OutsideLink[] = [];
+    // The home page is checked like every page inside the site, so it is a source only if it passes.
     const scanned = async (url: string, site: Omit<Site, "url" | "kind">, label: string, inside: boolean, deadline: number) => {
-      const feeds = await civicPlusFeeds(context, url, label, inside);
-      candidates.push(...feeds);
-      for (const feed of feeds) if (feed.url) seen.add(pageKey(feed.url));
-      const scan = await scanSite(context, { ...site, url, kind: "government" }, "government", seen, deadline, new Set(feeds.flatMap((feed) => feed.feed_url ? [feed.feed_url] : [])));
+      const civic = await civicPlusFeeds(context, url, label, inside, site.scope);
+      candidates.push(...civic.feeds);
+      candidates.push(...(await evaluateLeads(context, civic.leads, { method: "government", seen, deadline, fixed: true, siteKind: "government" })).candidates);
+      const scan = await scanSite(context, { ...site, url, kind: "government", home: { section: "civic", topic: "government", family: "official_site" } }, "government", seen, deadline, new Set(civic.feeds.flatMap((feed) => feed.feed_url ? [feed.feed_url] : [])));
       candidates.push(...scan.candidates);
       outside.push(...scan.outside);
     };
-    if (city) {
-      candidates.push(webCandidate(city, `City of ${town}`, "civic", "government", "The city's official website", { inside: cityInside }));
-      seen.add(pageKey(city));
-      await scanned(city, { name: `City of ${town}`, scope: cityInside ? "place" : "city" }, `City of ${town}`, cityInside, started + JOB_DEADLINE_MS * 0.6);
-    }
+    if (city) await scanned(city, { name: `City of ${town}`, scope: cityInside ? "place" : "city" }, `City of ${town}`, cityInside, started + JOB_DEADLINE_MS * 0.6);
     const facts = await areaFacts(context as unknown as ConnectorContext).catch(() => null);
     if (facts?.county) {
       const county = await countyWebsite(context, facts.county);
       if (county && hostOf(county) !== hostOf(city)) {
-        candidates.push(webCandidate(county, facts.county, "civic", "government", "The county's official website (OpenStreetMap)"));
-        seen.add(pageKey(county));
         await scanned(county, { name: facts.county, scope: "county", sections: COUNTY_SECTIONS, pages: limit("civic.stop.county_pages"), hubs: limit("civic.stop.county_hub_pages") }, facts.county, false, started + JOB_DEADLINE_MS * 0.85);
       }
     }
@@ -175,7 +192,7 @@ const government: MethodDefinition = {
   },
 };
 
-// --- OpenStreetMap places -------------------------------------------------------------------
+// --- local institutions -----------------------------------------------------------------------
 const OSM_RULES = ruleSet("osm_kinds");
 const OSM_KINDS: Record<string, { priority: number; section: SectionId; kind?: string }> = Object.fromEntries(OSM_RULES.map((rule) => [rule.osm!.kind, { priority: rule.osm!.priority, section: rule.section as SectionId, kind: rule.osm!.story_kind }]));
 export const OSM_CAP = limit("general.stop.osm_cap");
@@ -195,45 +212,103 @@ function websiteOf(tags: Record<string, string>) {
   const url = raw.startsWith("http") ? raw.replace(/^http:/, "https:") : `https://${raw.replace(/^\/+/, "")}`;
   return httpsLink(url);
 }
-const osm: MethodDefinition = {
-  method: "osm", label: "OpenStreetMap places inside the area", refreshDays: REFRESH_DAYS.osm,
+export type OsmPlace = { name: string; url: string; kind: string; section: SectionId };
+/** Places with a website inside the area, most useful first, within the per-host, per-section and overall caps. */
+export async function osmPlaces(context: DiscoveryContext): Promise<{ places: OsmPlace[]; detail: string }> {
+  const { center, area } = locationCenter(context.location);
+  if (!center) return { places: [], detail: "Location has no coordinates" };
+  const [west, south, east, north] = areaBox(area, center);
+  // Query the actual bbox (polygon candidates are filtered below), not an unrelated
+  // 3 km circle. One indexed name/website scan avoids five overlapping nwr scans.
+  const box = `(${south},${west},${north},${east})`;
+  const query = `[out:json][timeout:${QUERY_SECONDS}];nwr${box}["name"][~"^(website|contact:website)$"~"."];out tags center;`;
+  const response = await queryOverpass(context.transport, query);
+  const elements = response.data.elements;
+  const found: Array<{ name: string; url: string; kind: string; point: Point }> = [];
+  for (const element of elements) {
+    const tags = element.tags ?? {};
+    const kind = tags.amenity ?? (tags.tourism === "museum" ? "museum" : tags.office ?? (tags.shop === "funeral_directors" ? "funeral_directors" : tags.leisure)) ?? "";
+    const url = websiteOf(tags);
+    const lat = element.lat ?? element.center?.lat, lon = element.lon ?? element.center?.lon;
+    if (!tags.name || !url || !OSM_KINDS[kind] || typeof lat !== "number" || typeof lon !== "number") continue;
+    const point: Point = [lon, lat];
+    if (area ? !withinArea(area, center, point) : distanceKm(center, point) > TOWN_RADIUS_KM) continue;
+    found.push({ name: tags.name, url, kind, point });
+  }
+  found.sort((a, b) => OSM_KINDS[a.kind].priority - OSM_KINDS[b.kind].priority || a.name.localeCompare(b.name));
+  const perHost = new Map<string, number>();
+  const perSection = new Map<SectionId, number>();
+  const seen = new Set<string>();
+  const places: OsmPlace[] = [];
+  for (const item of found) {
+    const host = hostOf(item.url), key = normaliseUrl(item.url), section = osmSection(item.kind, item.name);
+    if (seen.has(key) || (perHost.get(host) ?? 0) >= itemCap(OSM_PER_HOST) || (perSection.get(section) ?? 0) >= itemCap(OSM_SECTION_CAP)) continue;
+    seen.add(key);
+    perHost.set(host, (perHost.get(host) ?? 0) + 1);
+    perSection.set(section, (perSection.get(section) ?? 0) + 1);
+    places.push({ name: item.name, url: item.url, kind: item.kind, section });
+    if (places.length >= itemCap(OSM_CAP)) break;
+  }
+  return { places, detail: `${elements.length} places with websites in bounding box; ${places.length} qualifying inside the area; ${response.attempts.join("; ")}` };
+}
+
+/** Libraries, police and fire stations and community centres: their sites are read in depth. */
+const DEEP_KINDS = new Set(list("general.prefer.institution_deep_kinds"));
+const INSTITUTION_SECTIONS = table<SectionId>("general.prefer.institution_sections");
+export const INSTITUTION_TOPICS = table<PriorityTopic | null>("general.prefer.institution_topics");
+const INSTITUTION_SITES = limit("general.stop.institution_sites");
+const OTHER_READERS = new Set(["school", "funeral_directors"]);
+export type DeepSite = { name: string; url: string; kind: string; inside: boolean };
+/**
+ * The institutions whose sites are read in depth: libraries, police and fire stations and community
+ * centres inside the place, and the clubs and high schools `localInstitutions` keeps for serving it
+ * from just outside. The map of the area adds any the nearby search left out. One site per address.
+ */
+export function deepSites(known: Institution[], places: OsmPlace[], cap = INSTITUTION_SITES): DeepSite[] {
+  const sites: DeepSite[] = [
+    ...known.flatMap((item) => item.website && (DEEP_KINDS.has(item.kind) || (!item.inside && ["club", "school"].includes(item.kind))) ? [{ name: item.name, url: item.website, kind: item.kind, inside: item.inside }] : []),
+    ...places.filter((item) => DEEP_KINDS.has(item.kind)).map((item) => ({ name: item.name, url: item.url, kind: item.kind, inside: true })),
+  ];
+  const perHost = new Map<string, number>();
+  return sites.filter((site, index) => sites.findIndex((other) => normaliseUrl(other.url) === normaliseUrl(site.url)) === index).filter((site) => {
+    const count = perHost.get(hostOf(site.url)) ?? 0;
+    perHost.set(hostOf(site.url), count + 1);
+    return count < OSM_PER_HOST;
+  }).slice(0, cap);
+}
+const institutions: MethodDefinition = {
+  method: "institutions", label: "Local institutions, read in depth", refreshDays: REFRESH_DAYS.institutions,
   async run(context) {
-    const { center, area } = locationCenter(context.location);
-    if (!center) return { candidates: [], detail: "Location has no coordinates" };
-    const [west, south, east, north] = areaBox(area, center);
-    // Query the actual bbox (polygon candidates are filtered below), not an unrelated
-    // 3 km circle. One indexed name/website scan avoids five overlapping nwr scans.
-    const box = `(${south},${west},${north},${east})`;
-    const query = `[out:json][timeout:${QUERY_SECONDS}];nwr${box}["name"][~"^(website|contact:website)$"~"."];out tags center;`;
-    const response = await queryOverpass(context.transport, query);
-    const elements = response.data.elements;
-    const found: Array<{ name: string; url: string; kind: string; point: Point }> = [];
-    for (const element of elements) {
-      const tags = element.tags ?? {};
-      const kind = tags.amenity ?? (tags.tourism === "museum" ? "museum" : tags.office ?? (tags.shop === "funeral_directors" ? "funeral_directors" : tags.leisure)) ?? "";
-      const url = websiteOf(tags);
-      const lat = element.lat ?? element.center?.lat, lon = element.lon ?? element.center?.lon;
-      if (!tags.name || !url || !OSM_KINDS[kind] || typeof lat !== "number" || typeof lon !== "number") continue;
-      const point: Point = [lon, lat];
-      if (area ? !withinArea(area, center, point) : distanceKm(center, point) > TOWN_RADIUS_KM) continue;
-      found.push({ name: tags.name, url, kind, point });
+    const started = Date.now();
+    const known = await localInstitutions(context).catch(() => [] as Institution[]);
+    let map: { places: OsmPlace[]; detail: string };
+    try { map = await osmPlaces(context); }
+    catch (error) {
+      // Nothing to read at all: fail, so this retries within the hour.
+      if (!deepSites(known, []).length) throw error;
+      map = { places: [], detail: `OpenStreetMap area search failed: ${String(error)}` };
     }
-    found.sort((a, b) => OSM_KINDS[a.kind].priority - OSM_KINDS[b.kind].priority || a.name.localeCompare(b.name));
-    const perHost = new Map<string, number>();
-    const perSection = new Map<SectionId, number>();
+    const deep = deepSites(known, map.places);
     const seen = new Set<string>();
     const candidates: SourceCandidate[] = [];
-    for (const item of found) {
-      const host = hostOf(item.url), key = normaliseUrl(item.url), section = osmSection(item.kind, item.name);
-      if (seen.has(key) || (perHost.get(host) ?? 0) >= itemCap(OSM_PER_HOST) || (perSection.get(section) ?? 0) >= itemCap(OSM_SECTION_CAP)) continue;
-      seen.add(key);
-      perHost.set(host, (perHost.get(host) ?? 0) + 1);
-      perSection.set(section, (perSection.get(section) ?? 0) + 1);
-      const definition = OSM_KINDS[item.kind];
-      candidates.push(webCandidate(item.url, item.name, section, "osm", `${item.kind.replace(/_/g, " ")} inside ${place(context.location)}`, { inside: true, kind: definition.kind }));
-      if (candidates.length >= itemCap(OSM_CAP)) break;
+    let read = 0;
+    // Each site's events, news and notices pages, the way the schools method reads a school's site.
+    for (const site of deep) {
+      if (Date.now() >= started + JOB_DEADLINE_MS * 0.7) break;
+      const home = { section: INSTITUTION_SECTIONS[site.kind] ?? "community", topic: INSTITUTION_TOPICS[site.kind] ?? null, family: `institution:${site.kind}` };
+      const scan = await scanSite(context, { url: site.url, name: site.name, kind: site.kind === "school" ? "school" : "organisation", scope: site.inside ? "place" : "city", hubs: limit("general.stop.institution_hub_pages"), pages: limit("general.stop.institution_pages"), home }, "institutions", seen, started + JOB_DEADLINE_MS * 0.7);
+      candidates.push(...scan.candidates);
+      read += 1;
     }
-    return { candidates, detail: `${elements.length} places with websites in bounding box; ${candidates.length} qualifying sources inside the area; ${response.attempts.join("; ")}` };
+    // Every other place on the map (town halls, courts, venues, nonprofits): its home page, checked like any other page.
+    // Schools and funeral homes are read in depth by the schools and local groups readers.
+    const deepKeys = new Set(deep.map((site) => normaliseUrl(site.url)));
+    const leads = map.places.filter((item) => !DEEP_KINDS.has(item.kind) && !OTHER_READERS.has(item.kind) && !deepKeys.has(normaliseUrl(item.url))).map((item): Lead => ({
+      url: item.url, title: item.name, snippet: `${item.kind.replace(/_/g, " ")} inside ${place(context.location)}`, topic: INSTITUTION_TOPICS[item.kind] ?? null, family: `institution:${item.kind}`, section: item.section, scope: "place", kind: OSM_KINDS[item.kind].kind,
+    }));
+    const homes = await evaluateLeads(context, leads, { method: "institutions", seen, deadline: started + JOB_DEADLINE_MS, fixed: true, siteKind: "organisation" });
+    candidates.push(...homes.candidates);
+    return { candidates, detail: `${read} of ${deep.length} institution sites read in depth (${[...new Set(deep.map((site) => site.kind.replace(/_/g, " ")))].join(", ") || "none with a website"}); ${leads.length - homes.leftover.length} other places' home pages checked; ${candidates.length} sources; ${map.detail}` };
   },
 };
 
@@ -347,7 +422,7 @@ const opendata: MethodDefinition = {
         let results: CatalogResult[] = [];
         try { results = ((JSON.parse(new TextDecoder().decode(await publicApiGet(context.transport, `${SOCRATA_CATALOG}?${params.toString()}`, "application/json", 4 * 1024 * 1024, 30_000))) as { results?: CatalogResult[] }).results ?? []); }
         catch { continue; }
-        let best: { views: number; id: string; name: string; attribution: string; license: string | null; filter: "radius" | "city" } | null = null;
+        let best: { views: number; id: string; name: string; attribution: string; license: string | null; filter: "radius" | "city"; updated: number } | null = null;
         for (const result of results) {
           const resource = result.resource ?? {};
           const id = resource.id ?? "", name = resource.name ?? "";
@@ -361,13 +436,15 @@ const opendata: MethodDefinition = {
           const city = fields.some((field) => /city/.test(field));
           if (!geo && !(city && level !== "city")) continue;
           const views = resource.page_views?.page_views_total ?? 0;
-          if (!best || views > best.views) best = { views, id, name, attribution: resource.attribution?.trim() || domain, license: result.metadata?.license ?? null, filter: geo && level !== "state" ? "radius" : "city" };
+          if (!best || views > best.views) best = { views, id, name, attribution: resource.attribution?.trim() || domain, license: result.metadata?.license ?? null, filter: geo && level !== "state" ? "radius" : "city", updated };
         }
         if (!best) continue;
         candidates.push({
           source_id: `opendata:${domain}:${best.id}`, name: `${best.name} (${best.attribution})`, url: `https://${domain}/d/${best.id}`, reader: "opendata",
           params: { domain, dataset: best.id, topic: topic.topic, filter: best.filter, agency: best.attribution, license: best.license },
           section: TOPIC_SECTION[topic.topic] as SectionId, found_by: { method: "opendata", detail: `${topic.query} on the ${level} portal ${domain}` }, inside_area: false,
+          // When its rows last changed, for the model check.
+          ...(Number.isFinite(best.updated) ? { latest_day: new Date(best.updated).toISOString().slice(0, 10) } : {}),
         });
       }
     }
@@ -383,18 +460,24 @@ const opendata: MethodDefinition = {
 };
 
 // --- newsrooms, athletics, publishers --------------------------------------------------------
+// Each outlet's site is checked like any other page. Where it was found says what it covers, so it
+// carries that scope; the feed already found is tried first, and still has to work.
 const newsrooms: MethodDefinition = {
   method: "newsrooms", label: "Wikidata newsrooms", refreshDays: REFRESH_DAYS.newsrooms,
   async run(context) {
     const found = await discoveredNewsrooms(context as unknown as ConnectorContext);
-    return { candidates: found.map((item) => webCandidate(item.website, item.name, "news", "newsrooms", item.provenance.detail, { feed: item.feed, kind: "news_report" })), detail: `${found.length} newsrooms with a current feed` };
+    const leads = found.map((item): Lead => ({ url: item.website, title: item.name, snippet: item.provenance.detail, topic: "news", family: "wikidata_newsroom", section: "news", scope: "city", kind: "news_report", feeds: [item.feed] }));
+    const checked = await evaluateLeads(context, leads, { method: "newsrooms", seen: new Set(), deadline: Date.now() + JOB_DEADLINE_MS, fixed: true });
+    return { candidates: checked.candidates, detail: `${found.length} newsrooms with a current feed; ${checked.candidates.length} passed the page checks` };
   },
 };
 const athletics: MethodDefinition = {
   method: "athletics", label: "State athletic association", refreshDays: REFRESH_DAYS.athletics,
   async run(context) {
     const found = await discoveredAthletics(context as unknown as ConnectorContext);
-    return { candidates: found.map((item) => webCandidate(item.website, item.name, setting("sports.prefer.athletics_association_section") as SectionId, "athletics", `Wikidata ${item.provenance.detail}`, { feed: item.feed, kind: "school_sports" })), detail: `${found.length} associations with a current feed` };
+    const leads = found.map((item): Lead => ({ url: item.website, title: item.name, snippet: `Wikidata ${item.provenance.detail}`, topic: "sports", family: "state_athletics", section: setting("sports.prefer.athletics_association_section") as SectionId, scope: "state", kind: "school_sports", feeds: [item.feed] }));
+    const checked = await evaluateLeads(context, leads, { method: "athletics", seen: new Set(), deadline: Date.now() + JOB_DEADLINE_MS, fixed: true });
+    return { candidates: checked.candidates, detail: `${found.length} associations with a current feed; ${checked.candidates.length} passed the page checks` };
   },
 };
 
@@ -476,17 +559,16 @@ const publishers: MethodDefinition = {
   method: "publishers", label: "Publishers found by news search", refreshDays: REFRESH_DAYS.publishers,
   async run(context) {
     const rows = await newsPublishers(context.db).find({ location_id: context.location.id, hits: { $gte: PUBLISHER_MIN_HITS } }).sort({ hits: -1 }).limit(limit("general.stop.publisher_rows")).toArray();
-    const candidates: SourceCandidate[] = [];
-    for (const row of rows) {
-      if (aggregator(row.url) || candidates.length >= limit("general.stop.publisher_sources")) continue;
-      const feed = await findFeed(context.fetcher, row.url, context.today).catch(() => null);
-      candidates.push(webCandidate(row.url, row.name || row.host, "news", "publishers", `Covered ${place(context.location)} in ${row.hits} news search results`, { feed: feed?.feed ?? null, kind: "news_report" }));
-    }
-    return { candidates, detail: `${rows.length} publishers with ${PUBLISHER_MIN_HITS}+ results; ${candidates.length} added` };
+    const leads = rows.filter((row) => !aggregator(row.url)).slice(0, limit("general.stop.publisher_sources")).map((row): Lead => ({
+      url: row.url, title: row.name || row.host, snippet: `Covered ${place(context.location)} in ${row.hits} news search results`, topic: "news", family: "news_search_publisher", section: "news", scope: "city", kind: "news_report",
+    }));
+    const { candidates } = await evaluateLeads(context, leads, { method: "publishers", seen: new Set(), deadline: Date.now() + JOB_DEADLINE_MS, fixed: true });
+    return { candidates, detail: `${rows.length} publishers with ${PUBLISHER_MIN_HITS}+ results; ${leads.length} checked, ${candidates.length} added` };
   },
 };
 
 // --- LLM discovery ----------------------------------------------------------------------------
+// Not part of the fixed pipeline any more: the agent replaces it. Kept for reference, unregistered.
 const LLM_SECTIONS = list("general.prefer.suggestion_sections");
 const LLM_STORY_KINDS = table("general.evidence.suggestion_story_kinds");
 function llmPrompt(location: LocationProfile, links: string[]) {
@@ -496,7 +578,7 @@ function llmPrompt(location: LocationProfile, links: string[]) {
 }
 const LLM_SCHEMA = { type: "object", properties: { sources: { type: "array", items: { type: "object", properties: { name: { type: "string" }, url: { type: "string" }, section: { type: "string" }, located_inside: { type: "boolean" }, why: { type: "string" } }, required: ["name", "url", "section", "located_inside", "why"] } } }, required: ["sources"] };
 const llm: MethodDefinition = {
-  method: "llm", label: "Gemini suggestions (checked)", refreshDays: REFRESH_DAYS.llm,
+  method: "llm", label: "Model suggestions (checked)", refreshDays: REFRESH_DAYS.llm,
   async run(context) {
     if (!context.settings.llmDiscovery) return { candidates: [], detail: "LLM discovery is off (NEWSBEE_LLM_DISCOVERY)" };
     if (!(await canSpend(context.db, context.settings, 2))) throw new Error("Daily model-call cap reached; LLM discovery waits until tomorrow");
@@ -573,25 +655,32 @@ const national: MethodDefinition = {
   },
 };
 
-// --- operator search (agentic flow only) ----------------------------------------------------
-/** Query budget per run for the template families: six for each of ten topics, and six general. The agent's rounds have their own. */
-export const DORK_QUERIES = limit("general.stop.dork_queries");
-const dork: MethodDefinition = {
-  method: "dork", label: "Google operator search", refreshDays: REFRESH_DAYS.dork,
+// --- home sales -------------------------------------------------------------------------------
+/** ATTOM's sale prices for the place's postal code: the only paid reader, so only with a key. Collection pays only when a run ticks ATTOM. */
+const homesales: MethodDefinition = {
+  method: "homesales", label: "Home sales (ATTOM)", refreshDays: REFRESH_DAYS.homesales,
   async run(context) {
-    const options = currentOptions();
-    const kit = await buildSearchKit(context);
-    const queries = stage1Queries(kit, options.topics, DORK_QUERIES);
-    const { candidates, counts, rejected } = await evaluateQueries(context, queries, { method: "dork", seen: new Set(), deadline: Date.now() + JOB_DEADLINE_MS });
-    // No search worked: fail, so this retries soon rather than counting as done for a week.
-    if (counts.queries && counts.skipped + counts.failed === counts.queries) throw new Error(`No search could run: ${rejected[0]?.reason ?? "every query was skipped by the run's budget or settings"}`);
-    if (kit.zips[0] && options.paid.attom !== undefined && context.settings.integrations.attomKey) {
-      candidates.push({ source_id: `property:attom:${kit.zips[0]}`, name: `ATTOM sales for ${kit.zips[0]}`, url: null, feed_url: null, reader: "property", params: { backend: "attom", postal_code: kit.zips[0] }, section: "real_estate", found_by: { method: "dork", detail: "Paid property data, ticked for this run" }, inside_area: true, status: "proposed", source_tier: "business", topics: ["home_sales"], why: "Sale prices from ATTOM" });
-    }
-    return { candidates, detail: `${counts.queries} queries (${counts.skipped} skipped, ${counts.failed} failed, ${counts.not_run} out of time), ${counts.results} results, ${counts.fetched} pages checked, ${candidates.length} sources` };
+    if (!context.settings.integrations?.attomKey) return { candidates: [], detail: "No ATTOM key set" };
+    const zip = (await postcode(context.transport, context.location))[0];
+    if (!zip) return { candidates: [], detail: "No postal code found for the place" };
+    return {
+      candidates: [{ source_id: `property:attom:${zip}`, name: `ATTOM sales for ${zip}`, url: null, feed_url: null, reader: "property", params: { backend: "attom", postal_code: zip }, section: "real_estate", found_by: { method: "homesales", detail: "Paid property data: read only in runs that tick ATTOM" }, inside_area: true, source_tier: "business", topics: ["home_sales"], why: "Sale prices from ATTOM" }],
+      detail: `ATTOM sales for ${zip}`,
+    };
   },
 };
 
-export const METHODS: MethodDefinition[] = [national, government, directories, osm, meetings, opendata, newsrooms, athletics, schools, groups, publishers, llm, dork];
+/** The fixed pipeline's one list of readers, each with the methods that make it up. */
+export const FIXED_READERS: Array<{ reader: string; methods: MethodDefinition[] }> = [
+  { reader: "City and county", methods: [government, meetings] },
+  { reader: "Open data", methods: [opendata] },
+  { reader: "Schools", methods: [schools] },
+  { reader: "Local groups", methods: [groups] },
+  { reader: "Local institutions", methods: [institutions] },
+  { reader: "News and wider sources", methods: [newsrooms, publishers, athletics, national] },
+  { reader: "Home sales", methods: [homesales] },
+];
+export const FIXED_METHODS = new Set<string>(FIXED_READERS.flatMap((entry) => entry.methods.map((definition) => definition.method)));
+export const METHODS: MethodDefinition[] = FIXED_READERS.flatMap((entry) => entry.methods);
 export function methodDefinition(method: string) { return METHODS.find((definition) => definition.method === method); }
 export { hashId };

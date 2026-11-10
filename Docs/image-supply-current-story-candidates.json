@@ -1,0 +1,412 @@
+{
+  "schema": "newsbee_photo_supply_research_v1",
+  "checked_on": "2026-11-03",
+  "timezone": "America/Los_Angeles",
+  "scope": [
+    "Wedgwood",
+    "Moses Lake"
+  ],
+  "automatic_use": false,
+  "publication_changed": false,
+  "outreach_sent": false,
+  "paid_services_activated": false,
+  "private_environment_accessed": false,
+  "summary": {
+    "asset_leads": 14,
+    "publisher_candidates": 13,
+    "resolution_rejected": 1,
+    "new_approved_photos": 0,
+    "binaries_downloaded": 0
+  },
+  "assets": [
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Completion gathering",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Route-40-Ribbon-Cutting-Oct-2026-1.jpg",
+      "declared_width": 1629,
+      "declared_height": null,
+      "native_resolution_verified": false,
+      "capture_date": "2026-10-29",
+      "credit": "Tim Durkan",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Request editorial, archive and crop rights and a larger original."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Bike and bus travel",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/IMG_2785.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Bus at Fremont Bridge",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-01-4.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "People riding the bus",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-02-6.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Person at bus stop",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-01-5.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Bus-stop lighting",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-02-7.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "People using new crossing",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-01-6.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Pedestrian crossing sign",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-02-8.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Person crossing Leary",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-03-4.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "862954177731"
+      ],
+      "subject": "Intersection street signs",
+      "source_url": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "image_url": "https://sdotblog.seattle.gov/wp-content/uploads/sites/10/2026/10/Image-04-1.jpg",
+      "declared_width": 2048,
+      "declared_height": 1365,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Amy Abdelsayed, SDOT",
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Confirm capture date and editorial, archive and crop rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "638f17683007"
+      ],
+      "subject": "Film crew at curling rink",
+      "source_url": "https://www.cascadepbs.org/out-back-alison-mariella-desir/2026/10/granite-curling-club-keeps-the-spirit-of-curling-alive/",
+      "image_url": "https://www.cascadepbs.org/content/images/size/w2000/format/webp/2026/10/IMG_8056.jpg",
+      "declared_width": 2000,
+      "declared_height": null,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Hippo Wong/Cascade PBS",
+      "license": null,
+      "status": "standalone_reuse_permission_required",
+      "next_step": "Request standalone-summary use, crop permission and capture date; article republication terms do not establish those rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "638f17683007"
+      ],
+      "subject": "Curling lesson",
+      "source_url": "https://www.cascadepbs.org/out-back-alison-mariella-desir/2026/10/granite-curling-club-keeps-the-spirit-of-curling-alive/",
+      "image_url": "https://www.cascadepbs.org/content/images/2026/10/10.27.26OutandBack_A.png",
+      "declared_width": 2000,
+      "declared_height": 1333,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": "Hippo Wong/Cascade PBS",
+      "license": null,
+      "status": "standalone_reuse_permission_required",
+      "next_step": "Request standalone-summary use, crop permission and capture date; article republication terms do not establish those rights."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "b9e5d609303a",
+        "63e83f4440b6"
+      ],
+      "subject": "Donna Moodie portrait",
+      "source_url": "https://www.marjorierestaurant.com/team",
+      "image_url": "https://static.spotapps.co/website_images/ab_websites/61557_website_v1/our_team/donna_moodie.jpg",
+      "declared_width": null,
+      "declared_height": null,
+      "native_resolution_verified": false,
+      "capture_date": null,
+      "credit": null,
+      "license": null,
+      "status": "permission_required",
+      "next_step": "Request a recent full-resolution portrait, photographer credit and rights for editorial use, archiving and cropping. Use at most once per edition."
+    },
+    {
+      "community": "Wedgwood",
+      "story_ids": [
+        "36ee82c3d80a",
+        "4734c846e437"
+      ],
+      "subject": "Dionne Foster at swearing-in",
+      "source_url": "https://commons.wikimedia.org/wiki/File:Dionne_Foster_in_2026.jpg",
+      "image_url": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Dionne_Foster_in_2026.jpg",
+      "declared_width": 588,
+      "declared_height": 587,
+      "native_resolution_verified": false,
+      "capture_date": "2026-01-06",
+      "credit": "Animatezoe",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "status": "resolution_rejected",
+      "next_step": "Request a larger original; do not upscale the available file."
+    }
+  ],
+  "suppliers": [
+    {
+      "id": "unexpected",
+      "communities": [
+        "Wedgwood"
+      ],
+      "source_url": "https://www.unexpectedproductions.org/aboutup/contact/",
+      "contact": "info@unexpectedproductions.org",
+      "status": "permission_required",
+      "request": "Distinct recent production photos and a Jay Hitt teaching photo or portrait. Confirm the Georgetown class site separately from the Market Theater."
+    },
+    {
+      "id": "visit-seattle",
+      "communities": [
+        "Wedgwood"
+      ],
+      "source_url": "https://www.visitseattle.org/press/services/",
+      "status": "request_required",
+      "request": "Request date-verified images of the actual venue through the destination-media request form; confirm any fee and allowed uses before import."
+    },
+    {
+      "id": "tourism",
+      "communities": [
+        "Moses Lake"
+      ],
+      "source_url": "https://stateofwatourism.com/media/",
+      "library_url": "https://platform.crowdriff.com/m/state-of-washington-tourism",
+      "contact": "WATourismPR@greenrubino.com",
+      "status": "asset_terms_and_dates_unverified",
+      "request": "Locate Moses Lake assets; record each credit, date, license and actual place. Use only for a matching eligible story."
+    },
+    {
+      "id": "flannel",
+      "communities": [
+        "Moses Lake"
+      ],
+      "source_url": "https://90sflannelfest.com/info/",
+      "library_url": "https://drive.google.com/drive/folders/1ywG74nUANrrdMFZUhbs4L0Z4AhAu0XTj",
+      "status": "organizer_media_folder_found",
+      "request": "Ask for dated documentary or performer originals and explicit editorial, archive and crop rights. Not a match for the current three stories."
+    },
+    {
+      "id": "cbaa",
+      "communities": [
+        "Moses Lake"
+      ],
+      "source_url": "https://www.cba-arts.org/contact/",
+      "contact": "events@cba-arts.org",
+      "status": "permission_required",
+      "request": "Ask for performer-approved recent photos tied to confirmed upcoming Moses Lake shows, with photographer credit and reuse terms."
+    },
+    {
+      "id": "wiaa",
+      "communities": [
+        "Wedgwood",
+        "Moses Lake"
+      ],
+      "source_url": "https://www.wiaa.com/media/",
+      "contact": "sbessette@wiaa.com",
+      "status": "rights_and_team_scope_unverified",
+      "request": "Confirm photo-rights route through the association and its official photography partner. A state schedule with no venue or named local team is not a photo match."
+    }
+  ],
+  "access_checks": [
+    {
+      "id": "sdot",
+      "target": "https://sdotblog.seattle.gov/2026/10/30/route-40-project-complete/",
+      "robots": "https://sdotblog.seattle.gov/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "unexpected",
+      "target": "https://www.unexpectedproductions.org/aboutup/ensemble/",
+      "robots": "https://www.unexpectedproductions.org/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "marjorie",
+      "target": "https://www.marjorierestaurant.com/team",
+      "robots": "https://www.marjorierestaurant.com/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "tourism",
+      "target": "https://stateofwatourism.com/media/",
+      "robots": "https://stateofwatourism.com/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "flannel",
+      "target": "https://90sflannelfest.com/info/",
+      "robots": "https://90sflannelfest.com/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "wiaa",
+      "target": "https://www.wiaa.com/media/",
+      "robots": "https://www.wiaa.com/robots.txt",
+      "status": 404
+    },
+    {
+      "id": "cascade",
+      "target": "https://www.cascadepbs.org/out-back-alison-mariella-desir/2026/10/granite-curling-club-keeps-the-spirit-of-curling-alive/",
+      "robots": "https://www.cascadepbs.org/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "visit-seattle",
+      "target": "https://www.visitseattle.org/press/services/",
+      "robots": "https://www.visitseattle.org/robots.txt",
+      "status": 200,
+      "newsbee": true,
+      "gptbot": true,
+      "chatgpt_user": true
+    },
+    {
+      "id": "flickr",
+      "target": "https://www.flickr.com/photos/sdot_photos/55225158087",
+      "robots": "https://www.flickr.com/robots.txt",
+      "status": 200,
+      "newsbee": false,
+      "gptbot": false,
+      "chatgpt_user": true
+    }
+  ],
+  "notes": [
+    "Declared dimensions are HTML/API metadata, not decoded image validation.",
+    "No photographer identity or capture date was inferred from image pixels or upload paths.",
+    "Flickr Newsbee crawling is disallowed for the checked path; the reviewed SDOT Flickr sample is CC BY-NC 4.0 and is not an approved Newsbee license."
+  ]
+}

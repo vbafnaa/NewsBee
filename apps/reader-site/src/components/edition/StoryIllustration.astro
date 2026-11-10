@@ -1,0 +1,18 @@
+---
+import { illustrationAsset, type EditorialIllustration } from "../../../../../shared/editorial-illustrations";
+interface Props { illustration: EditorialIllustration; lead?: boolean }
+const { illustration, lead = false } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const asset = illustration.asset_id ?? illustration.id;
+---
+<figure class="story-illustration" data-story-illustration={illustration.id}>
+  <img src={illustrationAsset(asset, base)}
+    srcset={`${illustrationAsset(asset, base, true)} 960w, ${illustrationAsset(asset, base)} 1536w`}
+    sizes={lead ? "(max-width: 40rem) calc(100vw - 2rem), 800px" : "(max-width: 40rem) calc(100vw - 2rem), 480px"}
+    alt={illustration.alt} width="1536" height="1024" loading={lead ? "eager" : "lazy"} decoding="async" />
+</figure>
+<style>
+  .story-illustration { margin: 0; min-width: 0; }
+  img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: contain; mix-blend-mode: multiply;
+    mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent); mask-composite: intersect; }
+</style>

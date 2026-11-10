@@ -9,7 +9,8 @@ import { runContext } from "../core/run-options";
 
 export const RUN_DECISIONS = "run_decisions";
 export type DecisionActor = "rule" | "model" | "classifier" | "agent" | "human" | "provider" | "reader";
-export type DecisionStage = "query" | "result" | "fetch" | "source" | "plan" | "collect" | "topic";
+/** `agent`: one step of the mapping agent, with its tool, query or page, reason and result. */
+export type DecisionStage = "query" | "result" | "fetch" | "source" | "plan" | "collect" | "topic" | "agent";
 export type Decision = {
   run_id: string;
   location_id: string;

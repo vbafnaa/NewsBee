@@ -73,7 +73,7 @@ export default function InteractiveHeatmap({ rows, metric, selected, onSelect }:
       <button type="button" onClick={() => zoom(.5)} disabled={view.width >= Math.max(360, 180 * size.width / size.height)} aria-label="Zoom out">− Zoom out</button>
       <button type="button" className="secondary" onClick={() => { setView(null); setMembers([]); }}>Reset extent</button>
     </div>
-    <p id={help} className="chart-caption">Drag to pan; scroll or pinch to zoom. Keyboard: focus the map, use arrow keys to pan, + / − to zoom, Home to reset. Select a numbered group to choose its communities.</p>
+    <p id={help} className="chart-caption">Drag to pan, scroll to zoom.</p>
     <div ref={surface} className="interactive-map-surface" style={{ height: size.height }} tabIndex={0} role="group" aria-label={`Interactive ${metric} map`} aria-describedby={help}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -145,13 +145,13 @@ export default function InteractiveHeatmap({ rows, metric, selected, onSelect }:
     <p className="chart-caption" role="status">{heat.degrees.toPrecision(3)}° cells · maximum {maximum.toLocaleString()} {metric} per cell. Numbered markers count communities, not events. <span className="heat-legend" style={{ background: `linear-gradient(to right, #eef2ef, ${COLORS[metric]})` }} /> Lower → higher. Grid cells are not community boundaries.</p>
     {candidates.length > 1 && <section className="map-chooser" aria-label="Communities in selected group">
       <h3 ref={chooser} tabIndex={-1}>{candidates.length} nearby or coincident communities</h3>
-      <p>Choose exact counts below. Communities sharing coordinates remain individually selectable at every zoom level.</p>
+      <p>Exact counts are below.</p>
       <button type="button" className="secondary" onClick={() => setView(fitView(candidates, size))}>Fit this group</button>
       <ul>{candidates.map((row) => <li key={row.id}><button type="button" className="secondary" aria-pressed={selected === row.id} onClick={() => onSelect(row.id)}>{row.name} · {row[metric].toLocaleString()} {metric}</button></li>)}</ul>
     </section>}
     {chosen && <div className="notice map-details" role="status"><strong>{chosen.name}</strong><p>{chosen.reads.toLocaleString()} edition reads · {chosen.subscriptions.toLocaleString()} subscription signups · {chosen.interest.toLocaleString()} interest signups</p>
       <p>{chosen.latitude === null || chosen.longitude === null ? "No saved coordinates. Counts are included in totals and the table." : `${chosen.latitude.toFixed(5)}, ${chosen.longitude.toFixed(5)} · saved community coordinates, not reader location.`}</p></div>}
     {!located.length && <p>No saved coordinates for this metric. Use the exact counts below.</p>}
-    <p className="chart-caption">Low-resolution country context: <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain). No external map services; local detail comes from community coordinates, not street tiles. Exact counts remain in the table regardless of viewport.</p>
+    <p className="chart-caption">Low-resolution country context: <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).</p>
   </div>;
 }

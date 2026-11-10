@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain JavaScript, shared with the build script
-import { BEGIN, compile, COMPILED_PATH, END, gaps, loadPlaybook, LOCKED, overview, OVERVIEW_PATH, PLAYBOOK_DIR, ROOT, SKILL_PATH, skillSection, withSkillSection } from "../../../scripts/playbook-lib.mjs";
+import { BEGIN, CHECK_GROUPS, compile, COMPILED_PATH, END, gaps, HARNESS_BEGIN, HARNESS_END, loadPlaybook, LOCKED, overview, OVERVIEW_PATH, pipelineSkill, PLAYBOOK_DIR, ROOT, SKILL_PATH, skillSection, withSkillSection } from "../../../scripts/playbook-lib.mjs";
 import { mappingSkill } from "../../agent/skill";
 import { SEARCH_PROVIDERS } from "../../core/run-values";
 import { newRun } from "../../orchestration/runs";
@@ -128,21 +128,39 @@ describe("the move left nothing behind", () => {
     }
   });
 
-  it("keeps the skill's text, apart from the one sentence saying where examples now go", () => {
+  it("has a shared skill with the goal and general principles only, and the old text's tool steps for the harness", () => {
     const now = read(SKILL_PATH);
-    const before = mainSkill.split("\n").filter((line) => line.trim());
-    const changed = before.filter((line) => !now.split("\n").includes(line));
-    expect(changed).toEqual([expect.stringMatching(/^Add accepted and rejected patterns below/), "### Accepted", "### Rejected"]);
-    // Above the examples, nothing moved.
-    const head = mainSkill.slice(0, mainSkill.indexOf("## Learning from decisions"));
-    expect(now.startsWith(head)).toBe(true);
+    const shared = pipelineSkill(now.replace(/^---[\s\S]*?---\s*/, "").trim());
+    const handWritten = shared.slice(0, shared.indexOf(BEGIN));
+    for (const category of ["Events", "Council and government", "Schools", "Crime, police and safety", "Real estate and home sales", "Business", "Community", "Other news", "Obituaries", "Sports"]) expect(handWritten, category).toContain(category);
+    expect(handWritten).toMatch(/Weather is not a category/);
+    for (const principle of ["First-party beats rewrites", "keep publishing beat one-off pages", "A feed, calendar or dataset beats scraping a page"]) expect(handWritten).toContain(principle);
+    // Category preferences live in the category files, not in the shared part.
+    for (const preference of ["police and sheriff logs", "funeral homes,", "assessor and recorder", "athletics pages", "Original civic records", "first-party business updates"]) expect(handWritten.toLowerCase(), preference).not.toContain(preference.toLowerCase());
+    expect(shared).toContain("Police and sheriff logs, and court notices.");
+    expect(shared).toContain("County assessor and recorder records");
+    // The old skill's tool steps survive, for the harness only.
+    const harness = now.slice(now.indexOf(HARNESS_BEGIN), now.indexOf(HARNESS_END));
+    for (const line of ["Call `place_profile` and `coverage`.", "`propose_source` for what passes, with why it is useful.", "## Learning from decisions"]) expect(harness).toContain(line.replace("topic", "category"));
+    expect(mainSkill).toContain("## How to work");
+  });
+
+  it("sends the pipeline agent no instructions for tools it can't call", () => {
+    for (const tool of ["place_profile", "test_source", "propose_source", "list_site_links", "find_endpoints", "`coverage`", "newsbee-tools", "searchapi"]) expect(PLAYBOOK_SKILL, tool).not.toContain(tool);
+    expect(read(SKILL_PATH)).toContain("list_site_links");
+  });
+
+  it("lists no query pattern twice for the agent", () => {
+    const patterns = PLAYBOOK_SKILL.split("\n").filter((line) => /^- `.*`$/.test(line));
+    const repeated = patterns.filter((line, index) => patterns.indexOf(line) !== index && !/\{(name|venue|school|host|association)\}/.test(line));
+    expect(repeated).toEqual([]);
   });
 
   it("gives the AI the category rules, from the same file as the harness", () => {
     expect(mappingSkill().text).toBe(PLAYBOOK_SKILL);
     expect(read(SKILL_PATH)).toContain(BEGIN);
     expect(read(SKILL_PATH)).toContain(END);
-    expect(read(SKILL_PATH).replace(/^---[\s\S]*?---\s*/, "").trim()).toBe(PLAYBOOK_SKILL);
+    expect(pipelineSkill(read(SKILL_PATH).replace(/^---[\s\S]*?---\s*/, "").trim())).toBe(PLAYBOOK_SKILL);
     for (const item of PLAYBOOK_RULES) if (item.part === "examples" || item.stage === "stage1" || item.stage === "stage2") expect(PLAYBOOK_SKILL, item.id).toContain(item.text ?? item.pattern);
   });
 
@@ -193,7 +211,7 @@ describe("services", () => {
   });
 
   it("drops Tavily's wildcard filters, as it always has", () => {
-    expect(tavilyRequest('site:.k12.xx.us site:a.example.org -site:.gov "Lakeside"')).toEqual({ query: '"Lakeside"', max_results: 10, search_depth: "basic", include_domains: ["a.example.org"] });
+    expect(tavilyRequest('site:.k12.xx.us site:a.example.org -site:.gov "Lakeside"')).toEqual({ query: '"Lakeside"', max_results: 10, search_depth: "basic", topic: "general", country: "united states", include_domains: ["a.example.org"] });
   });
 });
 
@@ -209,9 +227,10 @@ describe("locked rules", () => {
     expect(editable).not.toMatch(/robots|DO_NOT_SCRAPE|inside_area/i);
   });
 
-  it("are listed separately on the readable copy", () => {
+  it("are listed separately on the readable copy, each in its check group", () => {
     const html = read(OVERVIEW_PATH);
-    for (const [name] of LOCKED as string[][]) expect(html).toContain(name.replace(/&/g, "&amp;"));
+    for (const [name, , , group] of LOCKED as string[][]) { expect(html).toContain(name.replace(/&/g, "&amp;")); expect(["Safety", "Access", "Evidence", "Quality and Evidence"]).toContain(group); }
+    for (const [name] of CHECK_GROUPS as string[][]) expect(html).toContain(`<h4>${name}</h4>`);
   });
 });
 

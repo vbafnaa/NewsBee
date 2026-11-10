@@ -14,7 +14,7 @@ prefer:
   - consumers: [agent]
     from: skills/map-sources/SKILL.md
     rules:
-      - { id: events.prefer.calendars, text: "Venues, and parks and library calendars." }
+      - { id: events.prefer.calendars, text: "Venues, and parks and library calendars, and community centre programmes: each publishes its own events." }
   - consumers: [manual]
     from: apps/journalist-site/pipeline/discovery/methods.ts
     rules:
@@ -57,10 +57,6 @@ search_playbook:
       - { id: events.stage1.city_events, stage: stage1, source_type: Calendars, pattern: 'site:{city_domain} "{place}" ("upcoming events" OR calendar)' }
       - { id: events.stage1.venue, stage: stage1, source_type: Venues, for_each: { list: venues, limit: 2 }, pattern: '"{venue}" ("upcoming events" OR tickets OR schedule)' }
       - { id: events.stage2.place_sweep, stage: stage2, source_type: Events, pattern: '"{place}" ("this weekend" OR "upcoming") (event OR festival OR concert) after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: events.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: community events calendar }
 
 page_words:
   - consumers: [manual]

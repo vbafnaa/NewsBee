@@ -27,6 +27,7 @@ import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError } from "../model/runtime";
 import * as ranking from "../model/newsworthiness";
 import { pythonJson } from "../model/newsworthiness";
+import { hasFactualityError } from "../model/grounding";
 import * as writer from "../model/story-writer";
 import * as policy from "../editorial/policy";
 import * as withdrawals from "../editorial/withdrawals";
@@ -36,13 +37,20 @@ import { previewContent } from "../email/preview";
 import { sourceType } from "../ranking";
 import { coverageTypes, storyKinds } from "../connectors/registry";
 import { assemble, collectedItems, type PoolSection, type RunOverrides } from "./assemble";
-import { detailsText, EXTRACTION_POLICY, extractDetails, mergeDetails, type Details } from "./details";
+import { detailsText, EXTRACTION_POLICY, extractDetails, mergeDetails, saveText, type Details } from "./details";
 import { contentHash, EVIDENCE_POLICY, EvidenceReader, evidenceFor, evidenceText, missingDetails, rankingDescription, selectPassages, supportedFacts } from "./evidence";
 import { SECTIONS, sectionLabel, type SectionId } from "../sourcemap/sections";
 import { canSpend } from "../model/budget";
 import { writeEditionMap } from "./edition-map";
-import { hostOf, recordPublishedCounts, sourceMap } from "../sourcemap/store";
+import { hostOf, sourceMap, reviewedLocationSources } from "../sourcemap/store";
 import { ruleTier } from "../search/classifier";
+import { articleImageCandidates, imagesAllowed, mainText, pageRights, rightsAction } from "../connectors/web/page";
+import { normalizeStoryImage, safeImageUrl, type StoryImage } from "../../../../shared/story-image";
+import { publicHttpsGet } from "../../../../shared/image-http";
+import { reviewAllowsCollection } from "../sourcemap/source-review";
+import { publishableStoryImage } from "../images/pipeline";
+import { uniqueEditionPhotos } from "../images/uniqueness";
+import { planIllustrations, ILLUSTRATION_POLICY } from "../../../../shared/editorial-illustrations";
 
 export const DEFAULT_MODEL = "qwen3:4b";
 export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}+${EVIDENCE_POLICY}`;
@@ -50,6 +58,7 @@ export const WIDER_TIERS = new Set(["region", "nearby"]);
 const PRIORITY_SECTIONS = new Set<string>(["safety", "obituaries", "events", "real_estate", "sports"]);
 const PRIMARY_TIERS = new Set(["official", "organisation", "business"]);
 export const STORY_DETAILS = "story_details";
+export const STORY_IMAGES = "story_images";
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; lightModel?: ModelRuntime; settings: Settings; log: Logger; transport?: HttpTransport };
 export type AuthoringInput = { location: LocationProfile; runId: string; today: string; window: [string, string]; sourceResults: SourceResult[]; overrides?: RunOverrides };
 export type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule"; rank: number; section_rank: number; source_id: string; source_type: string; tier: string; section: SectionId; explain?: unknown };
@@ -73,7 +82,7 @@ function digestDraft(story: Story): writer.ItemDraft {
   return { headline: story.title.slice(0, writer.HEADLINE_MAX), summary };
 }
 function community(name: string) { return name.split(",")[0]; }
-function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: rankingDescription(story), occurrences: story.occurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
+function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: rankingDescription(story), occurrences: story.scheduledOccurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
 function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
 const SECTION_ORDER = new Map(SECTIONS.map((section, index) => [section.id as string, index]));
 function heldReasons(entries: Array<{ disposition: string; result: Record<string, any> }>) {
@@ -152,6 +161,7 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
     const [refined, refinement] = await refineRanking(deps.db, rankingModel, rated, {
       runId: `${draft.run_id}:${sectionId}`, locationId: draft.location_id, community: draft.location_name,
       sourceTypes: new Map(active.map((story) => [story.id, sourceType(story.first.source_id)])),
+      sourceIds: new Map(active.map((story) => [story.id, story.first.source_id])),
     });
     const ranked = refined.map((candidate, index) => {
       const story = byId.get(candidate.id)!;
@@ -213,9 +223,58 @@ async function notSelected(db: Db, runId: string, storyId: string, reason: strin
   await collectedItems(db).updateMany({ run_id: runId, story_id: storyId, ...(onlyIfPooled ? { status: "pooled" as const } : {}) }, { $set: { status: "not_selected", reason, step: "ranking" } });
 }
 
+type ImageDoc = { _id: string; images: StoryImage[]; checked_at: number };
+/** Covers the article, robots.txt and every redirect request issued by Fetcher. */
+function guardedPageTransport(injected?: HttpTransport): HttpTransport {
+  const transport = injected ?? publicHttpsGet;
+  return async (request) => {
+    const url = safeImageUrl(request.url);
+    if (!url) throw new Error("Article image metadata requires a public HTTPS URL");
+    return transport({ ...request, url, timeoutMs: 8000 });
+  };
+}
+/** Image discovery has its own cache and budget; it never depends on an available LLM. */
+export async function storyImages(deps: Pick<AuthoringDeps, "db" | "transport">, locationId: string, story: Story): Promise<StoryImage[]> {
+  if (story.facts.link_only || story.facts.image_blocked) return [];
+  const fallback = { source_url: story.first.source_url, source_name: typeof story.facts.source_name === "string" ? story.facts.source_name : story.first.venue };
+  const details = story.facts.details as Record<string, unknown> | undefined;
+  const values = [story.facts.details, ...(Array.isArray(details?.image_candidates) ? details.image_candidates.slice(0, 4) : [])];
+  const normalize = (values: unknown[]) => [...new Map(values.map(value => normalizeStoryImage(value, fallback))
+    .filter((image): image is StoryImage => Boolean(image)).map(image => [image.image, image])).values()].slice(0, 4);
+  const collected = normalize(values);
+  if (collected.length) return collected;
+  if (story.facts.no_page_fetch) return [];
+  const url = safeImageUrl(story.first.source_url);
+  if (!url) return [];
+  const key = `${locationId}:${story.id}:images_v4:${createHash("sha256").update(url).digest("hex").slice(0, 16)}`;
+  const collection = deps.db.collection<ImageDoc>(STORY_IMAGES);
+  const cached = await collection.findOne({ _id: key }).catch(() => null);
+  const ttl = cached?.images?.length ? 7 * 86400_000 : 3600_000;
+  if (cached && Date.now() - cached.checked_at < ttl) {
+    return normalize(cached.images);
+  }
+  let images: StoryImage[] = [];
+  try {
+    const response = await new Fetcher(guardedPageTransport(deps.transport)).getResponse(url, 1024 * 1024, "text/html, application/xhtml+xml");
+    const html = new TextDecoder().decode(response.body);
+    const flags = pageRights(response.headers, html);
+    if (rightsAction(flags) === "ok") {
+      if (imagesAllowed(flags)) images = normalize(articleImageCandidates(html, response.url, story.title));
+      await saveText(deps.db, response.url, mainText(html)).catch(() => undefined);
+    }
+  } catch { /* Image metadata failures leave the validated story eligible for publication. */ }
+  await collection.updateOne({ _id: key }, { $set: { images, checked_at: Date.now() } }, { upsert: true }).catch(() => undefined);
+  return images;
+}
+
+export async function storyImage(deps: Pick<AuthoringDeps, "db" | "transport">, locationId: string, story: Story): Promise<StoryImage | null> {
+  return (await storyImages(deps, locationId, story))[0] ?? null;
+}
+
 /** Details for a story: cached per story; extracted by the light model while the daily cap allows. */
 async function storyDetails(deps: AuthoringDeps, draft: DraftDoc, story: Story): Promise<Details> {
-  const ruleDetails = mergeDetails(story.facts.details as Details | undefined);
+  const ruleDetails = mergeDetails({ ...(story.facts.details as Partial<Details> | undefined), image: null });
+  if (story.facts.link_only || story.facts.no_page_fetch) return ruleDetails;
   if (!evidenceFor(story)) {
     const transport = deps.transport ?? (await import("../core/http")).fetchTransport;
     await new EvidenceReader(deps.db, transport, deps.log).enrich([story]);
@@ -227,7 +286,7 @@ async function storyDetails(deps: AuthoringDeps, draft: DraftDoc, story: Story):
   const cached = await deps.db.collection<{ _id: string; details: Details; content_hash?: string }>(STORY_DETAILS).findOne({ _id: key });
   if (cached?.content_hash === hash) {
     packet.extraction = "complete";
-    return mergeDetails(ruleDetails, cached.details);
+    return mergeDetails(ruleDetails, { ...cached.details, image: null });
   }
   if (!deps.lightModel) { packet.extraction = "model_unavailable"; return ruleDetails; }
   if (!(await canSpend(deps.db, deps.settings))) { packet.extraction = "budget_exhausted"; return ruleDetails; }
@@ -290,20 +349,20 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
     ...candidate, description: enriched, community_id: draft.location_id, venues: story.venues,
     floor_flags: flags, floor_instructions: `${floorInstructions(flags)}${sportsRule}`, people: details.people, update_of: story.facts.update_of ?? null,
   };
-  const eligibility = policy.errors(candidateForWrite).concat(policy.sourceErrors(story.occurrences.map((item) => item.source_url)));
+  const eligibility = [...new Set([...policy.errors(candidateForWrite), ...policy.eventDateErrors({ ...story, first_date: story.first.event_date })])].concat(policy.sourceErrors(story.occurrences.map((item) => item.source_url)));
   const existingWithdrawals = await withdrawals.forLocation(deps.db, draft.location_id);
   const withdrawn = withdrawals.matching(story, existingWithdrawals).length > 0;
   const blockedByRules: string[] = [];
   let result: Record<string, any>;
   if (withdrawn) result = { disposition: "held", checks_passed: false, validation_errors: [...eligibility, "previously_withdrawn"], attempts: 0, wall_seconds: 0 };
-  else if (eligibility.length && !rulesOff("quality")) result = { disposition: "held", checks_passed: false, validation_errors: eligibility, attempts: 0, wall_seconds: 0 };
+  else if (eligibility.includes("conflicting_event_dates") || eligibility.length && !rulesOff("quality")) result = { disposition: "held", checks_passed: false, validation_errors: eligibility, attempts: 0, wall_seconds: 0 };
   else if (digest) result = { disposition: "checks_passed", checks_passed: true, draft: digest, digest: true, validation_errors: [], attempts: 0, wall_seconds: 0 };
   else {
     if (eligibility.length) blockedByRules.push(...eligibility.map((error) => `eligibility:${error}`));
     result = await checkedItem(deps, candidateForWrite);
   }
   // Exploration: run a story that failed a check, with minors' and victims' names and suicide method removed.
-  if (rulesOff("quality") && result.disposition === "held" && result.draft) {
+  if (rulesOff("quality") && result.disposition === "held" && result.draft && !hasFactualityError(result.validation_errors ?? [])) {
     blockedByRules.push(...((result.validation_errors as string[] | undefined) ?? []));
     result = { ...result, disposition: "checks_passed", checks_passed: true, draft: { ...result.draft, ...stripFloorDetails(result.draft, flags, details.people) }, flagged_errors: result.validation_errors, validation_errors: [] };
   }
@@ -314,7 +373,7 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
     if (flags.suicide) result.draft = { ...result.draft, summary: `${result.draft.summary} ${CRISIS_LINE}` };
   }
   Object.assign(result, {
-    story: recordStory(story), details, floor: flags,
+    story: recordStory(story), writing_source: { id: candidateForWrite.id, title: candidateForWrite.title, description: candidateForWrite.description, venues: candidateForWrite.venues, kind: candidateForWrite.kind }, details, floor: flags,
     ranking: { rank: candidate.rank, section_rank: candidate.section_rank, score: candidate.score, rated_by: candidate.rated_by, ...candidate.rating, ...(candidate.explain ? { explain: candidate.explain } : {}) },
     when_where: whenWhere(story), source_url: story.first.source_url, tier: candidate.tier, section: candidate.section, also_from: story.facts.also_from ?? [],
     image_caption: story.facts.image_caption ?? null, image_credit: story.facts.image_credit ?? null,
@@ -354,51 +413,88 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const collection = drafts(deps.db);
   const draft = await collection.findOne({ id: draftId });
   if (!draft) throw new Error(`No authoring draft: ${draftId}`);
-  if (draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary };
+  if (draft.status === "built" || draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary, tokens: draft.tokens };
   if (draft.status !== "ready") return { done: false, more: true };
-  const entries = await getEntries(deps.db, draftId);
+  let entries = await getEntries(deps.db, draftId);
+  const reviewed = await reviewedLocationSources(deps.db, draft.location_id);
+  const holds = new Map(reviewed.filter((source) => !reviewAllowsCollection(source.access_review, new Date().toISOString().slice(0, 10)))
+    .map((source) => [source.source_id, source.access_review!.reason]));
+  let newlyHeld = 0;
+  for (const entry of entries) {
+    if (entry.disposition !== "checks_passed" || !holds.has(entry.source_id)) continue;
+    await deps.db.collection(COLLECTIONS.editionEntries).updateOne({ edition_id: draftId, story_id: entry.story_id, disposition: "checks_passed" }, {
+      $set: { disposition: "held", "result.disposition": "held", "result.checks_passed": false,
+        "result.validation_errors": [...(entry.result.validation_errors ?? []), `source_access_review:${holds.get(entry.source_id)}`] },
+    });
+    newlyHeld++;
+  }
+  if (newlyHeld) entries = await getEntries(deps.db, draftId);
   const perSection = new Map<string, number>();
   const caps = limits();
   const passed = entries.filter((entry) => entry.disposition === "checks_passed")
     .sort((a, b) => (SECTION_ORDER.get(a.section) ?? 99) - (SECTION_ORDER.get(b.section) ?? 99) || Number(a.result.ranking.section_rank) - Number(b.result.ranking.section_rank))
     .filter((entry) => { const count = perSection.get(entry.section) ?? 0; perSection.set(entry.section, count + 1); return count < caps.publishedPerSection; });
+  if (newlyHeld && !passed.length) throw new Error("Source access review prevents publication: no permitted validated stories remain");
   // The front page leads with the strongest story overall.
   const lead = [...passed].sort((a, b) => Number(b.result.ranking.score) - Number(a.result.ranking.score))[0];
   const ordered = lead ? [lead, ...passed.filter((entry) => entry !== lead)] : passed;
-  const itemStories = ordered.map((entry) => entry.result.story as writer.StoryInput);
+  const itemStories = ordered.map((entry) => (entry.result.writing_source ?? entry.result.story) as writer.StoryInput);
   const itemDrafts = ordered.map((entry) => entry.result.draft as writer.ItemDraft);
   const week = weekLabel(draft.window_start, draft.window_end);
   const front = await writer.writeFront(deps.model, community(draft.location_name), week, itemStories, itemDrafts);
   const email = await writer.writeEmail(deps.model, community(draft.location_name), week, itemStories, itemDrafts, { headline: String(front.headline), intro: String(front.intro) });
   const now = Date.now() / 1000;
   const sourceName = (sourceId: string, url?: string | null) => (sourceId.startsWith("sweep:") ? hostOf(url) : null) || (draft.source_results.find((result) => result.source_id === sourceId)?.name ?? "Local source");
-  const items = ordered.map((entry, index) => ({
+  const illustrated = currentOptions().image_mode === "illustrated";
+  const approvedImages = illustrated ? new Map<string, StoryImage | null>() : new Map(await Promise.all(ordered.map(async (entry) => [entry.story_id,
+    await publishableStoryImage(deps.db, draftId, entry.story_id, draft.location_id, entry.source_id, undefined, entry === lead)] as const)));
+  const items = await uniqueEditionPhotos(deps.db, ordered.map((entry, index) => ({
     story_id: entry.result.story.id, headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date,
     source_url: entry.result.source_url ?? null, rank: index + 1, kind: entry.result.story.kind ?? "event", source_name: sourceName(entry.source_id, entry.result.source_url),
     section: sectionLabel(entry.section), section_id: entry.section, local: entry.tier === "local", also_from: entry.result.also_from ?? [],
     ...(entry.result.digest ? { digest: true } : {}),
-    ...(entry === lead ? { lead: true } : {}), ...(entry.result.details?.image ? { image: entry.result.details.image } : {}),
-    ...(entry.result.image_credit ? { image_caption: entry.result.image_caption, image_credit: entry.result.image_credit } : {}),
-  }));
-  const payload: EditionPayload = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }> };
+    ...(entry === lead ? { lead: true } : {}),
+    // Preserve saved attribution metadata; the image URL still requires a current audit.
+    ...(!illustrated && entry.result.image_credit ? { image_caption: entry.result.image_caption, image_credit: entry.result.image_credit } : {}),
+    ...approvedImages.get(entry.story_id),
+  })));
+  const illustrations = illustrated ? planIllustrations(items, draft.location_id) : new Map();
+  const visualItems = illustrated ? items.map((item, index) => ({ ...item, ...(illustrations.has(index)
+    ? { illustration_id: illustrations.get(index)!.id, illustration_asset_id: illustrations.get(index)!.asset_id ?? illustrations.get(index)!.id, illustration_policy: ILLUSTRATION_POLICY } : {}) })) : items;
+  if (illustrated && ordered.length) await deps.db.collection(COLLECTIONS.editionEntries).bulkWrite(ordered.map((entry, index) => ({ updateOne: {
+    filter: { edition_id: draftId, story_id: entry.story_id, disposition: "checks_passed" }, update: { $set: {
+      "result.illustration": illustrations.get(index) ?? null,
+      "result.image_pipeline": { status: illustrations.has(index) ? "illustrated" : "not_applicable", provider: "newsbee_ai", policy: ILLUSTRATION_POLICY,
+        reason: illustrations.has(index) ? "distinct_reviewed_illustration" : "no_distinct_matching_illustration", checked_at: Date.now() },
+    } },
+  } })));
+  const payload: EditionPayload & { media_mode?: "illustrated" | "photos" } = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items: visualItems, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }>,
+    ...(currentOptions().image_mode ? { media_mode: illustrated ? "illustrated" as const : "photos" as const } : {}) };
   if (!validEditionShape(payload)) throw new Error("Generated edition does not match the published edition contract");
   const emailPreview = previewContent(draft.location_name, draft.location_id, { headline: payload.headline, intro: payload.intro, email: email as { blurb?: string } });
   const allEntries = await getEntries(deps.db, draftId);
   const summary = { included: passed.length, by_section: Object.fromEntries([...perSection].map(([section, count]) => [section, Math.min(count, caps.publishedPerSection)])), local_included: passed.filter((entry) => entry.tier === "local").length, wider_included: passed.filter((entry) => WIDER_TIERS.has(entry.tier)).length, held: allEntries.filter((entry) => entry.disposition === "held").length, attempted: allEntries.length, not_attempted: draft.candidates.length - allEntries.length, events: draft.event_count, stories: draft.story_count, ranked: draft.candidates.length, funnel: draft.funnel, ranking: draft.ranking, duration_seconds: Math.round((Date.now() - Number(draft.started_at_ms)) / 1000) / 1000, model: draft.model, provider: draft.provider, policy: draft.validation_policy, held_reasons: heldReasons(allEntries), model_errors: draft.model_errors ?? [], front, email };
-  await collection.updateOne({ id: draftId }, { $set: { status: "published", published_at: now, published: payload, email_preview: emailPreview, summary, front, email, held_reasons: summary.held_reasons, model_errors: summary.model_errors } });
+  // Built, not published: a person reviews it and publishes it to the reader (orchestration/publish.ts).
+  const sourceCounts: Record<string, number> = {};
+  for (const entry of passed) sourceCounts[entry.source_id] = (sourceCounts[entry.source_id] ?? 0) + 1;
+  await collection.updateOne({ id: draftId }, { $set: { status: "built", built_at: now, published_at: now, published: payload, email_preview: emailPreview, summary, front, email, held_reasons: summary.held_reasons, model_errors: summary.model_errors, source_counts: sourceCounts } });
   const publishedIds = new Set(items.map((item) => item.story_id));
   await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: { $in: [...publishedIds] } }, { $set: { status: "published", step: "published", reason: null } });
   await collectedItems(deps.db).updateMany({ run_id: draft.run_id, status: "candidate" }, { $set: { status: "not_selected", reason: `candidate not published: the section already had ${caps.publishedPerSection} stories`, step: "authoring" } });
-  const counts = new Map<string, number>();
-  for (const entry of passed) counts.set(entry.source_id, (counts.get(entry.source_id) ?? 0) + 1);
-  await recordPublishedCounts(deps.db, draft.location_id, counts);
-  deps.log.info("Edition published", { edition_id: draftId, location_id: draft.location_id, included: summary.included, held: summary.held, attempted: summary.attempted, front_fallback: front.fallback, duration_seconds: summary.duration_seconds });
+  deps.log.info("Edition built", { edition_id: draftId, location_id: draft.location_id, included: summary.included, held: summary.held, attempted: summary.attempted, front_fallback: front.fallback, duration_seconds: summary.duration_seconds });
   return { edition: payload, emailPreview, summary, tokens: draft.tokens };
 }
 
 export async function latestPublished(deps: Pick<AuthoringDeps, "db"> & Partial<AuthoringDeps>, locationId: string) {
   const doc = await drafts(deps.db).find({ location_id: locationId, status: "published" }).sort({ published_at: -1, id: -1 }).limit(1).next();
-  if (!doc?.published) return null;
+  return doc ? correctedEdition(deps.db, doc) : null;
+}
+
+/** An edition as the reader gets it: its stories, less any withdrawn since, with their corrections. */
+export async function correctedEdition(db: Db, doc: Pick<DraftDoc, "id" | "location_id" | "location_name" | "window_start" | "window_end" | "published">) {
+  if (!doc.published) return null;
+  const locationId = doc.location_id;
+  const deps = { db };
   const decisions = await withdrawals.forLocation(deps.db, locationId);
   const corrections: Array<{ story_id: string; reason: string; created_at: number }> = [];
   const entries = await getEntries(deps.db, doc.id);

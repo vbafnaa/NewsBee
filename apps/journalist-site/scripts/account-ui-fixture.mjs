@@ -44,8 +44,6 @@ Object.assign(env, {
   NEWSBEE_INTERNAL_PASSWORD: "fixture-maps-only",
   NEWSBEE_CREDENTIAL_ACTIVE_KEY: "fixture",
   NEWSBEE_CREDENTIAL_KEYS: JSON.stringify({ fixture: randomBytes(32).toString("base64") }),
-  NEWSBEE_ADMIN_LLM_BASE_URL: "https://admin-fixture.invalid/v1", NEWSBEE_ADMIN_LLM_MODEL: "fixture-admin-model",
-  NEWSBEE_ADMIN_LLM_API_KEY: "fixture-not-a-live-admin-key",
   ...(process.argv.includes("--deployment-defaults") ? {
     NEWSBEE_MODEL_PROVIDERS: "fixture",
     NEWSBEE_LLM_FIXTURE_BASE_URL: "https://provider-fixture.invalid/v1",
@@ -59,16 +57,16 @@ const next = spawn(process.execPath, [path.join(root, "node_modules", "next", "d
 if (process.argv.includes("--workspace-review")) {
   const stamp = Date.now() / 1000;
   await db.collection("pipeline_runs").insertOne({
-    _id: "fixture-final-run", kind: "edition", location_id: "fixture-one", location_name: "Fixture one",
+    _id: "fixture-review-run", kind: "edition", location_id: "fixture-one", location_name: "Fixture one",
     trigger: { by: principals.editor.email, kind: "manual" },
-    execution: { sponsorId: principals.editor.id, initiatedBy: principals.editor.id, credentialVersion: 1, source: "personal", purpose: "final", planHash: "fixture-plan", approvalId: "fixture-approval" },
+    execution: { sponsorId: principals.editor.id, initiatedBy: principals.editor.id, credentialVersion: 1, source: "personal", planHash: "fixture-plan" },
     status: "published", created_at: stamp - 600, updated_at: stamp, completed_at: stamp,
     sources: [], today: "2099-01-01", window: ["2099-01-01", "2099-01-08"], draft_id: null,
     edition_id: null, published: { items: 0, held: 0, held_reasons: {}, artifacts: {} }, error: null, authoring_started_at: stamp - 300,
   });
   await db.collection("journalist_funding_audit").insertMany([
-    { run_id: "fixture-final-run", funding: "personal", provider: "fixture-personal", model: "fixture-model", ok: false, reason: "Fixture fallback", at: stamp - 120 },
-    { run_id: "fixture-final-run", funding: "admin", provider: "admin_backup", model: "fixture-admin-model", ok: true, reason: "Fixture approved backup", at: stamp - 100 },
+    { run_id: "fixture-review-run", funding: "personal", provider: "fixture-personal", model: "fixture-model", ok: false, reason: null, at: stamp - 120 },
+    { run_id: "fixture-review-run", funding: "personal", provider: "fixture-personal", model: "fixture-model", ok: true, reason: null, at: stamp - 100 },
   ]);
 }
 const json = (response, status, value) => { response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" }); response.end(JSON.stringify(value)); };
@@ -91,8 +89,8 @@ async function effectiveProfile(request) {
 }
 function mockPlan(locationId, kind, choices, profile) {
   // Full panel options only: match production serialization without running an orchestrator.
-  const values = { ...choices, purpose: choices.purpose ?? "test", rebuild: choices.rebuild === true, story_limit: Number(choices.story_limit) > 0 ? Math.floor(Number(choices.story_limit)) : null };
-  const options = Object.fromEntries(["purpose", "rebuild", "mode", "flow", "map_flow", "guardrails", "guardrails_off", "access", "access_ignore", "count_history", "paid", "external_off", "search_provider", "classifier", "topics", "story_limit"].map((key) => [key, values[key]]));
+  const values = { ...choices, rebuild: choices.rebuild === true, story_limit: Number(choices.story_limit) > 0 ? Math.floor(Number(choices.story_limit)) : null };
+  const options = Object.fromEntries(["rebuild", "mode", "flow", "map_flow", "guardrails", "guardrails_off", "access", "access_ignore", "count_history", "paid", "external_off", "search_provider", "classifier", "topics", "story_limit"].map((key) => [key, values[key]]));
   if (kind === "map") options.flow = options.map_flow ?? options.flow;
   const plan = { locationId, kind, options, credentialVersion: profile?.version ?? 0, source: profile?.source ?? "personal" };
   return { options, planHash: createHash("sha256").update(JSON.stringify(plan)).digest("hex") };
@@ -107,8 +105,7 @@ const preview = createServer(async (request, response) => {
     }
     if (url.pathname === "/fixture/reset") {
       await db.collection("pipeline_runs").deleteMany({});
-      await db.collection("journalist_run_approvals").deleteMany({});
-      response.writeHead(302, { Location: "/approvals" }); response.end(); return;
+      response.writeHead(302, { Location: "/locations" }); response.end(); return;
     }
     const bytes = await bodyOf(request);
     const spendStart = url.pathname.match(/^\/api\/admin\/locations\/([^/]+)\/(ingestion|map-run)$/);
@@ -125,31 +122,25 @@ const preview = createServer(async (request, response) => {
         const runId = randomUUID(), stamp = Date.now() / 1000;
         const kind = spendStart[2] === "map-run" ? "map" : "edition";
         const normalized = mockPlan(spendStart[1], kind, { ...body.options, rebuild: body.rebuild ?? body.options?.rebuild }, profile);
-        const options = { ...normalized.options, ...(body.options?.admin_approval_id ? { admin_approval_id: body.options.admin_approval_id } : {}) };
-        const approval = options.admin_approval_id ? await db.collection("journalist_run_approvals").findOne({ _id: options.admin_approval_id, sponsorId: principal.id, status: "approved", runId: null }) : null;
-        if (options.admin_approval_id && !approval) return json(response, 403, { detail: "Fixture approval is unavailable." });
+        const options = normalized.options;
         const run = { _id: runId, admission: "newsroom", kind: spendStart[2] === "map-run" ? "map" : "edition", location_id: spendStart[1], location_name: `Fixture ${spendStart[1]}`, trigger: { by: principal.email, kind: "manual" }, options,
-          execution: { sponsorId: principal.id, initiatedBy: principal.id, credentialVersion: profile?.version ?? 0, source: profile?.source ?? "personal", purpose: options.purpose ?? "test", planHash: approval?.planHash ?? normalized.planHash, approvalId: options.admin_approval_id ?? null },
+          execution: { sponsorId: principal.id, initiatedBy: principal.id, credentialVersion: profile?.version ?? 0, source: profile?.source ?? "personal", planHash: normalized.planHash },
           status: "awaiting_authoring", created_at: stamp, updated_at: stamp, completed_at: null, sources: [], today: "2099-01-01", window: ["2099-01-01", "2099-01-08"], draft_id: null, edition_id: null, published: null, error: null, authoring_started_at: null };
         await db.collection("pipeline_runs").insertOne(run);
-        if (options.admin_approval_id) await db.collection("journalist_run_approvals").updateOne({ _id: options.admin_approval_id }, { $set: { runId } });
         console.log("UI mock admitted run; no job scheduled:", runId);
         return json(response, 200, { run_id: runId, started: true, mock: true });
       }
       const runId = spendExisting?.[1] ?? body.runId;
       const run = await db.collection("pipeline_runs").findOne({ _id: runId });
       if (spendExisting?.[2] === "restart") return json(response, 200, { run_id: runId, mock: true, detail: "Mocked restart: no new run, worker or provider invoked." });
-      if (!run || run.execution?.sponsorId !== principal.id) return json(response, 403, { detail: "Only the original sponsoring editor can trigger additional paid work." });
+      if (!run || run.execution?.sponsorId !== principal.id) return json(response, 403, { detail: "Only the person who started this run can trigger more paid work." });
       if (url.pathname === "/api/admin/execution") {
         const profile = await effectiveProfile(request);
         if (!profile || profile.revoked) return json(response, 403, { detail: "Configure an active execution profile before reconnecting." });
-        const approval = body.approvalId ? await db.collection("journalist_run_approvals").findOne({ _id: body.approvalId, sponsorId: principal.id, status: "approved", targetRunId: runId, runId: null }) : null;
-        if (body.approvalId && !approval) return json(response, 403, { detail: "Fixture reconnect approval is unavailable." });
         await db.collection("pipeline_runs").updateOne({ _id: runId }, { $set: {
-          "execution.credentialVersion": profile.version, "execution.source": profile.source, "execution.approvalId": body.approvalId ?? null,
-          "execution.planHash": approval?.planHash ?? mockPlan(run.location_id, run.kind ?? "edition", run.options, profile).planHash,
+          "execution.credentialVersion": profile.version, "execution.source": profile.source,
+          "execution.planHash": mockPlan(run.location_id, run.kind ?? "edition", run.options, profile).planHash,
         }, $unset: { execution_blocked: "" } });
-        if (body.approvalId) await db.collection("journalist_run_approvals").updateOne({ _id: body.approvalId }, { $set: { runId } });
         console.log("UI mock reconnect; no job scheduled:", runId);
         return json(response, 200, { run_id: runId, reconnected: true, mock: true });
       }

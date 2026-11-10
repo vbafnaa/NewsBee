@@ -38,7 +38,7 @@ export type MeetingItem = { title: string; consent?: boolean; weight?: number; o
 export type Meeting = {
   source_event_id: string; body: string; start: LocalMoment; venue?: string | null; source_url: string;
   items: MeetingItem[]; draft_agenda?: boolean; minutes_final?: boolean; note?: string | null;
-  community_relevance?: CommunityEvidence[];
+  community_relevance?: import("../locality").LocalityEvidence[];
 };
 export type MeetingFacts = EventFacts & { kind: "meeting_preview" | "meeting_outcome"; body: string; agenda_items: number };
 

@@ -25,14 +25,17 @@ export default function LocationDirectory({ owner = false }: { owner?: boolean }
     {error && <p className="alert" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="panel">
-      <div className="section-heading"><h2>Community desks</h2><a className="button" href="#onboarding">Add a location</a></div>
+      <div className="section-heading"><h2>Locations</h2></div>
       <label className="field">Find a workspace<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by location" /></label>
       {!locations && !error && <p role="status">Loading locations…</p>}
-      <div className="location-grid">{locations?.filter((location) => location.name.toLowerCase().includes(query.toLowerCase())).map((location) => <article className="location-card" key={location.id}>
-        <p className="eyebrow">{location.state} · {location.source_coverage?.status?.replaceAll("_", " ") ?? "Coverage not assessed"}</p><h3><Link href={`/locations/${encodeURIComponent(location.id)}`}>{location.name}</Link></h3>
-        {location.removal_pending && <p className="alert">Removal incomplete{owner ? <> — <Link href={`/locations/${encodeURIComponent(location.id)}?tab=settings#remove-location`}>retry cleanup</Link></> : " — contact the owner"}</p>}
-        <div className="card-actions"><Link className="button secondary" href={`/locations/${encodeURIComponent(location.id)}`}>Open workspace</Link><Link href={`/locations/${encodeURIComponent(location.id)}?tab=runs`}>Pipeline & logs</Link></div>
-      </article>)}</div>
+      <ul className="location-directory-list">{locations?.filter((location) => location.name.toLowerCase().includes(query.toLowerCase())).map((location) => <li className="location-directory-row" key={location.id}>
+        <div className="location-directory-copy">
+          <p className="eyebrow">{location.state} · {location.source_coverage?.status?.replaceAll("_", " ") ?? "Coverage not assessed"}</p>
+          <h3><Link href={`/locations/${encodeURIComponent(location.id)}`}>{location.name}</Link></h3>
+          {location.removal_pending && <p className="alert">Removal incomplete{owner ? <> — <Link href={`/locations/${encodeURIComponent(location.id)}?tab=settings#remove-location`}>retry cleanup</Link></> : " — contact the owner"}</p>}
+        </div>
+        <div className="location-directory-actions"><Link className="button secondary" href={`/locations/${encodeURIComponent(location.id)}`}>Open workspace</Link></div>
+      </li>)}</ul>
       {locations?.length === 0 && <p>No locations onboarded. Add your first community below.</p>}
       {locations?.length !== 0 && locations && !locations.some((location) => location.name.toLowerCase().includes(query.toLowerCase())) && <p>No locations match this search.</p>}
     </section>
@@ -40,7 +43,7 @@ export default function LocationDirectory({ owner = false }: { owner?: boolean }
       setBusy(true); setError(""); setNotice("");
       try {
         await adminApi("locations", { method: "POST", body: JSON.stringify({ place_id: place.id }) });
-        setNotice(`Added ${place.name}. Open its workspace to review inputs and start collection. Source discovery runs with the first collection.`);
+        setNotice(`Added ${place.name}. Open its workspace to manage sources, collect stories, publish editions, and make videos.`);
         await load();
       } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
       finally { setBusy(false); }

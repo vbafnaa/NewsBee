@@ -24,8 +24,8 @@ const locationId = "fixture-town-wa";
 const otherId = "other-town-wa";
 const collection = (name: string) => db.collection<{ _id: string; [key: string]: unknown }>(name);
 const scoped = [COLLECTIONS.manualLinks, COLLECTIONS.linkCache, COLLECTIONS.sourceResults, COLLECTIONS.shortlists,
-  COLLECTIONS.storyCache, COLLECTIONS.withdrawals, "source_map", "discovery_state", "collected_items",
-  "edition_maps", "news_publishers", "source_suggestions"];
+  COLLECTIONS.storyCache, COLLECTIONS.withdrawals, COLLECTIONS.videoPackages, "source_map", "discovery_state", "collected_items",
+  COLLECTIONS.youtubeLocationSettings, "edition_maps", "news_publishers", "source_suggestions", "photo_catalog_sources", "photo_catalog_cache", "photo_supply_invites", "photo_supply_submissions", "edition_photo_claims"];
 const retained = [COLLECTIONS.places, COLLECTIONS.libraryOutlets, COLLECTIONS.directorySetup, COLLECTIONS.wideCache,
   COLLECTIONS.publishedStories, COLLECTIONS.modelUsage, "reader_interest_signups", "reader_engagement",
   "neighbour_stories", "remembrance_notices", "reader_reports", "story_details", "story_text"];
@@ -57,6 +57,9 @@ beforeEach(async () => {
     await store.saveText(artifactFolder("email-previews", id), `${id}-edition.txt`, "preview");
     await store.saveJson(artifactFolder("sources", id), `${id}-run.json`, { run_id: `${id}-run` });
     await store.saveText(artifactFolder("logs", `${id}-run`), `${id}-job.jsonl`, "log");
+    await collection(COLLECTIONS.videoJobs).insertOne({ _id: `${id}-video`, location_id: id, story_id: `${id}-story`, status: "complete" });
+    const videoFolder = await store.ensureFolder(artifactFolder("video-production", id), `${id}-story`);
+    await store.saveBinary(videoFolder, `${id}-video.mp4`, new Uint8Array([1, 2, 3]), "video/mp4");
   }
   for (const name of retained) await collection(name).insertOne({ _id: "retained", location_id: locationId });
   await store.saveText(artifactFolder("editions"), "untracked.txt", "keep");
@@ -69,10 +72,13 @@ afterEach(async () => {
 });
 afterAll(async () => { await client?.close(); await server?.stop(); });
 
-it("removes only the chosen location's records and six owned files, preserving shared folders, config and reader data", async () => {
+it("removes only the chosen location's records and owned video, preserving shared folders, config and reader data", async () => {
   const result = await removeLocation(db, store, locationId);
-  expect(result.removed_files).toBe(6);
+  expect(result.removed_files).toBe(7);
   expect(result.removed.edition_entries).toBe(1);
+  expect(result.removed.video_packages).toBe(1);
+  expect(result.removed.video_jobs).toBe(1);
+  expect(result.removed.youtube_location_settings).toBe(1);
   expect(await collection(COLLECTIONS.locations).findOne({ _id: locationId })).toBeNull();
   for (const name of [...scoped, COLLECTIONS.runs, COLLECTIONS.jobs, COLLECTIONS.editions]) {
     expect(await collection(name).countDocuments({ location_id: locationId })).toBe(0);
@@ -85,6 +91,7 @@ it("removes only the chosen location's records and six owned files, preserving s
   expect(await store.list(artifactFolder("editions"))).toEqual([{ id: `${artifactFolder("editions")}/untracked.txt`, name: "untracked.txt" }]);
   expect(await store.findFolder(`${pipeline}/.newsbee-pipeline/email-previews`, locationId)).toBe(artifactFolder("email-previews"));
   expect(await store.readText(`${artifactFolder("logs", `${otherId}-run`)}/${otherId}-job.jsonl`)).toBe("log");
+  expect(await store.list(`${artifactFolder("video-production", otherId)}/${otherId}-story`)).toHaveLength(1);
 });
 
 it("keeps historical map counts and saved geography after removing a location workspace", async () => {
@@ -121,7 +128,14 @@ it("refuses a still-executing job after cancellation, and a live worker lease", 
   const token = await acquireWorker(db);
   await expect(removeLocation(db, store, locationId)).rejects.toThrow("worker or cleanup");
   await releaseWorker(db, token!);
-  await expect(removeLocation(db, store, locationId)).resolves.toMatchObject({ removed_files: 6 });
+  await expect(removeLocation(db, store, locationId)).resolves.toMatchObject({ removed_files: 7 });
+});
+
+it("refuses to remove a location while a video generation is active", async () => {
+  await collection(COLLECTIONS.videoJobs).updateOne({ _id: `${locationId}-video` }, { $set: { status: "processing" } });
+  await expect(removeLocation(db, store, locationId)).rejects.toThrow("active video generation");
+  expect((await collection(COLLECTIONS.locations).findOne({ _id: locationId }))?.removal).toBeUndefined();
+  expect(await store.list(`${artifactFolder("video-production", locationId)}/${locationId}-story`)).toHaveLength(1);
 });
 
 it("surfaces partial file cleanup, retains its manifest, blocks new work and retries idempotently", async () => {
@@ -146,8 +160,8 @@ it("surfaces partial file cleanup, retains its manifest, blocks new work and ret
   expect(await getLocation(db, locationId, true)).not.toHaveProperty("removal");
   remove.mockRestore();
   const retry = vi.spyOn(store, "removeFile");
-  await expect(removeLocation(db, store, locationId)).resolves.toMatchObject({ removed_files: 4 });
-  expect(retry).toHaveBeenCalledTimes(4);
+  await expect(removeLocation(db, store, locationId)).resolves.toMatchObject({ removed_files: 5 });
+  expect(retry).toHaveBeenCalledTimes(5);
 });
 
 it.each([1, 2])("never reports success when reader-directory write %s fails, and keeps cleanup retryable", async (failedWrite) => {
@@ -193,6 +207,23 @@ it("does not delete an edition file whose content belongs to another location", 
   await store.saveJson(reader, `${locationId}-edition.json`, { location_id: otherId });
   await expect(removeLocation(db, store, locationId)).rejects.toThrow("Reader file ownership does not match");
   expect(await store.readJson(`${reader}/${locationId}-edition.json`)).toMatchObject({ location_id: otherId });
+});
+
+it("cleans up the resolved Reader channel instead of the environment fallback", async () => {
+  const channelRoot = "channel-reader-root";
+  await collection(COLLECTIONS.outputChannels).insertOne({
+    _id: "reader-site", enabled: true, drive_folder_id: channelRoot,
+  });
+  for (const id of [locationId, otherId]) {
+    await store.saveJson(channelRoot, `${id}-edition.json`, { id: `${id}-edition`, location_id: id });
+  }
+  await writeReaderDirectory(db, store);
+  await removeLocation(db, store, locationId);
+  expect(await store.list(channelRoot)).not.toContainEqual({
+    id: `${channelRoot}/${locationId}-edition.json`, name: `${locationId}-edition.json`,
+  });
+  expect(await store.readJson(`${channelRoot}/locations.json`)).toMatchObject({ locations: [{ id: otherId }] });
+  expect(await store.readJson(`${reader}/${locationId}-edition.json`)).toMatchObject({ location_id: locationId });
 });
 
 it("local cleanup refuses directories, path traversal and junctions outside the artifact tree", async () => {

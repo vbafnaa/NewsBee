@@ -16,8 +16,12 @@ import { COLLECTIONS } from "../storage/mongo";
 import { PRIORITY_TOPICS, PAID_SERVICES } from "../core/run-values";
 import { apiCalls } from "./gateway";
 import { runDecisions, type Decision } from "./decisions";
+import { CATEGORIES, SECTION_LABELS } from "../sourcemap/sections";
+import type { CategoryCounts } from "../discovery/run";
 
-export type FunnelStage = { id: string; phase: "Find" | "Collect" | "Filter" | "Select" | "Print"; label: string; count: number | null; note: string | null; decided_by: string[]; left_out: Array<{ reason: string; count: number }>; recorded: boolean };
+export type FunnelStage = { id: string; phase: "Find" | "Collect" | "Filter" | "Select" | "Print" | "Share"; label: string; count: number | null; note: string | null; decided_by: string[]; left_out: Array<{ reason: string; count: number }>; recorded: boolean };
+/** What the fixed pipeline found this run in one category, and which methods found it. A source two methods found counts twice. */
+export type FixedCoverage = { category: string; label: string; found: number; readable: number; link_only: number; methods: Array<{ method: string; found: number }> };
 export type TopicCoverage = { topic: string; label: string; queries: number; sources: number; items: number; local: number; written: number; printed: number; status: string; note: string | null };
 
 function reasonsOf<T>(rows: T[], reason: (row: T) => string | null | undefined, limit = 8) {
@@ -64,6 +68,7 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
     db.collection(COLLECTIONS.editions).findOne({ run_id: run._id }, { projection: { funnel: 1, status: 1, candidates: { $size: { $ifNull: ["$candidates", []] } } } }) as Promise<{ funnel?: Record<string, number>; status?: string; candidates?: number } | null>,
   ]);
   const legacyMap = !recorded ? await editionMaps(db).findOne({ _id: run._id }) : null;
+  const videos = run.edition_id ? await runVideos(db, run.edition_id) : [];
   const by = (stage: Decision["stage"], decision?: string) => decisions.filter((row) => row.stage === stage && (!decision || row.decision === decision));
   const snapshot = run.source_snapshot ?? [];
   const queried = queries.filter((row) => !row.skipped && !row.error);
@@ -73,7 +78,9 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
   const fetched = by("fetch");
   const kept = fetched.filter((row) => (row.evidence as { outcome?: string } | null)?.outcome === "kept");
   const methods = by("source").filter((row) => row.subject.startsWith("method:"));
-  const candidates = by("source").filter((row) => !row.subject.startsWith("method:"));
+  // The model check and the final review have their own stage; a check rejection is still saved, as a row a person can overrule.
+  const judgements = by("source").filter((row) => row.rule === "gemini_check");
+  const candidates = by("source").filter((row) => !row.subject.startsWith("method:") && !["gemini_check", "final_review"].includes(row.rule ?? ""));
   const read = run.sources ?? [];
   const returned = read.filter((source) => source.event_count > 0);
   const collected = items.length;
@@ -92,7 +99,8 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
     { id: "queries", phase: "Find", label: "Search queries run", count: options.flow === "agentic" ? queried.length : null, note: options.flow === "current" ? "Not used in this flow" : [failedQueries.length ? `${failedQueries.length} failed` : "", skippedQueries.length ? `${skippedQueries.length} could not run` : ""].filter(Boolean).join(", ") || null, decided_by: options.flow === "agentic" ? ["rule", "agent"] : [], left_out: reasonsOf([...failedQueries, ...skippedQueries], (row) => row.error ?? row.skipped), recorded },
     { id: "results", phase: "Find", label: "Search results returned", count: options.flow === "agentic" ? queried.reduce((sum, row) => sum + row.result_count, 0) : null, note: options.flow === "current" ? "Not used in this flow" : null, decided_by: options.flow === "agentic" ? ["provider"] : [], left_out: reasonsOf(by("result"), (row) => row.reason), recorded },
     { id: "fetched", phase: "Find", label: "Pages fetched and checked", count: options.flow === "agentic" ? fetched.length : null, note: options.flow === "current" ? "Not used in this flow" : `${kept.length} kept`, decided_by: options.flow === "agentic" ? ["classifier", "rule", "agent"] : [], left_out: reasonsOf(fetched.filter((row) => (row.evidence as { outcome?: string } | null)?.outcome !== "kept"), (row) => row.reason), recorded },
-    { id: "candidates", phase: "Find", label: "Sources added or refreshed", count: recorded ? candidates.filter((row) => ["added", "proposed", "refreshed", "already_on_map"].includes(row.decision)).length : null, note: !recorded ? "Not recorded for this run" : null, decided_by: ["rule", "agent"], left_out: reasonsOf(candidates.filter((row) => !["added", "proposed", "refreshed", "already_on_map"].includes(row.decision)), (row) => row.reason), recorded },
+    { id: "judged", phase: "Find", label: "Sources judged by the model check", count: recorded ? judgements.filter((row) => row.decision.startsWith("gemini_")).length : null, note: recorded ? `${judgements.filter((row) => row.decision === "gemini_accepted").length} accepted, ${judgements.filter((row) => row.decision === "gemini_rejected").length} rejected, ${judgements.filter((row) => row.decision === "not_judged").length} not judged, ${judgements.filter((row) => row.decision === "judgement_kept").length} unchanged since judged` : "Not recorded for this run", decided_by: ["model"], left_out: reasonsOf(judgements.filter((row) => ["gemini_rejected", "not_judged"].includes(row.decision)), (row) => row.reason), recorded },
+    { id: "candidates", phase: "Find", label: "Sources added or refreshed", count: recorded ? candidates.filter((row) => ["added", "proposed", "refreshed", "already_on_map", "saved_rejected"].includes(row.decision)).length : null, note: !recorded ? "Not recorded for this run" : null, decided_by: ["rule", "agent"], left_out: reasonsOf(candidates.filter((row) => !["added", "proposed", "refreshed", "already_on_map", "saved_rejected"].includes(row.decision)), (row) => row.reason), recorded },
     { id: "read", phase: "Collect", label: "Sources read this run", count: recorded ? read.length : legacy("sources") ?? read.length, note: null, decided_by: ["rule"], left_out: reasonsOf(snapshot.filter((source) => !source.collected), (source) => source.skip_reason), recorded: true },
     { id: "returned", phase: "Collect", label: "Sources that returned items", count: recorded ? returned.length : legacy("returning") ?? returned.length, note: null, decided_by: ["reader"], left_out: reasonsOf(read.filter((source) => !source.event_count), (source) => source.result_status === "ingested" ? "nothing in the window" : `${source.result_status ?? source.status}: ${(source.detail ?? "").slice(0, 80)}`), recorded: true },
     { id: "collected", phase: "Collect", label: "Items collected", count: collected, note: null, decided_by: ["reader", "agent"], left_out: reasonsOf(dropped("reader"), (item) => item.reason), recorded: true },
@@ -104,6 +112,8 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
     { id: "written", phase: "Select", label: "Written", count: entries.length, note: entries.length ? null : "Authoring has not reached this", decided_by: ["model"], left_out: [], recorded: true },
     { id: "passed", phase: "Print", label: "Passed checks", count: written.length, note: heldByFloor ? `${heldByFloor} held to protect a minor or victim, counted but not listed` : null, decided_by: ["rule"], left_out: reasonsOf(held, (entry) => ((entry.result?.validation_errors as string[] | undefined)?.join(", ") || String(entry.result?.error ?? "")).slice(0, 120)), recorded: true },
     { id: "printed", phase: "Print", label: "Printed in the edition", count: recorded ? printedStories : legacy("published") ?? printedStories, note: null, decided_by: ["rule"], left_out: reasonsOf(items.filter((item) => item.status === "not_selected" && item.step === "authoring"), (item) => item.reason), recorded: true },
+    { id: "videos", phase: "Share", label: "Videos made", count: videos.filter((video) => video.status === "complete").length,
+      note: run.status !== "published" ? "Publish the edition to make videos" : videos.length ? `${videos.length} started` : null, decided_by: ["person"], left_out: [], recorded: true },
   ];
 
   const itemsWithTopic = items.map((item) => ({ item, topic: (item.facts as { topic?: string } | null)?.topic ?? topicOfItem({ kind: item.facts?.kind, section: item.section }) }));
@@ -125,11 +135,19 @@ export async function runFunnel(db: Db, locationId: string, runId?: string | nul
   const overrides = new Map<string, number>();
   for (const item of items) for (const rule of item.access_overrides ?? []) overrides.set(rule, (overrides.get(rule) ?? 0) + 1);
 
+  // The fixed pipeline is every discovery method but the agentic flow's operator search. Runs from before the counts were kept have none.
+  const fixedRuns = methods.filter((row) => row.subject !== "method:dork" && (row.evidence as { by_category?: CategoryCounts } | null)?.by_category);
+  const fixedCoverage: FixedCoverage[] | null = fixedRuns.length ? CATEGORIES.map((category) => {
+    const rows = fixedRuns.map((row) => ({ method: row.subject.slice("method:".length), counts: (row.evidence as { by_category: CategoryCounts }).by_category[category] ?? { found: 0, link_only: 0 } }));
+    const found = rows.reduce((sum, row) => sum + row.counts.found, 0), linkOnly = rows.reduce((sum, row) => sum + row.counts.link_only, 0);
+    return { category, label: SECTION_LABELS[category], found, readable: found - linkOnly, link_only: linkOnly, methods: rows.filter((row) => row.counts.found).map((row) => ({ method: row.method, found: row.counts.found })).sort((a, b) => b.found - a.found) };
+  }) : null;
+
   const tiers = new Map<string, number>();
   for (const source of snapshot.filter((entry) => entry.collected)) tiers.set(source.tier ?? "not labelled", (tiers.get(source.tier ?? "not labelled") ?? 0) + 1);
   return {
     run: { id: run._id, location_id: run.location_id, location_name: run.location_name, status: run.status, created_at: run.created_at, completed_at: run.completed_at, edition_id: run.edition_id, error: run.error, window: run.window, recorded, transitions: run.stage_transitions ?? [], by: run.trigger.by },
-    options, stages, coverage, categories: run.category_coverage ?? null, costs: await costs(db, run), tiers: Object.fromEntries(tiers),
+    options, stages, coverage, categories: run.category_coverage ?? null, fixed_coverage: fixedCoverage, costs: await costs(db, run), tiers: Object.fromEntries(tiers),
     rules_tripped: [...rulesTripped].map(([rule, count]) => ({ rule, count })).sort((a, b) => b.count - a.count), access_overrides: [...overrides].map(([rule, count]) => ({ rule, count })),
     agent_plans: by("query", "planned").map((row) => ({ round: row.subject, reason: row.reason, queries: (row.evidence as { queries?: string[] } | null)?.queries ?? [], planned_by: (row.evidence as { planned_by?: string } | null)?.planned_by ?? null, model: row.model ?? null })),
   };
@@ -142,6 +160,13 @@ export async function stageDetail(db: Db, runId: string, stage: string, filters:
   if (!run) return null;
   const decisionRows = async (filter: Record<string, unknown>) => (await runDecisions(db).find({ run_id: runId, ...filter, ...(filters.topic ? { topic: filters.topic } : {}) }).sort({ at: 1 }).skip(page * size).limit(size).toArray()).map((row) => ({ title: row.subject, url: /^https?:/.test(row.subject) ? row.subject : null, status: row.decision, reason: row.reason, decided_by: row.actor, topic: row.topic ?? null, flags: row.would_have_blocked ?? [], detail: row.evidence ?? null, id: String(row._id) }));
   if (stage === "methods") return { rows: await decisionRows({ stage: "source", subject: /^method:/ }), page };
+  if (stage === "videos") {
+    const edition = (await runs(db).findOne({ _id: runId }, { projection: { edition_id: 1 } }))?.edition_id;
+    return { rows: edition ? (await runVideos(db, edition)).map((video) => ({
+      id: video.id, title: video.headline ?? video.story_id, url: video.youtube_url ?? video.drive_url ?? null, status: video.status,
+      reason: video.error ?? (video.youtube_url ? "On YouTube" : video.drive_url ? "Saved to Drive" : null), decided_by: "person", topic: null, flags: [], detail: { story_id: video.story_id, created_at: video.created_at },
+    })) : [], page };
+  }
   if (stage === "queries") {
     const rows = await searchQueries(db).find({ run_id: runId, ...(filters.topic ? { topic: filters.topic } : {}) }, { projection: { results: 0 } }).sort({ created_at: 1 }).skip(page * size).limit(size).toArray();
     return { rows: rows.map((row) => ({ title: row.query, url: null, status: row.skipped ? "skipped" : row.error ? "failed" : "ran", reason: row.skipped ?? row.error ?? `${row.result_count} results, ${row.sources_added} sources added${row.cached ? " (cached)" : ""}`, decided_by: row.origin === "agent" ? "agent" : "rule", topic: row.topic, flags: [], detail: { family: row.family, stage: row.stage, provider: row.provider }, id: String(row._id) })), page };
@@ -194,4 +219,15 @@ export async function itemTrail(db: Db, runId: string, itemId: string) {
     printed: entry?.result?.draft ? { headline: entry.result.draft.headline, summary: entry.result.draft.summary } : null,
     quotes: (entry?.result?.details?.support ?? []).slice(0, 6) as Array<{ field: string; value: string; quote: string }>,
   };
+}
+
+/** The videos made from an edition's stories, newest first, with each story's headline. */
+export async function runVideos(db: Db, editionId: string) {
+  const [jobs, edition] = await Promise.all([
+    db.collection<{ _id: string; story_id: string; status: string; created_at: number; error?: string; drive_url?: string; youtube_url?: string }>(COLLECTIONS.videoJobs)
+      .find({ edition_id: editionId }, { projection: { story_id: 1, status: 1, created_at: 1, error: 1, drive_url: 1, youtube_url: 1 } }).sort({ created_at: -1 }).limit(100).toArray(),
+    db.collection<{ published?: { items?: Array<{ story_id?: string | null; headline?: string }> } }>(COLLECTIONS.editions).findOne({ id: editionId }, { projection: { "published.items.story_id": 1, "published.items.headline": 1 } }),
+  ]);
+  const headlines = new Map((edition?.published?.items ?? []).flatMap((item) => item.story_id && item.headline ? [[item.story_id, item.headline] as [string, string]] : []));
+  return jobs.map((job) => ({ id: job._id, story_id: job.story_id, headline: headlines.get(job.story_id) ?? null, status: job.status, created_at: job.created_at, error: job.error ?? null, drive_url: job.drive_url ?? null, youtube_url: job.youtube_url ?? null }));
 }

@@ -26,7 +26,7 @@ export type MapSource = {
   items_pulled: number; items_kept: number; items_published: number; items: MapItem[]; link_only: boolean;
 };
 export type EditionMap = {
-  _id: string; run_id: string; location_id: string; location_name: string; status: "assembling" | "ranked" | "published"; edition_id: string | null;
+  _id: string; run_id: string; location_id: string; location_name: string; status: "assembling" | "ranked" | "built" | "published"; edition_id: string | null;
   today: string; window: [string, string]; published_at: number | null; generated_at: number;
   funnel: Array<{ step: string; label: string; count: number }>;
   sections: Array<{ id: string; label: string; sources: MapSource[]; published: number; candidates: number }>;
@@ -93,9 +93,10 @@ export async function buildEditionMap(db: Db, runId: string) {
   const active = records.filter((record) => ["active", "pinned", "dormant"].includes(record.status) && !record.link_only).length;
   const returning = new Set(items.map((item) => item.source_id)).size;
   const funnel = draft?.funnel ?? {};
-  const status = draft?.status === "published" ? "published" : candidates.length ? "ranked" : "assembling";
+  const finished = draft?.status === "built" || draft?.status === "published";
+  const status = finished ? draft!.status as "built" | "published" : candidates.length ? "ranked" : "assembling";
   const map: EditionMap = {
-    _id: runId, run_id: runId, location_id: run.location_id, location_name: run.location_name, status, edition_id: draft?.status === "published" ? run.edition_id : null,
+    _id: runId, run_id: runId, location_id: run.location_id, location_name: run.location_name, status, edition_id: finished ? run.edition_id : null,
     today: run.today, window: run.window, published_at: draft?.published_at ?? null, generated_at: Date.now() / 1000,
     funnel: [
       { step: "sources", label: "Sources on the map", count: active },
@@ -120,9 +121,10 @@ export async function writeEditionMap(db: Db, runId: string) {
 }
 
 export async function latestEditionMap(db: Db, locationId: string, editionId?: string | null) {
-  if (editionId) return editionMaps(db).findOne({ _id: editionId, location_id: locationId, status: "published" });
-  return editionMaps(db).find({ location_id: locationId, status: "published" }).sort({ published_at: -1 }).limit(1).next();
+  if (editionId) return editionMaps(db).findOne({ _id: editionId, location_id: locationId, status: { $in: ["built", "published"] } });
+  return editionMaps(db).find({ location_id: locationId, status: { $in: ["built", "published"] } }).sort({ published_at: -1 }).limit(1).next();
 }
+/** Finished editions' maps, built or published, for the map's edition picker. */
 export async function editionMapList(db: Db, locationId: string) {
-  return editionMaps(db).find({ location_id: locationId, status: "published" }, { projection: { _id: 1, published_at: 1, window: 1 } }).sort({ published_at: -1 }).limit(20).toArray();
+  return editionMaps(db).find({ location_id: locationId, status: { $in: ["built", "published"] } }, { projection: { _id: 1, published_at: 1, window: 1, status: 1 } }).sort({ published_at: -1 }).limit(20).toArray();
 }

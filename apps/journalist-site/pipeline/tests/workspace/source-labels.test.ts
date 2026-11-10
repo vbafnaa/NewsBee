@@ -98,6 +98,27 @@ describe("labelling a source", () => {
     expect((await record("p")).status).toBe("pinned");
   });
 
+  it("with no Pin, Pause or Activate buttons, the Decision alone decides what runs collect", async () => {
+    // Paused (for example from a failing source's alert): Accept reads it again.
+    await seed("q", "paused");
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual([]);
+    await label("q", { decision: "accept" });
+    expect((await record("q")).status).toBe("active");
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["q"]);
+    // Accepted and then paused from its alert: clearing and accepting again reads it, as the Decision cell says.
+    expect((await patch({ source_id: "q", status: "paused" })).status).toBe(200);
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual([]);
+    await label("q", { decision: null });
+    await label("q", { decision: "accept" });
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["q"]);
+    // Pinned stays pinned and collected through Accept; Reject stops collection.
+    await seed("k", "pinned");
+    await label("k", { decision: "accept" });
+    expect((await record("k")).status).toBe("pinned");
+    await label("k", { decision: "reject" });
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["q"]);
+  });
+
   it("saves a reason without touching the status, before or after a decision", async () => {
     await seed("r", "paused");
     await label("r", { reason: "Looks like a press release mirror" });
