@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import type { EvidencePacket } from "@/pipeline/editions/evidence";
 import type { ImageResult } from "@/pipeline/images/pipeline";
+import StoryReview, { type StoryReviewValue } from "./story-review";
 
 type Trace = {
-  item: { _id: string; run_id: string; source_id: string; source_name: string; title: string; url: string | null; event_date: string | null; status: string; reason: string | null; step: string; section?: string | null; rank?: number | null; score?: number | null; why?: string | null; merge_group?: string | null; story_id?: string | null; locality?: unknown; facts: Record<string, unknown> | null; evidence?: EvidencePacket };
+  item: { _id: string; run_id: string; source_id: string; source_name: string; title: string; url: string | null; event_date: string | null; status: string; reason: string | null; step: string; section?: string | null; rank?: number | null; score?: number | null; why?: string | null; merge_group?: string | null; story_id?: string | null; locality?: unknown; facts: Record<string, unknown> | null; evidence?: EvidencePacket;
+    replication?: { copies: number; sources: number; independent: number; publishers: string[] }; pre_rank?: { score: number; civic: number; appeal: number; special: number; rules: string[] } };
   window: string | null;
   source: { name: string; url: string | null; reader: string; found_by: { method: string; detail: string }; status: string; inside_area: boolean; section: string } | null;
   siblings: Array<{ _id: string; title: string; source_name: string; status: string }>;
@@ -23,7 +25,7 @@ type Trace = {
 const show = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 
 /** One item from source to story, with the actions that change its outcome. */
-export default function ItemTrace({ runId, itemId, onClose, onChanged }: { runId: string; itemId: string; onClose: () => void; onChanged?: () => void }) {
+export default function ItemTrace({ runId, itemId, onClose, onChanged, review }: { runId: string; itemId: string; onClose: () => void; onChanged?: () => void; review?: StoryReviewValue }) {
   const [trace, setTrace] = useState<Trace | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -46,11 +48,14 @@ export default function ItemTrace({ runId, itemId, onClose, onChanged }: { runId
       <dl className="trace">
         <dt>Item</dt><dd>{item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a> : item.title}{item.event_date && ` · ${item.event_date}`}</dd>
         <dt>Outcome</dt><dd><span className={`item-status ${item.status}`}>{item.status.replace(/_/g, " ")}</span> at the {item.step} step{item.reason ? `: ${item.reason}` : ""}</dd>
+        {review !== undefined && <><dt>Editor review</dt><dd><StoryReview key={`${item._id}:${review?.at ?? "none"}`} runId={runId} itemId={item._id} review={review} onSaved={() => onChanged?.()} /></dd></>}
         <dt>Source</dt><dd>{trace.source ? <>{trace.source.url ? <a href={trace.source.url} target="_blank" rel="noopener noreferrer">{trace.source.name}</a> : trace.source.name} · {trace.source.reader} · found by {trace.source.found_by.method} ({trace.source.found_by.detail}) · {trace.source.status}{trace.source.inside_area ? " · inside the area" : ""}</> : item.source_name}</dd>
         <dt>Window</dt><dd>{trace.window ?? "—"}</dd>
         <dt>Locality</dt><dd><pre>{item.locality ? show(item.locality) : item.facts?.locality ? show(item.facts.locality) : item.facts?.needs_locality ? "Not checked yet" : "—"}</pre></dd>
         <dt>Merge group</dt><dd>{item.merge_group ?? "—"}{trace.siblings.length > 0 && <ul>{trace.siblings.map((sibling) => <li key={sibling._id}>{sibling.title} <small>· {sibling.source_name} · {sibling.status}</small></li>)}</ul>}</dd>
+        <dt>Replication</dt><dd>{item.replication ? `${item.replication.copies} cop${item.replication.copies === 1 ? "y" : "ies"} passed the checks, from ${item.replication.sources} source${item.replication.sources === 1 ? "" : "s"} and ${item.replication.independent} independent publisher${item.replication.independent === 1 ? "" : "s"}${item.replication.publishers.length ? ` (${item.replication.publishers.join(", ")})` : ""}` : "Not counted (left out before merging, or an older run)"}</dd>
         <dt>Section and rank</dt><dd>{item.section?.replace(/_/g, " ") ?? "—"}{item.rank ? ` · #${item.rank}` : ""}{item.score !== null && item.score !== undefined ? ` · score ${item.score}` : ""}{item.why ? ` · ${item.why}` : ""}</dd>
+        <dt>Pre-ranker</dt><dd>{item.pre_rank ? <>{item.pre_rank.score} of 18 (civic {item.pre_rank.civic}, appeal {item.pre_rank.appeal}, special {item.pre_rank.special}){item.pre_rank.rules.length > 0 && <ul>{item.pre_rank.rules.map((rule) => <li key={rule}><small>{rule}</small></li>)}</ul>}</> : "Not rated (outside the ranked shortlist, or an older run)"}</dd>
         <dt>Source evidence</dt><dd>{item.evidence ? <>
           <p>Text: {item.evidence.text_quality} · extraction: {item.evidence.extraction.replaceAll("_", " ")}. Text volume is not a factual-quality score.</p>
           {item.evidence.extraction_error && <p className="alert">{item.evidence.extraction_error}</p>}

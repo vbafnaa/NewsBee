@@ -10,6 +10,7 @@ import { getArtifacts } from "@/pipeline/storage/artifacts";
 import { getDatabase } from "@/pipeline/storage/mongo";
 import { ensureSourceMapIndexes } from "@/pipeline/sourcemap/store";
 import { ensureItemIndexes } from "@/pipeline/editions/assemble";
+import { ensureStoryReviewIndexes } from "@/pipeline/editions/story-reviews";
 import { ensureTextIndexes } from "@/pipeline/editions/details";
 import { ensureSearchIndexes } from "@/pipeline/search/provider";
 import { ensureDecisionIndexes } from "@/pipeline/trace/decisions";
@@ -22,7 +23,7 @@ let indexes: Promise<void> | null = null;
 export async function pipelineDeps(): Promise<OrchestratorDeps> {
   const settings = infrastructureSettings();
   const db = await getDatabase();
-  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db), ensureVideoProductionIndexes(db)]).then(() => undefined).catch((error) => {
+  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureStoryReviewIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db), ensureVideoProductionIndexes(db)]).then(() => undefined).catch((error) => {
     indexes = null;
     throw error;
   });

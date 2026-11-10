@@ -21,7 +21,7 @@ export const WINDOWS: Record<WindowKind, LookupWindow & { label: string }> = {
   records: { label: "Since last edition, up to 21 days back (filings post late)", back: { since: "last_edition", maxDays: 21 } },
   meeting_previews: { label: "Up to 14 days ahead", ahead: { days: 14 } },
   meeting_outcomes: { label: "Since last edition, up to 35 days back (minutes post late)", back: { since: "last_edition", maxDays: 35 } },
-  events: { label: "Up to 14 days ahead", ahead: { days: 14 } },
+  events: { label: "Up to 30 days ahead", ahead: { days: 30 } },
   obituaries: { label: "Since last edition, up to 14 days back", back: { since: "last_edition", maxDays: 14 } },
   reader_stories: { label: "Up to 14 days since approval", back: { days: 14 } },
   alerts: { label: "Active now", back: { days: 1 } },

@@ -36,7 +36,9 @@ import { currentOptions, limits, relaxedContentAllowed, rulesOff } from "../core
 import { previewContent } from "../email/preview";
 import { sourceType } from "../ranking";
 import { coverageTypes, storyKinds } from "../connectors/registry";
-import { assemble, collectedItems, type PoolSection, type RunOverrides } from "./assemble";
+import { assemble, collectedItems, type PoolSection, type Replication, type RunOverrides } from "./assemble";
+import { preRate, rankAgreement, PRE_RANK_POLICY, type PreRank } from "../ranking/pre-ranker";
+import { sourceAcceptRates } from "./story-reviews";
 import { detailsText, EXTRACTION_POLICY, extractDetails, mergeDetails, saveText, type Details } from "./details";
 import { contentHash, EVIDENCE_POLICY, EvidenceReader, evidenceFor, evidenceText, missingDetails, rankingDescription, selectPassages, supportedFacts } from "./evidence";
 import { SECTIONS, sectionLabel, type SectionId } from "../sourcemap/sections";
@@ -61,7 +63,7 @@ export const STORY_DETAILS = "story_details";
 export const STORY_IMAGES = "story_images";
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; lightModel?: ModelRuntime; settings: Settings; log: Logger; transport?: HttpTransport };
 export type AuthoringInput = { location: LocationProfile; runId: string; today: string; window: [string, string]; sourceResults: SourceResult[]; overrides?: RunOverrides };
-export type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule"; rank: number; section_rank: number; source_id: string; source_type: string; tier: string; section: SectionId; explain?: unknown };
+export type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule" | "pre_ranker"; rank: number; section_rank: number; source_id: string; source_type: string; tier: string; section: SectionId; explain?: unknown };
 type EditionPayload = { id: string; location_id: string; location_name: string; window_start: string; window_end: string; published_at: number; headline: string; intro: string; items: Array<Record<string, any>>; coverage: string[]; corrections: Array<{ story_id: string; reason: string; created_at: number }> };
 type EntryDoc = { id: string; edition_id: string; position: number; disposition: string; story_id: string; source_id: string; source_type: string; tier: string; section: SectionId; event_date: string; result: Record<string, any> };
 export type DraftDoc = {
@@ -152,7 +154,22 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
     }
     if (Object.keys(evidenceFields).length) await drafts(deps.db).updateOne({ id: draftId }, { $set: evidenceFields });
     const rankingModel = deps.rankingModel ?? deps.model;
-    const [rated, report] = await ranking.rank(rankingModel, storyCandidates(active));
+    // The local pre-ranker rates every story in shadow, and stands in where the model gives no rating.
+    const rates = await sourceAcceptRates(deps.db, draft.location_id).catch(() => undefined);
+    const preRanks = new Map<string, PreRank>(active.map((story) => [story.id, preRate({
+      id: story.id, title: story.title, description: story.description, kind: story.kind, tier: String(story.facts.tier ?? "local"),
+      source_tier: story.facts.source_tier as string | undefined, section: sectionId, first_date: story.first.event_date, occurrences: story.scheduledOccurrences.length,
+      independent: (story.facts.replication as Replication | undefined)?.independent ?? 1, update_of: story.facts.update_of, source_id: story.first.source_id,
+    }, { today: draft.today, sourceRates: rates })]));
+    const [rated, report] = await ranking.rank(rankingModel, storyCandidates(active), (candidate) => preRanks.get(candidate.id)!.rating);
+    const modelRated = rated.filter((item) => item.rated_by === "model");
+    const preTop = new Set([...modelRated].sort((a, b) => preRanks.get(b.id)!.score - preRanks.get(a.id)!.score).slice(0, 5).map((item) => item.id));
+    report.pre_ranker = {
+      policy: PRE_RANK_POLICY, filled_in: rated.length - modelRated.length, compared: modelRated.length,
+      agreement: rankAgreement(modelRated.map((item) => item.score), modelRated.map((item) => preRanks.get(item.id)!.score)),
+      mean_abs_diff: modelRated.length ? Math.round(modelRated.reduce((sum, item) => sum + Math.abs(item.score - preRanks.get(item.id)!.score), 0) / modelRated.length * 100) / 100 : null,
+      top5_overlap: modelRated.length ? [...modelRated].sort((a, b) => b.score - a.score).slice(0, 5).filter((item) => preTop.has(item.id)).length : null,
+    };
     // The rule order (locality strength, freshness, detail, source record, pins) breaks ties and lifts pinned sources.
     const ruleScores = new Map((await collectedItems(deps.db).find({ run_id: draft.run_id, section: sectionId as SectionId, status: "pooled" }, { projection: { story_id: 1, score: 1 } }).toArray()).map((item) => [item.story_id, Number(item.score ?? 0)]));
     for (const item of rated) item.score = Math.round((item.score + 0.5 * (ruleScores.get(item.id) ?? 0)) * 1000) / 1000;
@@ -169,7 +186,12 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
     });
     await drafts(deps.db).updateOne({ id: draftId }, { $set: { [`section_rankings.${sectionId}`]: ranked, [`ranking.${sectionId}`]: { ...report, refinement, provider: rankingModel.provider, model: rankingModel.model } } });
     for (const candidate of ranked) {
-      await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: candidate.id }, { $set: { rank: candidate.section_rank, score: (candidate.explain as { final?: number } | undefined)?.final ?? candidate.score, why: `${candidate.rating.category.replace(/_/g, " ")}; civic ${candidate.rating.civic}, appeal ${candidate.rating.appeal}, special ${candidate.rating.special}` } });
+      const pre = preRanks.get(candidate.id);
+      await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: candidate.id }, { $set: {
+        rank: candidate.section_rank, score: (candidate.explain as { final?: number } | undefined)?.final ?? candidate.score,
+        why: `${candidate.rated_by === "pre_ranker" ? "pre-ranker (no model rating): " : ""}${candidate.rating.category.replace(/_/g, " ")}; civic ${candidate.rating.civic}, appeal ${candidate.rating.appeal}, special ${candidate.rating.special}`,
+        ...(pre ? { pre_rank: { score: pre.score, civic: pre.rating.civic, appeal: pre.rating.appeal, special: pre.rating.special, rules: pre.rules, policy: pre.policy } } : {}),
+      } });
     }
   }
   const refreshed = (await drafts(deps.db).findOne({ id: draftId }))!;
