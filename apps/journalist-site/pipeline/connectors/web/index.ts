@@ -36,7 +36,21 @@ import { WEB_WINDOW, effectiveWindow } from "../../sourcemap/windows";
 import { saveText, type Details } from "../../editions/details";
 import { jinaRead } from "./jina";
 import { normalizeStoryImage } from "../../../../../shared/story-image";
-import { articleMeta, venuePoint, calendarLinks, trumbaFeeds, FEED_GUESSES, imagesAllowed, mainText, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
+import { articleMeta, venuePoint, calendarLinks, trumbaFeeds, FEED_GUESSES, imagesAllowed, mainText, meta, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type PageArticle, type RightsAction } from "./page";
+import { siteNameProblem, urlDate } from "../../editions/title-rules";
+
+/**
+ * The site's own name, from the page that opened it: `og:site_name`, else the part of the title
+ * after its last separator ("Story | Columbia Basin Herald"), else a home page's whole title.
+ */
+export function siteNameOf(html: string, pageUrl: string): string | null {
+  const named = meta(html, "og:site_name", "application-name").trim();
+  if (named) return named;
+  const title = (plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "", 200) ?? "").replace(/\.$/, "").trim();
+  const suffix = /\s[|–—-]\s([^|–—-]{3,80})$/.exec(title)?.[1]?.trim();
+  if (suffix) return suffix;
+  try { return new URL(pageUrl).pathname.replace(/\/+$/, "") === "" && title ? title : null; } catch { return null; }
+}
 
 export const SOURCE_BUDGET_MS = 120_000;
 export const SOURCE_REQUEST_TIMEOUT_MS = 15_000;
@@ -128,11 +142,15 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   const seen = new Set<string>();
   let siteRights: RightsAction = "ok";
   let siteImages = true;
+  /** The site's own name: a page titled only this is a page of the site, not a story. */
+  let siteName: string | null = null;
+  // A source saved as one dated story is named after that story, so its name says nothing about the site.
+  const sourceName = urlDate(site) ? null : task.name;
   let verifiedVenue: { url: string; point: Point; km: number; inside: boolean } | null = null;
 
   const base = (title: string, url: string, day: string, extra: Partial<CollectedEvent>): CollectedEvent => ({
     source_event_id: sha256(url + (extra.event_date ?? day)).slice(0, 16), title, event_date: day, schedule_text: publishedText(day),
-    venue: task.name, room: null, source_url: url, description: null, kind, source_name: task.name,
+    venue: task.name, room: null, source_url: url, description: null, kind, source_name: task.name, ...(siteName ? { site_name: siteName } : {}),
     ...(local ? { tier: "local", locality: { method: "local_site", matches: [site] } } : { needs_locality: true }),
     section_hint: params.section ?? null, ...extra,
   } as CollectedEvent);
@@ -215,6 +233,9 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
       if (readable?.date) article = withDate(readable.date, readable.title, readable.text ?? body);
       if ((body?.length ?? 0) < THIN_TEXT && readable?.text && readable.text.length > (body?.length ?? 0)) body = readable.text;
     }
+    // A date written in the story's own address (/2026/nov/08/) is the publisher's.
+    const addressed = undated() && article ? urlDate(page.url) : null;
+    if (addressed) article = withDate(addressed, null, body);
     if (undated() && action === "ok" && (body?.length ?? 0) < THIN_TEXT && extractions < MAX_EXTRACTIONS) {
       extractions += 1;
       const read = await jinaRead(context.transport, context.settings.integrations?.jinaKey, page.url);
@@ -235,6 +256,10 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     if (!article) return;
     const day = article.date;
     const id = sha256(page.url).slice(0, 16);
+    // A page titled only with the site's name, or a listing heading, is a page of the site (its home
+    // page, a section front), not a story: it is left out with that reason rather than "undated".
+    const navigation = siteNameProblem(article.title, [siteName, siteNameOf(html, page.url), sourceName]);
+    if (navigation) { drop(id, article.title, page.url, navigation, day); return; }
     if (!day) { drop(id, article.title, page.url, "undated"); return; }
     if (day < since || day > context.today) { drop(id, article.title, page.url, "outside_window", day); return; }
     const text = action === "ok" ? body : null;
@@ -255,6 +280,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   const homeHtml = decode(home.body);
   siteRights = rightsAction(pageRights(home.headers, homeHtml));
   siteImages = imagesAllowed(pageRights(home.headers, homeHtml));
+  siteName = siteNameOf(homeHtml, home.url);
   if (siteRights === "skip") {
     record.status = "blocked";
     record.detail = "Site opts out of reuse (noindex, noai or a mining reservation)";
@@ -282,6 +308,16 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     }
   }
   const feeds = [params.feed_url, ...advertisedFeeds(homeHtml, home.url)].map((url) => httpsLink(url)).filter((url): url is string => Boolean(url));
+  // A source saved as one dated story (/news/2026/nov/08/...) stands for its publisher: the story page
+  // rarely links the feed, so ask the site's home page for it before falling back to page links.
+  if (!feeds.length && !params.feed_url && urlDate(home.url)) {
+    const root = await fetchWithin(context, budget, record, new URL("/", home.url).toString(), ACCEPT_HTML);
+    if (root) {
+      const rootHtml = decode(root.body);
+      siteName = siteName ?? siteNameOf(rootHtml, root.url);
+      feeds.push(...advertisedFeeds(rootHtml, root.url).map((url) => httpsLink(url)).filter((url): url is string => Boolean(url)));
+    }
+  }
   let feedRead = false;
   for (const url of [...new Set(feeds)].slice(0, 2)) {
     const feed = await fetchWithin(context, budget, record, url, ACCEPT_FEED);

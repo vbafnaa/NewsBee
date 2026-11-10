@@ -165,7 +165,9 @@ items; source summary counters alone do not enable authoring.
     and **Compare runs**. Its decisions follow the run's mode: normal runs update the saved source
     review, while isolated test runs keep their decisions with the run.
   - **Collect stories** runs the saved source map: **Collect stories** with only the edition options, the run's stages,
-    the item explorer with **item trace** and its actions (force in or out, pin, extract details and
+    **Stories pulled in this run** (every item, one row per link with its copies in a dropdown; what each
+    source found, kept and left out and why; Accept or Reject per story with a reason; CSV export), the
+    **item trace** and its actions (force in or out, pin, extract details and
     rewrite, collect a source again, reassemble), held stories, reader stories and family notices,
     and edition run history. Runs collect source items, deduplicate and rank story candidates, write
     stories and produce the edition front page and email; this tab also provides run inspection and
@@ -1068,7 +1070,7 @@ has lives in the source map.
 
 | Reader | Reads | Window |
 | --- | --- | --- |
-| `web` | Any website on the map: its feed (on record, advertised or a common path), iCal links, schema.org events and articles, recent sitemap pages, story-like links, and each page's title, date, description, authors, image and main text; 10 requests per site; full text kept 30 days (`item_texts`) for details and locality, never republished | News since the last edition (up to 14 days); events 14 days ahead |
+| `web` | Any website on the map: its feed (on record, advertised or a common path), iCal links, schema.org events and articles, recent sitemap pages, story-like links, and each page's title, date, description, authors, image and main text; 10 requests per site; full text kept 30 days (`item_texts`) for details and locality, never republished | News since the last edition (up to 14 days); events 30 days ahead |
 | `opendata` | Any Socrata dataset on the map, columns read from the dataset's own metadata; police and fire calls grouped into incidents (same block within 2 hours) with plain-word call types, block-level places, unit counts and outcomes, notable ones as stories and the rest in one summary; permits (block level), licence applications, inspections; 311 as one summary. Personal columns are never selected | Calls 7 days; records 21 days |
 | `newssearch` | GDELT DOC API, three topic searches per place (`NEWSBEE_NEWS_SEARCH`, default `gdelt`; `llm` adds web-grounded model search, on the first configured model that can search the web). Google News RSS is not used (its robots.txt disallows `/rss`) | Since the last edition (up to 14 days) |
 | `library`, `meetings`, `hazards`, `trending`, `homesafety`, `housing`, `justice`, `community`, `remembrance` | Library calendars, Legistar/CivicClerk meetings, NWS and USGS, Wikipedia and Bluesky, EPA water records, Census permits, Justice Department releases, reader stories, family notices | Per reader |
@@ -1090,8 +1092,8 @@ opt-outs, `noai`, `nosnippet`, terms and the never-read list are the Access grou
 relaxed local run may skip; crawl delays and the private-address check never are.
 
 **Lookup windows and repeats.** News-like sources read since the last edition, capped per
-type (news 14 days, calls 7, records 21, meeting minutes 35); events and meeting previews
-read 14 days ahead. The ledger (`published_stories`) records each printed story's merge
+type (news 14 days, calls 7, records 21, meeting minutes 35); website events read 30 days
+ahead and meeting previews 14 days ahead. The ledger (`published_stories`) records each printed story's merge
 group and distinctive tokens: a later copy with nothing new is dropped, one with 2+ new
 facts is printed as an update; events print at most twice (first mention, then a "this
 week" reminder) and a recurring event at most once every 4 weeks.
@@ -1122,6 +1124,38 @@ Within each section, after rules order it and the model rates its top 30 (`model
 
 Each story's breakdown appears in run inspection's **Why ranked** column.
 `NEWSBEE_RANKING=classic` uses the model ratings alone.
+
+**Rule order and replication.** Before the model, each section is ordered by the rule score in
+`editions/assemble.ts`. Independent confirmation counts, not copies: when copies of one story are
+merged, each item keeps its `replication` (copies that passed the checks, their sources, and the
+independent publishers among them: distinct sites, reposts not counted), and the score adds
+1.5 × log2(independent publishers), at most 3. Many sources on one site count as one publisher.
+
+**Local pre-ranker** (`ranking/pre-ranker.ts`). A free rating with written-down rules, on the model's
+scale (civic, appeal and special, each 0-3; 0-18 in all). It rates every story in shadow, saved on the
+item as `pre_rank` with the rules that applied, and the section's ranking report records its agreement
+with the model (rank correlation, mean difference and overlap of the top five). Where the model gives
+no rating (a failed reply, or the run's model budget or Gemini's limits ran out) the pre-ranker's rating
+stands in, marked `pre_ranker`; a provider rate limit still waits and retries. Its appeal rule learns
+from editors: a source whose stories editors accepted 70% of the time or more (5 or more reviewed)
+gains a point, and one at 30% or less loses one.
+
+**Title rules** (`editions/title-rules.ts`). A title that is only the site's name, or a navigation
+heading such as "Latest stories", is a page of the site, not a story; a publisher's headline under four
+words is too thin. Both are left out with the reason (step `title`, or the reader's own reason for site
+pages), so they stay visible in **Stories pulled**. Events, meetings, obituaries, results and record
+digests are exempt from the word count. The web reader also takes a story's date from its address
+(`/2026/nov/08/`) when the page has none, and a source saved as one dated story reads its publisher's
+feed from the site's home page.
+
+**Story review and export.** On **Stories pulled** or the item trace, an editor accepts or rejects a
+story with a reason code (`editions/story-reasons.ts`, prefixed S so they never mix with source codes)
+and a note; Other needs a note. One decision covers every copy of the link in that run. Decisions are
+kept in `story_decisions` (one per run and link, with a snapshot of the story's date, sources, outcome,
+ranking and replication) and every save is appended to `story_reviews`. **Export** gives a CSV for the
+run or for every run at the location: location, run date, export date, story title, link and date,
+section, sources and their sites, copies and independent publishers, outcome and reason, rank, score,
+model rating, pre-rank score, decision, reason code and note, reviewer and time.
 
 `model/voice.ts` sets the writing voice (`NEWSBEE_VOICE`: `plain`, `lively` (default) or
 `bold`). Court cases, deaths, safety notices, weather alerts and earthquakes are always
