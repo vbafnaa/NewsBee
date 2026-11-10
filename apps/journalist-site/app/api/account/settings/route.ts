@@ -1,8 +1,8 @@
 import { getMongoDatabase } from "@/auth";
 import { adminGuard, currentPrincipal } from "@/lib/admin-session";
 import { CredentialValidationError, effectiveCredentialProfile, revokeCredentialProfile, saveCredentialProfile, type CredentialInput } from "@/pipeline/accounts/credentials";
-import { profileMetadata } from "@/pipeline/accounts/execution";
-import { ownerEmail } from "@/pipeline/accounts/identity";
+import { deploymentCredentialDefaults, profileMetadata } from "@/pipeline/accounts/execution";
+import { isConfiguredOwner, ownerEmail } from "@/pipeline/accounts/identity";
 import { logger } from "@/pipeline/core/log";
 import { safeError } from "@/pipeline/core/redaction";
 
@@ -21,7 +21,12 @@ async function handle(request: Request) {
       await saveCredentialProfile(db, principal, input);
     }
     if (request.method === "DELETE") await revokeCredentialProfile(db, principal);
-    return Response.json({ principal, ownerConfigured: Boolean(ownerEmail()), profile: profileMetadata(principal, await effectiveCredentialProfile(db, principal)) }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json({
+      principal,
+      ownerConfigured: Boolean(ownerEmail()),
+      profile: profileMetadata(principal, await effectiveCredentialProfile(db, principal)),
+      ...(isConfiguredOwner(principal) ? { environmentDefaults: deploymentCredentialDefaults() } : {}),
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     if (!(error instanceof CredentialValidationError)) logger("account-settings").error("settings_unavailable", { error: safeError(error) });
     return Response.json({ detail: error instanceof CredentialValidationError ? error.message : "Account settings are unavailable; check server credential provisioning" }, { status: error instanceof CredentialValidationError ? 400 : 503 });

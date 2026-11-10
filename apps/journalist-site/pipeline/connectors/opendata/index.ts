@@ -4,7 +4,7 @@
  * on the city's, county's or state's portal. The dataset's columns are read from its own
  * metadata at collection time, so no column names are configured.
  *
- *   - Datasets with a location column are filtered on the server to a circle around the
+ *   - Datasets with a location column are filtered on the server to a bounding box around the
  *     location, then each row is checked against the area (a point outside is decisive).
  *   - Statewide datasets without coordinates are filtered by city name; for a neighbourhood
  *     their addresses are geocoded (bounded) and kept only inside its area.
@@ -22,7 +22,7 @@ import { newestFirst } from "../web";
 import type { CollectedEvent, Connector, ConnectorContext, DroppedItem, SourceResult, SourceTask } from "../types";
 import { rangesFor } from "../../core/time";
 import { datasetWindow, effectiveWindow } from "../../sourcemap/windows";
-import { censusGeocoder, locationCenter, townName, TOWN_RADIUS_KM } from "../locality";
+import { areaBox, censusGeocoder, locationCenter, townName, TOWN_RADIUS_KM } from "../locality";
 import { distanceKm, withinArea, type Point } from "../../../../../shared/geography";
 import type { Details } from "../../editions/details";
 import { counts, groupIncidents, mapLink, notable, plainCall, tidyCode, toBlock, units, type Call } from "./safety";
@@ -36,6 +36,7 @@ export const TOPIC_SECTION: Record<Topic, string> = { police: "safety", fire: "s
 const PERSONAL = /(applicant|owner|licensee_?name|contact|phone|email|mail|signee|officer|agent|principal|ssn|birth|ubi|person|first_?name|last_?name|victim|suspect|arrestee|subject|driver|dob|^name$|contractor_?name)/i;
 const DATE_TYPES = new Set(["calendar_date", "floating_timestamp", "fixed_timestamp", "date"]);
 const ROW_LIMIT = 1000;
+const MAX_DATA_PAGES = 3;
 const MAX_ITEMS = 25;
 const GEOCODE_BUDGET = 15;
 
@@ -133,27 +134,44 @@ export async function readDataset(task: SourceTask, context: ConnectorContext, r
   const { center, area } = locationCenter(context.location);
   const town = townName(context.location);
   const place = context.location.community?.name ?? town;
-  const where = [`${map.date} >= '${since}T00:00:00'`];
-  const radiusKm = area?.radius_km ?? (area ? 4 : TOWN_RADIUS_KM);
-  const geoColumn = map.point;
-  if (params.filter !== "city" && geoColumn && center) where.push(`within_circle(${geoColumn}, ${center[1]}, ${center[0]}, ${Math.round(radiusKm * 1000)})`);
-  else if (map.city) where.push(`upper(${map.city}) = '${town.toUpperCase().replace(/'/g, "''")}'`);
+  const where = [`${map.date} >= '${since}T00:00:00'`, `${map.date} < '${addDays(context.today, 1)}T00:00:00'`];
+  const geographic = datasetGeography(map, context.location, params.filter);
+  if (geographic) where.push(geographic);
   else if (!center) throw new SourceUnavailable("failed", "Location has no coordinates and the dataset has no city column");
   const selected = [...new Set(Object.values(map).filter((value): value is string => Boolean(value)))];
-  const query = new URLSearchParams({ $select: selected.join(","), $where: where.join(" AND "), $order: `${map.date} DESC`, $limit: String(ROW_LIMIT) });
-  const url = `https://${params.domain}/resource/${params.dataset}.json?${query.toString()}`;
+  const query = new URLSearchParams({ $select: [":id as newsbee_row_id", ...selected].join(","), $where: where.join(" AND "), $order: `${map.date} DESC, :id DESC`, $limit: String(ROW_LIMIT) });
+  const endpoint = `https://${params.domain}/resource/${params.dataset}.json`;
   record.feed_kind = "socrata";
-  record.feed_url = url;
+  record.feed_url = `${endpoint}?${query}`;
   record.website = `https://${params.domain}/d/${params.dataset}`;
-  let rows: Array<Record<string, unknown>>;
-  try { rows = await fetchJson<Array<Record<string, unknown>>>(context, url); }
-  catch (error) {
-    // Some location columns don't support within_circle; fall back to filtering locally.
-    if (!(error instanceof SourceUnavailable) || params.filter === "city") throw error;
-    const fallback = new URLSearchParams({ $select: selected.join(","), $where: where[0], $order: `${map.date} DESC`, $limit: String(ROW_LIMIT) });
-    rows = await fetchJson<Array<Record<string, unknown>>>(context, `https://${params.domain}/resource/${params.dataset}.json?${fallback.toString()}`);
+  record.query_since = since;
+  record.geographic_filter = geographic;
+  const rows: Array<Record<string, unknown>> = [];
+  let pages = 0;
+  for (; pages < MAX_DATA_PAGES; pages++) {
+    if (context.deadline && Date.now() >= context.deadline) { record.status = "partial"; record.out_of_time = true; break; }
+    query.set("$offset", String(pages * ROW_LIMIT));
+    let batch: Array<Record<string, unknown>>;
+    const url = `${endpoint}?${query}`;
+    record.pages_checked.push(url);
+    try { batch = await fetchJson<Array<Record<string, unknown>>>(context, url); }
+    catch (error) {
+      if (pages > 0) { record.status = "partial"; record.page_error = error instanceof Error ? error.message : String(error); break; }
+      // Retry only an unsupported spatial query, not authentication/rate-limit/server failures.
+      if (pages || !(error instanceof SourceUnavailable) || !error.message.includes("HTTP 400") || !geographic?.startsWith("within_box")) throw error;
+      query.set("$where", where.slice(0, 2).join(" AND "));
+      record.geographic_fallback = "server rejected geometry; bounded rows filtered locally";
+      const fallbackUrl = `${endpoint}?${query}`;
+      record.pages_checked.push(fallbackUrl);
+      batch = await fetchJson<Array<Record<string, unknown>>>(context, fallbackUrl);
+    }
+    if (!Array.isArray(batch)) throw new SourceUnavailable("failed", "Dataset did not return rows");
+    rows.push(...batch);
+    if (batch.length < ROW_LIMIT) { pages++; break; }
+    if (pages === MAX_DATA_PAGES - 1) { record.status = "partial"; record.row_limit_reached = true; }
   }
-  if (!Array.isArray(rows)) throw new SourceUnavailable("failed", "Dataset did not return rows");
+  record.data_pages = pages;
+  record.rows_retrieved = rows.length;
 
   // Locality for every row: a point inside is local, a point outside is dropped.
   const geocoder = censusGeocoder(context.fetcher, context.db);
@@ -181,7 +199,7 @@ export async function readDataset(task: SourceTask, context: ConnectorContext, r
   const events: CollectedEvent[] = [];
   const drop = (row: Record<string, unknown>, title: string, reason: string) => {
     const day = dayOf(str(row[map.date!]));
-    dropped.push({ source_event_id: sha256(JSON.stringify(row)).slice(0, 16), title, url: record.website, reason, event_date: day });
+    dropped.push({ source_event_id: sha256(String(row.newsbee_row_id ?? JSON.stringify(row))).slice(0, 16), title, url: record.website, reason, event_date: day });
   };
 
   if (topic === "police" || topic === "fire") {
@@ -193,7 +211,7 @@ export async function readDataset(task: SourceTask, context: ConnectorContext, r
       if (located.ok === null) { drop(row, plainCall(raw), "no_location"); continue; }
       const value = str(row[map.date!]);
       calls.push({
-        id: sha256(JSON.stringify(row)).slice(0, 16), at: new Date(`${value.slice(0, 19)}Z`), raw: tidyCode(raw), what: plainCall(raw),
+        id: sha256(String(row.newsbee_row_id ?? JSON.stringify(row))).slice(0, 16), at: new Date(`${value.slice(0, 19)}Z`), raw: tidyCode(raw), what: plainCall(raw),
         block: map.address ? toBlock(str(row[map.address])) : "", outcome: map.outcome ? tidyCode(str(row[map.outcome])) : "",
         priority: map.priority ? str(row[map.priority]) : "", area: map.area ? `${map.area.replace(/_/g, " ")} ${str(row[map.area])}`.trim() : "",
         lat: located.point ? located.point[1] : null, lon: located.point ? located.point[0] : null, units: map.units ? Number(row[map.units]) || 1 : 1,
@@ -290,7 +308,7 @@ export async function readDataset(task: SourceTask, context: ConnectorContext, r
       ].filter(Boolean).join(" ");
       const point = located.point;
       events.push({
-        source_event_id: sha256(JSON.stringify(row)).slice(0, 16), title: title.slice(0, 200), event_date: day, schedule_text: dayText(day), venue: where || place, room: null,
+        source_event_id: sha256(String(row.newsbee_row_id ?? JSON.stringify(row))).slice(0, 16), title: title.slice(0, 200), event_date: day, schedule_text: dayText(day), venue: where || place, room: null,
         source_url: record.website!, description: sentences, kind: TOPIC_KIND[topic], tier: "local", section_id: TOPIC_SECTION[topic], source_name: agency,
         locality: { method: located.how, matches: [where || place] }, ...(point ? { coordinates: point } : {}),
         details: {
@@ -301,7 +319,18 @@ export async function readDataset(task: SourceTask, context: ConnectorContext, r
       } as CollectedEvent);
     }
   }
-  record.detail = `${rows.length} rows since ${since}; ${events.length} items kept, ${dropped.length} left out`;
+  record.detail = `${rows.length} rows since ${since}; ${events.length} items kept, ${dropped.length} left out${record.status === "partial" ? "; incomplete: request or row budget reached" : ""}`;
   return events;
 }
 
+
+/** Server-side bounding box reduces citywide reads; exact boundary checks still run on every row. */
+export function datasetGeography(map: ColumnMap, location: ConnectorContext["location"], filter?: string): string | null {
+  const { center, area } = locationCenter(location);
+  if (filter !== "city" && center) {
+    const [west, south, east, north] = areaBox(area, center);
+    if (map.point) return `within_box(${map.point}, ${north}, ${west}, ${south}, ${east})`;
+    if (map.lat && map.lon) return `${map.lat} between ${south} and ${north} AND ${map.lon} between ${west} and ${east}`;
+  }
+  return map.city ? `upper(${map.city}) = '${townName(location).toUpperCase().replace(/'/g, "''")}'` : null;
+}

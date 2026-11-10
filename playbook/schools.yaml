@@ -14,7 +14,7 @@ prefer:
   - consumers: [agent]
     from: skills/map-sources/SKILL.md
     rules:
-      - { id: schools.prefer.school_pages, text: School pages. }
+      - { id: schools.prefer.school_pages, text: "District, school board and school pages, and PTA sites." }
   - consumers: [manual]
     from: apps/journalist-site/pipeline/discovery/methods.ts
     rules:
@@ -35,8 +35,8 @@ search_playbook:
   - consumers: [agent, google, non_google]
     from: apps/journalist-site/pipeline/discovery/topics.ts
     rules:
-      - { id: schools.general.school_calendars, stage: general, order: 1, pattern: '"{place}" school (calendar OR announcements OR events)' }
-      - { id: schools.general.school_groups, stage: general, order: 2, pattern: '"{place}" (PTA OR PTSA) newsletter' }
+      - { id: schools.general.school_calendars, stage: general, order: 0, pattern: '"{place}" school (calendar OR announcements OR events)' }
+      - { id: schools.general.school_groups, stage: general, order: 1, pattern: '"{place}" (PTA OR PTSA) newsletter' }
       - { id: schools.stage1.board_meetings, stage: stage1, source_type: School boards, pattern: '"{city}" "{state}" "school board" (agenda OR minutes OR meetings)' }
       - { id: schools.stage1.district, stage: stage1, source_type: School districts, pattern: '"{city}" "{state}" ("school district" OR "public schools") calendar' }
       - { id: schools.stage1.board_platforms, stage: stage1, source_type: School boards, pattern: '"{city}" "school district" (boarddocs OR simbli OR "board meetings")' }
@@ -44,10 +44,6 @@ search_playbook:
       - { id: schools.stage1.school_pta, stage: stage1, source_type: Parent groups, for_each: { list: schools, limit: 2 }, pattern: '"{school}" (PTA OR PTSA OR PTO)' }
       - { id: schools.stage2.school_news, stage: stage2, source_type: School sites, for_each: { list: school_hosts, limit: 2 }, pattern: 'site:{host} (board OR PTA OR PTSA OR news) after:{after}' }
       - { id: schools.stage2.board_sweep, stage: stage2, source_type: School boards, pattern: '"{city}" "school board" (voted OR approved OR meeting) after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: schools.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: school board meetings PTA }
 
 page_words:
   - consumers: [manual]
@@ -124,4 +120,9 @@ when_to_stop:
     rules:
       - { id: schools.stop.school_title_max, text: Longest link text read as a school's name., value: 60 }
 
-examples: []
+examples:
+  - consumers: [agent]
+    from: skills/map-sources/SKILL.md
+    rules:
+      - { id: schools.example.board_meetings, verdict: accepted, text: "A school district's board meetings page, or a school's own news or PTA page, that keeps posting." }
+      - { id: schools.example.enrolment_page, verdict: rejected, text: "A static enrolment, staff directory or handbook page: it rarely changes and carries no news." }

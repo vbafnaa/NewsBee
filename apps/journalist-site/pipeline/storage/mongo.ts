@@ -54,4 +54,9 @@ export const COLLECTIONS = {
   heartbeat: "pipeline_heartbeat",
   modelUsage: "model_usage",
   readerDataClears: "reader_data_clears",
+  videoPackages: "video_production_packages",
+  videoJobs: "video_production_jobs",
+  youtubeLocationSettings: "youtube_location_settings",
+  outputChannels: "output_channels",
+  outputChannelEditions: "output_channel_editions",
 } as const;

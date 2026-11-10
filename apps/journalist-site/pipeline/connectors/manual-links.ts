@@ -97,6 +97,9 @@ function checkedUrl(raw: unknown) {
   return url.toString();
 }
 
+/** The longest "How did you find it?" note kept. */
+export const MAX_HOW_FOUND = 300;
+
 /**
  * Validate and save a source link for a location. Returns the source-map record id.
  * `method` is "editor" for portal links and "reader_suggestion" for approved suggestions.
@@ -110,6 +113,8 @@ export async function addSourceLink(db: Db, settings: Settings, locationId: stri
   if (!name || name.length > 120) throw new InvalidSourceLink("Enter a source name of 1-120 characters");
   const url = checkedUrl(values.url);
   const note = typeof values.note === "string" ? values.note.trim().slice(0, 500) : "";
+  // Optional: how the person found it, kept with how it was found so research habits can go into the playbook.
+  const howFound = typeof values.how_found === "string" ? values.how_found.replace(/\s+/g, " ").trim().slice(0, MAX_HOW_FOUND) : "";
   const section: SectionId = isSection(values.section) ? values.section : values.connector === "remembrance" ? "obituaries" : values.connector === "athletics" ? "sports" : values.connector === "justice" ? "safety" : "news";
   if (section === "obituaries" && note.length < 10) throw new InvalidSourceLink("Record how the funeral home or publisher gave permission to republish its notices");
   const location = await getLocation(db, locationId);
@@ -121,12 +126,12 @@ export async function addSourceLink(db: Db, settings: Settings, locationId: stri
   try {
     if (type === "web") {
       const kind = webKind(section, values.connector === "remembrance" ? "obituary" : values.kind);
-      candidate = { source_id: webSourceId(url), name, url, feed_url: null, reader: "web", params: { url, kind, section, inside_area: values.inside_area === true }, section, found_by: { method, detail: method === "editor" ? "Added by an editor in the journalist portal" : "Suggested by a reader, approved by an editor" }, inside_area: values.inside_area === true, note: note || null };
+      candidate = { source_id: webSourceId(url), name, url, feed_url: null, reader: "web", params: { url, kind, section, inside_area: values.inside_area === true }, section, found_by: { method, detail: method === "editor" ? "Added by an editor in the journalist portal" : "Suggested by a reader, approved by an editor", ...(howFound ? { how_found: howFound } : {}) }, inside_area: values.inside_area === true, note: note || null };
       preview = await webConnector.collect({ type: "web", source_id: candidate.source_id, name, params: candidate.params }, context);
     } else if (type === "opendata") {
       const { domain, dataset } = datasetFromUrl(url);
       const topic = (["police", "fire", "permits", "inspections", "licences", "311"].includes(String(values.topic)) ? values.topic : values.connector === "business" ? "licences" : "permits") as Topic;
-      candidate = { source_id: `opendata:${domain}:${dataset}`, name, url: `https://${domain}/d/${dataset}`, reader: "opendata", params: { domain, dataset, topic, filter: values.filter === "city" ? "city" : "radius", agency: name }, section: TOPIC_SECTION[topic] as SectionId, found_by: { method, detail: "Added by an editor in the journalist portal" }, inside_area: false, note: note || null };
+      candidate = { source_id: `opendata:${domain}:${dataset}`, name, url: `https://${domain}/d/${dataset}`, reader: "opendata", params: { domain, dataset, topic, filter: values.filter === "city" ? "city" : "radius", agency: name }, section: TOPIC_SECTION[topic] as SectionId, found_by: { method, detail: "Added by an editor in the journalist portal", ...(howFound ? { how_found: howFound } : {}) }, inside_area: false, note: note || null };
       preview = await openDataConnector.collect({ type: "opendata", source_id: candidate.source_id, name, params: candidate.params }, context);
     } else {
       const created = new Date().toISOString();
@@ -142,7 +147,7 @@ export async function addSourceLink(db: Db, settings: Settings, locationId: stri
         await manualLinks(db).insertOne(link);
       }
       const task = manualTask(link);
-      candidate = { source_id: task.source_id, name, url, reader: type, params: { manual_link_id: link._id }, section: type === "library" ? "events" : "civic", found_by: { method, detail: "Added by an editor in the journalist portal" }, inside_area: type === "library", note: note || null };
+      candidate = { source_id: task.source_id, name, url, reader: type, params: { manual_link_id: link._id }, section: type === "library" ? "events" : "civic", found_by: { method, detail: "Added by an editor in the journalist portal", ...(howFound ? { how_found: howFound } : {}) }, inside_area: type === "library", note: note || null };
     }
   } catch (error) {
     if (error instanceof InvalidSourceLink) throw error;

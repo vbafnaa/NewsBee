@@ -19,6 +19,8 @@ export interface ArtifactStore {
   ensureFolder(parentId: string, name: string): Promise<string>;
   saveJson(parentId: string, name: string, value: unknown): Promise<string>;
   saveText(parentId: string, name: string, value: string, mimeType: string): Promise<string>;
+  saveBinary?(parentId: string, name: string, value: Uint8Array, mimeType: string): Promise<string>;
+  readBinary?(fileId: string): Promise<Uint8Array>;
   readJson<T>(fileId: string): Promise<T>;
   readText(fileId: string): Promise<string>;
   list(parentId: string): Promise<StoredFile[]>;
@@ -60,6 +62,13 @@ export class LocalArtifacts implements ArtifactStore {
     return id;
   }
 
+  async saveBinary(parentId: string, name: string, value: Uint8Array) {
+    const id = `${parentId}/${segment(name)}`;
+    await mkdir(this.resolve(parentId), { recursive: true });
+    await writeFile(this.resolve(id), value);
+    return id;
+  }
+
   async saveJson(parentId: string, name: string, value: unknown) {
     return this.saveText(parentId, name, `${JSON.stringify(value, null, 2)}\n`);
   }
@@ -70,6 +79,14 @@ export class LocalArtifacts implements ArtifactStore {
 
   async readText(fileId: string) {
     return readFile(this.resolve(fileId), "utf8");
+  }
+
+  async readBinary(fileId: string) {
+    await this.checkRegularPath(fileId, false);
+    if ((await lstat(this.resolve(fileId))).size > 100 * 1024 * 1024) {
+      throw new Error("Video file exceeds the 100 MB YouTube upload limit");
+    }
+    return readFile(this.resolve(fileId));
   }
 
   async list(parentId: string) {
@@ -136,7 +153,7 @@ export function getArtifacts(): ArtifactStore {
 }
 
 /** Folder that holds pipeline run artifacts (not visible to the reader site). */
-export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews" | "logs", ...names: string[]) {
+export async function runFolder(store: ArtifactStore, kind: "sources" | "editions" | "email-previews" | "logs" | "video-production", ...names: string[]) {
   const configuredRoot = process.env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID?.trim() || null;
   if (store.kind === "drive" && !configuredRoot) {
     throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");

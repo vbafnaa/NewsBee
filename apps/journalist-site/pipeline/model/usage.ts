@@ -57,9 +57,21 @@ export type ProviderUsage = {
   warnings: string[];
 };
 
+/** One model a person or a run used, and how much. */
+export type ModelUse = { provider: string; model: string | null; calls: number; failures: number };
+/** Model calls by the person whose keys paid for them: each run runs on its starter's own models. */
+export type PersonUsage = UsageMetrics & { sponsor_id: string; email: string | null; runs: number; models: ModelUse[] };
+/** Which models served a run, whose keys they were on, and what it cost. */
+export type RunUsage = UsageMetrics & {
+  run_id: string; location_id: string | null; location_name: string | null; kind: string | null; status: string | null;
+  started_by: string | null; started_at: number | null; credential_source: string | null; models: ModelUse[];
+};
+
 export type ModelUsageSummary = {
   generated_at: number;
   providers: ProviderUsage[];
+  /** The latest runs in the last 7 days, each with the models that served it. */
+  runs: RunUsage[];
   totals: { last_24h: UsageWindow; last_7d: UsageWindow };
   pricing_configured: boolean;
 };
@@ -97,9 +109,10 @@ function pricingOf(config: ProviderConfig | undefined): ProviderUsage["pricing"]
 }
 
 function configFor(providers: ProviderConfig[], provider: string, model: string | null) {
-  // Gemini records the physical provider name even for the separate light-model config.
+  // A Gemini call records "gemini" as its provider, and a light model records its provider's name, so
+  // match the light config (`<name>_light`) and the provider kind too.
   return providers.find((item) => item.name === provider && (item.model ?? null) === model)
-    ?? providers.find((item) => provider === "gemini" && item.name === "gemini_light" && item.kind === "gemini" && item.model === model);
+    ?? providers.find((item) => (item.name === `${provider}_light` || item.kind === provider) && (item.model ?? null) === model);
 }
 
 export type ModelPrice = { provider: string; model: string; input_per_mtok: number; output_per_mtok: number };
@@ -141,6 +154,10 @@ export type DetailedModelUsage = {
   roles: (UsageMetrics & { role: string })[];
   daily: (UsageMetrics & { day: string })[];
   recent_failures: { at: number; provider: string; model: string | null; role: string; location: string; message: string; status_code: number | null }[];
+  /** By person: whose keys paid for the calls. Calls outside a run (or from before attribution) are left out. */
+  people: PersonUsage[];
+  /** The latest runs in the window, up to 50, each with the models that served it. */
+  runs: RunUsage[];
 };
 type DetailedBucket = Bucket & { measured_calls: number; measured_input: number; measured_output: number };
 type Accumulator = { bucket: DetailedBucket; priced_calls: number; estimated_cost_usd: number | null };
@@ -163,6 +180,80 @@ function metrics(value: Accumulator): UsageMetrics {
     ...windowOf(value.bucket, null), estimated_cost_usd: value.estimated_cost_usd,
     calls_with_tokens: value.bucket.measured_calls, priced_calls: value.priced_calls,
     unpriced_calls: value.bucket.calls - value.priced_calls,
+  };
+}
+
+type RunGroup = DetailedBucket & { _id: { provider: string; model: string | null; sponsor: string | null; run: string | null } };
+type PriceOf = (provider: string, model: string | null) => ProviderUsage["pricing"];
+
+/**
+ * Model calls by person and by run, between `start` and `end` (seconds). Every run uses the models its
+ * starter configured, so different runs (and different people) can show different providers and models.
+ */
+async function usageByPersonAndRun(db: Db, start: number, end: number, priceOf: PriceOf, options: { location?: string; runLimit: number }) {
+  const measured = { $and: [
+    { $isNumber: "$input_tokens" }, { $isNumber: "$output_tokens" },
+    { $gte: ["$input_tokens", 0] }, { $gte: ["$output_tokens", 0] },
+  ] };
+  const groups = await usage(db).aggregate<RunGroup>([
+    { $match: { created_at: { $gte: start, $lte: end }, ...(options.location === UNASSIGNED_USAGE ? { $or: [{ location_id: null }, { location_id: "" }] } : options.location ? { location_id: options.location } : {}) } },
+    { $group: {
+      _id: { provider: "$provider", model: { $ifNull: ["$model", null] }, sponsor: { $ifNull: ["$sponsor_id", null] }, run: { $ifNull: ["$run_id", null] } },
+      calls: { $sum: 1 }, failures: { $sum: { $cond: ["$ok", 0, 1] } },
+      rate_limited: { $sum: { $cond: ["$rate_limited", 1, 0] } },
+      input_tokens: { $sum: { $ifNull: ["$input_tokens", 0] } }, output_tokens: { $sum: { $ifNull: ["$output_tokens", 0] } },
+      calls_without_tokens: { $sum: { $cond: [measured, 0, 1] } },
+      measured_calls: { $sum: { $cond: [measured, 1, 0] } },
+      measured_input: { $sum: { $cond: [measured, "$input_tokens", 0] } },
+      measured_output: { $sum: { $cond: [measured, "$output_tokens", 0] } },
+      duration_ms: { $sum: "$duration_ms" },
+      last: { $max: "$created_at" },
+    } },
+  ]).toArray() as Array<RunGroup & { last: number }>;
+  const runIds = [...new Set(groups.map((group) => group._id.run).filter((id): id is string => Boolean(id)))];
+  const runDocs = runIds.length ? await db.collection<{ _id: string; location_id?: string; location_name?: string; kind?: string; status?: string; created_at?: number; trigger?: { by?: string }; execution?: { sponsorId?: string; sponsorEmail?: string; source?: string } }>("pipeline_runs")
+    .find({ _id: { $in: runIds } }, { projection: { location_id: 1, location_name: 1, kind: 1, status: 1, created_at: 1, trigger: 1, execution: 1 } }).toArray().catch(() => []) : [];
+  const runInfo = new Map(runDocs.map((run) => [run._id, run]));
+  const sponsorIds = [...new Set(groups.map((group) => group._id.sponsor).filter((id): id is string => Boolean(id)))];
+  const admins = sponsorIds.length ? await db.collection<{ principalId?: string; email?: string }>("journalist_admins").find({ principalId: { $in: sponsorIds } }, { projection: { principalId: 1, email: 1 } }).toArray().catch(() => []) : [];
+  const emails = new Map<string, string>(admins.flatMap((row) => row.principalId && row.email ? [[row.principalId, row.email] as [string, string]] : []));
+  for (const run of runDocs) if (run.execution?.sponsorId && run.execution.sponsorEmail && !emails.has(run.execution.sponsorId)) emails.set(run.execution.sponsorId, run.execution.sponsorEmail);
+
+  const addModel = (list: Map<string, ModelUse>, group: RunGroup) => {
+    const key = JSON.stringify([group._id.provider, group._id.model]);
+    const row = list.get(key) ?? { provider: group._id.provider, model: group._id.model, calls: 0, failures: 0 };
+    row.calls += group.calls; row.failures += group.failures; list.set(key, row);
+  };
+  const sorted = (list: Map<string, ModelUse>) => [...list.values()].sort((a, b) => b.calls - a.calls);
+  const people = new Map<string, { value: Accumulator; models: Map<string, ModelUse>; runs: Set<string> }>();
+  const runs = new Map<string, { value: Accumulator; models: Map<string, ModelUse>; sponsor: string | null; last: number }>();
+  for (const group of groups) {
+    const pricing = priceOf(group._id.provider, group._id.model);
+    const { sponsor, run } = group._id;
+    // A run's sponsor is its starter; older usage without one is attributed through the run.
+    const who = sponsor ?? (run ? runInfo.get(run)?.execution?.sponsorId ?? null : null);
+    if (who) {
+      const person = people.get(who) ?? { value: accumulator(), models: new Map(), runs: new Set<string>() };
+      accumulate(person.value, group, pricing); addModel(person.models, group); if (run) person.runs.add(run);
+      people.set(who, person);
+    }
+    if (run) {
+      const row = runs.get(run) ?? { value: accumulator(), models: new Map(), sponsor: who, last: 0 };
+      accumulate(row.value, group, pricing); addModel(row.models, group); row.last = Math.max(row.last, group.last);
+      runs.set(run, row);
+    }
+  }
+  return {
+    people: [...people].map(([id, row]) => ({ sponsor_id: id, email: emails.get(id) ?? null, runs: row.runs.size, models: sorted(row.models), ...metrics(row.value) }))
+      .sort((a, b) => b.calls - a.calls || (a.email ?? a.sponsor_id).localeCompare(b.email ?? b.sponsor_id)),
+    runs: [...runs].sort((a, b) => (runInfo.get(b[0])?.created_at ?? b[1].last) - (runInfo.get(a[0])?.created_at ?? a[1].last)).slice(0, options.runLimit).map(([id, row]) => {
+      const info = runInfo.get(id);
+      return {
+        run_id: id, location_id: info?.location_id ?? null, location_name: info?.location_name ?? null, kind: info?.kind ?? (info ? "edition" : null), status: info?.status ?? null,
+        started_by: info?.execution?.sponsorEmail ?? (row.sponsor ? emails.get(row.sponsor) ?? null : null) ?? info?.trigger?.by ?? null,
+        started_at: info?.created_at ?? null, credential_source: info?.execution?.source ?? null, models: sorted(row.models), ...metrics(row.value),
+      };
+    }),
   };
 }
 
@@ -202,6 +293,11 @@ export async function detailedModelUsage(
       ...(options.location === UNASSIGNED_USAGE ? { $or: [{ location_id: null }, { location_id: "" }] } : options.location ? { location_id: options.location } : {}),
     }, { projection: { created_at: 1, provider: 1, model: 1, role: 1, location_id: 1, error: 1, status_code: 1 } }).sort({ created_at: -1 }).limit(20).toArray(),
   ]);
+  const priceFor: PriceOf = (provider, model) => {
+    const override = options.prices?.find((price) => price.provider === provider && price.model === model);
+    return override ? { input_per_mtok: override.input_per_mtok, output_per_mtok: override.output_per_mtok } : pricingOf(configFor(providers, provider, model));
+  };
+  const byPersonAndRun = await usageByPersonAndRun(db, start, end, priceFor, { location: options.location, runLimit: 50 });
   const names = new Map(places.map((place) => [place._id, place.name]));
   const locationIds = new Set([...names.keys(), ...groups.map((group) => group._id.location ?? UNASSIGNED_USAGE)]);
   const locationName = (id: string) => id === UNASSIGNED_USAGE ? "Unassigned / historical" : names.get(id) ?? id;
@@ -241,6 +337,8 @@ export async function detailedModelUsage(
       at: row.created_at, provider: row.provider, model: row.model, role: row.role,
       location: locationName(row.location_id || UNASSIGNED_USAGE), message: row.error ?? "Provider attempt failed", status_code: row.status_code,
     })),
+    people: byPersonAndRun.people,
+    runs: byPersonAndRun.runs,
   };
 }
 
@@ -331,9 +429,11 @@ export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now
     });
   }
   result.sort((a, b) => b.last_7d.calls - a.last_7d.calls || a.provider.localeCompare(b.provider));
+  const recent = await usageByPersonAndRun(db, weekStart, current, (provider, model) => pricingOf(configFor(providers, provider, model)), { runLimit: 10 });
   return {
     generated_at: current,
     providers: result,
+    runs: recent.runs,
     totals: {
       last_24h: { ...windowOf(totalsDay, null), estimated_cost_usd: totalDayCost },
       last_7d: { ...windowOf(totalsWeek, null), estimated_cost_usd: totalWeekCost },

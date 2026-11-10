@@ -8,7 +8,7 @@ import type { Settings } from "../core/config";
 import { COLLECTIONS } from "../storage/mongo";
 import { isParallelKind, type Job } from "./jobs";
 import { expireOverdueRuns } from "./diagnostics";
-import { stageKinds, workableRuns } from "./runs";
+import { openRunIds, stageKinds, workableRuns } from "./runs";
 
 const now = () => Date.now() / 1000;
 /** Housekeeping runs at most this often, however many jobs are moving. */
@@ -78,5 +78,16 @@ export async function maintain(deps: { db: Db; settings: Settings }, current = n
     throw error;
   }
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
+  await cancelLeftoverJobs(deps.db, current);
   return true;
+}
+
+/** Jobs left waiting by a run that has ended will never run; left alone, they look like stalled work. */
+export async function cancelLeftoverJobs(db: Db, current = now()) {
+  const waiting: string[] = await db.collection<Job>(COLLECTIONS.jobs).distinct("run_id", { status: "pending" });
+  if (!waiting.length) return 0;
+  const open = new Set(await openRunIds(db));
+  const ended = waiting.filter((runId) => !open.has(runId));
+  if (!ended.length) return 0;
+  return (await db.collection<Job>(COLLECTIONS.jobs).updateMany({ run_id: { $in: ended }, status: "pending" }, { $set: { status: "cancelled", completed_at: current, error: "The run had already ended" } })).modifiedCount;
 }

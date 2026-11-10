@@ -14,6 +14,7 @@ import { ensureTextIndexes } from "@/pipeline/editions/details";
 import { ensureSearchIndexes } from "@/pipeline/search/provider";
 import { ensureDecisionIndexes } from "@/pipeline/trace/decisions";
 import { ensureApiCallIndexes } from "@/pipeline/trace/gateway";
+import { ensureVideoProductionIndexes } from "@/pipeline/video-production";
 
 let indexes: Promise<void> | null = null;
 
@@ -21,7 +22,7 @@ let indexes: Promise<void> | null = null;
 export async function pipelineDeps(): Promise<OrchestratorDeps> {
   const settings = infrastructureSettings();
   const db = await getDatabase();
-  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db)]).then(() => undefined).catch((error) => {
+  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db), ensureVideoProductionIndexes(db)]).then(() => undefined).catch((error) => {
     indexes = null;
     throw error;
   });

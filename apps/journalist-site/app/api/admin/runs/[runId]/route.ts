@@ -42,6 +42,7 @@ export async function GET(request: Request, context: Context) {
       reasons: entry.disposition === "held"
         ? (entry.result?.validation_errors?.length ? entry.result.validation_errors : entry.result?.error ? [entry.result.error] : [])
         : [],
+      image: entry.result?.image_pipeline ?? (entry.disposition === "held" ? { status: "not_applicable", reason: "story_held" } : { status: "pending", reason: "image_stage_not_run" }),
     }));
     return {
       run,

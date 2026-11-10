@@ -26,7 +26,7 @@ function statusFor(error: unknown) {
   if (error instanceof InvalidSourceLink) return 422;
   if (error instanceof RunOptionsError) return 400;
   const message = error instanceof Error ? error.message : "";
-  if (/^(Location is not onboarded|Census place is not available|No published|No active withdrawal|Unknown run|Unknown source)/.test(message)) return 404;
+  if (/^(Location is not onboarded|Census place is not available|No published|No active withdrawal|Unknown run|Unknown source|Unknown video request)/.test(message)) return 404;
   if (/^(A public correction reason|Withdrawal already exists|Invalid )/.test(message)) return 400;
   return 500;
 }

@@ -1,0 +1,9 @@
+---
+import StoryIllustration from "./StoryIllustration.astro";
+import StoryPhoto from "./StoryPhoto.astro";
+import type { ArticlePhoto } from "../../lib/edition-view";
+import type { EditorialIllustration } from "../../../../../shared/editorial-illustrations";
+interface Props { illustration?: EditorialIllustration; photo?: ArticlePhoto; lead?: boolean }
+const { illustration, photo, lead = false } = Astro.props;
+---
+{illustration ? <StoryIllustration illustration={illustration} lead={lead} /> : photo ? <StoryPhoto photo={photo} lead={lead} /> : null}

@@ -36,7 +36,7 @@ export default function RunItems({ locationId }: { locationId: string }) {
     try { await adminApi(`runs/${encodeURIComponent(runId)}/actions`, { method: "POST", body: JSON.stringify({ action: "reassemble" }) }); window.dispatchEvent(new Event("newsbee:runs-changed")); await load(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); }
   }
-  if (!runId) return <section className="panel"><h2>Items</h2><p>Inspect a run to see every item it collected and why each was kept or left out.</p></section>;
+  if (!runId) return <section className="panel"><h2>Items</h2><p>Inspect a run to see its items.</p></section>;
   return <section className="panel" id="run-items">
     <div className="section-heading"><div><h2>Items in this run</h2><p>{page ? `${page.total} items · ${Object.entries(page.counts).map(([key, value]) => `${value} ${key.replace(/_/g, " ")}`).join(" · ")}` : "Loading…"}</p></div>
       <button type="button" className="secondary" disabled={busy || !policy?.permissions[runId]?.canSpend} onClick={() => void reassemble()}>Reassemble and rewrite</button></div>

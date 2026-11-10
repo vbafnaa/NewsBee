@@ -14,7 +14,7 @@ prefer:
   - consumers: [agent]
     from: skills/map-sources/SKILL.md
     rules:
-      - { id: real_estate.prefer.records, text: "County assessor and recorder records, and city permit pages." }
+      - { id: real_estate.prefer.records, text: "County assessor and recorder records, and city permit and planning pages, if their items can be filtered to the place." }
   - consumers: [manual]
     from: apps/journalist-site/pipeline/discovery/methods.ts
     rules:
@@ -50,13 +50,9 @@ search_playbook:
       - { id: real_estate.stage1.assessor, stage: stage1, source_type: County records, pattern: '"{county} County" "{city}" (assessor OR recorder) ("sales data" OR "parcel search" OR "recorded documents")' }
       - { id: real_estate.stage1.sales_files, stage: stage1, source_type: County records, pattern: '"{county} County" "{city}" "real property" sales filetype:csv' }
       - { id: real_estate.stage1.permits, stage: stage1, source_type: City permits, pattern: 'site:{city_domain} ("building permit" OR "land use") (notices OR issued OR applications)' }
-      - { id: real_estate.general.hidden_documents, stage: general, order: 12, source_type: City documents, pattern: 'site:{city_domain} filetype:pdf "{place}" "land use"' }
+      - { id: real_estate.general.hidden_documents, stage: general, order: 9, source_type: City documents, pattern: 'site:{city_domain} filetype:pdf "{place}" "land use"' }
       - { id: real_estate.stage2.sales_sweep, stage: stage2, source_type: Home sales, pattern: '"{place}" ("sold for" OR "sale price" OR "recently sold") after:{after}' }
       - { id: real_estate.stage2.permit_sweep, stage: stage2, source_type: City permits, pattern: 'site:{city_domain} "{place}" ("permit issued" OR "land use notice") after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: real_estate.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: property records sales }
 
 page_words:
   - consumers: [manual]

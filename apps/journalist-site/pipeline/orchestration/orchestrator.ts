@@ -4,7 +4,13 @@
  * A map run writes the source map, and stops there:
  *
  *   trigger -> discover, one job per discovery method -> agent_round, when the agent maps
+ *           (every route's finds go through the shared Model check as they are saved)
+ *           -> review_map: the final review flags likely duplicates and each new source's strength
  *           -> finish_map: each source's working address is saved -> mapped
+ *
+ * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, on by default) a map run instead reads every fixed
+ * reader into its own store (`source_run_<run id>`), saves no addresses and leaves the source map,
+ * the location's map version and so every edition as they were.
  *
  * An edition run only reads the map. Its link to a map run is the saved map, nothing else: a
  * saved address that fails is flagged for the next map run rather than searched for again.
@@ -14,15 +20,18 @@
  *           -> awaiting_authoring -> editor starts author_start (assemble: locality,
  *              merging, ledger, sections) -> author_rank, one job per section
  *           -> author_story, one story per job (details, floor, write, validate, retry once, or hold)
- *           -> awaiting_finish -> editor starts author_finish -> publish to the reader folder
+ *           -> image_story, one job per validated story (rights, source/venue discovery, validation, attachment)
+ *           -> stock_story, optional second pass for eligible activities without a primary photo
+ *           -> awaiting_finish -> editor starts author_finish -> built
+ *           -> editor publishes the built edition -> reader folder
  *
  * Every step is one bounded job, so it fits one function call and survives restarts. Sources
  * and discovery methods run side by side, up to the worker slots; each source has a time budget
  * and so does collection, which then moves on to writing with what it has.
  *
  * Under autopilot (the default run mode) the two "awaiting" stops advance on their own, so an
- * edition goes from one click to print. On a map run, the agentic flow adds the `dork` method and
- * agent_round jobs. On an edition run, it adds topic sweeps during collection; everything from
+ * edition goes from one click to print. On a map run, the agentic flow adds the mapping agent
+ * after the fixed pipeline, as agent_round jobs of up to 200 seconds each. On an edition run, it adds topic sweeps during collection; everything from
  * author_start onward is the same code for both flows.
  */
 import { randomUUID } from "node:crypto";
@@ -30,26 +39,33 @@ import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
 import { fetchTransport, type HttpTransport } from "../core/http";
 import { logger, withLogSink, type LogRecord, type Logger } from "../core/log";
-import { currentOptions, resolveRunOptions, runContext, withRunContext, LEGACY_OPTIONS } from "../core/run-options";
+import { currentOptions, resolveRunOptions, runContext, sourceRunsIsolated, withRunContext, LEGACY_OPTIONS } from "../core/run-options";
 import { ingestWindow, localToday, lookupRanges } from "../core/time";
-import { agentRound } from "../agent/map-sources";
+import { agentJob } from "../agent/map-sources";
 import { publicOnlyTransport, publicSourceTransport } from "../connectors/public-http";
 import { logSourceCollected, logSourceMap } from "./source-log";
 import { sweepTasks } from "../connectors/sweep";
 import { recordDecision, recordDecisions } from "../trace/decisions";
 import { externalTransport } from "../trace/gateway";
 import { Fetcher } from "../connectors/fetcher";
+import { areaPlaces, locationCenter } from "../connectors/locality";
 import { sourceResult } from "../connectors/types";
 import { CONNECTORS, windowOf } from "../connectors/registry";
 import { collectManualLink, manualLinks, migrateManualLinks } from "../connectors/manual-links";
 import { locationHealth, recordSourceHealth } from "./source-health";
 import type { CollectedSource, Connector, ConnectorContext, SourceTask, SourceType } from "../connectors/types";
 import { getLocation, listLocations } from "../communities/locations";
-import { finishAuthoring, authorNextStory, rankSection, startAuthoring } from "../editions/authoring";
-import { collectedItems, type CollectedItem } from "../editions/assemble";
+import { finishAuthoring, authorNextStory, rankSection, startAuthoring, storyImage, storyImages } from "../editions/authoring";
+import { IMAGE_POLICY, processStoryImage, processStockImage, failStoryImage } from "../images/pipeline";
+import { processEditedImage } from "../images/editor";
+import { processIllustrationStory } from "../images/illustrations";
+import { stockTopic } from "../images/stock";
+import { collectedItems, ensureItemIndexes, type CollectedItem } from "../editions/assemble";
 import { writeEditionMap } from "../editions/edition-map";
-import { categoryCoverage, collectableSources, hostOf, recordSourceRun, sourceMap, taskFor } from "../sourcemap/store";
+import { categoryCoverage, collectableSources, hostOf, recordSourceRun, sourceMap, reviewedLocationSources, taskFor } from "../sourcemap/store";
+import { applyReviewedContentPolicy, reviewAllowsCollection, reviewedSourceTransport } from "../sourcemap/source-review";
 import { dueMethods, runMethod } from "../discovery/run";
+import { finalReview } from "../discovery/final-review";
 import { METHODS } from "../discovery/methods";
 import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError, withModelUsageContext } from "../model/runtime";
@@ -57,12 +73,10 @@ import { runFolder, type ArtifactStore } from "../storage/artifacts";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
 import { acquireRunLease, acquireSlot, appendJobLog, cancelClaimedJob, cancelPending, cancelRunJobs, claim, complete, enqueue, enqueueMany, fail, isParallelKind, LostLeaseError, markLogsArchived, MONGO_LOG, recoverExpired, releaseLease, renewJob, runJobs, setJobLog, unarchivedLogs, type Job, type JobKind, type Lease } from "./jobs";
-import { publishToReader } from "./publish";
-import { recordPublished } from "../editions/ledger";
 import { expireOverdueRuns } from "./diagnostics";
 import { ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, collectionCandidateCount, RunConflict, failRun, getRun, markNotReached, newRun, lastEditionDay, planRun, runs, setRun, stageKinds, awaitAuthoringWhenReady, updateSource, workableRuns, type PipelineRun } from "./runs";
 import type { Principal } from "../accounts/identity";
-import { assertGlobalAdmission, assertSponsor, authorizePaidAction, blockExecution, consumeApproval, prepareBinding } from "../accounts/execution";
+import { assertGlobalAdmission, assertSponsor, authorizePaidAction, blockExecution, prepareBinding } from "../accounts/execution";
 import { ExecutionBlocked } from "../core/execution-errors";
 import { safeError } from "../core/redaction";
 
@@ -146,10 +160,11 @@ export async function startMapRun(deps: OrchestratorDeps, locationId: string, tr
     return { run: existing, started: false };
   }
   const today = localToday(location.state);
-  // The dork method belongs to the agentic flow. Results are cached by query, so a repeat doesn't pay twice.
-  const due = rebuild ? METHODS.map((definition) => definition.method) : await dueMethods(deps.db, location.id);
-  const methods = [...new Set([...due, ...(options.flow === "agentic" ? ["dork"] : [])])].filter((method) => method !== "dork" || options.flow === "agentic");
-  const run: PipelineRun = { ...newRun(location, trigger, today, ingestWindow(today), [], null, methods, options), kind: "map", status: "mapping" };
+  // A test-mode run starts from scratch: every fixed reader, into its own store.
+  const isolated = sourceRunsIsolated();
+  // Operator search is one of the agent's tools, not a method of its own.
+  const methods = rebuild || isolated ? METHODS.map((definition) => definition.method) : await dueMethods(deps.db, location.id);
+  const run: PipelineRun = { ...newRun(location, trigger, today, ingestWindow(today), [], null, methods, options), kind: "map", status: "mapping", ...(isolated ? { isolated: true } : {}) };
   if (deps.principal) run.execution = await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "map", mapChoices);
   run.stage_transitions = [{ status: "mapping", by: trigger.by, at: run.created_at }];
   const inserted = await insertRun(deps, run, locationId);
@@ -172,7 +187,6 @@ async function insertRun(deps: OrchestratorDeps, run: PipelineRun, locationId: s
     throw error;
   }
   try {
-    await consumeApproval(deps.db, run);
     // Removal may have started while this request was preparing the run.
     await getLocation(deps.db, locationId);
   } catch (error) {
@@ -197,10 +211,14 @@ async function afterDiscovery(deps: OrchestratorDeps, run: PipelineRun) {
   else await afterMapping(deps, run);
 }
 
-/** A map run saves its addresses; a run from before the split goes on to collect. */
+/** A map run gets its final review, then saves its addresses; a run from before the split goes on to collect. */
 async function afterMapping(deps: OrchestratorDeps, run: PipelineRun) {
-  if (run.kind === "map") await enqueue(deps.db, { kind: "finish_map", run_id: run._id, location_id: run.location_id, payload: { step: 0 }, dedupe_key: `finish_map:${run._id}:0` });
+  if (run.kind === "map") await enqueue(deps.db, { kind: "review_map", run_id: run._id, location_id: run.location_id, payload: { step: 0 }, dedupe_key: `review_map:${run._id}:0` });
   else await enqueue(deps.db, { kind: "plan_sources", run_id: run._id, location_id: run.location_id, dedupe_key: `plan:${run._id}` });
+}
+
+async function afterReview(deps: OrchestratorDeps, run: PipelineRun) {
+  await enqueue(deps.db, { kind: "finish_map", run_id: run._id, location_id: run.location_id, payload: { step: 0 }, dedupe_key: `finish_map:${run._id}:0` });
 }
 
 /** Save a finished stage's job logs as one file. A failure leaves them in MongoDB. */
@@ -281,9 +299,13 @@ export async function resumeRun(deps: OrchestratorDeps, runId: string, by: strin
   const finished = (job: Job) => ["completed", "failed", "cancelled"].includes(job.status);
   if (run.status === "mapping") {
     const finishing = jobs.filter((job) => job.kind === "finish_map").sort((a, b) => Number(b.payload.step) - Number(a.payload.step))[0];
+    const reviewing = jobs.filter((job) => job.kind === "review_map").sort((a, b) => Number(b.payload.step) - Number(a.payload.step) || Number(b.payload.pass ?? 0) - Number(a.payload.pass ?? 0))[0];
     const agentJobs = jobs.filter((job) => job.kind === "agent_round").sort((a, b) => Number(b.payload.round) - Number(a.payload.round));
     if (finishing) {
       if (finishing.status === "completed" && finishing.result?.more) await queue("finish_map", { step: Number(finishing.payload.step) + 1 }, `finish_map:${runId}:${Number(finishing.payload.step) + 1}`);
+    } else if (reviewing) {
+      if (reviewing.status === "completed" && reviewing.result?.more) { const next = nextReview(runId, reviewing.payload, { step: Number(reviewing.result.step), judging: Number(reviewing.result.judging ?? 0) }); await queue("review_map", next.payload, next.dedupe_key); }
+      else if (finished(reviewing)) await afterReview(deps, run);
     } else if (agentJobs.length) {
       if (finished(agentJobs[0])) await afterMapping(deps, run);
     } else {
@@ -311,7 +333,7 @@ export async function resumeRun(deps: OrchestratorDeps, runId: string, by: strin
       const stories = jobs.filter((job) => job.kind === "author_story").sort((a, b) => Number(b.payload.step) - Number(a.payload.step));
       const last = stories[0];
       if (last?.status === "completed" && last.result?.more === false) {
-        await awaitFinish(deps, runId);
+        await queueStoryImages(deps, run);
       } else if (!last || last.status === "completed") {
         const step = last ? Number(last.payload.step) + 1 : 0;
         await queue("author_story", { draft_id: run.draft_id, step }, `author_story:${runId}:${step}`);
@@ -339,6 +361,83 @@ async function awaitFinish(deps: OrchestratorDeps, runId: string) {
   }
 }
 
+/** Resume from persisted validated entries; a repeated enqueue never repeats completed work. */
+async function queueStoryImages(deps: OrchestratorDeps, run: PipelineRun) {
+  if (!run.draft_id || run.status !== "authoring") return;
+  const draft = await deps.db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id, status: "ready" });
+  if (!draft) return;
+  const revision = Number(draft.image_revision ?? 0);
+  const entries = await deps.db.collection(COLLECTIONS.editionEntries).find({ edition_id: run.draft_id, disposition: "checks_passed" }, { projection: { story_id: 1 } }).toArray();
+  for (const entry of entries) await enqueue(deps.db, { kind: "image_story", run_id: run._id, location_id: run.location_id,
+    payload: { draft_id: run.draft_id, story_id: entry.story_id, revision, policy: IMAGE_POLICY }, dedupe_key: `image_story:${run._id}:${entry.story_id}:${IMAGE_POLICY}:${revision}` });
+  await finishImagesWhenReady(deps, run._id);
+}
+
+async function finishImagesWhenReady(deps: OrchestratorDeps, runId: string, finishingJob?: string) {
+  const run = await getRun(deps.db, runId);
+  const draft = run?.draft_id && await deps.db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id, status: "ready" });
+  if (!draft) return;
+  const jobs = (await runJobs(deps.db, runId)).filter((job) => job.kind === "image_story" && job.payload.policy === IMAGE_POLICY
+    && Number(job.payload.revision ?? 0) === Number(draft.image_revision ?? 0));
+  const entries = await deps.db.collection(COLLECTIONS.editionEntries).find({ edition_id: draft.id, disposition: "checks_passed" }, { projection: { story_id: 1, result: 1 } }).toArray();
+  // A crash halfway through enqueueing must not open the gate after only the known subset finishes.
+  if (!entries.every(entry => jobs.some(job => job.payload.story_id === entry.story_id
+    && (job._id === finishingJob || ["completed", "failed", "cancelled"].includes(job.status))))) return;
+  // Stock is a separate pass, queued only once the entire primary pass has settled.
+  const stockCandidates = run?.options?.image_mode === "illustrated" ? [] : entries;
+  for (const entry of stockCandidates) {
+    const shadowNeedsStock = run?.options?.image_mode === "shadow" && entry.result?.image_pipeline?.shadow_status !== "selected";
+    if (entry.result?.image_pipeline?.status === "selected" && !shadowNeedsStock || !stockTopic(entry.result?.story ?? {})) continue;
+    await enqueue(deps.db, { kind: "stock_story", run_id: runId, location_id: run!.location_id,
+      payload: { draft_id: draft.id, story_id: entry.story_id, revision: Number(draft.image_revision ?? 0), policy: IMAGE_POLICY },
+      dedupe_key: `stock_story:${runId}:${entry.story_id}:${IMAGE_POLICY}:${Number(draft.image_revision ?? 0)}` });
+  }
+  const stocks = (await runJobs(deps.db, runId)).filter(job => job.kind === "stock_story" && job.payload.policy === IMAGE_POLICY
+    && Number(job.payload.revision ?? 0) === Number(draft.image_revision ?? 0));
+  if (stocks.every(job => job._id === finishingJob || ["completed", "failed", "cancelled"].includes(job.status))) await awaitFinish(deps, runId);
+}
+
+async function imageStory(deps: OrchestratorDeps, job: Job) {
+  const draft = await deps.db.collection(COLLECTIONS.editions).findOne({ id: String(job.payload.draft_id), status: "ready" });
+  if (!draft || job.payload.policy !== IMAGE_POLICY || Number(draft.image_revision ?? 0) !== Number(job.payload.revision ?? 0)) return { skipped: true, reason: "draft_changed" };
+  const location = await getLocation(deps.db, job.location_id);
+  const photoDeps = { db: deps.db, transport: deps.transport,
+    sourcePhoto: (story: Parameters<typeof storyImage>[2]) => storyImage(authoringDeps(deps), job.location_id, story),
+    sourcePhotos: (story: Parameters<typeof storyImages>[2]) => storyImages(authoringDeps(deps), job.location_id, story) };
+  const args = [String(job.payload.draft_id), String(job.payload.story_id), location] as const;
+  const mode = currentOptions().image_mode ?? "current";
+  if (mode === "illustrated") {
+    const result = await processIllustrationStory(deps.db, args[0], args[1]);
+    await finishImagesWhenReady(deps, job.run_id, job._id);
+    return result;
+  }
+  let result;
+  if (mode === "agentic") result = await processEditedImage({ ...photoDeps, model: deps.agentModel ?? null }, ...args, job.kind === "stock_story" ? "stock" : "primary", mode);
+  else {
+    result = await (job.kind === "stock_story" ? processStockImage : processStoryImage)(photoDeps, ...args);
+    if (mode === "shadow") await processEditedImage({ ...photoDeps, model: deps.agentModel ?? null }, ...args, job.kind === "stock_story" ? "stock" : "primary", mode);
+  }
+  await finishImagesWhenReady(deps, job.run_id, job._id);
+  return { story_id: result.story_id, status: result.status, reason: result.reason, provider: result.provider };
+}
+
+/** Optional image-only retry before publication; leaves authored text and its checks intact. */
+export async function rerunImageStage(deps: OrchestratorDeps, runId: string, by: string) {
+  const run = await getRun(deps.db, runId);
+  if (!run?.draft_id || run.status !== "awaiting_finish") throw new RunConflict("Retry photo sourcing while the edition is waiting for publication review");
+  await getLocation(deps.db, run.location_id);
+  const draft = await deps.db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id, status: "ready" });
+  if (!draft) throw new RunConflict("The authoring draft is not ready for image sourcing");
+  const at = now();
+  const changed = await runs(deps.db).findOneAndUpdate({ _id: runId, status: "awaiting_finish" }, {
+    $set: { status: "authoring", updated_at: at, stage_started_at: at }, $push: { stage_transitions: { status: "authoring", by, at } },
+  }, { returnDocument: "after" });
+  if (!changed) throw new RunConflict("The edition changed; reload before retrying images");
+  await deps.db.collection(COLLECTIONS.editions).updateOne({ id: run.draft_id, status: "ready" }, { $inc: { image_revision: 1 } });
+  await queueStoryImages(deps, changed);
+  return { run_id: runId, images_queued: true };
+}
+
 /** A source that will not be collected (final failure) still releases the authoring barrier. */
 async function sourceFailed(deps: OrchestratorDeps, job: Job, error: string) {
   const task = job.payload.task as SourceTask;
@@ -356,7 +455,7 @@ async function discoverJob(deps: OrchestratorDeps, job: Job) {
     db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location, today: run.today,
     log: logger(`discovery.${method}`, { run_id: run._id, location_id: run.location_id }), model: deps.discoveryModel ?? deps.lightModel ?? null,
   }, method);
-  await recordDecision({ stage: "source", actor: "rule", subject: `method:${method}`, decision: state.ok ? "ran" : "failed", reason: state.detail, evidence: { found: state.found, added: state.added } });
+  await recordDecision({ stage: "source", actor: "rule", subject: `method:${method}`, decision: state.ok ? "ran" : "failed", reason: state.detail, evidence: { found: state.found, added: state.added, by_category: state.by_category ?? {} } });
   return { method, ok: state.ok, found: state.found, added: state.added, detail: state.detail };
 }
 
@@ -368,20 +467,47 @@ async function planWhenDiscovered(deps: OrchestratorDeps, job: Job) {
   if (run) await afterDiscovery(deps, run);
 }
 
-/** One round of the mapping agent; the job queue is its checkpoint, so it survives the function limit. */
+/** One job of the mapping agent. It saves its progress after every step, so the next job carries on where this one stopped. */
 async function agentRoundJob(deps: OrchestratorDeps, job: Job) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !["mapping", "collecting"].includes(run.status)) return { skipped: true };
   const location = await getLocation(deps.db, run.location_id);
   const transport = externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport));
   const round = Number(job.payload.round ?? 0);
-  const result = await agentRound({
+  const result = await agentJob({
     db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(publicSourceTransport(transport)), location, today: run.today,
-    log: logger("agent", { run_id: run._id, location_id: run.location_id }), model: deps.agentModel ?? deps.discoveryModel ?? null,
+    // The light model by default: the full one runs out of a free tier's day in about 20 calls.
+    log: logger("agent", { run_id: run._id, location_id: run.location_id }), model: deps.agentLightModel ?? deps.agentModel ?? deps.discoveryModel ?? null,
+    // The model check is a separate call on the light model, never the agent's own.
+    judgeModel: deps.discoveryModel ?? deps.lightModel ?? null,
   }, round);
   if (result.next) await enqueue(deps.db, { kind: "agent_round", run_id: run._id, location_id: run.location_id, payload: { round: round + 1 }, dedupe_key: `agent:${run._id}:${round + 1}` });
   else await afterMapping(deps, run);
   return { round, ...result };
+}
+
+/**
+ * The next final-review job: the category it carries on from, or, while sources an earlier job had
+ * no time to judge still wait, another pass at step 0 (each pass its own job).
+ */
+export function nextReview(runId: string, payload: Record<string, unknown>, result: { step: number; judging?: number }) {
+  const pass = result.judging ? Number(payload.pass ?? 0) + 1 : 0;
+  return { payload: { step: result.step, ...(pass ? { pass } : {}) }, dedupe_key: `review_map:${runId}:${result.step}${pass ? `:judge${pass}` : ""}` };
+}
+
+/** The final review of a map run's new sources, one category after another; it only adds flags. */
+async function reviewMap(deps: OrchestratorDeps, job: Job) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "mapping") return { skipped: true };
+  const location = await getLocation(deps.db, run.location_id);
+  const transport = externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport));
+  const result = await finalReview({
+    db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location, today: run.today,
+    log: logger("final_review", { run_id: run._id, location_id: run.location_id }), model: deps.discoveryModel ?? deps.lightModel ?? null,
+  }, run, Number(job.payload.step ?? 0), Date.now() + FINISH_MAP_MS);
+  if (result.more) await enqueue(deps.db, { kind: "review_map", run_id: run._id, location_id: run.location_id, ...nextReview(run._id, job.payload, result) });
+  else await afterReview(deps, run);
+  return result;
 }
 
 /**
@@ -393,7 +519,8 @@ async function finishMap(deps: OrchestratorDeps, job: Job) {
   if (!run || run.status !== "mapping") return { skipped: true };
   const location = await getLocation(deps.db, run.location_id);
   const transport = externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport));
-  const records = await collectableSources(deps.db, run.location_id, run.today, currentOptions().flow);
+  // Proposed sources too, so one a person accepts is ready to read. A test-mode run feeds no edition, so it saves no addresses.
+  const records = run.isolated ? [] : await collectableSources(deps.db, run.location_id, run.today, "agentic", { proposedUntilApproved: false });
   const tasks = records.map(taskFor).filter((task) => LINK_READERS.includes(task.type) && connectorsOf(deps)[task.type]);
   const step = Number(job.payload.step ?? 0);
   const deadline = Date.now() + FINISH_MAP_MS;
@@ -414,11 +541,12 @@ async function finishMap(deps: OrchestratorDeps, job: Job) {
     await enqueue(deps.db, { kind: "finish_map", run_id: run._id, location_id: run.location_id, payload: { step: index }, dedupe_key: `finish_map:${run._id}:${index}` });
     return { more: true, checked: index - step };
   }
-  await deps.db.collection(COLLECTIONS.locations).updateOne({ _id: location.id as never }, { $set: { source_map_at: now() }, $inc: { source_map_version: 1 } });
+  if (!run.isolated) await deps.db.collection(COLLECTIONS.locations).updateOne({ _id: location.id as never }, { $set: { source_map_at: now() }, $inc: { source_map_version: 1 } });
   const at = now();
   const categories = await categoryCoverage(deps.db, location.id);
   for (const row of categories.filter((category) => category.empty)) await recordDecision({ stage: "topic", actor: "rule", subject: `category:${row.category}`, decision: "empty", reason: `No source found for ${row.label}${row.built_in ? ` beyond ${row.built_in} national readers` : ""}` });
   await runs(deps.db).updateOne({ _id: run._id, status: "mapping" }, { $set: { status: "mapped", completed_at: at, updated_at: at, category_coverage: categories }, $push: { stage_transitions: { status: "mapped", by: "worker", at } } });
+  await cancelRunJobs(deps.db, run._id);
   await archiveStageLogs(deps, run._id, "mapping");
   log.info("run_mapped", { run_id: run._id, location_id: run.location_id, addresses: tasks.length, empty_categories: categories.filter((row) => row.empty).map((row) => row.category) });
   return { more: false, checked: index - step };
@@ -428,13 +556,18 @@ async function planSources(deps: OrchestratorDeps, job: Job) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || run.status !== "collecting") return { skipped: true };
   if (run.planned !== false) return { already_planned: true };
+  // Warm the shared geographic snapshot before short-lived reader jobs compete for it.
+  const location = await getLocation(deps.db, run.location_id);
+  const { center, area } = locationCenter(location);
+  await areaPlaces({ db: deps.db, location, today: run.today, transport: externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport)), log }, center, area).catch(() => undefined);
   const flow = currentOptions().flow;
-  const records = await collectableSources(deps.db, run.location_id, run.today, flow);
+  // While proposed-until-approved is on, an edition reads only what a person approved (or a source live before it).
+  const records = await collectableSources(deps.db, run.location_id, run.today, flow, { proposedUntilApproved: deps.settings.proposedUntilApproved !== false });
   const allowed = records.map(taskFor).filter((task) => connectorsOf(deps)[task.type] && (deps.settings.widerSources || !["hazards", "trending"].includes(task.type)));
   // The fastest and most useful first, so collection's time budget cuts the slow, quiet tail.
   const health = new Map((await locationHealth(deps.db, run.location_id)).map((row) => [row.source_id, row]));
   const order = (task: SourceTask) => { const row = health.get(task.source_id); return [row?.consecutive_empty ?? 0, row?.median_seconds ?? TYPICAL_SOURCE_SECONDS]; };
-  const planned = [...allowed].sort((a, b) => order(a)[0] - order(b)[0] || order(a)[1] - order(b)[1]);
+  const planned = [...allowed].sort((a, b) => collectionPriority(a) - collectionPriority(b) || order(a)[0] - order(b)[0] || order(a)[1] - order(b)[1]);
   // A sweep skips sites this run already reads. Topic sweeps run early; tracing needs the items, so it's last.
   const readHosts = [...new Set(planned.map((task) => hostOf(String(task.params?.url ?? ""))).filter(Boolean))];
   const sweeps = flow === "agentic" ? sweepTasks(currentOptions().topics, readHosts) : [];
@@ -444,7 +577,10 @@ async function planSources(deps: OrchestratorDeps, job: Job) {
   const snapshot = all.map((record) => ({
     source_id: record.source_id, name: record.name, url: record.url, reader: record.reader, status: record.status, section: record.section, found_by: record.found_by.method, detail: record.found_by.detail,
     tier: record.source_tier ?? null, topics: record.topics ?? [], collected: collected.has(record.source_id),
-    skip_reason: collected.has(record.source_id) ? null : record.link_only ? "link only: listed, never collected" : record.status === "proposed" ? "proposed: only agentic runs read it" : record.status === "dormant" ? `dormant until ${record.dormant_until ?? "retry"}` : record.status,
+    skip_reason: collected.has(record.source_id) ? null : record.link_only ? "link only: listed, never collected"
+      : !reviewAllowsCollection(record.access_review, run.today) ? "source access review blocks collection"
+        : record.status === "proposed" ? deps.settings.proposedUntilApproved !== false ? "proposed: awaiting editorial acceptance" : "proposed: only agentic runs read it"
+          : record.status === "dormant" ? `dormant until ${record.dormant_until ?? "retry"}` : record.status,
   }));
   const jobIds = new Map(tasks.map((task) => [task.source_id, randomUUID()]));
   if (!(await planRun(deps.db, run._id, tasks, jobIds))) return { already_planned: true };
@@ -477,10 +613,20 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   const task = job.payload.task as SourceTask;
   const run = await getRun(deps.db, job.run_id);
   if (!run || run.status !== "collecting") return { skipped: true };
+  // Recheck persisted decisions: a queued task may predate a source's review.
+  const reviewed = (await reviewedLocationSources(deps.db, run.location_id)).find((source) => source.source_id === task.source_id);
+  const review = reviewed?.access_review;
+  if (!reviewAllowsCollection(review, new Date().toISOString().slice(0, 10))) {
+    throw new PermanentJobError(`Source access review prevents collection: ${review?.reason}`);
+  }
+  if (review) {
+    task.type = review.collection_reader;
+    task.params = { ...task.params, ...review.collection_params, images_allowed: review.images_allowed };
+  }
   const connector = connectorsOf(deps)[task.type];
   if (!connector) throw new PermanentJobError(`No reader for source type ${task.type}`);
   const location = await getLocation(deps.db, run.location_id);
-  const transport = externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport));
+  const transport = reviewedSourceTransport(externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport)), review);
   const sourceLog = logger(`connector.${task.type}`, { source_id: task.source_id, run_id: run._id, location_id: run.location_id });
   const context: ConnectorContext = {
     location,
@@ -502,7 +648,14 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   const manual = typeof manualId === "string" ? await manualLinks(deps.db).findOne({ _id: manualId, location_id: location.id }) : null;
   if (typeof manualId === "string" && !manual) throw new PermanentJobError("Source link was removed before collection");
   const collected: CollectedSource = await withinSourceBudget(task, context, () => manual ? collectManualLink(manual, context) : connector.collect(task, context));
+  applyReviewedContentPolicy(collected.events, review);
   logSourceCollected(location.name, run.source_snapshot?.find((source) => source.source_id === task.source_id)?.section ?? null, task, collected.result, collected.events.length, collected.dropped?.length ?? 0);
+  if (task.type === "web" && collected.result.structured_read) {
+    const learned: Record<string, unknown> = { "params.endpoint_checked_at": new Date().toISOString() };
+    if (typeof collected.result.news_feed_url === "string") learned["params.feed_url"] = collected.result.news_feed_url;
+    if (Array.isArray(collected.result.calendar_feeds)) learned["params.calendar_urls"] = collected.result.calendar_feeds;
+    await sourceMap(deps.db).updateOne({ location_id: run.location_id, source_id: task.source_id }, { $set: learned });
+  }
   const created = now();
   const base = { run_id: run._id, location_id: run.location_id, source_id: task.source_id, source_name: task.name, created_at: created };
   const skipped = [...(runContext()?.overrides ?? [])];
@@ -579,7 +732,8 @@ async function authorStory(deps: OrchestratorDeps, job: Job) {
   if (result.more) {
     await enqueue(deps.db, { kind: "author_story", run_id: job.run_id, location_id: job.location_id, payload: { draft_id: draftId, step: step + 1 }, dedupe_key: `author_story:${job.run_id}:${step + 1}` });
   } else {
-    await awaitFinish(deps, job.run_id);
+    const run = await getRun(deps.db, job.run_id);
+    if (run) await queueStoryImages(deps, run);
   }
   return { step, ...("candidate" in result ? { candidate: result.candidate } : {}), more: result.more };
 }
@@ -607,9 +761,8 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   });
   if (!("edition" in finished) || !finished.edition) throw new Error("Authoring has unwritten stories");
   const { edition, emailPreview, summary } = finished as { edition: { id: string; location_id: string; items: unknown[] }; emailPreview: { subject: string; text: string; html: string }; summary: Record<string, unknown> };
-  const readerFolder = await publishToReader(deps.db, deps.store, edition);
-  // Comparison and exploration runs print, but leave the no-repeat ledger alone.
-  if (currentOptions().count_history) await recordPublished(deps.db, run.today, edition, new Map(Object.entries((finished as { tokens?: Record<string, string[]> }).tokens ?? {})));
+  // Built, not published: nothing reaches the reader, the no-repeat ledger or source counts until a
+  // person publishes it (orchestration/publish.ts).
   const previews = await runFolder(deps.store, "email-previews", run.location_id);
   const editions = await runFolder(deps.store, "editions", run.location_id);
   const sources = await runFolder(deps.store, "sources", run.location_id);
@@ -621,37 +774,40 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
   };
   const held = Number(summary.held ?? 0);
   await setRun(deps.db, run._id, {
-    status: "published",
+    status: "built",
     edition_id: edition.id,
     completed_at: now(),
     published: {
       items: edition.items.length,
       held,
       held_reasons: (summary.held_reasons as Record<string, number>) ?? {},
-      reader_folder: readerFolder,
       artifacts,
     },
   });
+  await cancelRunJobs(deps.db, run._id);
   await archiveStageLogs(deps, run._id, "finishing");
   await writeEditionMap(deps.db, run._id).catch((error) => log.warn("edition_map_failed", { run_id: run._id, error: String(error) }));
-  log.info("run_published", { run_id: run._id, location_id: run.location_id, status: "published", by: "worker", edition_id: edition.id, items: edition.items.length, held, reader_folder: readerFolder });
-  return { edition_id: edition.id, items: edition.items.length, held, reader_folder: readerFolder };
+  log.info("run_built", { run_id: run._id, location_id: run.location_id, status: "built", by: "worker", edition_id: edition.id, items: edition.items.length, held });
+  return { edition_id: edition.id, items: edition.items.length, held };
 }
 
 export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !stageKinds(run).includes(job.kind)) return { skipped: true };
   if (deps.runtimeForRun) deps = await deps.runtimeForRun(run);
-  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, sponsorId: run.execution?.sponsorId, credentialVersion: run.execution?.credentialVersion, options: run.options ?? LEGACY_OPTIONS }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion }, () => {
+  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, sponsorId: run.execution?.sponsorId, credentialVersion: run.execution?.credentialVersion, options: run.options ?? LEGACY_OPTIONS, runKind: run.kind ?? "edition", startedAt: run.created_at, isolated: run.isolated === true }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion }, () => {
     switch (job.kind) {
       case "discover": return discoverJob(deps, job);
       case "agent_round": return agentRoundJob(deps, job);
+      case "review_map": return reviewMap(deps, job);
       case "finish_map": return finishMap(deps, job);
       case "plan_sources": return planSources(deps, job);
       case "collect_source": return collectSource(deps, job);
       case "author_start": return authorStart(deps, job);
       case "author_rank": return authorRank(deps, job);
       case "author_story": return authorStory(deps, job);
+      case "image_story": return imageStory(deps, job);
+      case "stock_story": return imageStory(deps, job);
       case "author_finish": return authorFinish(deps, job);
     }
   }));
@@ -665,6 +821,14 @@ async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
   else if (job.kind === "discover") await planWhenDiscovered(deps, job);
   // A failed agent round keeps what it found; the run goes ahead.
   else if (job.kind === "agent_round") await afterMapping(deps, run);
+  // The final review only adds flags: the run goes ahead without them.
+  else if (job.kind === "review_map") await afterReview(deps, run);
+  else if (job.kind === "image_story" || job.kind === "stock_story") {
+    const draft = await deps.db.collection(COLLECTIONS.editions).findOne({ id: String(job.payload.draft_id), status: "ready" });
+    if (!draft || job.payload.policy !== IMAGE_POLICY || Number(draft.image_revision ?? 0) !== Number(job.payload.revision ?? 0)) return;
+    await failStoryImage(deps.db, String(job.payload.draft_id), String(job.payload.story_id), job.location_id, job.run_id, error, job.kind === "stock_story");
+    await finishImagesWhenReady(deps, job.run_id, job._id);
+  }
   else await failRun(deps.db, job.run_id, `${job.kind} failed: ${error}`);
 }
 
@@ -740,9 +904,24 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
   }
   const started = Date.now();
   const records: LogRecord[] = [];
+  let writing: Promise<void> | null = null;
+  let logError: unknown = null;
+  const flush = async () => {
+    if (writing) return writing;
+    if (!records.length) return;
+    const batch = records.splice(0);
+    writing = appendJobLog(deps.db, job, batch.map((record) => JSON.stringify(record)))
+      .then(() => { logError = null; })
+      .catch((error: unknown) => { records.unshift(...batch); logError = error; })
+      .finally(() => { writing = null; });
+    return writing;
+  };
   let executionFailed = false;
   let executionError: unknown;
+  let logTimer: ReturnType<typeof setInterval> | null = null;
   try {
+    await setJobLog(deps.db, job._id, `${MONGO_LOG}${job._id}`, null);
+    logTimer = setInterval(() => { void flush(); }, 2_000);
     await withLogSink((record) => records.push(record), async () => {
       logger("job").info("job_started", { kind: job.kind, job_id: job._id, run_id: job.run_id, attempt: job.attempts });
       try {
@@ -789,14 +968,15 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
   } catch (error) {
     executionFailed = true;
     executionError = error;
+  } finally {
+    if (logTimer) clearInterval(logTimer);
   }
-  try {
-    await appendJobLog(deps.db, job, records.map((record) => JSON.stringify(record)));
-    if (!job.log_file) await setJobLog(deps.db, job._id, `${MONGO_LOG}${job._id}`, null);
-  } catch (error) {
-    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  await flush();
+  if (records.length) await flush();
+  if (logError) {
+    const detail = logError instanceof Error ? `${logError.name}: ${logError.message}` : String(logError);
     log.error("job_log_upload_failed", { kind: job.kind, job_id: job._id, run_id: job.run_id, error: detail });
-    await setJobLog(deps.db, job._id, job.log_file, detail);
+    await setJobLog(deps.db, job._id, `${MONGO_LOG}${job._id}`, detail);
   }
   if (executionFailed) throw executionError;
   return true;
@@ -819,4 +999,12 @@ export async function tick(deps: OrchestratorDeps, options: { budgetMs?: number;
   await Promise.all(Array.from({ length: deps.settings.collectConcurrency }, worker));
   await deps.db.collection(COLLECTIONS.heartbeat).updateOne({ _id: "scheduler" as never }, { $set: { last_tick_finished_at: now(), last_tick_executed: executed } });
   return { executed };
+}
+
+/** Primary records and direct local feeds get slots before optional broad discovery. */
+export function collectionPriority(task: SourceTask): number {
+  if (["newssearch", "trending", "sweep"].includes(task.type)) return 2;
+  if (["opendata", "meetings", "library", "property"].includes(task.type)) return 0;
+  if (task.type === "web" && ["schools", "events", "community", "civic"].includes(String(task.params?.section))) return 0;
+  return 1;
 }

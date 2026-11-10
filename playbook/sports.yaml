@@ -15,7 +15,7 @@ prefer:
   - consumers: [agent]
     from: skills/map-sources/SKILL.md
     rules:
-      - { id: sports.prefer.athletics_pages, text: School athletics pages. }
+      - { id: sports.prefer.athletics_pages, text: "School athletics pages, and local leagues and clubs. School sports belong here, not under schools." }
   - consumers: [manual]
     from: apps/journalist-site/pipeline/discovery/methods.ts
     rules:
@@ -49,10 +49,6 @@ search_playbook:
       - { id: sports.stage2.school_sweep, stage: stage2, source_type: School sports, for_each: { list: school_hosts, limit: 2 }, pattern: 'site:{host} (score OR recap OR results) after:{after}' }
       - { id: sports.stage2.school_results, stage: stage2, source_type: School sports, for_each: { list: schools, limit: 2 }, pattern: '"{school}" (defeated OR playoff OR "final score") after:{after}' }
       - { id: sports.stage2.team_sweep, stage: stage2, source_type: Local clubs, for_each: { list: team_hosts, limit: 2 }, pattern: 'site:{host} (recap OR result OR schedule) after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: sports.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: high school sports schedule }
 
 page_words:
   - consumers: [manual]

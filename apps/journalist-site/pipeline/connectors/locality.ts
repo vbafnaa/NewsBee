@@ -18,7 +18,7 @@ import type { Db } from "mongodb";
 import { plainText } from "./common";
 import { communityEvidence, mentions, type CommunityEvidence } from "./community";
 import type { Fetcher } from "./fetcher";
-import { publicApiGet } from "./public-api";
+import { queryOverpass, QUERY_SECONDS } from "./overpass";
 import type { ConnectorContext, LocationProfile } from "./types";
 import { distanceKm, withinArea, type Area, type Point } from "../../../../shared/geography";
 
@@ -77,7 +77,7 @@ const GENERIC_LANDMARK = /^(?:the )?(?:park|playground|library|school|community 
 export function overpassQuery(bbox: [number, number, number, number]) {
   const [west, south, east, north] = bbox;
   const box = `${south},${west},${north},${east}`;
-  return `[out:json][timeout:60];(nwr["leisure"~"^(park|playground|stadium|sports_centre|marina)$"]["name"](${box});nwr["amenity"~"^(school|library|community_centre|townhall|marketplace|college|university|theatre|arts_centre|hospital|fire_station)$"]["name"](${box});nwr["tourism"~"^(museum|attraction|zoo|aquarium)$"]["name"](${box}););out tags center 400;`;
+  return `[out:json][timeout:${QUERY_SECONDS}];(nwr["leisure"~"^(park|playground|stadium|sports_centre|marina)$"]["name"](${box});nwr["amenity"~"^(school|library|community_centre|townhall|marketplace|college|university|theatre|arts_centre|hospital|fire_station)$"]["name"](${box});nwr["tourism"~"^(museum|attraction|zoo|aquarium)$"]["name"](${box}););out tags center 400;`;
 }
 export function parseLandmarks(value: unknown, area: Area | null, center: Point): string[] {
   const elements = (value as { elements?: Array<{ tags?: Record<string, string>; lat?: number; lon?: number; center?: { lat: number; lon: number } }> })?.elements ?? [];
@@ -90,6 +90,12 @@ export function parseLandmarks(value: unknown, area: Area | null, center: Point)
     const point: Point = [lon, lat];
     if (area ? !withinArea(area, center, point) : distanceKm(center, point) > TOWN_RADIUS_KM) continue;
     names.add(name);
+    // Aliases come from the same geolocated map object, never a model guess.
+    for (const alias of [element.tags?.alt_name, element.tags?.short_name, element.tags?.official_name].flatMap(value => (value ?? "").split(";"))) {
+      const trimmed = alias.trim();
+      if (trimmed.split(/\s+/).length >= 2 && trimmed.length <= 80 && !GENERIC_LANDMARK.test(trimmed)) names.add(trimmed);
+    }
+    if (/\bplayfield\b/i.test(name)) names.add(name.replace(/\bplayfield\b/i, "Field"));
   }
   return [...names].sort();
 }
@@ -147,28 +153,32 @@ export function townName(location: LocationProfile) {
 
 /** Cached landmarks for the location; looked up once (then every 90 days) and never fatal. */
 type PlacesContext = Pick<ConnectorContext, "db" | "transport" | "location" | "today" | "log">;
-type PlaceCache = { _id: string; names: string[]; sites?: LocalSite[]; checked_at: string; failed?: boolean; failed_at?: string | null };
+type PlaceCache = { _id: string; names: string[]; sites?: LocalSite[]; checked_at: string; failed?: boolean; failed_at?: string | null; refreshing_until?: number; area_key?: string };
 /** Named places and venue websites in the area; looked up once (then every 90 days) and never fatal. */
 export async function areaPlaces(context: PlacesContext, center: Point | null, area: Area | null): Promise<{ names: string[]; sites: LocalSite[] }> {
   if (!center) return { names: [], sites: [] };
   const collection = context.db.collection<PlaceCache>(LANDMARK_CACHE);
   const cached = await collection.findOne({ _id: context.location.id });
+  const area_key = JSON.stringify({ area, center });
+  const sameArea = cached?.area_key === area_key;
   const age = cached ? (Date.parse(`${context.today}T00:00:00Z`) - Date.parse(cached.checked_at)) / 86400000 : Infinity;
   // A failed lookup (Overpass is often busy) is retried after an hour, a good one after 90 days.
   const failedRecently = cached?.failed && cached.failed_at && Date.now() - Date.parse(cached.failed_at) < 3600_000;
-  if (cached && cached.sites && (failedRecently || (!cached.failed && age < LANDMARK_MAX_AGE_DAYS))) return { names: cached.names, sites: cached.sites };
+  if (sameArea && cached && cached.sites && (failedRecently || (!cached.failed && age < LANDMARK_MAX_AGE_DAYS))) return { names: cached.names, sites: cached.sites };
+  // One refresher per location across workers; other readers use the last valid snapshot.
+  const claimed = await collection.findOneAndUpdate({ _id: context.location.id, $or: [{ refreshing_until: { $exists: false } }, { refreshing_until: { $lt: Date.now() } }] },
+    { $set: { refreshing_until: Date.now() + 120_000 } }, { upsert: true, returnDocument: "after" }).catch((error: { code?: number }) => { if (error.code === 11000) return null; throw error; });
+  if (!claimed) return { names: sameArea ? cached?.names ?? [] : [], sites: sameArea ? cached?.sites ?? [] : [] };
   let names: string[] = [], sites: LocalSite[] = [], failed = false;
   try {
-    const url = `${OVERPASS}?data=${encodeURIComponent(overpassQuery(areaBox(area, center)))}`;
-    const body = await publicApiGet(context.transport, url, "application/json", 4 * 1024 * 1024, OVERPASS_TIMEOUT_MS);
-    const parsed = JSON.parse(new TextDecoder().decode(body));
+    const { data: parsed } = await queryOverpass(context.transport, overpassQuery(areaBox(area, center)));
     names = parseLandmarks(parsed, area, center); sites = parseSites(parsed, area, center);
   } catch (error) {
-    failed = true; names = cached?.names ?? []; sites = cached?.sites ?? [];
+    failed = true; names = sameArea ? cached?.names ?? [] : []; sites = sameArea ? cached?.sites ?? [] : [];
     context.log.info("landmarks_unavailable", { location_id: context.location.id, error: error instanceof Error ? error.message : String(error) });
   }
   const checked_at = failed && cached ? cached.checked_at : `${context.today}T00:00:00Z`;
-  await collection.updateOne({ _id: context.location.id }, { $set: { names, sites, checked_at, failed, failed_at: failed ? new Date().toISOString() : null } }, { upsert: true });
+  await collection.updateOne({ _id: context.location.id }, { $set: { names, sites, checked_at, failed, area_key, refreshing_until: 0, failed_at: failed ? new Date().toISOString() : null } }, { upsert: true });
   return { names, sites };
 }
 export async function landmarksFor(context: PlacesContext, center: Point | null, area: Area | null): Promise<string[]> {
@@ -239,4 +249,15 @@ export async function localEvidence(locality: Locality, texts: Array<string | nu
   if (!article) return null;
   const found = quickEvidence(locality, [article]) ?? await addressEvidence(locality, [article]);
   return found ? { method: "article", matches: found.matches, via: found.method } : null;
+}
+
+/** An event's explicitly labeled venue is stronger than the school site's navigation. */
+export async function outsideEventVenue(locality: Locality, description: string | null | undefined): Promise<string | null> {
+  if (!locality.area || !locality.center || !locality.geocoder || locality.budget.geocodes <= 0) return null;
+  const locationText = /\blocation\s*:\s*([^\n]{1,240})/i.exec(description ?? "")?.[1];
+  const address = locationText && extractAddresses(locationText, 1)[0];
+  if (!address) return null;
+  locality.budget.geocodes -= 1;
+  const match = await locality.geocoder.geocode(`${address}, ${locality.town}, ${locality.state}`).catch(() => null);
+  return match && !withinArea(locality.area, locality.center, match.point) ? match.matched || address : null;
 }

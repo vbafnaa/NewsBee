@@ -1,3 +1,4 @@
+import { localityFor, quickEvidence, type Locality, type LocalityEvidence } from "../locality";
 import { Parser } from "htmlparser2";
 import { httpsLink, MAX_FEED_BYTES } from "../common";
 import { advertisedFeeds } from "../feeds";
@@ -16,7 +17,7 @@ const MAX_AGE_DAYS = 7;
 const ATTENTION = /\b(?:trending|viral|attention|public interest|search interest|searches|page views|readership)\b/i;
 const EXCLUDED_HOST = /(?:^|\.)(?:wikipedia\.org|wikimedia\.org|bsky\.app|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com)$/i;
 
-export type TrendContext = { url: string; publisher: string; published_at: string; headline: string; excerpt: string };
+export type TrendContext = { url: string; publisher: string; published_at: string; headline: string; excerpt: string; locality?: LocalityEvidence };
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -51,7 +52,7 @@ export function reportingLinks(bytes: Uint8Array, since: Date) {
 }
 
 /** Require an actual recent local development; attention is discovery metadata, not reporting. */
-export function parseTrendReport(html: string, url: string, topic: string, today: string, place: Region): TrendContext | null {
+export function parseTrendReport(html: string, url: string, topic: string, today: string, place: Region, locality?: Locality | null): TrendContext | null {
   let title = "", publisher = "", published = "", paragraph = "", script = "", scriptType = "";
   const sections: string[] = [];
   let hidden = 0, inParagraph = false, inTitle = false;
@@ -107,12 +108,13 @@ export function parseTrendReport(html: string, url: string, topic: string, today
   if (!Number.isFinite(age) || age < 0 || age > MAX_AGE_DAYS * 86400000 ) return null;
   if (sponsoredItem({ title, link: url, summary: paragraphs.join(" "), categories: sections })) return null;
   const relevant = paragraphs.filter((text) => (!topic || topicMention(`${title} ${text}`, topic))
-    && trendTier(place, title, text) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
+    && (trendTier(place, title, text) || (locality && quickEvidence(locality, [title, text]))) && !sensitive(title, text) && text.length >= 80 && text.length <= 2000);
   // Do not let a sidebar's town name or a popularity-only paragraph establish relevance.
   const evidence = relevant.filter((text) => !ATTENTION.test(text) && !/\b(?:pageviews|daily views|post count)\b/i.test(text));
   if (!title.trim() || ATTENTION.test(title) || !evidence.length) return null;
   return { url, publisher: publisher.trim() || new URL(url).hostname, published_at: published, headline: title.trim(),
-    excerpt: evidence.slice(0, 2).join(" ").slice(0, 4000) };
+    excerpt: evidence.slice(0, 2).join(" ").slice(0, 4000),
+    ...(locality && quickEvidence(locality, [title, ...evidence]) ? { locality: quickEvidence(locality, [title, ...evidence])! } : {}) };
 }
 
 export async function trendReports(context: ConnectorContext, topic: string, place: Region, wikipediaUrl?: string): Promise<TrendContext[]> {
@@ -120,6 +122,7 @@ export async function trendReports(context: ConnectorContext, topic: string, pla
 }
 
 export async function discoverReports(context: ConnectorContext, place: Region, searches: ReportingSearch[], feeds: string[] = [], wikipediaUrl?: string) {
+  const locality = place.community_location && context.db ? await localityFor(context, { geocodes: 0, articles: 0 }).catch(() => null) : null;
   const since = new Date(Date.parse(`${context.today}T00:00:00Z`) - MAX_AGE_DAYS * 86400000);
   const groups: Array<Array<{ url: string; topic: string }>> = [];
   const errors: string[] = [];
@@ -170,7 +173,7 @@ export async function discoverReports(context: ConnectorContext, place: Region, 
     try {
       const [finalUrl, html] = await fetcher.getText(url, MAX_FEED_BYTES, "text/html");
       fetched++;
-      const report = [...topics].map((topic) => parseTrendReport(html, finalUrl, topic, context.today, place)).find((report) => report !== null);
+      const report = [...topics].map((topic) => parseTrendReport(html, finalUrl, topic, context.today, place, locality)).find((report) => report !== null);
       if (report) {
         context.log.info("trend_context_verified", { url: finalUrl, publisher: report.publisher });
         reportsByUrl.set(finalUrl, report);

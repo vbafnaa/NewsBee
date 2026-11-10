@@ -13,7 +13,7 @@ import type { Settings } from "../core/config";
 import { listLocations } from "../communities/locations";
 import { COLLECTIONS } from "../storage/mongo";
 import { modelBudget } from "../model/budget";
-import { runs, ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, type PipelineRun } from "./runs";
+import { openRunIds, runs, ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, type PipelineRun } from "./runs";
 import { sourceMap } from "../sourcemap/store";
 import { discoveryState } from "../discovery/run";
 import { editionMaps } from "../editions/edition-map";
@@ -33,7 +33,7 @@ export async function alerts(db: Db, settings: Settings, locationId?: string): P
   const now = Date.now() / 1000;
   const locations = (await listLocations(db)).filter((location) => !locationId || location.id === locationId);
   const budget = await modelBudget(db, settings);
-  if (!locationId && budget.near) out.push({ id: "model-cap", severity: budget.exhausted ? "failed" : "warning", location_id: null, location_name: null, kind: "model", message: `Model calls today: ${budget.used} of ${budget.cap}${budget.exhausted ? " (cap reached: detail extraction uses rules, discovery waits)" : ""}.`, fix: "Raise NEWSBEE_MODEL_DAILY_CALLS or wait until tomorrow (UTC).", at: now, link: "/model-usage" });
+  if (!locationId && budget.near) out.push({ id: "model-cap", severity: budget.exhausted ? "failed" : "warning", location_id: null, location_name: null, kind: "model", message: `Model calls today: ${budget.used} of ${budget.cap}${budget.exhausted ? " (cap reached: detail extraction uses rules, discovery waits)" : ""}.`, fix: "Raise NEWSBEE_MODEL_DAILY_CALLS or wait until tomorrow (UTC).", at: now, link: "/health?view=usage" });
   for (const location of locations) {
     const name = location.name;
     const base = `/locations/${encodeURIComponent(location.id)}`;
@@ -45,23 +45,23 @@ export async function alerts(db: Db, settings: Settings, locationId?: string): P
     const latest = await runs(db).findOne({ location_id: location.id }, { sort: { created_at: -1 } });
     if (latest && PROCESSING_RUN_STATUSES.includes(latest.status)) {
       const since = latest.stage_started_at ?? latest.updated_at;
-      if (now - since > STUCK_SECONDS) out.push({ id: `stuck:${latest._id}`, severity: "failed", location_id: location.id, location_name: name, kind: "run_stuck", message: `Run has been ${latest.status} for ${Math.round((now - since) / 60)} minutes.`, fix: "Inspect the run; resume the stage or retry the failed job.", at: since, link: `${base}?tab=runs&run=${encodeURIComponent(latest._id)}` });
+      if (now - since > STUCK_SECONDS) out.push({ id: `stuck:${latest._id}`, severity: "failed", location_id: location.id, location_name: name, kind: "run_stuck", message: `Run has been ${latest.status} for ${Math.round((now - since) / 60)} minutes.`, fix: "Inspect the run; resume the stage or retry the failed job.", at: since, link: `${base}?tab=edition&run=${encodeURIComponent(latest._id)}` });
     }
     if (latest) {
       const retried = await db.collection(COLLECTIONS.jobs).find({ run_id: latest._id, attempts: { $gte: 3 }, status: { $in: ["pending", "running", "failed"] } }).limit(5).toArray();
-      for (const job of retried) out.push({ id: `job:${job._id}`, severity: "warning", location_id: location.id, location_name: name, kind: "job_retried", message: `${String(job.kind).replace(/_/g, " ")} retried ${job.attempts} times: ${job.error ?? "no error recorded"}.`, fix: "Open the job log in the run inspector.", at: job.created_at, link: `${base}?tab=runs&run=${encodeURIComponent(latest._id)}` });
+      for (const job of retried) out.push({ id: `job:${job._id}`, severity: "warning", location_id: location.id, location_name: name, kind: "job_retried", message: `${String(job.kind).replace(/_/g, " ")} retried ${job.attempts} times: ${job.error ?? "no error recorded"}.`, fix: "Open the job log in the run inspector.", at: job.created_at, link: `${base}?tab=edition&run=${encodeURIComponent(latest._id)}` });
     }
-    const maps = await editionMaps(db).find({ location_id: location.id, status: "published" }).sort({ published_at: -1 }).limit(2).toArray();
+    const maps = await editionMaps(db).find({ location_id: location.id, status: { $in: ["built", "published"] } }).sort({ published_at: -1 }).limit(2).toArray();
     if (maps[0]) {
       const thin = maps[0].sections.filter((section) => section.sources.reduce((sum, source) => sum + source.items.filter((item) => !["dropped"].includes(item.status)).length, 0) < 3).map((section) => section.label);
       const emptySections = SECTIONS.filter((section) => !maps[0].sections.some((item) => item.id === section.id)).map((section) => section.label);
       const weak = [...thin, ...emptySections].slice(0, 6);
       if (weak.length >= 4) out.push({ id: `sections:${location.id}`, severity: "warning", location_id: location.id, location_name: name, kind: "thin_sections", message: `Fewer than 3 local items in: ${weak.join(", ")}.`, fix: "Refresh the source map, or add source links for these sections.", at: maps[0].published_at, link: `${base}?tab=sources` });
       const now0 = funnelCount(maps[0], "local"), before = funnelCount(maps[1] ?? null, "local");
-      if (now0 !== null && before && now0 < before / 2) out.push({ id: `drop:${location.id}`, severity: "warning", location_id: location.id, location_name: name, kind: "local_drop", message: `Local items fell from ${before} to ${now0} since the previous edition.`, fix: "Check failing or blocked sources in the edition map.", at: maps[0].published_at, link: `${base}?tab=map` });
+      if (now0 !== null && before && now0 < before / 2) out.push({ id: `drop:${location.id}`, severity: "warning", location_id: location.id, location_name: name, kind: "local_drop", message: `Local items fell from ${before} to ${now0} since the previous edition.`, fix: "Check failing or blocked sources in the edition map.", at: maps[0].published_at, link: `${base}?tab=published` });
     }
     const states = await discoveryState(db).find({ location_id: location.id }).toArray();
-    for (const state of states.filter((item) => !item.ok)) out.push({ id: `discovery:${state._id}`, severity: "warning", location_id: location.id, location_name: name, kind: "discovery_failed", message: `Discovery "${state.label}" failed: ${state.detail}.`, fix: "Rerun the method on the Discovery page; it retries on the next run.", at: state.last_run_at, link: "/discovery" });
+    for (const state of states.filter((item) => !item.ok)) out.push({ id: `discovery:${state._id}`, severity: "warning", location_id: location.id, location_name: name, kind: "discovery_failed", message: `Discovery "${state.label}" failed: ${state.detail}.`, fix: "Refresh the source map to run it again.", at: state.last_run_at, link: `${base}?tab=sources#discovery` });
     const newest = states.reduce((max, state) => Math.max(max, state.ok ? state.last_run_at : 0), 0);
     if (!states.length || now - newest > MAP_MAX_AGE_DAYS * 86400) out.push({ id: `stale-map:${location.id}`, severity: "warning", location_id: location.id, location_name: name, kind: "stale_map", message: states.length ? `Source map last refreshed ${Math.round((now - newest) / 86400)} days ago.` : "Source map has not been built yet.", fix: "Start a run, or press Refresh sources.", at: newest || null, link: `${base}?tab=sources` });
   }
@@ -72,17 +72,17 @@ export async function overview(db: Db, settings: Settings) {
   const locations = await listLocations(db);
   const [budget, queue, allAlerts] = await Promise.all([
     modelBudget(db, settings),
-    db.collection(COLLECTIONS.jobs).aggregate<{ _id: string; count: number }>([{ $match: { status: { $in: ["pending", "running"] } } }, { $group: { _id: "$status", count: { $sum: 1 } } }]).toArray(),
+    openRunIds(db).then((open) => db.collection(COLLECTIONS.jobs).aggregate<{ _id: string; count: number }>([{ $match: { status: { $in: ["pending", "running"] }, run_id: { $in: open } } }, { $group: { _id: "$status", count: { $sum: 1 } } }]).toArray()),
     alerts(db, settings),
   ]);
   const failingSources = await sourceMap(db).countDocuments({ status: { $in: ["active", "pinned"] }, "health.consecutive_failures": { $gte: 3 } });
   const dueDiscovery = await discoveryState(db).countDocuments({ next_due_at: { $lte: Date.now() / 1000 } });
   const rows = await Promise.all(locations.map(async (location) => {
     const latest = await runs(db).findOne({ location_id: location.id }, { sort: { created_at: -1 } }) as PipelineRun | null;
-    const maps = await editionMaps(db).find({ location_id: location.id, status: "published" }).sort({ published_at: -1 }).limit(2).toArray();
+    const maps = await editionMaps(db).find({ location_id: location.id, status: { $in: ["built", "published"] } }).sort({ published_at: -1 }).limit(2).toArray();
     const current = latest ? await editionMaps(db).findOne({ _id: latest._id }) : null;
     const funnel = (current ?? maps[0])?.funnel ?? [];
-    const previous = maps[current?.status === "published" ? 1 : 0]?.funnel ?? [];
+    const previous = maps[current?.status === "published" || current?.status === "built" ? 1 : 0]?.funnel ?? [];
     const sourceCounts = await sourceMap(db).aggregate<{ _id: string; count: number }>([{ $match: { location_id: location.id } }, { $group: { _id: "$status", count: { $sum: 1 } } }]).toArray();
     return {
       location_id: location.id, location_name: location.name,

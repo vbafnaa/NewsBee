@@ -1,4 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { decodeHTML } from "entities";
 import { Parser } from "htmlparser2";
 import { cancelledTitle, checkCount, checkSize, FeedFormatError, httpsLink, plainText, rejectUnsafeXml, scheduleText, type EventFacts, type LocalMoment } from "../common";
 
@@ -175,7 +176,7 @@ export function parseTrumba(content: Uint8Array): ParsedEvents {
     const details = new DescriptionParser(textValue(item.description)); details.finish();
     if (cancelledTitle(textValue(item.title))) { skip("cancelled"); continue; }
     if (!details.venue) { skip("no_venue"); continue; }
-    const title = textValue(item.title).trim(), id = textValue(item.guid).trim(), link = httpsLink(textValue(item.link));
+    const title = decodeHTML(textValue(item.title)).trim(), id = textValue(item.guid).trim(), link = httpsLink(textValue(item.link));
     const dateString = textValue(item.category).split(" ")[0];
     const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(dateString);
     if (!match) throw new FeedFormatError("Event is missing a supported calendar date");

@@ -1,4 +1,5 @@
 ---
+import StoryMedia from "./StoryMedia.astro";
 import type { DataSource, EventDay } from "../../lib/edition-view";
 import SavedNote from "./SavedNote.astro";
 import SectionHeading from "./SectionHeading.astro";
@@ -28,6 +29,7 @@ const ALSO_SHOWN = 2;
 
           {featured && (
             <div class="featured">
+              <StoryMedia photo={featured.photo} illustration={featured.illustration} />
               <span class="time">{featured.time}</span>
               {featured.href
                 ? <a class="featured-title nb-card-link" href={featured.href} data-story-id={featured.storyId ?? undefined}><span class="nb-title">{featured.title}</span></a>
@@ -41,6 +43,7 @@ const ALSO_SHOWN = 2;
             <ul class="list">
               {shown.map((event) => (
                 <li class="event">
+                  <StoryMedia photo={event.photo} illustration={event.illustration} />
                   <span class="time">{event.time}</span>
                   {event.href
                     ? <a class="title nb-card-link" href={event.href} data-story-id={event.storyId ?? undefined}><span class="nb-title">{event.title}</span></a>

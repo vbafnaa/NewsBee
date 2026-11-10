@@ -14,7 +14,7 @@ export async function GET(request: Request, context: Context) {
     const runId = run?._id;
     if (selected && !run) return Response.json({ detail: "Run not found for this location." }, { status: 404 });
     if (!runId) return { map: null, editions: await editionMapList(db, locationId) };
-    const map = run?.status === "published"
+    const map = (run?.status === "published" || run?.status === "built")
       ? (await editionMaps(db).findOne({ _id: runId, location_id: locationId })) ?? await writeEditionMap(db, runId)
       : await writeEditionMap(db, runId);
     return { map, editions: await editionMapList(db, locationId) };

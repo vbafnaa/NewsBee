@@ -1,8 +1,7 @@
 import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { getLocation } from "@/pipeline/communities/locations";
 import { locationDiscovery, refreshDiscovery } from "@/pipeline/discovery/run";
-import { locationSources, MAX_REVIEW_REASON, METHOD_LABELS, saveSourceReview, setSourceStatus, setSourceWindow, sourceMap, type SourceDecision, type SourceStatus } from "@/pipeline/sourcemap/store";
-import { decisionOf, isOtherReason, type ReasonCode } from "@/pipeline/sourcemap/reasons";
+import { locationSources, METHOD_LABELS, reviewChange, saveSourceReview, setSourceStatus, setSourceWindow, sourceMap, type SourceStatus } from "@/pipeline/sourcemap/store";
 import { SECTIONS } from "@/pipeline/sourcemap/sections";
 import { CONNECTORS, windowOf } from "@/pipeline/connectors/registry";
 import { describeWindow, WINDOWS } from "@/pipeline/sourcemap/windows";
@@ -40,16 +39,9 @@ export async function PATCH(request: Request, context: Context) {
     if (typeof body.source_id !== "string") throw new Error("Invalid request: send a source_id");
     if (body.decision !== undefined || body.reason_code !== undefined || body.reason !== undefined) {
       if (body.status !== undefined || body.window !== undefined) throw new Error("Invalid request: send a label on its own");
-      if (body.decision !== undefined && body.decision !== null && body.decision !== "accept" && body.decision !== "reject") throw new Error("Invalid decision: send accept, reject or null");
-      if (body.reason !== undefined && body.reason !== null && typeof body.reason !== "string") throw new Error("Invalid reason: send text or null");
-      const reason = typeof body.reason === "string" ? body.reason.trim() || null : body.reason;
-      if (reason && reason.length > MAX_REVIEW_REASON) throw new Error(`Invalid reason: keep it to ${MAX_REVIEW_REASON} characters`);
-      const code = body.reason_code;
-      if (code !== undefined && code !== null && (typeof code !== "string" || !decisionOf(code))) throw new Error("Invalid reason code: send one from the list or null");
-      if (typeof code === "string" && body.decision !== undefined && body.decision !== decisionOf(code)) throw new Error("Invalid reason code: it doesn't belong to this decision");
-      if (reason && !(typeof code === "string" && isOtherReason(code))) throw new Error("Invalid reason: text goes only with an Other reason code");
+      const change = reviewChange(body);
       if (!principal) throw new Error("Sign in as an approved journalist.");
-      const saved = await saveSourceReview(db, locationId, body.source_id, { decision: body.decision as SourceDecision | null | undefined, reason_code: code as ReasonCode | null | undefined, reason }, principal.email);
+      const saved = await saveSourceReview(db, locationId, body.source_id, change, principal.email);
       return Response.json({ updated: body.source_id, ...saved });
     }
     if (typeof body.status === "string") {

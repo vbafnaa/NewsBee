@@ -19,26 +19,31 @@ const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml,
 /** An endpoint or page with nothing newer than this isn't publishing. */
 export const RECENT_DAYS = limit("general.stop.recent_days");
 const MAX_ENDPOINT_TRIES = limit("general.stop.endpoint_tries");
+const ENDPOINT_TITLES = limit("general.stop.gemini_check_titles");
 const DOCUMENT_LIST_MIN = limit("general.stop.document_list_min");
 const LOOKUP_MAX_DATES = limit("general.stop.lookup_max_dates");
 const LOOKUP_EMBED = regex("general.page.lookup_embed");
 const LOOKUP_FORM = regex("general.page.lookup_form");
 
-export type Endpoint = { url: string; format: "rss" | "ical"; latest: string; items: number };
+/** `titles` are its newest items' titles and `recent` how many it dated in the last RECENT_DAYS, for the model check. */
+export type Endpoint = { url: string; format: "rss" | "ical"; latest: string; items: number; titles?: string[]; recent?: number };
 export type SourceKind = "feed" | "calendar" | "dataset" | "document_list" | "listing" | "lookup";
 
 /** A feed or calendar counts only if it parses and has something current. */
 async function verify(fetcher: Fetcher, url: string, today: string): Promise<Endpoint | null> {
   try {
     const [final, bytes] = await fetcher.get(url, MAX_FEED_BYTES, ACCEPT_FEED);
+    const since = addDays(today, -RECENT_DAYS);
+    const newest = (items: Array<{ title: string; day: string }>) => [...items].sort((a, b) => b.day.localeCompare(a.day)).map((item) => item.title).filter(Boolean).slice(0, ENDPOINT_TITLES);
     if (new TextDecoder().decode(bytes.slice(0, 200)).trimStart().startsWith("BEGIN:VCALENDAR")) {
-      const days = parseIcal(bytes).events.map((event) => event.event_date).sort();
+      const events = parseIcal(bytes).events;
+      const days = events.map((event) => event.event_date).sort();
       const latest = days.at(-1);
-      return latest && latest >= addDays(today, -RECENT_DAYS) ? { url: final, format: "ical", latest, items: days.length } : null;
+      return latest && latest >= since ? { url: final, format: "ical", latest, items: days.length, titles: newest(events.map((event) => ({ title: event.title, day: event.event_date }))), recent: days.filter((day) => day >= since).length } : null;
     }
     const items = parseNewsFeed(bytes);
     const latest = items.map((item) => item.published_day).sort().at(-1);
-    return latest && latest >= addDays(today, -RECENT_DAYS) ? { url: final, format: "rss", latest, items: items.length } : null;
+    return latest && latest >= since ? { url: final, format: "rss", latest, items: items.length, titles: newest(items.map((item) => ({ title: item.title, day: item.published_day }))), recent: items.filter((item) => item.published_day >= since && item.published_day <= today).length } : null;
   } catch { return null; }
 }
 
@@ -66,9 +71,9 @@ async function civicPlusFeeds(fetcher: Fetcher, pageUrl: string) {
   } catch { return []; }
 }
 
-/** The first feed or calendar this page offers that really works. */
-export async function findEndpoint(fetcher: Fetcher, html: string, pageUrl: string, today: string): Promise<Endpoint | null> {
-  const candidates = [...advertisedFeeds(html, pageUrl), ...calendarLinks(html, pageUrl)];
+/** The first feed or calendar this page offers that really works. `known` feeds, from a reader that already listed them, are tried first. */
+export async function findEndpoint(fetcher: Fetcher, html: string, pageUrl: string, today: string, known: string[] = []): Promise<Endpoint | null> {
+  const candidates = [...known, ...advertisedFeeds(html, pageUrl), ...calendarLinks(html, pageUrl)];
   for (const platform of PLATFORMS) if (platform.test.test(html)) candidates.push(...platform.urls(html, pageUrl));
   if (/civicplus|civicengage|CivicAlerts/i.test(html)) candidates.push(...await civicPlusFeeds(fetcher, pageUrl));
   for (const url of [...new Set(candidates.map((value) => httpsLink(value)).filter((value): value is string => Boolean(value)))].slice(0, MAX_ENDPOINT_TRIES)) {
@@ -92,10 +97,10 @@ const LONG_DATE = new RegExp(`\\b(${MONTH})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\
 const NUMERIC_DATE = /\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/g;
 const NO_YEAR_DATE = new RegExp(`\\b(${MONTH})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!,?\\s*\\d)`, "gi");
 
-/** Every date a page's markup or text states, as YYYY-MM-DD. Listings often leave out the year. */
-export function datesIn(html: string, today?: string) {
-  const days = new Set<string>();
-  for (const match of html.matchAll(/(?:datetime|datePublished|dateModified|startDate)["'=:\s]+["']?(20\d{2}-\d{2}-\d{2})/gi)) days.add(match[1]);
+/** Every date a page states, as YYYY-MM-DD, by where it was found: the markup or the visible text. */
+export function datesBySource(html: string, today?: string) {
+  const markup = new Set<string>(), days = new Set<string>();
+  for (const match of html.matchAll(/(?:datetime|datePublished|dateModified|startDate)["'=:\s]+["']?(20\d{2}-\d{2}-\d{2})/gi)) markup.add(match[1]);
   // All visible text: agenda and calendar listings are usually tables, not paragraphs.
   const text = decodeHTML(html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").slice(0, 200_000);
   if (today) {
@@ -113,14 +118,32 @@ export function datesIn(html: string, today?: string) {
     if (!Number.isNaN(at.getTime())) days.add(at.toISOString().slice(0, 10));
   }
   for (const match of text.matchAll(NUMERIC_DATE)) days.add(`${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`);
-  return [...days].sort();
+  return { markup: [...markup].sort(), text: [...days].sort() };
 }
 
-export type Inspection = { kind: SourceKind; fresh: boolean; latest: string | null; upcoming: string | null; dated: number };
+/** Every date a page's markup or text states, as YYYY-MM-DD. Listings often leave out the year. */
+export function datesIn(html: string, today?: string) {
+  const found = datesBySource(html, today);
+  return [...new Set([...found.markup, ...found.text])].sort();
+}
+
+export type Inspection = { kind: SourceKind; fresh: boolean; latest: string | null; upcoming: string | null; dated: number; dates: { markup: string[]; text: string[] } };
+
+/** A page's item headings, in page order: what the model check and the final review read as its recent titles. */
+export function pageTitles(html: string, count = ENDPOINT_TITLES) {
+  const out: string[] = [];
+  for (const match of html.matchAll(/<h[2-4]\b[^>]*>([\s\S]*?)<\/h[2-4]>/gi)) {
+    const title = decodeHTML(match[1].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+    if (title.length >= 12 && title.length <= 160 && !out.includes(title)) out.push(title);
+    if (out.length >= count) break;
+  }
+  return out;
+}
 
 /** What kind of source a page is, and whether it is publishing now. */
 export function inspectPage(html: string, pageUrl: string, today: string, endpoint: Endpoint | null): Inspection {
-  const days = datesIn(html, today);
+  const dates = datesBySource(html, today);
+  const days = [...new Set([...dates.markup, ...dates.text])].sort();
   const past = days.filter((day) => day <= today);
   const ahead = days.filter((day) => day > today && day <= addDays(today, 365));
   const latest = [endpoint?.latest, past.at(-1)].filter((day): day is string => Boolean(day)).sort().at(-1) ?? null;
@@ -133,10 +156,11 @@ export function inspectPage(html: string, pageUrl: string, today: string, endpoi
   const kind: SourceKind = endpoint ? (endpoint.format === "ical" ? "calendar" : "feed")
     : embedded || (form && days.length < LOOKUP_MAX_DATES) ? "lookup"
     : documents >= DOCUMENT_LIST_MIN ? "document_list" : "listing";
-  return { kind, fresh, latest, upcoming, dated: days.length };
+  return { kind, fresh, latest, upcoming, dated: days.length, dates };
 }
 
-export type SiteLink = { url: string; title: string; topic: PriorityTopic | null; section: string; rank: number };
+/** `lastmod` is the sitemap's last-modified day, when the link came from one. */
+export type SiteLink = { url: string; title: string; topic: PriorityTopic | null; section: string; rank: number; lastmod?: string | null };
 /** Whose site it is: the same words mean different things on a council's site and a school's. */
 export type SiteKind = "government" | "school" | "organisation";
 type LinkRule = { topic: PriorityTopic | null; section: string; test: RegExp };
@@ -252,7 +276,7 @@ export async function sitemapLinks(fetcher: Fetcher, pageUrl: string, cap = LINK
       try { url = new URL(entry.loc); } catch { continue; }
       if (url.protocol !== "https:" || SKIP_PATH.test(url.pathname) || url.pathname.split("/").filter(Boolean).length > 3) continue;
       const link = classifyLink(url, "", kind);
-      if (link) out.push(link);
+      if (link) out.push({ ...link, lastmod: entry.lastmod });
     }
     return spread(out, cap);
   } catch { return []; }

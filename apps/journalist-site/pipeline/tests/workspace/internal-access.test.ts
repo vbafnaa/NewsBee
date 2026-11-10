@@ -60,6 +60,7 @@ import { GET as adminLocationMap, PATCH as editSource, POST as refreshSources } 
 import { POST as addSource } from "../../../app/api/admin/locations/[locationId]/links/route";
 import { DELETE as removeLocation } from "../../../app/api/admin/locations/[locationId]/route";
 import { POST as runAction } from "../../../app/api/admin/runs/[runId]/actions/route";
+import { GET as photoCatalog, POST as importPhotos } from "../../../app/api/admin/locations/[locationId]/photo-catalog/route";
 import SourceMapPage from "../../../app/source-map/page";
 import InterestUsagePage from "../../../app/interest-usage/page";
 import UsageMap from "../../../app/interest-usage/usage-map";
@@ -94,7 +95,7 @@ function unlockRequest(supplied = password, extraHeaders: Record<string, string>
   });
 }
 
-it("protects every map read before database or admin authentication dependencies", async () => {
+it("protects every map read before database dependencies, checking only for a sign-in", async () => {
   const context = { params: Promise.resolve({ locationId: "fixture-wa" }) };
   for (const configured of ["", password]) {
     vi.stubEnv("NEWSBEE_INTERNAL_PASSWORD", configured);
@@ -107,7 +108,17 @@ it("protects every map read before database or admin authentication dependencies
   }
   expect(mocks.database).not.toHaveBeenCalled();
   expect(mocks.deps).not.toHaveBeenCalled();
-  expect(mocks.auth).not.toHaveBeenCalled();
+});
+
+it("opens map reads to a signed-in journalist with no password cookie", async () => {
+  vi.stubEnv("NEWSBEE_INTERNAL_PASSWORD", password);
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  const handler = vi.fn().mockResolvedValue({ read: true });
+  const response = await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler);
+  expect(response.status).toBe(200);
+  expect(handler).toHaveBeenCalledWith({ db });
+  mocks.auth.mockResolvedValue({ user: { email: "stranger@example.test" } });
+  expect((await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler)).status).toBe(403);
 });
 
 it("allows password-only reads without consulting an admin session and rejects writes", async () => {
@@ -131,14 +142,13 @@ it("renders independent map gates without journalist sign-in and unlocks both wi
     expect(page.type).toBe(MapShell);
     const gate = page.props.children.props;
     const locked = renderToStaticMarkup(await InternalGate({ ...gate, children: "protected fixture" }));
-    expect(locked).toContain("No journalist account is needed");
+    expect(locked).toContain("Signed-in journalists open these maps directly");
     expect(locked).toContain('action="/api/internal-access"');
     expect(locked).not.toContain("protected fixture");
     unlocked();
     expect(await InternalGate({ ...gate, children: "protected fixture" })).toBe("protected fixture");
     mocks.cookies.mockResolvedValue({ get: () => undefined });
   }
-  expect(mocks.auth).not.toHaveBeenCalled();
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
@@ -149,7 +159,7 @@ it("never grants admin data, source mutation or pipeline privileges to a map coo
   const write = new Request(request.url, { method: "POST", headers: { cookie: request.headers.get("cookie")!, origin: "https://workspace.example.test" }, body: "{}" });
   const responses = await Promise.all([
     adminLocations(request), adminSources(request), adminUsage(request), adminLocationMap(request, context), adminEditions(request, context), modelUsage(request),
-    editSource(write, context), refreshSources(write, context), addSource(write, context),
+    editSource(write, context), refreshSources(write, context), addSource(write, context), photoCatalog(request, context), importPhotos(write, context),
     removeLocation(new Request(write.url, { method: "DELETE", headers: write.headers }), context),
     runAction(write, { params: Promise.resolve({ runId: "fixture-run" }) }),
   ]);
@@ -158,7 +168,7 @@ it("never grants admin data, source mutation or pipeline privileges to a map coo
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
-it("uses the normal usage map behind the password gate with production build settings and no activation flag", async () => {
+it("uses the normal usage map behind the password gate with production build settings and no activation flag, like the other maps", async () => {
   unlocked();
   vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("VERCEL_ENV", "production");
@@ -168,8 +178,8 @@ it("uses the normal usage map behind the password gate with production build set
   const content = await InternalGate(gate.props);
   expect(content).toBe(gate.props.children);
   expect(gate.props.children.type).toBe(UsageMap);
-  expect(gate.props.children.props).toEqual({});
-  expect(mocks.auth).not.toHaveBeenCalled();
+  // Signed out, the page checks for a sign-in only; the map itself reads nothing until it loads.
+  expect(gate.props.children.props).toEqual({ signedIn: false });
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
@@ -184,6 +194,34 @@ it("keeps admin model usage bounded and permits authenticated source editing wit
   }), { params: Promise.resolve({ locationId: "fixture-wa" }) });
   expect(response.status).toBe(200);
   expect(mocks.cookies).not.toHaveBeenCalled();
+});
+
+it("defaults catalog imports to validation and requires an authenticated same-origin apply", async () => {
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  mocks.allowlist.mockResolvedValue(true);
+  const context = { params: Promise.resolve({ locationId: "fixture-wa" }) };
+  const body = { version: 1, location_id: "fixture-wa", sources: [{ id: "organizer", name: "Town Garden organizer", kind: "supplied", status: "pending",
+    reviewed_on: "2026-01-01", expires_on: "2099-01-01", evidence_url: "https://organizer.example/permissions",
+    permission: { editorial: false, archive: false, crop: false }, photos: [], scope: { kind: "venue", name: "Town Garden", city: "Seattle" } }] };
+  const request = (query = "", origin = "https://workspace.example.test", data: unknown = body) => new Request(
+    "https://workspace.example.test/api/admin/locations/fixture-wa/photo-catalog" + query,
+    { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data) });
+  expect((await importPhotos(request("?apply=true", "https://untrusted.example.test"), context)).status).toBe(403);
+  expect(mocks.deps).not.toHaveBeenCalled();
+  mocks.deps.mockResolvedValue({ db });
+  await db.collection<{ _id: string; id: string; name: string; systems: unknown[] }>("locations")
+    .insertOne({ _id: "fixture-wa", id: "fixture-wa", name: "Fixture town", systems: [] });
+  const validated = await importPhotos(request(), context);
+  expect(validated.status).toBe(200); expect(await validated.json()).toMatchObject({ applied: false });
+  expect(await db.collection("photo_catalog_sources").countDocuments()).toBe(0);
+  expect((await importPhotos(request("?apply=true"), context)).status).toBe(200);
+  expect(await db.collection("photo_catalog_sources").countDocuments()).toBe(1);
+  const listed = await photoCatalog(new Request("https://workspace.example.test/api/admin/locations/fixture-wa/photo-catalog"), context);
+  expect(listed.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(await listed.json()).toMatchObject({ sources: [{ id: "organizer", status: "pending" }] });
+  expect((await importPhotos(request("?apply=true", undefined, { ...body, location_id: "another-community" }), context)).status).toBe(400);
+  expect((await importPhotos(request("?apply=true", undefined, "x".repeat(256 * 1024)), context)).status).toBe(400);
+  expect(await db.collection("photo_catalog_sources").countDocuments()).toBe(1);
 });
 
 it("keeps deletion same-origin and owner-only, while allowing the owner to remove an idle fixture", async () => {

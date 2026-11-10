@@ -37,10 +37,6 @@ search_playbook:
       - { id: news.stage1.city_news, stage: stage1, source_type: City news, pattern: 'site:{city_domain} (news OR "press releases")' }
       - { id: news.stage1.local_radio, stage: stage1, source_type: Local radio, pattern: '"{city}" "{state}" (radio OR "public radio") news' }
       - { id: news.stage2.place_sweep, stage: stage2, source_type: Local outlets, pattern: '"{place}" "{state}" news after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: news.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: local news }
 
 page_words:
   - consumers: [manual]

@@ -3,15 +3,24 @@
  * writes candidates here, editors pin, pause, reject or add sources here, and collection
  * reads only from here. A record's `_id` is `<location id>:<source id>`; the source id is
  * also the collection task's id, so run results, health and the edition map line up.
+ *
+ * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, on by default), a map run's jobs write their own
+ * store instead, `source_run_<run id>`, with the same records: `sourceMap` returns it inside such a
+ * run, so the source map and editions are untouched and each run keeps exactly what it found. A
+ * person's decisions on those runs' pages are kept by page (`page_decisions`), so they carry across runs.
  */
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import type { LookupWindow, SourceTask, SourceType } from "../connectors/types";
 import { nonScrapableReason } from "./display";
 import { decisionOf, OTHER_CODES, reasonLabel, type ReasonCode } from "./reasons";
-import { itemCap, limits } from "../core/run-options";
+import { isolatedRunId, itemCap, limits } from "../core/run-options";
 import { recordDecision } from "../trace/decisions";
 import { CATEGORIES, SECTION_LABELS, type SectionId } from "./sections";
+import { inheritedAccessReview, reviewAllowsCollection, type SourceAccessReview } from "./source-review";
+import type { PageChecks } from "../discovery/checks";
+import type { GeminiVerdict, JudgeInput } from "../discovery/gemini-check";
+import type { ReviewFlags } from "../discovery/final-review";
 
 export const SOURCE_MAP = "source_map";
 /** Append-only history of human source labels. It is never updated or deleted, and outlives the source records. */
@@ -30,12 +39,13 @@ export const PROPOSED_PER_HOST = 12;
 export const SECTION_PAGES_PER_HOST = 24;
 
 export type DiscoveryMethod =
-  | "government" | "osm" | "meetings" | "opendata" | "newsrooms" | "athletics" | "schools" | "groups" | "publishers" | "llm"
+  | "government" | "institutions" | "osm" | "meetings" | "opendata" | "newsrooms" | "athletics" | "schools" | "groups" | "publishers" | "homesales" | "llm"
   | "directories" | "dork" | "agent" | "national" | "library" | "editor" | "reader_suggestion" | "migrated";
 
 export const METHOD_LABELS: Record<DiscoveryMethod, string> = {
   government: "City or county website",
   directories: "Official institution directory",
+  institutions: "Local institution website, read and checked",
   osm: "OpenStreetMap place inside the area",
   meetings: "Meeting platform account",
   opendata: "Open-data portal",
@@ -44,7 +54,8 @@ export const METHOD_LABELS: Record<DiscoveryMethod, string> = {
   schools: "School district directory and school websites",
   groups: "Local group or funeral home website, then checked",
   publishers: "Publisher found by news search",
-  llm: "Suggested by Gemini, then checked",
+  homesales: "Home sale data (ATTOM)",
+  llm: "Suggested by a model, then checked",
   dork: "Google operator search, then checked",
   agent: "Found by the mapping agent, then checked",
   national: "National public data",
@@ -54,11 +65,16 @@ export const METHOD_LABELS: Record<DiscoveryMethod, string> = {
   migrated: "Earlier source link",
 };
 
-/** `proposed` sources were found by the agentic flow: only agentic runs read them, until promoted. */
+/**
+ * `proposed` sources wait for a person: while proposed-until-approved is on (the testing phase), every
+ * source a map run finds is proposed, and no edition reads it until a person accepts it. With it off,
+ * the fixed pipeline's sources go live as active, and agentic editions also read proposed ones.
+ * `rejected` is a person's rejection, or the model check's (`gemini.verdict`), which a person can overrule.
+ */
 export type SourceStatus = "active" | "pinned" | "paused" | "rejected" | "dormant" | "proposed";
 export type SourceTier = "official" | "organisation" | "business" | "local_reporting" | "repost";
 /** The widest area a source covers. Items from a wider source still have to pass the locality filter. */
-export type SourceScope = "place" | "city" | "county";
+export type SourceScope = "place" | "city" | "county" | "state";
 export type SourceEvidence = { url: string; quote: string | null; kind: "locality" | "date" | "search"; at: number };
 /** What was checked before a source was used, and any rule a relaxed run skipped. */
 export type SourceAccess = { robots: "allowed" | "ignored" | "blocked"; rights: string; terms: "not_checked" | "no_restriction_found" | "mentions_restrictions" | "skipped"; checked_at: number; fresh: boolean };
@@ -99,7 +115,13 @@ export type SourceRecord = {
   reader: SourceType;
   params: Record<string, unknown>;
   section: SectionId;
-  found_by: { method: DiscoveryMethod; detail: string; query?: string | null };
+  /**
+   * How it was found. `opened_with` is the reader that opened its page. A source added by hand can carry `how_found`. The agent also records the tool that found it, the step
+   * it proposed it at (`step`), the step the page first came up (`found_at_step`) and its stated reason.
+   */
+  found_by: { method: DiscoveryMethod; detail: string; query?: string | null; opened_with?: string | null; tool?: string | null; step?: number | null; found_at_step?: number | null; reason?: string | null;
+    /** A person's own note on how they found a source they added by hand, so their research habits can go into the playbook. */
+    how_found?: string | null };
   source_tier?: SourceTier | null;
   evidence?: SourceEvidence[];
   access?: SourceAccess | null;
@@ -111,6 +133,14 @@ export type SourceRecord = {
   /** How it publishes: feed, calendar, dataset, document_list, listing or lookup. */
   source_kind?: string;
   latest_day?: string | null;
+  /** The locality and freshness facts discovery's checks saw, each with its outcome. */
+  checks?: PageChecks;
+  /** The model check's verdict, reason code and evidence, or why it wasn't judged. */
+  gemini?: GeminiVerdict;
+  /** The newest item titles discovery saw, for the final review's duplicate check. */
+  recent_titles?: string[];
+  /** The final review's flags: how strong the source is, and a likely duplicate. Flags only. */
+  review_flags?: ReviewFlags;
   /** Items from a source inside the area are local by construction. */
   inside_area: boolean;
   /** Listed with a link only (court portals, public notices): never collected. */
@@ -124,12 +154,89 @@ export type SourceRecord = {
   first_seen: string;
   last_seen: string;
   dormant_until?: string | null;
+  access_review?: SourceAccessReview;
 };
 
-export type SourceCandidate = Omit<SourceRecord, "_id" | "location_id" | "status" | "health" | "score" | "first_seen" | "last_seen" | "note" | "dormant_until" | "review"> & { status?: SourceStatus; note?: string | null; /** A checked section of a site, not a second copy of its home page. Not saved. */ section_page?: boolean };
+export type SourceCandidate = Omit<SourceRecord, "_id" | "location_id" | "status" | "health" | "score" | "first_seen" | "last_seen" | "note" | "dormant_until" | "review" | "review_flags"> & {
+  status?: SourceStatus; note?: string | null;
+  /** A checked section of a site, not a second copy of its home page. Not saved. */
+  section_page?: boolean;
+  /** What the model check reads of the page. Not saved. */
+  judge_input?: JudgeInput;
+  /** The status its route gave it, before the save step held it as proposed. Not saved. */
+  route_status?: SourceStatus;
+};
 
+/** A source whose status is still the pipeline's to set: proposed, or rejected by the model check, and not labelled by a person. */
+export function checkOwned(record: Pick<SourceRecord, "status" | "review" | "gemini">) {
+  return !record.review?.decision && (record.status === "proposed" || (record.status === "rejected" && record.gemini?.verdict === "reject"));
+}
+
+/** The source map, or, inside a test-mode map run, that run's own store. */
 export function sourceMap(db: Db) {
-  return db.collection<SourceRecord>(SOURCE_MAP);
+  const runId = isolatedRunId();
+  return runId ? runSources(db, runId) : db.collection<SourceRecord>(SOURCE_MAP);
+}
+
+/** A test-mode run's own sources: the records it would have written to the source map. Never read by an edition. */
+export function runSources(db: Db, runId: string) {
+  return db.collection<SourceRecord>(`source_run_${runId}`);
+}
+
+/**
+ * A person's decision on a page, for a location and the page's normalised address (`key`), so a page
+ * reviewed in one source run shows that decision in every run. Each save also goes to
+ * `source_reviews`, whose labels are the model check's examples.
+ */
+export const PAGE_DECISIONS = "page_decisions";
+export type PageDecision = { _id: string; location_id: string; key: string; url: string | null; name: string | null; section: SectionId | null; source_id: string | null;
+  decision: SourceDecision | null; reason_code: ReasonCode | null; reason: string | null; by: string; at: string; run_id: string | null };
+export function pageDecisions(db: Db) { return db.collection<PageDecision>(PAGE_DECISIONS); }
+/** The key a page's decision is kept under: its normalised address, or its source id for a structured source. */
+export function pageKey(record: Pick<SourceRecord, "url" | "source_id">) { return record.url ? normaliseUrl(record.url) : `source:${record.source_id}`; }
+
+async function keepPageDecision(db: Db, locationId: string, record: Pick<SourceRecord, "url" | "source_id" | "name" | "section">, review: SourceReview, runId: string | null) {
+  const key = pageKey(record);
+  await pageDecisions(db).replaceOne({ _id: `${locationId}:${key}` }, {
+    location_id: locationId, key, url: record.url, name: record.name, section: record.section, source_id: record.source_id,
+    decision: review.decision, reason_code: review.reason_code ?? null, reason: review.reason, by: review.by, at: review.at, run_id: runId,
+  }, { upsert: true });
+}
+
+/**
+ * Saves a person's decision on a page a test-mode run found, as `saveSourceReview` does for the
+ * source map and with the same rules for codes and text, but by page: the run's own record and the
+ * source map are left as they are. Returns the status the page would have with this decision.
+ */
+export async function savePageDecision(db: Db, locationId: string, runId: string, sourceId: string, change: ReviewChange, by: string) {
+  const record = await runSources(db, runId).findOne({ _id: `${locationId}:${sourceId}` });
+  if (!record) throw new Error(`Unknown source: ${sourceId}`);
+  const previous = await pageDecisions(db).findOne({ _id: `${locationId}:${pageKey(record)}` });
+  const decision = change.decision !== undefined ? change.decision : previous?.decision ?? null;
+  const code = previous?.reason_code ?? null;
+  const nextCode = change.reason_code !== undefined ? change.reason_code : change.decision !== undefined ? previous?.decision === change.decision ? code : null : code;
+  if (nextCode && decisionOf(nextCode) !== decision) throw new Error("Invalid reason code: it doesn't belong to this source's decision");
+  const reason = change.reason !== undefined ? change.reason : code && OTHER_CODES.includes(code) && code !== nextCode ? null : previous?.reason ?? null;
+  const review: SourceReview = { decision, reason_code: nextCode, reason, initial_status: record.status, by, at: new Date().toISOString() };
+  await keepPageDecision(db, locationId, record, review, runId);
+  const status: SourceStatus = decision === "reject" ? "rejected" : decision === "accept" ? "active" : record.status;
+  await db.collection<SourceReviewEntry>(SOURCE_REVIEWS).insertOne({
+    location_id: locationId, source_id: sourceId, url: record.url, name: record.name, section: record.section,
+    source_tier: record.source_tier ?? null, scope: record.scope ?? null, source_kind: record.source_kind ?? null,
+    found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
+  });
+  return { status, review };
+}
+
+/** One decision for many of a test-mode run's pages, each saved on its own, as `saveSourceReviews` does. */
+export async function savePageDecisions(db: Db, locationId: string, runId: string, sourceIds: string[], change: ReviewChange, by: string) {
+  const saved: Array<{ source_id: string; status: SourceStatus; review: SourceReview }> = [];
+  const failed: Array<{ source_id: string; detail: string }> = [];
+  for (const sourceId of [...new Set(sourceIds)]) {
+    try { saved.push({ source_id: sourceId, ...await savePageDecision(db, locationId, runId, sourceId, change, by) }); }
+    catch (error) { failed.push({ source_id: sourceId, detail: error instanceof Error ? error.message : String(error) }); }
+  }
+  return { saved, failed };
 }
 
 export async function ensureSourceMapIndexes(db: Db) {
@@ -178,9 +285,12 @@ export async function categoryCoverage(db: Db, locationId: string): Promise<Cate
 }
 
 /**
- * Write discovery candidates for a location. New sources are added as active; existing
- * ones keep their editor status, note, review and health, and get fresh details. A rejected
- * source stays rejected. Returns how many were new.
+ * Write discovery candidates for a location. New sources are added with the status they carry
+ * (active when none); existing ones keep their editor status, note, review and health, and get
+ * fresh details. A source a person labelled keeps its label, and one a person rejected stays
+ * rejected. The pipeline still sets the status of what is its own (proposed, or rejected by the
+ * Model check): a new verdict can reject it, or lift the check's own rejection back to proposed.
+ * Nothing becomes active here. Returns how many were new.
  */
 export async function upsertCandidates(db: Db, locationId: string, candidates: SourceCandidate[]) {
   const now = new Date().toISOString();
@@ -188,9 +298,10 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
   const seenHosts = new Map<string, number>();
   for (const candidate of candidates) {
     const _id = `${locationId}:${candidate.source_id}`;
-    const existing = await sourceMap(db).findOne({ _id }, { projection: { status: 1, found_by: 1 } });
+    const existing = await sourceMap(db).findOne({ _id }, { projection: { status: 1, found_by: 1, review: 1, gemini: 1 } });
+    const owned = Boolean(existing && checkOwned(existing));
     // A checked page's id follows its feed, which can come and go. A page a person rejected stays out under either id.
-    if (!existing && candidate.section_page && candidate.source_kind && await sourceMap(db).findOne({ location_id: locationId, url: candidate.url, status: "rejected" }, { projection: { _id: 1 } })) {
+    if (!existing && candidate.section_page && candidate.source_kind && await sourceMap(db).findOne({ location_id: locationId, url: candidate.url, status: "rejected", $or: [{ "review.decision": "reject" }, { "gemini.verdict": { $ne: "reject" } }] }, { projection: { _id: 1 } })) {
       await recordDecision({ stage: "source", actor: "rule", subject: candidate.url ?? candidate.source_id, decision: "not_added", reason: "This page was rejected under another address", rule: "rejected_page" });
       continue;
     }
@@ -201,11 +312,11 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
       seenHosts.set(host, count + 1);
       // Agentic finds are specific pages, and one site can have many worth reading.
       const specificPage = Boolean(candidate.source_kind && candidate.params.discovery_parent_url);
-      const cap = candidate.section_page ? itemCap(SECTION_PAGES_PER_HOST) : candidate.status === "proposed" || specificPage ? itemCap(PROPOSED_PER_HOST) : limits().newWebPerHost;
+      const cap = candidate.section_page ? itemCap(SECTION_PAGES_PER_HOST) : (candidate.route_status ?? candidate.status) === "proposed" || specificPage ? itemCap(PROPOSED_PER_HOST) : limits().newWebPerHost;
       if (candidate.status !== "pinned" && count >= cap) { await recordDecision({ stage: "source", actor: "rule", subject: candidate.url, decision: "not_added", reason: `${count} sources from ${host} are already on the map`, rule: "per_host_limit", topic: candidate.topics?.[0] ?? null }); continue; }
     }
-    // An agentic find never changes a source already on the map: current runs must stay a clean baseline.
-    if (existing && existing.status !== "proposed" && candidate.status === "proposed") {
+    // A proposal never changes a source already on the map that isn't the pipeline's own: a person's label, and current runs' baseline, stand.
+    if (existing && !owned && (candidate.status === "proposed" || candidate.status === "rejected")) {
       await sourceMap(db).updateOne({ _id }, { $set: { last_seen: now }, $addToSet: { topics: { $each: candidate.topics ?? [] } } });
       await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: "already_on_map", reason: `Already on the map as ${existing.status}`, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, name: candidate.name } });
       continue;
@@ -221,30 +332,52 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
       ...(candidate.topics ? { topics: candidate.topics } : {}), ...(candidate.agent_run_id ? { agent_run_id: candidate.agent_run_id } : {}),
       ...(candidate.access_overrides?.length ? { access_overrides: candidate.access_overrides } : {}),
       ...(candidate.scope ? { scope: candidate.scope } : {}), ...(candidate.source_kind ? { source_kind: candidate.source_kind } : {}),
-      ...(candidate.latest_day ? { latest_day: candidate.latest_day } : {}),
+      ...(candidate.latest_day ? { latest_day: candidate.latest_day } : {}), ...(candidate.checks ? { checks: candidate.checks } : {}),
+      ...(candidate.gemini ? { gemini: candidate.gemini } : {}), ...(candidate.recent_titles?.length ? { recent_titles: candidate.recent_titles } : {}),
     };
+    // The pipeline's own source: the check can reject it, or lift its own rejection back to proposed.
+    const status = owned ? candidate.status === "rejected" ? "rejected" : existing!.status === "rejected" ? "proposed" : existing!.status : null;
     await sourceMap(db).updateOne({ _id }, {
-      $set: set,
-      $setOnInsert: { status: candidate.status ?? "active", note: candidate.note ?? null, health: emptyHealth(), score: 0, first_seen: now, dormant_until: null },
+      $set: { ...set, ...(status ? { status } : {}) },
+      $setOnInsert: { ...(status ? {} : { status: candidate.status ?? "active" }), note: candidate.note ?? null, health: emptyHealth(), score: 0, first_seen: now, dormant_until: null },
     }, { upsert: true });
     if (!existing) added += 1;
-    await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: existing ? "refreshed" : candidate.status === "proposed" ? "proposed" : "added", reason: candidate.why ?? candidate.found_by.detail, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, tier: candidate.source_tier ?? null, name: candidate.name } });
+    await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: existing ? "refreshed" : candidate.status === "proposed" ? "proposed" : candidate.status === "rejected" ? "saved_rejected" : "added", reason: candidate.why ?? candidate.found_by.detail, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, tier: candidate.source_tier ?? null, name: candidate.name } });
   }
   return added;
 }
 
-/**
- * Sources collected this run: active and pinned, plus dormant ones due a retry. Agentic runs
- * also read proposed sources, so current runs stay a clean baseline. Link-only sources are never collected.
- */
-export async function collectableSources(db: Db, locationId: string, today: string, flow: "current" | "agentic" = "current") {
-  const records = await sourceMap(db).find({ location_id: locationId, status: { $in: flow === "agentic" ? ["active", "pinned", "dormant", "proposed"] : ["active", "pinned", "dormant"] }, link_only: { $ne: true } }).toArray();
-  return records.filter((record) => record.status !== "dormant" || !record.dormant_until || record.dormant_until <= today)
+/** Collect only due, readable sources that pass the applicable access review. */
+export async function collectableSources(db: Db, locationId: string, today: string, flow: "current" | "agentic" = "current", options: { proposedUntilApproved?: boolean } = {}) {
+  const proposed = flow === "agentic" && options.proposedUntilApproved === false;
+  const statuses = proposed ? ["active", "pinned", "dormant", "proposed"] : ["active", "pinned", "dormant"];
+  const records = await reviewedLocationSources(db, locationId);
+  return records.filter((record) => statuses.includes(record.status) && !record.link_only
+    && reviewAllowsCollection(record.access_review, today)
+    && (record.status !== "dormant" || !record.dormant_until || record.dormant_until <= today))
     .sort((a, b) => Number(b.status === "pinned") - Number(a.status === "pinned") || b.score - a.score || a.name.localeCompare(b.name));
 }
 
+/** Reconcile aliases at planning, execution and assembly, including tasks queued before review. */
+export async function reviewedLocationSources(db: Db, locationId: string) {
+  const records = await sourceMap(db).find({ location_id: locationId }).toArray();
+  const reviewed = records.filter((record) => record.access_review);
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index];
+    const inherited = inheritedAccessReview(record, reviewed);
+    if (!inherited) continue;
+    const changes = { access_review: inherited, status: record.status === "rejected" ? "rejected" as const : "paused" as const, link_only: true };
+    await sourceMap(db).updateOne({ _id: record._id, access_review: { $exists: false } }, { $set: changes });
+    records[index] = { ...record, ...changes };
+  }
+  return records;
+}
+
 export function taskFor(record: SourceRecord): SourceTask {
-  return { type: record.reader, source_id: record.source_id, name: record.name, params: { ...record.params, source_map_id: record._id, ...(record.window ? { window: record.window } : {}), ...(record.source_tier ? { source_tier: record.source_tier } : {}) } };
+  if (!reviewAllowsCollection(record.access_review, new Date().toISOString().slice(0, 10))) throw new Error(`Source access review prevents collection: ${record.access_review?.reason}`);
+  return { type: record.access_review?.collection_reader ?? record.reader, source_id: record.source_id, name: record.name, params: { ...record.params,
+    ...record.access_review?.collection_params, ...(record.access_review ? { images_allowed: record.access_review.images_allowed } : {}),
+    source_map_id: record._id, ...(record.source_tier ? { source_tier: record.source_tier } : {}), ...(record.window ? { window: record.window } : {}) } };
 }
 
 /** Records the outcome of one collection on the source's health, and moves it in or out of dormancy. */
@@ -295,6 +428,14 @@ export async function recordPublishedCounts(db: Db, locationId: string, counts: 
 }
 
 export async function setSourceStatus(db: Db, locationId: string, sourceId: string, status: SourceStatus, note?: string | null) {
+  if (["active", "pinned", "dormant"].includes(status)) {
+    await reviewedLocationSources(db, locationId);
+    const source = await sourceMap(db).findOne({ _id: `${locationId}:${sourceId}` });
+    if (!source) throw new Error(`Unknown source: ${sourceId}`);
+    if (!reviewAllowsCollection(source.access_review, new Date().toISOString().slice(0, 10))) {
+      throw new Error(`Invalid source access review: ${source.access_review?.reason}. Update the review before enabling collection.`);
+    }
+  }
   const set: Record<string, unknown> = { status, ...(note !== undefined ? { note } : {}) };
   if (status !== "dormant") set.dormant_until = null;
   const result = await sourceMap(db).updateOne({ _id: `${locationId}:${sourceId}` }, { $set: set });
@@ -330,6 +471,8 @@ export async function saveSourceReview(db: Db, locationId: string, sourceId: str
     throw new Error(`Unknown source: ${sourceId}`);
   }
   const review = record.review;
+  // The same decision shows on this page's row in test-mode source runs.
+  await keepPageDecision(db, locationId, record, review, null);
   let status = record.status;
   if (change.decision !== undefined) {
     const pinned = record.status === "pinned" || review.initial_status === "pinned";
@@ -342,6 +485,42 @@ export async function saveSourceReview(db: Db, locationId: string, sourceId: str
     found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
   });
   return { status, review };
+}
+
+export type ReviewChange = { decision?: SourceDecision | null; reason_code?: ReasonCode | null; reason?: string | null };
+
+/**
+ * Check a label sent by a person: a decision (accept, reject or null), a reason code from that
+ * decision's list, and text only with an Other code. Throws an `Invalid ...` error otherwise.
+ */
+export function reviewChange(body: { decision?: unknown; reason_code?: unknown; reason?: unknown }): ReviewChange {
+  if (body.decision !== undefined && body.decision !== null && body.decision !== "accept" && body.decision !== "reject") throw new Error("Invalid decision: send accept, reject or null");
+  if (body.reason !== undefined && body.reason !== null && typeof body.reason !== "string") throw new Error("Invalid reason: send text or null");
+  const reason = typeof body.reason === "string" ? body.reason.trim() || null : body.reason as null | undefined;
+  if (reason && reason.length > MAX_REVIEW_REASON) throw new Error(`Invalid reason: keep it to ${MAX_REVIEW_REASON} characters`);
+  const code = body.reason_code;
+  if (code !== undefined && code !== null && (typeof code !== "string" || !decisionOf(code))) throw new Error("Invalid reason code: send one from the list or null");
+  if (typeof code === "string" && body.decision !== undefined && body.decision !== decisionOf(code)) throw new Error("Invalid reason code: it doesn't belong to this decision");
+  if (reason && !(typeof code === "string" && OTHER_CODES.includes(code))) throw new Error("Invalid reason: text goes only with an Other reason code");
+  return { decision: body.decision as SourceDecision | null | undefined, reason_code: code as ReasonCode | null | undefined, reason };
+}
+
+/** Most sources one bulk decision may label. */
+export const MAX_BULK_REVIEW = 500;
+
+/**
+ * One decision and reason for many sources (the Source runs tab's bulk accept or reject). Each is
+ * saved as its own label, exactly as if it were chosen in its row, so each gets its history row.
+ * A source that can't be saved is reported and the rest still are.
+ */
+export async function saveSourceReviews(db: Db, locationId: string, sourceIds: string[], change: ReviewChange, by: string) {
+  const saved: Array<{ source_id: string; status: SourceStatus; review: SourceReview }> = [];
+  const failed: Array<{ source_id: string; detail: string }> = [];
+  for (const sourceId of [...new Set(sourceIds)]) {
+    try { saved.push({ source_id: sourceId, ...await saveSourceReview(db, locationId, sourceId, change, by) }); }
+    catch (error) { failed.push({ source_id: sourceId, detail: error instanceof Error ? error.message : String(error) }); }
+  }
+  return { saved, failed };
 }
 
 export async function setSourceWindow(db: Db, locationId: string, sourceId: string, window: LookupWindow | null) {

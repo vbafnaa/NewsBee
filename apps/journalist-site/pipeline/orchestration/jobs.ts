@@ -13,7 +13,7 @@ import { COLLECTIONS } from "../storage/mongo";
 import { ModelRateLimitError } from "../model/runtime";
 import { safeError } from "../core/redaction";
 
-export const JOB_KINDS = ["discover", "agent_round", "finish_map", "plan_sources", "collect_source", "author_start", "author_rank", "author_story", "author_finish"] as const;
+export const JOB_KINDS = ["discover", "agent_round", "review_map", "finish_map", "plan_sources", "collect_source", "author_start", "author_rank", "author_story", "image_story", "stock_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 /** These can overlap within a run. The rest build on each other, so a run does them one at a time. */
 const PARALLEL_KINDS: readonly JobKind[] = ["discover", "collect_source"];
@@ -296,8 +296,10 @@ export async function fail(db: Db, job: Job, error: unknown, retryable: boolean)
   const limited = error instanceof ModelRateLimitError || (error instanceof HttpStatusError && error.status === 429);
   const retryAfter = limited ? error.retryAfterSeconds ?? 60 : 0;
   const limitRetries = job.rate_limit_retries ?? 0;
+  const supplementary = job.kind === "collect_source" && (job.payload?.task as { type?: string } | undefined)?.type === "newssearch";
+  const retryLimit = supplementary ? 1 : MAX_RATE_LIMIT_RETRIES;
   const retry = retryable && (limited
-    ? limitRetries < MAX_RATE_LIMIT_RETRIES && retryAfter <= 3600
+    ? limitRetries < retryLimit && retryAfter <= 3600
     : job.attempts < MAX_ATTEMPTS);
   const delay = limited
     ? Math.max(Math.min(15 * 2 ** limitRetries, 300), retryAfter)

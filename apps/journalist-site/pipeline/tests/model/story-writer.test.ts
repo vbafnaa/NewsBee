@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { addedClaims } from "../../model/news-blurb";
-import { headlineErrors, itemPrompt, styleErrors, validateFront, validateEmail, editionContext, validateItem, writeItem, writeEmail, writeFront, type StoryInput } from "../../model/story-writer";
+import { eventName, nameErrors, headlineErrors, itemPrompt, styleErrors, validateFront, validateEmail, editionContext, validateItem, writeItem, writeEmail, writeFront, type StoryInput } from "../../model/story-writer";
+import { parseTrumba } from "../../connectors/library/parsers";
 import { FakeModel } from "../support/fake-model";
 
 const story: StoryInput = { id: "robot-lab", title: "Robot Lab", description: "Build and program small robots with LEGO kits. Ages 8 to 12.", venues: ["Ballard Branch"] };
 const draft = (summary: string, headline = "Robot Lab welcomes young builders") => ({ headline, summary });
+
+it("compares encoded feed titles as their displayed event names while still rejecting unrelated names", () => {
+  const title = "Kaleidoscope Play &#38; Learn / &#19975;&#33457;";
+  expect(eventName(title)).toBe("Kaleidoscope Play & Learn");
+  expect(nameErrors("Kaleidoscope Play & Learn at the library", title)).toEqual([]);
+  expect(nameErrors("Fun activities at the library", title)).toEqual(["drops_event_name"]);
+  const xml = `<rss><channel><item><title>Kaleidoscope Play &amp;#38; Learn / &amp;#19975;&amp;#33457;</title><guid>one</guid><link>https://www.spl.org/event/one</link><category>2026/11/02</category><description><![CDATA[Monday 2 pm<br/>Location Link: Beacon Hill Branch<br/>A library program]]></description></item></channel></rss>`;
+  expect(parseTrumba(new TextEncoder().encode(xml)).events[0].title).toBe("Kaleidoscope Play & Learn / 万花");
+});
 
 describe("story writing validation", () => {
   it("does not treat an age at sentence end as a numbered list marker", () => {
@@ -133,4 +143,39 @@ describe("story writing validation", () => {
     expect(email).toMatchObject({ fallback: true, blurb: "See what is happening around Auburn this week in the new edition." });
   });
 
+});
+
+
+describe("source-grounded quantities and news dates", () => {
+  it.each([
+    ["Ages 8 to 15 can build robots.", "15"],
+    ["The lab has 200 kits.", "200"],
+    ["The lab has $8 in supplies.", "$8"],
+    ["The lab expanded by 12%.", "12%"],
+    ["The lab has 8 million kits.", "8million"],
+  ])("holds invented or changed quantities: %s", async (summary, quantity) => {
+    const model = new FakeModel(() => draft(summary));
+    expect(await writeItem(model, story)).toMatchObject({ disposition: "held", attempts: 2, validation_errors: expect.arrayContaining([`summary:unsupported_number:${quantity}`]) });
+    expect(model.calls[1].prompt).toContain("Preserve their units and meaning");
+  });
+  it("allows equivalent numeric formatting and explicitly supported quantities", () => {
+    const source = { ...story, description: "Robot Lab received $1,000.00 and expanded by 12 percent. It has 8 million kits." };
+    expect(validateItem(source, draft("Robot Lab received $1000 and expanded by 12%. It has 8 million kits."))).toEqual([]);
+  });
+  it("checks numbers in headlines and dates in news as well as events", () => {
+    expect(validateItem(story, draft("Build robots.", "Robot Lab gets 50 kits"))).toContain("headline:unsupported_number:50");
+    const news = { ...story, kind: "local_news", description: "Robot Lab opens on Tuesday." };
+    expect(validateItem(news, draft("Robot Lab opens on Wednesday."))).toContain("summary:unsupported_date_word:wednesday");
+    expect(validateItem(news, draft("Robot Lab opens on tuesday."))).not.toContain("summary:unsupported_date_word:tuesday");
+  });
+  it("does not let earlier generated text authorize invented front or email facts", () => {
+    const drafts = [draft("Robot Lab has 500 kits on Wednesday.")];
+    const context = editionContext("Auburn", "Nov 1–7", [story], drafts);
+    const front = { headline: "Robot Lab gets 500 kits", intro: "Build with 500 kits." };
+    expect(validateFront(context, [story], front)).toEqual(expect.arrayContaining(["headline:unsupported_number:500", "intro:unsupported_number:500"]));
+    expect(validateEmail({ ...context, ...front }, [story], { blurb: "Explore 500 kits on Wednesday." })).toEqual(expect.arrayContaining(["blurb:unsupported_number:500", "blurb:unsupported_date_word:wednesday"]));
+  });
+  it("holds whitespace-only structured responses", async () => {
+    expect(await writeItem(new FakeModel(() => ({ headline: " ", summary: " " })), story)).toMatchObject({ disposition: "held", error: expect.stringContaining("Invalid structured response") });
+  });
 });

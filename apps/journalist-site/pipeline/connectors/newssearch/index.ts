@@ -56,7 +56,7 @@ export const newsSearchConnector: Connector = {
   type: "newssearch",
   meta: {
     name: "News search",
-    formats: "GDELT news search for the place (Gemini grounded search optional); headlines and links, each checked against the article before use",
+    formats: "GDELT news search for the place (web-grounded model search optional); headlines and links, each checked against the article before use",
     manual: false,
     coverage: { group: "local", label: "news coverage of the place" },
     storyKinds: ["news_report"],
@@ -64,7 +64,7 @@ export const newsSearchConnector: Connector = {
   window: WINDOWS.news,
   rank: newestFirst,
   sources(location, settings) {
-    return settings.newsSearch.map((backend) => ({ source_id: `newssearch:${backend}`, name: backend === "gdelt" ? "News search (GDELT)" : "News search (Gemini)", type: "newssearch" as const, params: { backend } }));
+    return settings.newsSearch.map((backend) => ({ source_id: `newssearch:${backend}`, name: backend === "gdelt" ? "News search (GDELT)" : "News search (model, web-grounded)", type: "newssearch" as const, params: { backend } }));
   },
   async collect(task, context) {
     const dropped: DroppedItem[] = [];
@@ -73,7 +73,7 @@ export const newsSearchConnector: Connector = {
   },
 };
 
-type Hit = { title: string; url: string; day: string; domain: string; image: string | null };
+type Hit = { title: string; url: string; day: string; domain: string };
 
 async function gdelt(context: ConnectorContext, query: string, days: number): Promise<Hit[]> {
   const params = new URLSearchParams({ query: `${query} sourcelang:english`, mode: "ArtList", format: "json", maxrecords: "75", timespan: `${Math.max(1, Math.min(days, 90))}d`, sort: "DateDesc" });
@@ -99,7 +99,7 @@ async function gdelt(context: ConnectorContext, query: string, days: number): Pr
     const url = httpsLink(article.url ?? null);
     const seen = /^(\d{4})(\d{2})(\d{2})/.exec(article.seendate ?? "");
     if (!url || !article.title || !seen) return [];
-    return [{ title: article.title.replace(/\s+-\s+[^-]{2,60}$/, "").trim(), url, day: `${seen[1]}-${seen[2]}-${seen[3]}`, domain: article.domain ?? hostOf(url), image: httpsLink(article.socialimage ?? null) }];
+    return [{ title: article.title.replace(/\s+-\s+[^-]{2,60}$/, "").trim(), url, day: `${seen[1]}-${seen[2]}-${seen[3]}`, domain: article.domain ?? hostOf(url) }];
   });
 }
 
@@ -115,7 +115,7 @@ async function llmNews(context: ConnectorContext, query: string, since: string):
     if (!url || typeof item.title !== "string" || !day) return [];
     // Grounding redirect links hide the real URL; accept only answers that point at a real site.
     if (grounded.size && hostOf(url).includes("vertexaisearch")) return [];
-    return [{ title: item.title, url, day, domain: typeof item.publisher === "string" ? item.publisher : hostOf(url), image: null }];
+    return [{ title: item.title, url, day, domain: typeof item.publisher === "string" ? item.publisher : hostOf(url) }];
   });
 }
 
@@ -158,7 +158,9 @@ async function search(task: SourceTask, context: ConnectorContext, record: Sourc
     events.push({
       source_event_id: id, title: hit.title, event_date: hit.day, schedule_text: publishedText(hit.day), venue: hit.domain, room: null, source_url: hit.url,
       description: null, kind: "news_report", source_name: hit.domain, needs_locality: true, found_by: "news search", section_hint: null,
-      details: { image: hit.image, links: [hit.url] } as Partial<Details>,
+      // Search thumbnails cannot establish the original article's image permissions.
+      // Authoring discovers images from that article through the guarded page reader.
+      details: { links: [hit.url] } as Partial<Details>,
     } as CollectedEvent);
   }
   await recordPublishers(context.db, context.location.id, publishers);

@@ -10,7 +10,7 @@ export async function GET(request: Request, context: Context) {
   return adminRoute(request, async ({ db, store }) => {
     const job = await db.collection<Job>(COLLECTIONS.jobs).findOne(
       { _id: jobId },
-      { projection: { log_file: 1, log_error: 1 } },
+      { projection: { log_file: 1, log_error: 1, status: 1 } },
     );
     if (!job) return Response.json({ detail: "Job not found" }, { status: 404 });
     if (typeof job.log_file !== "string") {
@@ -18,8 +18,8 @@ export async function GET(request: Request, context: Context) {
     }
     const kept = job.log_file.startsWith(MONGO_LOG);
     const content = kept ? await readJobLog(db, jobId) : await store.readText(job.log_file);
-    if (content === null) return Response.json({ detail: "This log has expired. The run's stage logs are in its logs folder." }, { status: 404 });
-    return new Response(content, {
+    if (content === null && job.status !== "running") return Response.json({ detail: "This log has expired. The run's stage logs are in its logs folder." }, { status: 404 });
+    return new Response(content ?? "", {
       headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
     });
   });

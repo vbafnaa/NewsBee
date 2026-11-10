@@ -4,7 +4,7 @@ import { Story } from "../../editions/stories";
 
 function story(title: string, date: string, recurring = false) {
   const item = new Story(title, title, null);
-  item.occurrences = Array.from({ length: recurring ? 2 : 1 }, (_, index) => ({ source_id: "library:x", source_event_id: `${title}-${index}`, event_date: date, schedule_text: "", venue: "", room: null, source_url: "" }));
+  item.occurrences = Array.from({ length: recurring ? 2 : 1 }, (_, index) => ({ source_id: "library:x", source_event_id: `${title}-${index}`, event_date: date, schedule_text: recurring ? `Session ${index}` : "", venue: "", room: null, source_url: "" }));
   return item;
 }
 it("ranks one-offs before recurring, practical topics before other events, then soonest", () => {

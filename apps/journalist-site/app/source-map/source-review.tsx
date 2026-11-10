@@ -5,36 +5,50 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiJson, mapApi } from "@/lib/admin-client";
 import SourceMapManager from "../locations/[locationId]/source-map-manager";
-import RunFunnel from "./run-funnel";
+import SourceRuns from "./source-runs";
 
-export default function SourceReview({ locationId, mode, runId, view, canLabel = false }: { locationId: string; mode: string; runId: string | null; view: string; canLabel?: boolean }) {
+/**
+ * Source map: All sources (the source network) and Source runs (what each run did), read-only for
+ * everyone. Sources are edited, and runs started, only in a location's workspace, under Sources.
+ */
+export default function SourceReview({ locationId, tab, runId, signedIn, showLocationPicker = true, locationName, basePath }: { locationId: string; tab: "sources" | "runs"; runId: string | null; signedIn: boolean; showLocationPicker?: boolean; locationName?: string; basePath?: string }) {
   const router = useRouter();
-  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>(() =>
+    !showLocationPicker && locationId ? [{ id: locationId, name: locationName ?? locationId }] : []);
   const [error, setError] = useState("");
-  const path = (location: string, nextMode = mode, run?: string | null, nextView?: string) => `/source-map?${new URLSearchParams({ ...(location ? { location } : {}), mode: nextMode, ...(run ? { run } : {}), ...(nextView ? { view: nextView } : {}) })}`;
+  const path = (location: string, nextTab = tab, run?: string | null) => {
+    const params = new URLSearchParams({
+      ...(!basePath && location ? { location } : {}),
+      ...(nextTab === "runs" ? { tab: "runs" } : {}),
+      ...(run ? { run } : {}),
+    });
+    return `${basePath ?? "/source-map"}?${params}`;
+  };
   useEffect(() => {
+    if (!showLocationPicker) return;
     mapApi<{ locations: Array<{ id: string; name: string }> }>("locations").then((value) => setLocations(value.locations))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
-  }, []);
+  }, [showLocationPicker]);
   return <>
-    <section className="workspace-toolbar panel">
-      <label className="field">Coverage area<select value={locationId} onChange={(event) => router.push(path(event.target.value))}>
-        <option value="">All locations · source network</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}
-      </select></label>
-      {locationId && <Link className="button secondary" href={`/locations/${encodeURIComponent(locationId)}?tab=settings#source-settings`}>Manage sources · journalist sign-in</Link>}
-      <button className="secondary" onClick={async () => {
-        try { await apiJson("/api/internal-access", { method: "DELETE" }); router.refresh(); }
-        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-      }}>Lock maps</button>
-    </section>
-    <nav className="tabs" aria-label="Source review views">
-      <Link aria-current={mode === "edition" && view !== "compare" ? "page" : undefined} href={path(locationId, "edition")}>Run funnel</Link>
-      <Link aria-current={mode === "edition" && view === "compare" ? "page" : undefined} href={path(locationId, "edition", null, "compare")}>Compare runs</Link>
-      <Link aria-current={mode !== "edition" ? "page" : undefined} href={path(locationId, "inventory")}>Source network</Link>
+    <nav className="tabs" aria-label="Source map views">
+      <Link aria-current={tab === "sources" ? "page" : undefined} href={path(locationId, "sources")}>All sources</Link>
+      <Link aria-current={tab === "runs" ? "page" : undefined} href={path(locationId, "runs")}>Source runs</Link>
     </nav>
     {error && <p className="alert" role="alert">{error}</p>}
-    {mode !== "edition" ? <SourceMapManager key={locationId} locationId={locationId || undefined} canLabel={canLabel} /> :
-      !locationId ? <section className="panel"><h2>Choose a location above to review its runs</h2></section> :
-      <RunFunnel key={`${locationId}:${view}`} locationId={locationId} runId={runId} view={view} />}
+    {tab === "runs" ? <SourceRuns key={locationId} locationId={locationId} runId={runId} canEdit={false} locations={locations}
+      routeFor={basePath ? (location, run) => path(location, "runs", run) : undefined}
+      editHref={signedIn && locationId ? `/locations/${encodeURIComponent(locationId)}?${new URLSearchParams({ tab: "sources", ...(runId ? { run: runId } : {}) })}` : null} /> : <>
+      <section className="workspace-toolbar panel">
+        {showLocationPicker && <label className="field">Coverage area<select value={locationId} onChange={(event) => router.push(path(event.target.value))}>
+          <option value="">All locations · source network</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}
+        </select></label>}
+        {locationId && signedIn && <Link className="button secondary" href={`/locations/${encodeURIComponent(locationId)}?tab=sources`}>Edit in workspace</Link>}
+        {!signedIn && <button className="secondary" onClick={async () => {
+          try { await apiJson("/api/internal-access", { method: "DELETE" }); router.refresh(); }
+          catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+        }}>Lock maps</button>}
+      </section>
+      <SourceMapManager key={locationId} locationId={locationId || undefined} />
+    </>}
   </>;
 }

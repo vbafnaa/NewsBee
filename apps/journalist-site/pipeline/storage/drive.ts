@@ -118,6 +118,33 @@ async function findFile(parentId: string, name: string, mimeType?: string) {
 export class DriveArtifacts implements ArtifactStore {
   readonly kind = "drive" as const;
 
+  async listEntries(parentId: string): Promise<(StoredFile & { mimeType: string })[]> {
+    const files: (StoredFile & { mimeType: string })[] = [];
+    let pageToken: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        q: `'${quoted(checkId(parentId))}' in parents and trashed = false`,
+        fields: "nextPageToken,files(id,name,mimeType)",
+        pageSize: "1000",
+        supportsAllDrives: "true",
+        includeItemsFromAllDrives: "true",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const page = await driveRequest<{ files?: DriveFile[]; nextPageToken?: string }>(`https://www.googleapis.com/drive/v3/files?${params}`);
+      files.push(...(page.files ?? []).map((file) => ({ id: file.id, name: file.name ?? "", mimeType: file.mimeType ?? "application/octet-stream" })));
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return files;
+  }
+
+  async removeById(id: string) {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(id))}?supportsAllDrives=true`,
+      { method: "DELETE", headers: { Authorization: `****** accessToken()}` }, cache: "no-store" },
+    );
+    if (!response.ok && response.status !== 404) throw new Error(`Google Drive artifact cleanup failed (${response.status})`);
+  }
+
   async findFolder(parentId: string, name: string) {
     artifactSegment(name);
     const params = new URLSearchParams({
@@ -188,6 +215,35 @@ export class DriveArtifacts implements ArtifactStore {
     return file.id;
   }
 
+  async saveBinary(parentId: string, name: string, value: Uint8Array, mimeType: string) {
+    artifactSegment(name);
+    let file = await findFile(parentId, name);
+    file ??= await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, mimeType, parents: [checkId(parentId)] }),
+    });
+    const bytes = new Uint8Array(value.byteLength);
+    bytes.set(value);
+    const response = await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(checkId(file.id))}?uploadType=media&supportsAllDrives=true`,
+      {
+        method: "PATCH",
+        headers: { Authorization: `****** accessToken()}`, "Content-Type": mimeType },
+        body: bytes.buffer,
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 500);
+      const quotaGuidance = detail.includes("Service Accounts do not have storage quota")
+        ? " The parent folder must be on a Shared Drive where the service account has at least Contributor access; a My Drive folder shared with the account is not sufficient."
+        : "";
+      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}${quotaGuidance}`);
+    }
+    return file.id;
+  }
+
   async saveJson(parentId: string, name: string, value: unknown) {
     return this.saveText(parentId, name, JSON.stringify(value), "application/json");
   }
@@ -208,6 +264,37 @@ export class DriveArtifacts implements ArtifactStore {
     );
     if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
     return response.text();
+  }
+
+  async readBinary(fileId: string) {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
+    const length = Number(response.headers.get("content-length") ?? 0);
+    if (length > 100 * 1024 * 1024) throw new Error("Video file exceeds the 100 MB YouTube upload limit");
+    if (!response.body) throw new Error("Google Drive video response has no content");
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > 100 * 1024 * 1024) {
+        await reader.cancel();
+        throw new Error("Video file exceeds the 100 MB YouTube upload limit");
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
   }
 
   async list(parentId: string): Promise<StoredFile[]> {

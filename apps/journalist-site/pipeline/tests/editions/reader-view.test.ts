@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Edition, EditionItem } from "../../../../reader-site/src/lib/reader-data";
 
 const data = vi.hoisted(() => ({ readerData: vi.fn() }));
@@ -17,7 +17,22 @@ const edition = (id: string, published_at: number, items: EditionItem[], locatio
   corrections: [{ reason: "Updated the date.", created_at: 1792435200 }],
 });
 
+it("carries labeled event photos through the new reader views using the original edition index", async () => {
+  const photo = { image: "https://upload.wikimedia.org/activity.jpg", image_credit: "Photographer", image_source_url: "https://commons.wikimedia.org/wiki/File:Activity.jpg",
+    image_role: "stock" as const, image_caption: "Board games", image_date: "2026-10-01", image_license: "CC0", image_license_url: "https://creativecommons.org/publicdomain/zero/1.0/" };
+  data.readerData.mockResolvedValue({ locations: [{ id: "ballard-wa", name: "Ballard, WA" }], editions: [edition("photos", 1, [
+    { ...item("record", 0, "public_record", "Census data"), ...photo },
+    { ...item("games", 9, "event", "Board games"), ...photo },
+  ])] });
+  const page = (await loadEditionPage("ballard-wa"))!;
+  expect(page.articles[0].photo).toBeUndefined(); expect(page.articles[0].image).toBeNull();
+  expect(page.articles[1].photo).toMatchObject({ image_role: "stock", image_date: "2026-10-01" });
+  expect(page.articles[1].image).toContain("/api/images/ballard-wa?edition=photos&item=1");
+  expect(page.eventDays.flatMap(day => day.events)[0].photo).toMatchObject({ image_role: "stock" });
+});
+
 beforeEach(() => {
+  vi.stubEnv("NEWSBEE_READER_MEDIA_MODE", "photos");
   data.readerData.mockReset();
   data.readerData.mockResolvedValue({
     locations: [{ id: "ballard-wa", name: "Ballard, Seattle, WA" }, { id: "other-wa", name: "Other, WA" }],
@@ -37,6 +52,23 @@ beforeEach(() => {
       edition("other-edition", 3, [item("other-story", 1, "news_report", "Other town news")], "other-wa"),
     ],
   });
+});
+afterEach(() => vi.unstubAllEnvs());
+
+it("uses distinct illustrations consistently across cards, events and full articles", async () => {
+  vi.stubEnv("NEWSBEE_READER_MEDIA_MODE", "illustrated");
+  data.readerData.mockResolvedValue({ locations: [{ id: "ballard-wa", name: "Ballard, WA" }], editions: [edition("art", 1, [
+    item("mime-a", 1, "event", "Mime workshop"), item("mime-b", 2, "event", "Another mime class"),
+    item("bus", 3, "local_news", "New bus lanes open"), item("police", 4, "safety_incident", "Police report"),
+  ])] });
+  const page = (await loadEditionPage("ballard-wa"))!;
+  expect(page.articles[0].illustration?.id).toBe("performance");
+  expect(page.articles[1].illustration?.id).toBe("event-calendar");
+  expect(page.articles[2].illustration?.id).toBe("transit");
+  expect(page.articles[3].illustration).toBeUndefined();
+  expect(page.topStories.find(story => story.storyId === "bus")?.illustration).toEqual(page.articles[2].illustration);
+  expect(page.eventDays.flatMap(day => day.events).find(event => event.storyId === "mime-a")?.illustration).toEqual(page.articles[0].illustration);
+  expect(page.articles.every(article => !article.photo && !article.image)).toBe(true);
 });
 
 describe("server-rendered reader editions", () => {

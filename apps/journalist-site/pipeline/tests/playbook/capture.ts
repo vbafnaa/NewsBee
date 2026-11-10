@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { mappingSkill } from "../../agent/skill";
-import { agentRound, MAX_ROUNDS, QUERIES_PER_ROUND, TOPICS_OF, withoutGuessedSites } from "../../agent/map-sources";
+import { agentJob, CELL_DRY, CELL_DRY_DORK, ROUND_PROPOSALS, TRIAGE_CATEGORIES, TRIAGE_RESULTS, withoutGuessedSites, type AgentState } from "../../agent/map-sources";
 import { Fetcher } from "../../connectors/fetcher";
 import { aggregator } from "../../connectors/newssearch";
 import type { LocationProfile } from "../../connectors/types";
@@ -16,7 +16,7 @@ import type { HttpTransport } from "../../core/http";
 import { PRIORITY_TOPICS, resolveRunOptions, withRunContext, type PriorityTopic } from "../../core/run-options";
 import { governmentScore } from "../../discovery/city-site";
 import { datasetOf, hubLinks, inspectPage, outsideLinks, RECENT_DAYS, siteLinks, type SiteKind, type SiteLink } from "../../discovery/inspect";
-import { DORK_QUERIES, groupAddresses, matchPortals, methodDefinition, OSM_CAP, OSM_SECTION_CAP, osmSection, PUBLISHER_MIN_HITS, type DiscoveryContext } from "../../discovery/methods";
+import { groupAddresses, INSTITUTION_TOPICS, matchPortals, methodDefinition, OSM_CAP, OSM_SECTION_CAP, osmSection, PUBLISHER_MIN_HITS, type DiscoveryContext } from "../../discovery/methods";
 import { localSchools, schoolLinks } from "../../discovery/schools";
 import { chooseLinks } from "../../discovery/site-pages";
 import { stage1Queries, stage2Queries, TOPIC_KINDS, TOPIC_SECTIONS, type SearchKit } from "../../discovery/topics";
@@ -47,7 +47,7 @@ export const KITS: Record<string, SearchKit> = {
 function queries() {
   const out: Record<string, unknown> = {};
   for (const [name, kit] of Object.entries(KITS)) {
-    out[`${name}:stage1:all:66`] = stage1Queries(kit, [...TOPICS], DORK_QUERIES);
+    out[`${name}:stage1:all:66`] = stage1Queries(kit, [...TOPICS], 66);
     out[`${name}:stage1:all:500`] = stage1Queries(kit, [...TOPICS], 500);
     out[`${name}:stage1:two:9`] = stage1Queries(kit, ["crime", "sports"], 9);
     for (const topic of TOPICS) {
@@ -116,8 +116,8 @@ function pure() {
   const links = (kind: SiteKind) => siteLinks(anchors(LINKS), "https://city.example.gov/", 500, kind);
   const many = links("government") as SiteLink[];
   return {
-    limits: { RECENT_DAYS, OSM_CAP, OSM_SECTION_CAP, PUBLISHER_MIN_HITS, DORK_QUERIES, MAX_ROUNDS, QUERIES_PER_ROUND },
-    maps: { TOPIC_SECTIONS, TOPIC_KINDS, TOPICS_OF, KIND_SECTIONS },
+    limits: { RECENT_DAYS, OSM_CAP, OSM_SECTION_CAP, PUBLISHER_MIN_HITS, CELL_DRY, CELL_DRY_DORK, ROUND_PROPOSALS, TRIAGE_CATEGORIES, TRIAGE_RESULTS },
+    maps: { TOPIC_SECTIONS, TOPIC_KINDS, INSTITUTION_TOPICS, KIND_SECTIONS },
     keywordSection: Object.fromEntries(ITEMS.map((text) => [text, keywordSection(text)])),
     sectionFor: KINDS.flatMap((kind) => ITEMS.slice(0, 200).filter((_, index) => index % 9 === 0).map((title) => [kind, title, sectionFor({ kind, title }), sectionFor({ kind, title: "Nothing to file here" }, "business")])),
     sectionForExplicit: [sectionFor({ title: "x", section_id: "news" }), sectionFor({ title: "Nothing", section_id: "nope" })],
@@ -254,7 +254,7 @@ async function seed(db: Db) {
 }
 
 // The budget row is created by the first paid call, and calls racing to create it can be refused: each run below opens it first.
-/** Every fixed method, the dork method and one agent round, with what each asked for and returned. */
+/** Every fixed method, with what each asked for and returned. */
 export async function methodRuns(db: Db) {
   await seed(db);
   const out: Record<string, unknown> = {};
@@ -262,7 +262,7 @@ export async function methodRuns(db: Db) {
   const options = resolveRunOptions({ flow: "agentic", search_provider: "tavily", paid: { tavily: 9999 } });
   const log = { info() {}, warn() {}, error() {} };
   for (const location of [LOCATION, NEIGHBOURHOOD]) {
-    for (const method of ["government", "osm", "meetings", "opendata", "schools", "groups", "publishers", "llm", "dork"]) {
+    for (const method of ["government", "institutions", "meetings", "opendata", "schools", "groups", "publishers", "homesales"]) {
       const seen: string[] = [];
       const transport = fakeWeb(seen);
       const model = new FakeModel(() => ({ sources: [{ name: "Lakeside Rotary", url: "https://rotary.example.org/", section: "community", located_inside: true, why: "Local" }, { name: "Odd", url: "https://chapel.example.com/", section: "obituaries", located_inside: false, why: "x" }, { name: "Bad", url: "https://lib.example.org/", section: "nope", located_inside: true, why: "y" }, { name: "Skip", url: "https://www.msn.com/x", section: "news", located_inside: true, why: "z" }] }));
@@ -276,28 +276,45 @@ export async function methodRuns(db: Db) {
   return out;
 }
 
-/** Queries finish in any order, so a prompt's lists are compared sorted, and the judge's by its wording alone. */
-const steady = (prompt: string) => prompt.split("\n\nURL: ")[0].split("\n").map((line) => line.startsWith("Confirmed sites: ") ? line.split(", ").sort().join(", ") : line).sort();
-
+/**
+ * The mapping agent's rounds against the made-up web, with a scripted model: round 1's anchors,
+ * round 2's angles (one refused as not local, one Tavily exploration), triage, the model check's
+ * verdicts, and the prompts it was sent apart from the skill. It ends on three unusable plans in a
+ * row. With no model, it stops at once.
+ */
 export async function agentRuns(db: Db) {
   await seed(db);
   const out: Record<string, unknown> = {};
   const settings = { tavilySearchApiKey: "k", modelDailyCalls: 100, modelProviders: [], integrations: {} } as unknown as Settings;
-  const options = resolveRunOptions({ flow: "agentic", search_provider: "tavily", paid: { tavily: 9999 } });
+  const options = resolveRunOptions({ flow: "agentic", search_provider: "tavily", paid: { tavily: 9999 }, topics: ["crime", "government", "news"] });
   const log = { info() {}, warn() {}, error() {} };
+  const plans = [
+    { categories: [{ category: "crime", searches: [{ tool: "tavily" }] }, { category: "government", searches: [{ tool: "tavily" }] }, { category: "news", searches: [{ tool: "tavily" }] }] },
+    { categories: [
+      { category: "crime", angle: "institutions", angle_reason: "the north precinct covers Northgate", searches: [{ tool: "tavily", query: "Where does the Northgate police precinct post its news?" }] },
+      { category: "government", angle: "tool_native", angle_reason: "the city site is the hub", searches: [{ tool: "tavily", url: "https://city.example.gov/", instruction: "find the council agendas" }] },
+      { category: "news", angle: "geography", angle_reason: "the wider region", searches: [{ tool: "tavily", query: "Washington news" }] },
+    ] },
+  ];
   for (const [name, planner] of [["model", true], ["rules", false]] as const) {
     const seen: string[] = [];
     const transport = fakeWeb(seen);
-    const model = new FakeModel((call) => /"verdicts"|one verdict per URL/.test(call.prompt) ? { verdicts: [] } : { reasoning: "thin topics", queries: [{ topic: "crime", query: '"Northgate" police blotter' }, { topic: "other", query: 'site:guess.example.com "Northgate"' }, { topic: "news", query: '"Washington" news' }, { topic: "crime", query: 'inurl:admin "Northgate"' }] });
-    const context = { db, settings, transport, fetcher: new Fetcher(transport, undefined, false), location: NEIGHBOURHOOD, today: "2026-11-06", log, model: planner ? model : null } as unknown as DiscoveryContext;
-    await db.collection("discovered_sources").deleteMany({});
-    await db.collection("search_queries").deleteMany({});
-    await db.collection("source_map").deleteMany({});
+    let call = 0;
+    const model = new FakeModel((request) => {
+      if (/one verdict per source id/.test(request.prompt)) return { verdicts: request.prompt.split("\n\nSource id: ").slice(1).map((block) => ({ id: block.split("\n")[0], verdict: /agendas/.test(block) ? "accept" : "reject", reason_code: /agendas/.test(block) ? "A1" : "R3", evidence: "x", reason: "y" })) };
+      if (/You are triaging search results/.test(request.prompt)) return { decisions: [...request.prompt.matchAll(/^\[(r\d+-\d+)\] (\S+)/gm)].map(([, id, url]) => /agendas/.test(url) ? { id, action: "propose", category: "government" } : { id, action: "skip", why: "a national outlet, not local" }) };
+      return plans[call++] ?? { wander: true };
+    });
+    const context = { db, settings, transport, fetcher: new Fetcher(transport, undefined, false), location: NEIGHBOURHOOD, today: "2026-11-06", log, model: planner ? model : null, judgeModel: model } as unknown as DiscoveryContext;
+    for (const collection of ["discovered_sources", "search_queries", "source_map", "agent_state"]) await db.collection(collection).deleteMany({});
     const runId = `agent-${name}`;
-    const rounds = await withRunContext({ db, runId, locationId: NEIGHBOURHOOD.id, options }, async () => { await paidRefusal("tavily"); return [await agentRound(context, 0), await agentRound(context, 1)]; });
+    const result = await withRunContext({ db, runId, locationId: NEIGHBOURHOOD.id, options }, async () => { await paidRefusal("tavily"); return agentJob(context, 0); });
     const skill = mappingSkill().text;
-    const state = await db.collection("agent_state").findOne({ _id: runId as never });
-    out[name] = clean({ rounds, found: Object.fromEntries(Object.entries(state?.found ?? {}).sort()),  leads: sorted(state?.leads ?? []), known_hosts: sorted(state?.known_hosts ?? []), seen: sorted([...new Set(seen)].filter((url) => !url.endsWith("/robots.txt"))), prompts: model.calls.map((call) => steady(call.prompt.split(skill).join("<SKILL>"))) });
+    const state = await db.collection<AgentState>("agent_state").findOne({ _id: runId });
+    out[name] = clean({
+      result, steps: state?.steps.map(({ ms: _ms, ...step }) => step) ?? [], sources: state?.sources ?? [], checklist: state?.checklist ?? {}, unavailable: state?.unavailable ?? {}, finished: state?.finished?.reason ?? null,
+      known_hosts: state?.known_hosts ?? [], seen: sorted([...new Set(seen)].filter((url) => !url.endsWith("/robots.txt"))), prompts: model.calls.map((call) => call.prompt.split(skill).join("<SKILL>")),
+    });
   }
   return out;
 }

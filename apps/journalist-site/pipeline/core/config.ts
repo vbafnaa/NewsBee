@@ -24,7 +24,14 @@ export type ProviderConfig = {
   /** OpenAI-compatible only: null omits temperature for models that only allow their default. */
   temperature: number | null;
   jsonMode: "json_schema" | "json_object";
+  /** Explicit image-input capability; never send images to an unconfirmed text-only model. */
+  vision?: boolean;
   usage: ProviderUsageConfig;
+  /**
+   * A cheaper model on the same provider for light work (extraction, discovery, the model check).
+   * Unset: Gemini providers use Settings.lightModel; others use their own model.
+   */
+  lightModel?: string | null;
 };
 export type PipelineMode = "local" | "cloud";
 
@@ -53,9 +60,11 @@ export type Settings = {
   newsSearch: Array<"gdelt" | "llm">;
   /** NEWSBEE_LLM_DISCOVERY: Gemini suggests sources at discovery time (every suggestion is checked). */
   llmDiscovery: boolean;
+  /** NEWSBEE_PROPOSED_UNTIL_APPROVED: for the testing phase, every source a map run finds is saved as proposed, and editions read only what a person accepted. On by default. */
+  proposedUntilApproved: boolean;
   /** NEWSBEE_MODEL_DAILY_CALLS: model calls per day for detail extraction and discovery. */
   modelDailyCalls: number;
-  /** NEWSBEE_GEMINI_LIGHT_MODEL: the light model for extraction and discovery (Flash-Lite). */
+  /** NEWSBEE_GEMINI_LIGHT_MODEL: the light model for Gemini providers that don't set their own (Flash-Lite). */
   lightModel: string;
   /** Keys for the paid integrations; a service with no key stays off whatever the run allows. */
   integrations: Integrations;
@@ -66,6 +75,8 @@ export type Integrations = {
   searchapiKey: string | null;
   brightdataKey: string | null;
   brightdataZone: string | null;
+  /** Bright Data's Web Unlocker zone, for opening pages: a different zone from search. */
+  brightdataUnlockerZone: string | null;
   exaKey: string | null;
   scrapingbeeKey: string | null;
   typesafeKey: string | null;
@@ -74,6 +85,7 @@ export type Integrations = {
   jevModel: string;
   attomKey: string | null;
   jinaKey: string | null;
+  falKey: string | null;
 };
 
 export const DEFAULT_MODEL_DAILY_CALLS = 800;
@@ -152,6 +164,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     collectBudgetSeconds: Math.round((nonNegative(env.NEWSBEE_COLLECT_BUDGET_MINUTES, "NEWSBEE_COLLECT_BUDGET_MINUTES") ?? DEFAULT_COLLECT_BUDGET_MINUTES) * 60) || null,
     newsSearch: newsSearchValue(env.NEWSBEE_NEWS_SEARCH),
     llmDiscovery: flag(env.NEWSBEE_LLM_DISCOVERY, true),
+    proposedUntilApproved: flag(env.NEWSBEE_PROPOSED_UNTIL_APPROVED, true),
     modelDailyCalls: nonNegative(env.NEWSBEE_MODEL_DAILY_CALLS, "NEWSBEE_MODEL_DAILY_CALLS") ?? DEFAULT_MODEL_DAILY_CALLS,
     lightModel: blank(env.NEWSBEE_GEMINI_LIGHT_MODEL) ?? DEFAULT_LIGHT_MODEL,
     integrations: {
@@ -159,6 +172,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
       searchapiKey: blank(env.NEWSBEE_SEARCHAPI_API_KEY),
       brightdataKey: blank(env.NEWSBEE_BRIGHTDATA_API_KEY),
       brightdataZone: blank(env.NEWSBEE_BRIGHTDATA_ZONE),
+      brightdataUnlockerZone: blank(env.NEWSBEE_BRIGHTDATA_UNLOCKER_ZONE),
       exaKey: blank(env.NEWSBEE_EXA_API_KEY),
       scrapingbeeKey: blank(env.NEWSBEE_SCRAPINGBEE_API_KEY),
       typesafeKey: blank(env.TYPESAFE_API_KEY),
@@ -167,6 +181,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
       jevModel: blank(env.NEWSBEE_JEV_MODEL) ?? "jev-1.13",
       attomKey: blank(env.NEWSBEE_ATTOM_API_KEY),
       jinaKey: blank(env.NEWSBEE_JINA_API_KEY),
+      falKey: blank(env.FAL_KEY),
     },
   };
 }
@@ -203,6 +218,7 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
       return {
         ...base,
         kind: "ollama",
+        vision: env.NEWSBEE_OLLAMA_VISION === "true",
         baseUrl: (env.NEWSBEE_OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/$/, ""),
         model: env.NEWSBEE_OLLAMA_MODEL === undefined ? "qwen3:4b" : blank(env.NEWSBEE_OLLAMA_MODEL),
       };
@@ -213,9 +229,11 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
       return {
         ...base,
         kind: "gemini",
+        vision: env.NEWSBEE_GEMINI_VISION !== "false",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta",
         model,
         apiKey: blank(env.NEWSBEE_GEMINI_API_KEY) ?? blank(env.GOOGLE_AI_STUDIO_API_KEY),
+        lightModel: modelName(blank(env.NEWSBEE_GEMINI_LIGHT_MODEL) ?? DEFAULT_LIGHT_MODEL, "NEWSBEE_GEMINI_LIGHT_MODEL"),
       };
     }
     const prefix = `NEWSBEE_LLM_${name.toUpperCase()}_`;
@@ -233,7 +251,9 @@ export function modelProviders(env: NodeJS.ProcessEnv, mode: PipelineMode): Prov
       maxTokensParam: enumValue(blank(env[`${prefix}MAX_TOKENS_PARAM`]), ["max_tokens", "max_completion_tokens"] as const, "max_tokens", `${prefix}MAX_TOKENS_PARAM`),
       temperature: temperatureValue(blank(env[`${prefix}TEMPERATURE`]), `${prefix}TEMPERATURE`),
       jsonMode: enumValue(blank(env[`${prefix}JSON_MODE`]), ["json_schema", "json_object"] as const, "json_schema", `${prefix}JSON_MODE`),
+      vision: env[`${prefix}VISION`] === "true",
       usage: base.usage,
+      lightModel: blank(env[`${prefix}LIGHT_MODEL`]),
     };
   });
 }
@@ -248,14 +268,33 @@ export function rankingSettings(settings: Settings): Settings {
   return hosted.length ? { ...settings, modelProviders: hosted } : settings;
 }
 
-/** Light-model settings: the primary Gemini provider with the light model first, then the usual chain. */
+const MODEL_NAME = /^[A-Za-z0-9._:/-]{1,100}$/;
+function modelName(value: string, variable: string) {
+  if (!MODEL_NAME.test(value)) throw new Error(`${variable} is invalid`);
+  return value;
+}
+
+/** A provider's light model, or null when its light work runs on its own model. */
+export function lightModelOf(provider: ProviderConfig, settings: Pick<Settings, "lightModel">): string | null {
+  const light = provider.lightModel !== undefined && provider.lightModel !== null ? provider.lightModel
+    : provider.kind === "gemini" ? settings.lightModel : null;
+  return light && light !== provider.model ? light : null;
+}
+
+/**
+ * Light-model settings: the configured providers in their order, each preceded by its light model
+ * when it has one (`<name>_light`). Any provider kind works; nothing assumes Gemini.
+ */
 export function lightSettings(settings: Settings, env: NodeJS.ProcessEnv = process.env): Settings {
-  const gemini = settings.modelProviders.find((provider) => provider.kind === "gemini");
-  if (!gemini) return settings;
-  const lightUsage = usageConfig(env, "gemini_light");
-  return { ...settings, modelProviders: [{ ...gemini, name: "gemini_light", model: settings.lightModel, usage: {
-    ...lightUsage,
-    requestsPerMinute: lightUsage.requestsPerMinute ?? gemini.usage.requestsPerMinute,
-    requestsPerDay: lightUsage.requestsPerDay ?? gemini.usage.requestsPerDay,
-  } }, ...settings.modelProviders] };
+  const modelProviders = settings.modelProviders.flatMap((provider): ProviderConfig[] => {
+    const light = lightModelOf(provider, settings);
+    if (!light) return [provider];
+    const lightUsage = usageConfig(env, `${provider.name}_light`);
+    return [{ ...provider, name: `${provider.name}_light`, model: light, lightModel: null, usage: {
+      ...lightUsage,
+      requestsPerMinute: lightUsage.requestsPerMinute ?? provider.usage.requestsPerMinute,
+      requestsPerDay: lightUsage.requestsPerDay ?? provider.usage.requestsPerDay,
+    } }, provider];
+  });
+  return modelProviders.length === settings.modelProviders.length ? settings : { ...settings, modelProviders };
 }

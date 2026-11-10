@@ -35,7 +35,8 @@ export type SearchKit = {
   schools: Array<{ name: string; host: string | null }>; institutions: Institution[]; venues: string[]; agencyHosts: string[]; funeralHosts: string[]; schoolHosts: string[]; teamHosts: string[]; savedHosts: string[]; associationHost: string | null;
 };
 
-async function postcode(transport: HttpTransport, location: LocationProfile) {
+/** The place's postal code, from its coordinates. */
+export async function postcode(transport: HttpTransport, location: LocationProfile) {
   if (typeof location.latitude !== "number" || typeof location.longitude !== "number") return [];
   try {
     const params = new URLSearchParams({ lat: String(location.latitude), lon: String(location.longitude), format: "jsonv2", zoom: "14" });

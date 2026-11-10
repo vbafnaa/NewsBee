@@ -1,5 +1,6 @@
 ---
 import { directoryTown, SUGGESTION_SECTIONS } from "../lib/reader-data";
+import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 export const prerender = false;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const id = Astro.url.searchParams.get("location");
@@ -14,7 +15,7 @@ try {
 }
 ---
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /><title>Suggest a source | Newsbee</title></head>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /><GoogleAnalytics /><title>Suggest a source | Newsbee</title></head>
 <body><main><a href={base || "/"} class="brand">Newsbee</a><h1>Suggest a source</h1>
   {error && <p role="alert">{error}</p>}
   {town && <><p>Know a useful source for {town.name}? An editor checks every suggestion before it is added.</p>

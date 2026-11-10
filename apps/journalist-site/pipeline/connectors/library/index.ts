@@ -283,6 +283,14 @@ export const libraryConnector: Connector = {
     const key = task.params?.fscskey ?? task.source_id.slice("library:".length);
     const system = context.location.systems.find((candidate) => candidate.fscskey === key);
     if (!system) return { result: sourceResult(task.source_id, task.name, "failed", `Library system not found: ${key}`), events: [] };
+    if (typeof task.params?.reviewed_feed_url === "string") {
+      const names = Array.isArray(task.params.reviewed_branches) ? task.params.reviewed_branches : [];
+      const branches = system.branches.filter((branch) => names.includes(branch.name));
+      if (!names.length || branches.length !== names.length) return {
+        result: sourceResult(task.source_id, task.name, "blocked", "Reviewed library branches must match the onboarded branches"), events: [],
+      };
+      return (await collectLibraryLink(context, task.params.reviewed_feed_url, { ...system, branches })).collected;
+    }
     return runSystem(system, context);
   },
 };

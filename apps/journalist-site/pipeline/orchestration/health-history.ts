@@ -20,10 +20,10 @@ export async function healthHistory(db: Db, days: 7 | 30, locationId: string | n
   const end = Date.parse(`${today}T00:00:00Z`) + 86400000;
   const start = end - days * 86400000;
   const buckets = await runs(db).aggregate<HealthDay>([
-    { $match: { status: { $in: ["published", "failed"] }, completed_at: { $gte: start / 1000, $lt: end / 1000 }, ...(locationId ? { location_id: locationId } : {}) } },
+    { $match: { status: { $in: ["built", "published", "failed"] }, completed_at: { $gte: start / 1000, $lt: end / 1000 }, ...(locationId ? { location_id: locationId } : {}) } },
     { $group: {
       _id: { $dateToString: { format: "%Y-%m-%d", date: { $toDate: { $multiply: ["$completed_at", 1000] } }, timezone: "UTC" } },
-      completed_runs: { $sum: { $cond: [{ $eq: ["$status", "published"] }, 1, 0] } },
+      completed_runs: { $sum: { $cond: [{ $in: ["$status", ["built", "published"]] }, 1, 0] } },
       failed_runs: { $sum: { $cond: [{ $eq: ["$status", "failed"] }, 1, 0] } },
       published_items: { $sum: { $ifNull: ["$published.items", 0] } },
       held_items: { $sum: { $ifNull: ["$published.held", 0] } },

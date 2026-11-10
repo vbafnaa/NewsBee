@@ -3,6 +3,17 @@ import Google from "next-auth/providers/google";
 import { MongoClient } from "mongodb";
 import { disableAccount, normalizedEmail, ownerEmail, principalForEmail, type Account } from "./pipeline/accounts/identity";
 
+declare module "next-auth/jwt" {
+  interface JWT {
+    youtubeRefreshToken?: string;
+    youtubeAccountEmail?: string;
+    youtubeScopes?: string[];
+    googleDriveRefreshToken?: string;
+    googleDriveAccountEmail?: string;
+    googleDriveScopes?: string[];
+  }
+}
+
 type MongoCache = typeof globalThis & {
   newsbeeMongo?: {
     uri: string;
@@ -92,6 +103,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           profile?.email_verified === true &&
           (await isAdminEmail(email)),
       );
+    },
+    async jwt({ token, user, account }) {
+      if (account?.provider === "google") {
+        const accountEmail = (user?.email ?? token.email)?.trim().toLowerCase();
+        const scopes = account.scope?.split(" ").filter(Boolean) ?? [];
+        if (token.youtubeAccountEmail && token.youtubeAccountEmail !== accountEmail) {
+          delete token.youtubeRefreshToken;
+          delete token.youtubeAccountEmail;
+          delete token.youtubeScopes;
+        }
+        if (token.googleDriveAccountEmail && token.googleDriveAccountEmail !== accountEmail) {
+          delete token.googleDriveRefreshToken;
+          delete token.googleDriveAccountEmail;
+          delete token.googleDriveScopes;
+        }
+        if (accountEmail && scopes.includes("https://www.googleapis.com/auth/youtube")) {
+          if (account.refresh_token) token.youtubeRefreshToken = account.refresh_token;
+          token.youtubeAccountEmail = accountEmail;
+          token.youtubeScopes = [...new Set([...(token.youtubeScopes ?? []), ...scopes])];
+        }
+        if (accountEmail && scopes.includes("https://www.googleapis.com/auth/drive")) {
+          if (account.refresh_token) token.googleDriveRefreshToken = account.refresh_token;
+          token.googleDriveAccountEmail = accountEmail;
+          token.googleDriveScopes = [...new Set([...(token.googleDriveScopes ?? []), ...scopes])];
+        }
+      }
+      return token;
     },
   },
 });

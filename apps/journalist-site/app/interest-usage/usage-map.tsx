@@ -14,8 +14,8 @@ const day = (value: string | null) => value ? new Date(value).toLocaleDateString
 
 const loadRecordedUsage = (range: string) => mapApi<UsageSummary>(`usage-map${range ? `?${range}` : ""}`);
 
-export default function UsageMap({ loadUsage = loadRecordedUsage, preview = false }: {
-  loadUsage?: (range: string) => Promise<UsageSummary>; preview?: boolean;
+export default function UsageMap({ loadUsage = loadRecordedUsage, preview = false, signedIn = false }: {
+  loadUsage?: (range: string) => Promise<UsageSummary>; preview?: boolean; signedIn?: boolean;
 }) {
   const router = useRouter();
   const [data, setData] = useState<UsageSummary | null>(null);
@@ -47,19 +47,19 @@ export default function UsageMap({ loadUsage = loadRecordedUsage, preview = fals
         <label className="field">From (UTC)<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
         <label className="field">Through (UTC)<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
         <button type="submit">Apply dates</button><button type="button" className="secondary" onClick={() => { setFrom(""); setTo(""); setRange(""); setError(""); }}>All recorded history</button>
-        {!preview && <button type="button" className="secondary" onClick={async () => {
+        {!preview && !signedIn && <button type="button" className="secondary" onClick={async () => {
           try { await apiJson("/api/internal-access", { method: "DELETE" }); router.refresh(); }
           catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
         }}>Lock maps</button>}
       </form>
-      <p className="chart-caption">Blank dates include all recorded history. Counts are by the time an event was recorded, in UTC.</p>
+      <p className="chart-caption">Blank dates: all history (UTC).</p>
     </section>
     {error && <p className="alert" role="alert">{error}</p>}
     {!data && !error && <p role="status">Loading recorded usage…</p>}
     {data && <>
       <div className="metric-grid usage-metrics">{METRICS.map(([key, label]) => <button key={key} type="button" className="metric-card" aria-pressed={metric === key} onClick={() => setMetric(key)} style={{ borderTopColor: COLORS[key] }}><small>{label}</small><strong>{totals[key].toLocaleString()}</strong><span>Show on map</span></button>)}</div>
       <section className="panel">
-        <div className="section-heading"><div><h2>{METRICS.find(([key]) => key === metric)![1]} by community</h2><p>Darker cells mean more activity. Select a community for exact counts.</p></div>
+        <div className="section-heading"><div><h2>{METRICS.find(([key]) => key === metric)![1]} by community</h2><p>Darker means more activity.</p></div>
           <label className="field">Location<select aria-label="Location" value={location} onChange={(event) => { setLocation(event.target.value); setSelected(""); }}><option value="">All recorded locations</option>{data.rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label></div>
         {!totals[metric] ? <p className="empty-state">No {METRICS.find(([key]) => key === metric)![1].toLowerCase()} recorded for this selection. No activity is inferred from searches, source clicks or model calls.</p> :
           <InteractiveHeatmap key={`${range}/${location}/${metric}`} rows={rows} metric={metric} selected={selected} onSelect={setSelected} />}
@@ -67,7 +67,7 @@ export default function UsageMap({ loadUsage = loadRecordedUsage, preview = fals
         <div className="table-wrap"><table><caption>Exact counts by newsletter / requested location</caption><thead><tr><th>Community</th>{METRICS.map(([key, label]) => <th key={key}>{label}</th>)}<th>Coverage</th></tr></thead><tbody>
           {rows.map((row) => <tr key={row.id} className={selected === row.id ? "selected-row" : ""}><td><button className="run-inspect-link" onClick={() => setSelected(row.id)}>{row.name}</button>{(row.latitude === null || row.longitude === null) && <small> · not mapped</small>}</td>{METRICS.map(([key]) => <td key={key}>{row[key].toLocaleString()}</td>)}<td>{preview ? "Sample only" : row.onboarded ? <Link href={`/locations/${encodeURIComponent(row.id)}`}>Open workspace</Link> : <Link href="/locations#onboarding">Not onboarded</Link>}</td></tr>)}
         </tbody></table></div>
-        {!rows.length && <p>No recorded activity in this date range. Usage appears after an edition is read or a signup is saved.</p>}
+        {!rows.length && <p>No activity in this range.</p>}
       </section>
       <details className="panel"><summary>Metric definitions, privacy &amp; history</summary>
         <dl className="metric-definitions"><dt>Edition reads</dt><dd>One anonymous edition-view event, not one event per story. Reloads and return visits count again; these are not unique people. Source opens and shares are excluded. Tracking can be blocked and is not email-open tracking.</dd>

@@ -5,6 +5,7 @@ import { Story, collapse, type SourceEvent } from "../../editions/stories";
 import { EvidenceReader, EVIDENCE_LIMITS, evidenceFor, evidenceText, rankingDescription, selectPassages } from "../../editions/evidence";
 import { extractDetails, groundDetails, itemTexts, saveText } from "../../editions/details";
 import { authorNextStory, rankSection, type DraftDoc, type AuthoringDeps } from "../../editions/authoring";
+import { defaultRunOptions, withRunContext } from "../../core/run-options";
 import { loadSettings } from "../../core/config";
 import type { HttpTransport } from "../../core/http";
 import { COLLECTIONS } from "../../storage/mongo";
@@ -294,4 +295,42 @@ it("keeps per-fact provenance and re-extracts when the evidence input changes", 
   await db.collection(COLLECTIONS.editions).updateOne({ id: "run" }, { $set: { status: "drafting", "events.0.facts.description": "The garden plans now include an updated timetable." } });
   await authorNextStory(deps, "run");
   expect(light.calls).toHaveLength(2);
+});
+
+
+it("refetches relaxed-run cache text before strict ranking or writing", async () => {
+  const item = story(), get = transport();
+  await withRunContext({ db, runId: "relaxed", locationId: "fixture-wa", options: { ...defaultRunOptions({}), access: "relaxed" } }, () =>
+    saveText(db, item.first.source_url, "Restricted cached article text. ".repeat(10), { canonical_url: item.first.source_url, reuse_allowed: true }));
+  await withRunContext({ db, runId: "strict", locationId: "fixture-wa", options: defaultRunOptions({}) }, () =>
+    new EvidenceReader(db, get, log, false).enrich([item]));
+  expect(get).toHaveBeenCalled();
+  expect(evidenceFor(item)!.sources[0].status).toBe("fetched");
+  expect(rankingDescription(item)).not.toContain("Restricted cached article");
+  expect(evidenceText(evidenceFor(item))).toContain(action);
+});
+
+it("holds unsupported numbers after source collection, evidence ranking and article generation", async () => {
+  const { deps, model } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  vi.spyOn(model, "generateStructured").mockResolvedValue({ response: JSON.stringify({ headline: "Garden plans at Cedar Park", summary: "The council approved 999 playgrounds." }), done: true });
+  const result = await authorNextStory(deps, "run");
+  expect(result.result).toMatchObject({ disposition: "held", attempts: 2, validation_errors: expect.arrayContaining(["summary:unsupported_number:999"]) });
+  expect(await db.collection(COLLECTIONS.storyCache).countDocuments()).toBe(0);
+});
+
+it("does not approve invented facts when quality selection is relaxed", async () => {
+  const { deps, model } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  vi.spyOn(model, "generateStructured").mockResolvedValue({ response: JSON.stringify({ headline: "Garden plans at Cedar Park", summary: "The council approved 999 playgrounds." }), done: true });
+  const result = await withRunContext({ db, runId: "run", locationId: "fixture-wa", options: { ...defaultRunOptions({}), guardrails_off: ["quality"] } }, () => authorNextStory(deps, "run"));
+  expect(result.result).toMatchObject({ disposition: "held", validation_errors: expect.arrayContaining(["summary:unsupported_number:999"]) });
+});
+
+it("keeps the exact writing evidence for edition-front checks, not just the original feed snippet", async () => {
+  const { deps } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  const result = await authorNextStory(deps, "run");
+  expect(result.result?.writing_source.description).toContain(action);
+  expect(result.result?.story.description).not.toContain(action);
 });

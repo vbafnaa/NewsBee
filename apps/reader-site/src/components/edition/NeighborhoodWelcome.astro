@@ -1,0 +1,24 @@
+---
+import { neighborhoodArt, neighborhoodArtAsset } from "../../../../../shared/neighborhood-illustrations";
+interface Props { locationId: string; mediaMode?: string }
+const { locationId, mediaMode } = Astro.props;
+const profile = mediaMode === "illustrated" ? neighborhoodArt(locationId) : null;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+{profile && <section class={`neighborhood-welcome ${profile.id}`} aria-labelledby="neighborhood-welcome-heading">
+  <div class="welcome-copy"><p class="nb-label">A note from your neighborhood</p><h1 id="neighborhood-welcome-heading">Hello, {profile.name}.</h1><p>{profile.intro}</p></div>
+  <figure>
+    <img src={neighborhoodArtAsset(profile, base)} srcset={`${neighborhoodArtAsset(profile, base, true)} 960w, ${neighborhoodArtAsset(profile, base)} 2172w`}
+      sizes="(max-width: 70rem) calc(100vw - 2rem), 1052px" alt={profile.alt} width="2172" height="724" loading="eager" decoding="async" />
+  </figure>
+</section>}
+<style>
+  .neighborhood-welcome { display: grid; gap: var(--space-5); padding-top: var(--space-6); min-width: 0; }
+  .welcome-copy { display: grid; gap: var(--space-4); text-align: center; margin-inline: auto; max-width: 42rem; }
+  h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.12; letter-spacing: -.02em; }
+  .welcome-copy > p:last-child { color: var(--color-muted); line-height: 1.65; max-width: 48ch; margin-inline: auto; }
+  figure { margin: 0; min-width: 0; }
+  img { display: block; width: 100%; height: auto; mix-blend-mode: multiply;
+    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent); mask-composite: intersect; }
+  @media (max-width: 40rem) { .neighborhood-welcome { padding-top: 0; } .welcome-copy > p:last-child { font-size: var(--text-sm); } }
+</style>

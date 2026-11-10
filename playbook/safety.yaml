@@ -57,10 +57,6 @@ search_playbook:
       - { id: safety.stage1.prosecutor, stage: stage1, source_type: Prosecutor, pattern: '"{county} County" "{city}" prosecutor ("press release" OR news OR charges)' }
       - { id: safety.stage2.agency_sweep, stage: stage2, source_type: Police, for_each: { list: agency_hosts, limit: 2 }, pattern: 'site:{host} "{place}" (arrest OR incident OR investigation) after:{after}' }
       - { id: safety.stage2.place_sweep, stage: stage2, source_type: Police, pattern: '"{place}" (police OR sheriff) (arrested OR incident OR investigation) after:{after}' }
-  - consumers: [google, non_google]
-    from: apps/journalist-site/pipeline/agent/map-sources.ts
-    rules:
-      - { id: safety.fallback.words, stage: agent_fallback, text: Words the agent searches with when it has no planner., pattern: police reports }
 
 page_words:
   - consumers: [manual]

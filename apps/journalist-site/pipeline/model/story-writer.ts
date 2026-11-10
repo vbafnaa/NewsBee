@@ -1,13 +1,15 @@
 /** Grounded story, edition-front and email-preview writing with fail-closed checks. */
 import type { ModelRuntime, JsonSchema } from "./runtime";
+import { decodeHTML } from "entities";
 import { ModelRateLimitError } from "./runtime";
+import { groundingErrors, reportingErrors, namedEntityErrors } from "./grounding";
 import { addedClaims } from "./news-blurb";
 import { NEWS_KINDS, PURPOSE } from "../editorial/kinds";
 import { editionVoiceGuide, explainVoice, voiceErrors, voiceGuide } from "./voice";
 import { explainFloor, floorErrors, type FloorFlags } from "../editorial/floor";
 export { NEWS_KINDS } from "../editorial/kinds";
 
-export const WRITING_POLICY = "story_v8_evidence";
+export const WRITING_POLICY = "story_v10_reported_grounding";
 export const HEADLINE_MAX = 90;
 export const SUMMARY_MAX = 900;
 export const SUMMARY_WORDS_MAX = 120;
@@ -79,6 +81,7 @@ export function styleErrors(value: string, headline?: string, prose = true, date
   return errors;
 }
 export function eventName(title: string) {
+  title = decodeHTML(title);
   return (title.split(NAME_SPLIT, 1)[0] ?? title).split(NAME_CUT, 1)[0].replace(NAME_DATE, " ").split(/\s+/).filter(Boolean).join(" ");
 }
 function stem(word: string) { const lower = word.toLowerCase().replace(/['’]s$/, ""); return lower.length > 3 && lower.endsWith("s") ? lower.slice(0, -1) : lower; }
@@ -111,19 +114,36 @@ function editorialClaimErrors(value: string, allowed: string[]) {
   return claims.filter((claim) => claim.pattern.test(value) && !claim.evidence.test(source)).map((claim) => claim.label);
 }
 function dateClaimErrors(value: string, allowed: string[]) {
-  const supported = new Set(allowed.flatMap((text) => [...text.matchAll(new RegExp(WHEN_WORDS.source, "g"))]).map((match) => match[0].toLowerCase()));
-  return [...value.matchAll(new RegExp(WHEN_WORDS.source, "g"))]
+  // Lowercase "may" and "march" are ordinary verbs, not calendar claims.
+  const words = (text: string) => [...text.matchAll(new RegExp(WHEN_WORDS.source, "gi"))].filter(([word]) => !["may", "march", "marches"].includes(word));
+  const supported = new Set(allowed.flatMap(words).map((match) => match[0].toLowerCase()));
+  return words(value)
     .filter((match) => !supported.has(match[0].toLowerCase()))
     .map((match) => `unsupported_date_word:${match[0].toLowerCase()}`);
 }
+/** Conservative lexical check: quantities must occur in the supplied evidence.
+ * Formatting commas and decimal trailing zeroes are equivalent; currency, percent
+ * and magnitude remain significant. This does not prove a number's semantic role.
+ */
+export function numberClaimErrors(value: string, allowed: string[]) {
+  const quantities = (text: string) => [...text.matchAll(/(?:[$£€]\s*)?\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:%|percent\b|thousand\b|million\b|billion\b))?/gi)]
+    .map(([token]) => token.toLowerCase().replace(/,/g, "").replace(/\s+/g, "").replace(/percent$/, "%").replace(/\d+(?:\.\d+)?/, (number) => String(Number(number))));
+  const supported = new Set(allowed.flatMap(quantities));
+  return [...new Set(quantities(value).filter((token) => !supported.has(token)).map((token) => `unsupported_number:${token}`))];
+}
+
 export function validateItem(story: StoryInput, draft: ItemDraft) {
   const allowed = storyAllowed(story);
-  const dates = !NEWS_KINDS.has(story.kind ?? "event");
   const errors: string[] = [];
+  errors.push(...namedEntityErrors(draft.summary, allowed).map((e) => `summary:${e}`));
+  errors.push(...groundingErrors(draft.headline, allowed).map((e) => `headline:${e}`), ...groundingErrors(draft.summary, allowed).map((e) => `summary:${e}`));
+  errors.push(...reportingErrors(draft.headline, story.title, true).map((e) => `headline:${e}`), ...reportingErrors(draft.summary, story.title).map((e) => `summary:${e}`));
   errors.push(...attentionErrors([story], `${draft.headline} ${draft.summary}`));
+  errors.push(...numberClaimErrors(draft.headline, allowed).map((error) => `headline:${error}`));
+  errors.push(...numberClaimErrors(draft.summary, allowed).map((error) => `summary:${error}`));
   errors.push(...addedClaims(draft.headline, allowed, 1).map((error) => `headline:${error}`));
   errors.push(...styleErrors(draft.headline, undefined, false, false).filter((error) => error !== "repeated_sentence").map((error) => `headline:${error}`));
-  if (dates) errors.push(...dateClaimErrors(draft.headline, allowed).map((error) => `headline:${error}`));
+  errors.push(...dateClaimErrors(draft.headline, allowed).map((error) => `headline:${error}`));
   errors.push(...nameErrors(draft.headline, story.title).map((error) => `headline:${error}`));
   errors.push(...headlineErrors(draft.headline).map((error) => `headline:${error}`));
   errors.push(...editorialClaimErrors(draft.headline, allowed).map((error) => `headline:${error}`));
@@ -131,7 +151,7 @@ export function validateItem(story: StoryInput, draft: ItemDraft) {
   if (draft.summary.trim().split(/\s+/).length > SUMMARY_WORDS_MAX) errors.push("summary:too_many_words");
   errors.push(...editorialClaimErrors(draft.summary, allowed).map((error) => `summary:${error}`));
   errors.push(...styleErrors(draft.summary, undefined, true, false).map((error) => `summary:${error}`));
-  if (dates) errors.push(...dateClaimErrors(draft.summary, allowed).map((error) => `summary:${error}`));
+  errors.push(...dateClaimErrors(draft.summary, allowed).map((error) => `summary:${error}`));
   errors.push(...voiceErrors(draft.headline, allowed, story.kind, "headline").map((error) => `headline:${error}`));
   errors.push(...voiceErrors(draft.summary, allowed, story.kind, "summary").map((error) => `summary:${error}`));
   const flags = story.floor_flags as FloorFlags | undefined;
@@ -139,14 +159,14 @@ export function validateItem(story: StoryInput, draft: ItemDraft) {
   return [...new Set(errors)];
 }
 export function itemPrompt(story: StoryInput) {
-  const data = { title: story.title, description: story.description ?? null };
+  const data = { title: story.title, description: story.description ?? null, venues: story.venues ?? [] };
   const kind = story.kind ?? "event";
   const purpose = PURPOSE[kind] ?? PURPOSE.event;
   const rules = NEWS_KINDS.has(kind) ? NEWS_RULES : RULES;
   const people = "Readers connect with people and places: when the description names people, venues, streets or organisations, use those names, and lead with the most human or concrete detail.";
   const floor = typeof story.floor_instructions === "string" && story.floor_instructions ? ` ${story.floor_instructions}` : "";
   const update = story.update_of ? " This is an update to a story printed in an earlier edition: lead with what is new." : "";
-  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${people}${update}${floor} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a clear headline of at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. ${rules} ${HEADLINE_GUIDE} The event's name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
+  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${people}${update}${floor} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a clear headline of at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. A one-sentence factual brief is better than invented purpose, emotion or a generic call to action. Do not write advertising language, address readers as us/our, or tell them to celebrate, join us or not miss out. ${rules} ${HEADLINE_GUIDE} The story's identifying name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
 }
 export function frontPrompt(context: Record<string, unknown>) {
   const stories = context.stories as StoryInput[];
@@ -159,7 +179,7 @@ function parseObject<T extends object>(generation: string, schema: JsonSchema, r
   const data: unknown = JSON.parse(generation);
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid structured response");
   const object = data as Record<string, unknown>;
-  if (Object.keys(object).some((key) => !required.includes(key)) || required.some((key) => typeof object[key] !== "string" || !(object[key] as string).length || Array.from(object[key] as string).length > limits[key])) throw new Error("Invalid structured response");
+  if (Object.keys(object).some((key) => !required.includes(key)) || required.some((key) => typeof object[key] !== "string" || !(object[key] as string).trim().length || Array.from(object[key] as string).length > limits[key])) throw new Error("Invalid structured response");
   return Object.fromEntries(required.map((key) => [key, object[key]])) as T;
 }
 async function generate<T extends object>(runtime: ModelRuntime, text: string, schema: JsonSchema, required: string[], limits: Record<string, number>) {
@@ -169,9 +189,13 @@ async function generate<T extends object>(runtime: ModelRuntime, text: string, s
 }
 export function explain(errors: string[], title?: string) {
   const notes = ["unsupported_claim_word means the word is not in the story: remove it."];
+  if (errors.some((error) => error.includes("unsupported_number:") || error.includes("unsupported_date_word:"))) notes.push("Use only numbers, amounts, percentages and calendar words explicitly present in the source. Preserve their units and meaning; remove unsupported dates or quantities.");
   if (title && errors.some((error) => error.endsWith("drops_event_name"))) notes.push(`drops_event_name means the headline must include the event's own name, ${JSON.stringify(eventName(title))}, written as is.`);
   if (errors.some((error) => error.endsWith("incomplete_headline"))) notes.push("incomplete_headline means the headline is cut off or leaves an unfinished thought. Rewrite a shorter complete headline; do not just remove the last word or add punctuation.");
+  if (errors.some((error) => error.includes("unsupported_name:"))) notes.push("Remove invented people, organizations and places. Use only names explicitly present in the supplied source; do not infer a venue, street or organizer from the topic.");
   if (errors.some((error) => /unsupported_(?:novelty|moderation|attribution|developmental_claim|language_claim)$/.test(error))) notes.push("Remove the unsupported novelty, format, attribution, developmental or language assertion. A recurring listing is not a launch. Use only what the description states, even if that means a shorter article.");
+  if (errors.some((error) => /unsupported_(?:quote|decision|completion|purpose)/.test(error))) notes.push("Use only verbatim source quotations. Preserve uncertainty and negation: proposed is not approved, and planned is not started or completed. Remove unsupported outcome claims and any inferred purpose, motive or benefit.");
+  if (errors.some((error) => error.endsWith("promotional_language"))) notes.push("Rewrite as neutral reported prose. Remove promotional invitations, invented purposes, hype and generic closing lines. Sparse evidence should produce a short factual brief.");
   const voice = explainVoice(errors);
   if (voice) notes.push(voice);
   const floor = explainFloor(errors);
@@ -207,12 +231,14 @@ function editionAllowed(context: ReturnType<typeof editionContext>, stories: Sto
 export function validateFront(context: ReturnType<typeof editionContext>, stories: StoryInput[], draft: FrontDraft) {
   const allowed = editionAllowed(context, stories);
   const original = stories.flatMap(storyAllowed);
+  const factual = [...namedEntityErrors(draft.intro, [context.community, ...original]).map((e) => `intro:${e}`), ...groundingErrors(draft.headline, original).map((e) => `headline:${e}`), ...groundingErrors(draft.intro, original).map((e) => `intro:${e}`), ...numberClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...numberClaimErrors(draft.intro, original).map((e) => `intro:${e}`), ...dateClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...dateClaimErrors(draft.intro, original).map((e) => `intro:${e}`)];
   const attention = attentionErrors(stories, `${draft.headline} ${draft.intro}`);
-  return [...new Set([...attention, ...addedClaims(draft.headline, allowed, 1).map((e) => `headline:${e}`), ...headlineErrors(draft.headline).map((e) => `headline:${e}`), ...editorialClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...(foreignScript(draft.headline) ? ["headline:foreign_characters"] : []), ...nameErrors(draft.headline, stories[0].title).map((e) => `headline:${e}`), ...addedClaims(draft.intro, allowed, 2).map((e) => `intro:${e}`), ...editorialClaimErrors(draft.intro, original).map((e) => `intro:${e}`), ...styleErrors(draft.intro, draft.headline).map((e) => `intro:${e}`), ...voiceErrors(draft.headline, allowed, stories[0].kind, "headline").map((e) => `headline:${e}`), ...voiceErrors(draft.intro, allowed, "event", "intro").map((e) => `intro:${e}`)])];
+  return [...new Set([...factual, ...attention, ...addedClaims(draft.headline, allowed, 1).map((e) => `headline:${e}`), ...headlineErrors(draft.headline).map((e) => `headline:${e}`), ...editorialClaimErrors(draft.headline, original).map((e) => `headline:${e}`), ...(foreignScript(draft.headline) ? ["headline:foreign_characters"] : []), ...nameErrors(draft.headline, stories[0].title).map((e) => `headline:${e}`), ...addedClaims(draft.intro, allowed, 2).map((e) => `intro:${e}`), ...editorialClaimErrors(draft.intro, original).map((e) => `intro:${e}`), ...styleErrors(draft.intro, draft.headline).map((e) => `intro:${e}`), ...voiceErrors(draft.headline, allowed, stories[0].kind, "headline").map((e) => `headline:${e}`), ...voiceErrors(draft.intro, allowed, "event", "intro").map((e) => `intro:${e}`)])];
 }
 export function validateEmail(context: ReturnType<typeof editionContext> & { headline: string; intro: string }, stories: StoryInput[], draft: EmailDraft) {
   const allowed = [...editionAllowed(context, stories), context.headline, context.intro];
-  return [...new Set([...attentionErrors(stories, draft.blurb), ...addedClaims(draft.blurb, allowed, 2).map((e) => `blurb:${e}`), ...editorialClaimErrors(draft.blurb, stories.flatMap(storyAllowed)).map((e) => `blurb:${e}`), ...styleErrors(draft.blurb, context.headline).map((e) => `blurb:${e}`), ...voiceErrors(draft.blurb, allowed, "event", "blurb").map((e) => `blurb:${e}`)])];
+  const original = stories.flatMap(storyAllowed);
+  return [...new Set([...namedEntityErrors(draft.blurb, [context.community, ...original]).map((e) => `blurb:${e}`), ...groundingErrors(draft.blurb, original).map((e) => `blurb:${e}`), ...numberClaimErrors(draft.blurb, original).map((e) => `blurb:${e}`), ...dateClaimErrors(draft.blurb, original).map((e) => `blurb:${e}`), ...attentionErrors(stories, draft.blurb), ...addedClaims(draft.blurb, allowed, 2).map((e) => `blurb:${e}`), ...editorialClaimErrors(draft.blurb, stories.flatMap(storyAllowed)).map((e) => `blurb:${e}`), ...styleErrors(draft.blurb, context.headline).map((e) => `blurb:${e}`), ...voiceErrors(draft.blurb, allowed, "event", "blurb").map((e) => `blurb:${e}`)])];
 }
 async function editionText(runtime: ModelRuntime, context: ReturnType<typeof editionContext> & { headline?: string; intro?: string }, stories: StoryInput[], promptFn: (context: Record<string, unknown>) => string, schema: JsonSchema, fields: string[], limits: Record<string, number>, validate: (context: any, stories: StoryInput[], draft: any) => string[], label: string) {
   const result: Record<string, unknown> = { fallback: true, validation_errors: [] };

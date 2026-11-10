@@ -26,6 +26,7 @@ export type SourceEvent = { source_id: string; facts: CollectedEvent };
 
 export class Story {
   occurrences: Occurrence[] = [];
+  leadOccurrence?: Occurrence;
   constructor(
     public id: string,
     public title: string,
@@ -35,15 +36,25 @@ export class Story {
   ) {}
 
   get first(): Occurrence {
-    return this.occurrences[0];
+    return this.leadOccurrence ?? this.occurrences[0];
   }
 
   get venues(): string[] {
     return [...new Set(this.occurrences.map((item) => item.venue))];
   }
 
+  /** Source copies are provenance, not additional scheduled happenings. */
+  get scheduledOccurrences(): Occurrence[] {
+    const seen = new Set<string>();
+    return this.occurrences.filter((item) => {
+      const key = JSON.stringify([item.event_date, item.schedule_text.trim().toLowerCase(), item.venue.trim().toLowerCase(), item.room?.trim().toLowerCase() ?? ""]);
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }
+
   get recurring(): boolean {
-    return this.occurrences.length > 1;
+    return this.scheduledOccurrences.length > 1;
   }
 }
 
@@ -106,7 +117,9 @@ export function collapse(events: SourceEvent[]): Story[] {
       stories.set(key, story);
     }
     const description = facts.description;
-    if (description && description.length > (story.description ?? "").length) story.description = description;
+    if (facts.lead) {
+      story.title = facts.title; story.kind = kind; story.facts = facts; story.description = description ?? null;
+    } else if (!story.facts.lead && description && description.length > (story.description ?? "").length) story.description = description;
     const occurrence: Occurrence = {
       source_id: event.source_id,
       source_event_id: facts.source_event_id,
@@ -116,6 +129,7 @@ export function collapse(events: SourceEvent[]): Story[] {
       room: facts.room ?? null,
       source_url: facts.source_url,
     };
+    if (facts.lead) story.leadOccurrence = occurrence;
     if (!story.occurrences.some((item) => sameOccurrence(item, occurrence))) story.occurrences.push(occurrence);
   }
   for (const story of stories.values()) {
@@ -139,13 +153,14 @@ export function whenWhere(story: Story): string {
     const item = story.first;
     return template.replace("{when}", withoutYear(item.schedule_text)).replace("{source}", item.venue);
   }
-  const shown = story.occurrences.slice(0, MAX_OCCURRENCES_SHOWN);
-  if (story.occurrences.length === 1) {
+  const occurrences = story.scheduledOccurrences;
+  const shown = occurrences.slice(0, MAX_OCCURRENCES_SHOWN);
+  if (occurrences.length === 1) {
     const item = shown[0];
     return `When: ${withoutYear(item.schedule_text)}. Where: ${place(item)}.`;
   }
   const parts = shown.map((item) => `${withoutYear(item.schedule_text)} at ${place(item)}`);
-  const more = story.occurrences.length - shown.length;
+  const more = occurrences.length - shown.length;
   return `When and where: ${parts.join("; ")}${more ? `; plus ${more} more` : ""}.`;
 }
 

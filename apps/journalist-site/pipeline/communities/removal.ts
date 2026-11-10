@@ -1,9 +1,9 @@
 import type { Db } from "mongodb";
-import { readerDriveFolderId } from "../../../../shared/reader-folder";
 import { loadSettings } from "../core/config";
 import { logger } from "../core/log";
 import { acquireWorker, releaseWorker, renewWorkerLease } from "../orchestration/jobs";
-import { writeReaderDirectory } from "../orchestration/publish";
+import { readerFolder, writeReaderDirectory } from "../orchestration/publish";
+import { removeLocationFromOutputChannels } from "../orchestration/output-channels";
 import { artifactSegment, type ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
 import { assertLocationIdle, getLocation, LocationBusy, removeLocationRecords } from "./locations";
@@ -30,12 +30,14 @@ async function existingFolder(store: ArtifactStore, root: string, ...segments: s
 
 async function planRemoval(db: Db, store: ArtifactStore, id: string): Promise<RemovalPlan> {
   artifactSegment(id);
-  const readerRoot = readerDriveFolderId();
+  const readerRoot = await readerFolder(db);
   const configured = loadSettings().pipelineDriveFolderId;
   if (store.kind === "drive" && !configured) throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is not configured");
   const pipelineRoot = configured ?? "pipeline";
   const editions = await db.collection(COLLECTIONS.editions).find({ location_id: id }, { projection: { id: 1 } }).toArray();
   const runs = await db.collection<{ _id: string; location_id: string; edition_id?: string; draft_id?: string }>(COLLECTIONS.runs).find({ location_id: id }).toArray();
+  const videos = await db.collection<{ _id: string; location_id: string; story_id: string }>(COLLECTIONS.videoJobs)
+    .find({ location_id: id }).project<{ _id: string; story_id: string }>({ _id: 1, story_id: 1 }).toArray();
   const editionIds = [...new Set([...editions.map((edition) => edition.id), ...runs.flatMap((run) => [run.edition_id, run.draft_id])].filter((value): value is string => typeof value === "string"))];
   for (const value of [...editionIds, ...runs.map((run) => run._id)]) artifactSegment(value);
   if (editionIds.includes("locations")) throw new Error("Refusing to remove the shared locations.json directory as an edition");
@@ -76,6 +78,10 @@ async function planRemoval(db: Db, store: ArtifactStore, id: string): Promise<Re
     const present = folder ? new Set((await store.list(folder)).map((file) => file.name)) : new Set<string>();
     for (const stage of ["mapping", "collecting", "authoring", "finishing"]) if (present.has(`${stage}.jsonl`)) add(folder, `${stage}.jsonl`);
   }
+  for (const storyId of new Set(videos.map((video) => video.story_id))) {
+    const folder = await existingFolder(store, pipelineRoot, ".newsbee-pipeline", "video-production", id, storyId);
+    for (const video of videos.filter((item) => item.story_id === storyId)) add(folder, `${video._id}.mp4`);
+  }
   return { files, editionIds, kind: store.kind, readerRoot, pipelineRoot };
 }
 
@@ -99,13 +105,14 @@ export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
       plan = await planRemoval(db, store, id);
       await locations.updateOne({ _id: id }, { $set: { "removal.plan": plan } });
     }
-    if (plan.kind !== store.kind || plan.readerRoot !== readerDriveFolderId() ||
+    if (plan.kind !== store.kind || plan.readerRoot !== await readerFolder(db) ||
       plan.pipelineRoot !== (loadSettings().pipelineDriveFolderId ?? "pipeline")) {
       throw new Error("Artifact storage configuration changed since removal began; restore it before retrying cleanup");
     }
     stage = "updating the reader directory";
     await renewWorkerLease(db, token);
     await writeReaderDirectory(db, store);
+    await removeLocationFromOutputChannels(db, store, id);
     let removedFiles = 0;
     stage = "removing generated files";
     for (const [index, file] of plan.files.entries()) {

@@ -25,6 +25,9 @@
     },
     "EditionItem": {
       "properties": {
+        "illustration_id": { "type": "string", "enum": ["music","books","permits","community","performance","comedy","improv","trees","civic","transit","sports","games","arts","improv-prompts","theatre-curtain","theatre-tickets","theatre-stage","comedy-duo","improv-props","puppets","reception","film","volunteers","autumn-park","soccer","basketball","baseball","curling","restaurants","podcast","halloween","civic-budget","neighborhood-meeting","music-keys","event-calendar","tickets","civic-housing","civic-papers","film-reel","food-kitchen"] },
+        "illustration_policy": { "type": "string", "const": "newsbee-watercolor-v1" },
+        "illustration_asset_id": { "type": "string", "enum": ["music","books","permits","community","performance","comedy","improv","trees","civic","transit","sports","games","arts","improv-prompts","theatre-curtain","theatre-tickets","theatre-stage","comedy-duo","improv-props","puppets","reception","film","volunteers","autumn-park","soccer","basketball","baseball","curling","restaurants","podcast","halloween","civic-budget","neighborhood-meeting","music-keys","event-calendar","tickets","civic-housing","civic-papers","film-reel","food-kitchen","wedgwood-books","moses-lake-football"] },
         "story_id": {
           "anyOf": [
             {
@@ -166,18 +169,42 @@
           ],
           "default": null,
           "title": "Image",
-          "description": "A source photo or editor-approved reader photo link, shown only with public image_credit"
-        },
-        "image_caption": {
-          "type": ["string", "null"],
-          "default": null,
-          "description": "Editor-approved photo description, also used as alternative text"
+          "description": "An approved story photo or licensed event-venue photograph; optional metadata preserves provenance"
         },
         "image_credit": {
-          "type": ["string", "null"],
-          "default": null,
-          "description": "Public photo credit; the reader does not display uncredited images"
-        }
+          "type": "string",
+          "maxLength": 240,
+          "description": "Publisher-supplied credit, or the source's name; does not imply a reuse license"
+        },
+        "image_source_url": {
+          "type": "string",
+          "description": "The original article or licensed file page that supplied this image"
+        },
+        "image_alt": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Only the publisher's supplied alternative text or image caption"
+        },
+        "image_width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "image_height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "image_role": {
+          "enum": ["venue", "area", "stock"],
+          "description": "Venue or permit street context, or last-resort stock for eligible neutral event activities"
+        },
+        "image_place": { "type": "string", "maxLength": 120 },
+        "image_asset_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "image_caption": { "type": ["string", "null"], "maxLength": 500 },
+        "image_date": { "type": "string", "format": "date" },
+        "image_license": { "type": "string", "maxLength": 100 },
+        "image_license_url": { "type": "string", "format": "uri" }
       },
       "required": [
         "headline",
@@ -191,6 +218,7 @@
     }
   },
   "properties": {
+    "media_mode": { "type": "string", "enum": ["illustrated", "photos", "none"] },
     "id": {
       "title": "Id",
       "type": "string"

@@ -1,23 +1,27 @@
 # What each search service understands. Query patterns are written once, with Google operators.
 # Google-operator services run them as written. Non-Google services go through an adapter, which
 # follows the instructions below: `keep` sends the operator unchanged, `parameter` moves it to a
-# request field, and `drop` removes it.
+# request field, and `drop` removes it. `request` holds the fixed settings code sends with every
+# search (results per search, US region and English): the agent writes the query, never these.
 services:
   serpapi:
     consumer: google
     label: SerpApi
     from: apps/journalist-site/pipeline/search/provider.ts
     operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+    request: { num: 10, gl: us, hl: en }
   searchapi:
     consumer: google
     label: SearchApi
     from: apps/journalist-site/pipeline/search/provider.ts
     operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+    request: { num: 10, gl: us, hl: en }
   brightdata:
     consumer: google
     label: Bright Data
     from: apps/journalist-site/pipeline/search/provider.ts
     operators: { site: keep, -site: keep, inurl: keep, intitle: keep, filetype: keep, after: keep, before: keep }
+    request: { num: 10, gl: us, hl: en }
   tavily:
     consumer: non_google
     label: Tavily
@@ -35,12 +39,12 @@ services:
       filetype: drop
       before: drop
     strip: { match: after_space, ignore_case: true }
-    request: { max_results: 10, search_depth: basic }
+    request: { max_results: 10, search_depth: basic, topic: general, country: united states }
   exa:
     consumer: non_google
     label: Exa
     from: apps/journalist-site/pipeline/search/provider.ts
-    note: Every operator is stripped and Exa gets the plain words. Used for coverage comparison.
+    note: Every operator is stripped and Exa gets the plain words, so the agent writes it plain sentences.
     operators: { site: drop, -site: drop, inurl: drop, intitle: drop, filetype: drop, after: drop, before: drop }
     strip: { match: word_start, ignore_case: false }
-    request: { type: auto, numResults: 10, contents: { highlights: true } }
+    request: { type: auto, numResults: 10, userLocation: US, contents: { highlights: true } }

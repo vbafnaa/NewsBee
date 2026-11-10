@@ -1,0 +1,13 @@
+.form { display: grid; gap: 1.1rem; max-width: 840px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.full { grid-column: 1 / -1; }
+.check { display: flex; gap: .75rem; align-items: flex-start; line-height: 1.5; }
+.check input { width: 1.15rem; min-height: 1.15rem; margin-top: .25rem; flex-shrink: 0; }
+.card { display: grid; gap: 1rem; margin: 0; padding: 1.2rem; border: 1px solid var(--line); border-radius: var(--radius-sm); min-width: 0; }
+.card p { margin-bottom: 0; line-height: 1.6; }
+.card a, .wrap { overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.card textarea { width: 100%; min-height: 6rem; resize: vertical; }
+.notice { border-left: 3px solid var(--color-bee-deep); padding: .75rem 1rem; background: var(--color-cream); line-height: 1.6; }
+.status { padding: .8rem 0; line-height: 1.6; }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }

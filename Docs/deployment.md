@@ -1,5 +1,20 @@
 # Deploying Newsbee
 
+The image implementation is maintained on `nkd/image_pipeline_integration`.
+Pushing that branch does not automatically deploy or republish editions: `vercel.json` enables Git deployments only from `main`.
+When deploying an approved revision, both existing services use the same MongoDB database
+for `photo_assets`, `photo_assets_blobs` and `photo_assets_originals`. No additional image
+storage service is required. The journalist service uses Sharp for decoding/cropping;
+its lockfile includes the Linux native dependencies and its tracing root is the repository.
+The reader serves stored variants without loading Sharp or requiring a live photo origin.
+
+New runs default to `NEWSBEE_IMAGE_MODE=illustrated`, selecting reviewed AI watercolor assets without per-story photo or generation calls. The reader can override presentation with `NEWSBEE_READER_MEDIA_MODE=illustrated|photos|none`. See [the illustration pipeline](illustration-pipeline.md). Choose `agentic` for vision-reviewed photos, or `shadow` to compare decisions
+before publishing agent-selected photos, or `current` for the baseline. Hosted vision
+still requires a configured capable provider and the Agent model service to be selected
+for the run. Set `NEWSBEE_LLM_<PROVIDER>_VISION=true` for confirmed compatible models, or
+use the existing Gemini provider (`NEWSBEE_GEMINI_VISION=false` opts out). No paid service
+is enabled merely by deploying. See [Agentic photo editor](image-pipeline-agentic.md).
+
 Create one Vercel project with its Root Directory set to the repository root and
 Node.js 24 selected. The root `vercel.json` builds two services independently:
 
@@ -19,13 +34,30 @@ even though the journalist service has public routes.
 Project environment variables are shared by both services. Set `NEWSBEE_MODE=cloud`,
 `MONGODB_URI`, `MONGODB_DATABASE`, model-provider credentials, Google sign-in credentials
 and `AUTH_SECRET`. Set `NEWSBEE_READER_SITE_URL=https://<your-domain>/reader` for links in
-email previews. Both services read the reader Drive folder from
-`NEWSBEE_READER_DRIVE_FOLDER_ID` (default `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`). Without a
-Google Workspace Shared drive, set `NEWSBEE_ARTIFACT_STORE=mongo` instead: both services then
-keep and read editions in MongoDB's `artifacts` collection and need no Drive credentials. Preview
-deployments are disabled: only `main` deploys.
+email previews. Both services first look up the MongoDB `output_channels` document
+whose `_id` is `NEWSBEE_OUTPUT_CHANNEL_ID` (default `reader-site`). An existing document
+must have `enabled: true` and a valid `drive_folder_id`; disabled or malformed channels
+and database/configuration failures are errors, never reasons to use a different folder.
+Only an absent document falls back to `NEWSBEE_READER_DRIVE_FOLDER_ID`
+(default `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`). Both services need read access to
+`output_channels` and matching channel/fallback settings. This shared Reader target is
+separate from the journalist-owned publishing channels, which remain supported. Preview
+deployments are not created automatically: only `main` has automatic Git deployments enabled.
+Without a Google Workspace Shared drive, set `NEWSBEE_ARTIFACT_STORE=mongo` instead: both
+services then keep and read editions in MongoDB's `artifacts` collection and need no Drive
+credentials.
 The OAuth callback remains `https://<your-domain>/api/auth/callback/google`. Seed an
 enabled account in `journalist_admins` before signing in.
+
+To test the image branch, open the existing Vercel project's **Deployments** tab,
+choose **Create Deployment**, and enter `nkd/image_pipeline_integration` or its
+verified commit SHA. Select **Preview** and retain the repository-root project
+configuration so both services build. Keep the production branch set to `main`.
+Use preview-specific MongoDB and reader Drive settings for test runs; deploying
+application code does not isolate a shared database or publish an edition.
+The bundled watercolor illustrations require no image-generation API key.
+After review, production deployment follows the normal PR merge into `main`;
+an edition still needs the workspace's separate **Publish** action.
 
 Set `NEWSBEE_INTERNAL_PASSWORD` to a strong private value to enable `/source-map` and
 `/interest-usage`. Use one server-side value for both; never prefix it with `NEXT_PUBLIC_`
@@ -50,7 +82,7 @@ Map access is read-only. Source inventory omits connector parameters; live editi
 reviews are calculated without changing pipeline data. Source edits, discovery refreshes,
 full item traces/overrides and pipeline operations remain behind journalist administrator
 authentication under `/api/admin/*`. Source management is in each location workspace's
-**Location details** tab. The map password grants none of these privileges.
+**Sources** tab. Neither the map password nor map access grants these privileges.
 
 The usage map aggregates saved newsletter/requested-community coordinates, not readers'
 physical locations, and sends no analytics to an external map service.
@@ -97,9 +129,10 @@ password gate on `/interest-usage` or any `/api/maps/*` endpoint.
 Runs use the same code locally and when deployed. See [Run options](../README.md#run-options) for
 the settings and [APIs and paid calls](../README.md#apis-and-paid-calls) for the keys.
 
-- Autopilot publishes live with no human check. Set `NEWSBEE_RUN_MODE=manual` to require the two
-  clicks by default.
-- Exploration and relaxed runs are allowed and publish live. Setting
+- Runs never publish on their own: each finished edition waits as **Ready to publish** until a
+  signed-in journalist publishes it in the location's **Publish** step. Set `NEWSBEE_RUN_MODE=manual`
+  to also stop after collection and after writing.
+- Exploration and relaxed runs are allowed, and can be published like any other. Setting
   `NEWSBEE_GUARDRAIL_PROFILE=exploration`, `NEWSBEE_ACCESS_POLICY=relaxed` or
   `NEWSBEE_GUARDRAILS_OFF` here makes them the default for every run.
 - Caps are off when `NEWSBEE_GUARDRAILS_OFF` is unset; set it to `none` to keep every rule group on.
@@ -112,7 +145,7 @@ the settings and [APIs and paid calls](../README.md#apis-and-paid-calls) for the
 
 ## Location removal and artifact cleanup
 
-Administrators use **Location details → Remove location and generated files** and type
+Administrators use **Settings → Remove location and generated files** and type
 the location ID to confirm. The map password grants no removal privilege. The service
 account needs permission to delete the location's generated files in the configured
 reader and pipeline Drive folders, not just upload permission; shared folders are never
@@ -135,8 +168,10 @@ without context are explicitly unassigned, not attributed by guesswork.
 Set both `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK` and
 `NEWSBEE_MODEL_<NAME>_OUTPUT_COST_PER_MTOK` in USD per million tokens for each configured
 model. `<NAME>` is the uppercase configuration identifier, for example `GEMINI`, `OPENAI` or
-`GEMINI_LIGHT`. The light model does not inherit the writing model's price. Gemini usage
-records show provider `gemini` for both writing and light models; exact model IDs distinguish them.
+`GEMINI_LIGHT` (any provider's light model is `<NAME>_LIGHT`). A light model does not inherit its
+main model's price. Gemini usage records show provider `gemini` for both its models; exact model
+IDs distinguish them. Model calls bill one **Model calls** budget (`model`) whichever provider
+serves them; `gemini` and `openai_compatible` in `NEWSBEE_PAID_ALLOW` still mean `model`.
 
 For exact models, including ones no longer configured, optionally set `NEWSBEE_MODEL_PRICING`
 to a JSON array. This overrides provider-default rates only for a matching provider/model

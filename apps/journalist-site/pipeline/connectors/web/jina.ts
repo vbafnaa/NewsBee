@@ -4,6 +4,7 @@
  * read, so robots.txt and the page's usage signals have had their say.
  */
 import type { HttpTransport } from "../../core/http";
+import { paceService } from "../../trace/gateway";
 import { plainText } from "../common";
 
 const TIMEOUT_MS = 10_000;
@@ -23,6 +24,7 @@ export function parseJina(body: string): JinaPage | null {
 
 export async function jinaRead(transport: HttpTransport, key: string | null | undefined, url: string): Promise<JinaPage | null> {
   try {
+    await paceService("jina", Boolean(key));
     const response = await transport({ url: `https://r.jina.ai/${url}`, headers: { Accept: "text/plain", ...(key ? { Authorization: `Bearer ${key}` } : {}) }, timeoutMs: TIMEOUT_MS, maxBytes: 2 * 1024 * 1024 });
     return response.status < 400 ? parseJina(new TextDecoder().decode(response.body)) : null;
   } catch { return null; }

@@ -1,4 +1,5 @@
 ---
+import StoryMedia from "./StoryMedia.astro";
 // A neighborhood's events for the edition's week (?location=<id>&section=events): a day picker,
 // then every event that day. day picks the day (the main page's "+N more" links); otherwise
 // today, or the first day with events. The picker works without JavaScript (each day is a
@@ -47,6 +48,7 @@ const MAX_DOTS = 4;
         <ol class="events">
           {day.events.map((event) => (
             <li class="event">
+              <StoryMedia photo={event.photo} illustration={event.illustration} />
               <span class="meta">{[event.time, event.where].filter(Boolean).join(" · ")}</span>
               {event.href
                 ? <a class="title nb-card-link" href={event.href} data-story-id={event.storyId ?? undefined}><span class="nb-title">{event.title}</span></a>

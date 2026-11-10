@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe("model provider config", () => {
-  it("prefers hosted ranking, and puts the light Gemini model first for extraction", () => {
+  it("prefers hosted ranking, and keeps the configured order for light work, each provider's light model before it", () => {
     const local = loadSettings(env({}));
     expect(rankingSettings(local)).toBe(local);
     expect(lightSettings(local)).toBe(local);
@@ -46,7 +46,7 @@ describe("model provider config", () => {
     }));
     expect(rankingSettings(mixed).modelProviders.map(({ name }) => name)).toEqual(["gemini", "groq"]);
     expect(mixed.modelProviders[0].name).toBe("ollama");
-    expect(lightSettings(mixed).modelProviders.map(({ name, model }) => `${name}:${model}`).slice(0, 2)).toEqual(["gemini_light:gemini-flash-lite-latest", "ollama:qwen3:4b"]);
+    expect(lightSettings(mixed).modelProviders.map(({ name, model }) => `${name}:${model}`)).toEqual(["ollama:qwen3:4b", "gemini_light:gemini-flash-lite-latest", "gemini:gemini-flash-latest", "groq:openai/gpt-oss-120b"]);
   });
   it("defaults to Ollama locally and Gemini in cloud mode", () => {
     expect(modelProviders(env({}), "local").map((item) => item.name)).toEqual(["ollama"]);

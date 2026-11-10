@@ -38,8 +38,8 @@ export type Site = {
   bestRank?: number;
   /** Sports pages to keep, when not the section's usual share. */
   sportsPages?: number;
-  /** Check the home page as a source too. */
-  home?: { section: SectionId; topic: Lead["topic"] };
+  /** Check the home page as a source too. `family` says how it was found, when not just as a site's home. */
+  home?: { section: SectionId; topic: Lead["topic"]; family?: string };
 };
 export type SiteScan = { candidates: SourceCandidate[]; outside: OutsideLink[]; rejected: Rejection[]; read: Array<[string, string]> };
 
@@ -107,7 +107,7 @@ export async function scanSite(context: DiscoveryContext, site: Site, method: Di
   if (found.size < SITEMAP_BELOW) for (const link of await sitemapLinks(context.fetcher, home[0], LINKS_PER_PAGE, site.kind)) if (!found.has(normaliseUrl(link.url))) found.set(normaliseUrl(link.url), link);
   const outside = pages.flatMap(([url, html]) => outsideLinks(html, url, site.kind)).filter((link, index, all) => all.findIndex((other) => other.url === link.url) === index);
   const leads: Lead[] = [
-    ...(site.home ? [{ url: home[0], title: site.name, snippet: "", topic: site.home.topic, family: "site_home", section: site.home.section, scope: site.scope }] : []),
+    ...(site.home ? [{ url: home[0], title: site.name, snippet: "", topic: site.home.topic, family: site.home.family ?? "site_home", section: site.home.section, scope: site.scope }] : []),
     ...chooseLinks([...found.values()], site).map((link) => leadFor(site, link)),
     ...outside.filter((link) => link.kind === "platform").slice(0, MAX_PLATFORMS).map((link): Lead => ({ url: link.url, title: `${site.name}: meetings`, snippet: "", topic: link.topic, family: "meeting_platform", section: link.section as SectionId, scope: site.scope })),
   ];

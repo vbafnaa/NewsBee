@@ -8,9 +8,11 @@ import { decodeHTML } from "entities";
 import { parseHTML } from "linkedom";
 import { accessIgnored } from "../../core/run-options";
 import { httpsLink, plainText } from "../common";
+import { normalizeStoryImage, safeImageUrl, type StoryImage, type StoryImageMetadata } from "../../../../../shared/story-image";
+import { rankedArticlePhotos, ARTICLE_PHOTO_POOL_LIMIT } from "./article-images";
 
 export const AI_META_NAMES = ["robots", "newsbee", "claudebot", "gptbot", "ccbot", "google-extended", "anthropic-ai"];
-const DIRECTIVES = new Set(["noindex", "none", "nosnippet", "noarchive", "noai", "noimageai", "max-snippet:0"]);
+const DIRECTIVES = new Set(["noindex", "none", "nosnippet", "noarchive", "noai", "noimageai", "noimageindex", "max-image-preview:none", "max-snippet:0"]);
 export type RightsAction = "ok" | "link-only" | "skip";
 
 export function meta(html: string, ...names: string[]): string {
@@ -56,6 +58,10 @@ export function rightsAction(flags: Set<string>): RightsAction {
   return "ok";
 }
 
+export function imagesAllowed(flags: Set<string>): boolean {
+  return rightsAction(flags) === "ok" && !["noimageai", "noimageindex", "max-image-preview:none"].some((flag) => flags.has(flag));
+}
+
 type JsonObject = Record<string, unknown>;
 export function jsonLdNodes(html: string): JsonObject[] {
   const nodes: JsonObject[] = [];
@@ -81,17 +87,36 @@ function names(value: unknown): string[] {
   return list.flatMap((item) => typeof item === "string" ? [item] : item && typeof item === "object" && typeof (item as JsonObject).name === "string" ? [String((item as JsonObject).name)] : [])
     .map((name) => name.trim()).filter((name) => name && name.length < 80);
 }
-function imageOf(value: unknown): string | null {
-  if (typeof value === "string") return httpsLink(value);
-  if (Array.isArray(value)) return imageOf(value[0]);
-  if (value && typeof value === "object") return httpsLink(String((value as JsonObject).url ?? ""));
-  return null;
+function imageOf(value: unknown, pageUrl?: string): StoryImage | null {
+  if (Array.isArray(value)) return value.map((item) => imageOf(item, pageUrl)).find(Boolean) ?? null;
+  const node = value && typeof value === "object" ? value as JsonObject : {};
+  const image = safeImageUrl(typeof value === "string" ? value : node.contentUrl ?? node.url, pageUrl);
+  return image ? normalizeStoryImage({ image, image_source_url: pageUrl, image_credit: node.creditText ?? node.copyrightNotice,
+    image_alt: node.caption ?? node.description, image_width: node.width, image_height: node.height }) : null;
 }
 
-export type PageArticle = { title: string; date: string | null; description: string | null; authors: string[]; image: string | null; section: string | null; keywords: string[] };
+export type PageArticle = StoryImageMetadata & { title: string; date: string | null; description: string | null; authors: string[]; image: string | null;
+  image_candidates?: StoryImage[]; section: string | null; keywords: string[] };
+
+/** Extract bounded editorial candidates without collecting unrelated page images. */
+export function articleImageCandidates(html: string, pageUrl?: string, headline?: string): StoryImage[] {
+  const images = new Map<string, StoryImage>();
+  const add = (image: StoryImage | null) => { if (image && !images.has(image.image) && images.size < ARTICLE_PHOTO_POOL_LIMIT) images.set(image.image, image); };
+  for (const article of jsonLdNodes(html).filter(node => types(node).some(type => ARTICLE_TYPES.has(type) || type === "Event"))) {
+    for (const value of Array.isArray(article.image) ? article.image : [article.image]) add(imageOf(value, pageUrl));
+  }
+  for (const name of ["og:image:secure_url", "og:image", "twitter:image", "twitter:image:src"]) {
+    const image = safeImageUrl(meta(html, name), pageUrl);
+    if (image) add(normalizeStoryImage({ image, image_source_url: pageUrl,
+      image_alt: meta(html, name.startsWith("og:") ? "og:image:alt" : "twitter:image:alt"),
+      image_width: name.startsWith("og:") ? meta(html, "og:image:width") : undefined,
+      image_height: name.startsWith("og:") ? meta(html, "og:image:height") : undefined }));
+  }
+  return rankedArticlePhotos(html, pageUrl, [...images.values()], headline);
+}
 
 /** Title, date, description, authors and image from schema.org, then Open Graph and HTML. */
-export function articleMeta(html: string): PageArticle | null {
+export function articleMeta(html: string, pageUrl?: string): PageArticle | null {
   const article = jsonLdNodes(html).find((node) => types(node).some((type) => ARTICLE_TYPES.has(type)));
   const title = (typeof article?.headline === "string" ? article.headline : "") || meta(html, "og:title", "twitter:title")
     || plainText(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "", 220) || "";
@@ -100,13 +125,16 @@ export function articleMeta(html: string): PageArticle | null {
   const day = /^(\d{4}-\d{2}-\d{2})/.exec(rawDate)?.[1] ?? (Number.isFinite(Date.parse(rawDate)) ? new Date(Date.parse(rawDate)).toISOString().slice(0, 10) : null);
   const description = (typeof article?.description === "string" ? article.description : "") || meta(html, "og:description", "description", "twitter:description");
   const keywords = typeof article?.keywords === "string" ? article.keywords.split(",") : Array.isArray(article?.keywords) ? article.keywords.map(String) : meta(html, "keywords", "news_keywords").split(",");
+  const candidates = articleImageCandidates(html, pageUrl, title);
+  const image = candidates[0];
   return {
     title: plainText(title, 220)?.replace(/\.$/, "") ?? title,
     // A bare 1 January is what a year mention in a title produces; don't trust it.
     date: day && !day.endsWith("-01-01") ? day : null,
     description: plainText(description, 600),
     authors: names(article?.author),
-    image: imageOf(article?.image) ?? httpsLink(meta(html, "og:image")),
+    ...(image ?? { image: null }),
+    ...(candidates.length > 1 ? { image_candidates: candidates } : {}),
     section: (typeof article?.articleSection === "string" ? article.articleSection : "") || meta(html, "article:section") || null,
     keywords: keywords.map((value) => value.trim()).filter(Boolean).slice(0, 12),
   };
@@ -228,4 +256,13 @@ export function trumbaFeeds(html: string): string[] {
     feeds.add(url.toString());
   }
   return [...feeds];
+}
+
+/** Coordinates explicitly published by the venue page (not inferred from its name). */
+export function venuePoint(html: string): [number, number] | null {
+  const { document } = parseHTML(html);
+  const marker = document.querySelector("[data-map-markerlat][data-map-markerlng]");
+  if (!marker) return null;
+  const lat = Number(marker.getAttribute("data-map-markerlat")), lon = Number(marker.getAttribute("data-map-markerlng"));
+  return Number.isFinite(lat) && Math.abs(lat) <= 90 && Number.isFinite(lon) && Math.abs(lon) <= 180 ? [lon, lat] : null;
 }

@@ -4,6 +4,7 @@ import { list, restore, withdraw } from "@/pipeline/editorial/withdrawals";
 import { logger } from "@/pipeline/core/log";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { publishToReader } from "@/pipeline/orchestration/publish";
+import { publishToOutputChannels } from "@/pipeline/orchestration/output-channels";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
 
 /** Rewrite the location's latest edition in the reader folder so the correction shows right away. */
@@ -11,6 +12,7 @@ async function republish(deps: OrchestratorDeps, locationId: string) {
   const edition = await latestPublished({ db: deps.db, model: deps.model, settings: deps.settings, log: logger("withdrawals") }, locationId);
   if (!edition) return false;
   await publishToReader(deps.db, deps.store, edition);
+  await publishToOutputChannels(deps.db, deps.store, edition);
   return true;
 }
 

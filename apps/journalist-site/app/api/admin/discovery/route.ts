@@ -10,6 +10,7 @@ import { withModelUsageContext } from "@/pipeline/model/runtime";
 import { personalRequestDeps } from "@/pipeline/accounts/runtime";
 import { resolveRunOptions, withRunContext } from "@/pipeline/core/run-options";
 import { randomUUID } from "node:crypto";
+import { ExecutionBlocked } from "@/pipeline/core/execution-errors";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -29,12 +30,13 @@ export async function POST(request: Request) {
     if (typeof body.location_id !== "string" || typeof body.method !== "string") throw new Error("Invalid request: send location_id and method");
     const options = body.options === undefined ? undefined : resolveRunOptions(body.options);
     const personal = await personalRequestDeps(deps, deps.principal!, options, body.method === "dork", body.method === "llm");
+    if (body.method === "homesales" && !personal.settings.integrations.attomKey) throw new ExecutionBlocked("Add your ATTOM API key in Environment & API settings to discover home sales.");
     deps = personal;
     const location = await getLocation(deps.db, body.location_id);
     const method = body.method;
     const transport = deps.transport ?? publicOnlyTransport(fetchTransport);
     const operationId = `discovery:${randomUUID()}`;
-    return { state: await withRunContext({ db: deps.db, runId: operationId, locationId: location.id, sponsorId: deps.principal!.id, credentialVersion: personal.credentialVersion, options: personal.requestOptions },
+    return { state: await withRunContext({ db: deps.db, runId: operationId, locationId: location.id, sponsorId: deps.principal!.id, credentialVersion: personal.credentialVersion, options: personal.requestOptions, runKind: "map", startedAt: Date.now() / 1000 },
       () => withModelUsageContext({ location_id: location.id, sponsor_id: deps.principal!.id, credential_version: personal.credentialVersion },
         () => runMethod({ db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location, today: localToday(location.state), log: logger(`discovery.${method}`), model: deps.discoveryModel ?? deps.lightModel ?? null }, method))) };
   });

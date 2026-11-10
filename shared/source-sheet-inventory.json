@@ -1,0 +1,4829 @@
+{
+  "version": 1,
+  "spreadsheet_url": "https://docs.google.com/spreadsheets/d/13V3WG3vsXFpn_pwgqW2h__b2d2v8dBsWAbT-xbFdHFk/edit?gid=2144765667",
+  "spreadsheet_sha256": "534f34485bc7d754136d4529ce8628f6794f8ca28c76e748c8cc3af03ad370a7",
+  "checked_on": "2026-11-01",
+  "communities": {
+    "beacon-hill": {
+      "id": "osm-n150975261-wa",
+      "name": "Beacon Hill, Seattle, WA"
+    },
+    "wedgwood": {
+      "id": "osm-r13915552-wa",
+      "name": "Wedgwood / NE Seattle, WA"
+    },
+    "ballard": {
+      "id": "osm-w1551637823-wa",
+      "name": "Ballard, Seattle, WA"
+    },
+    "moses-lake": {
+      "id": "moses-lake-wa",
+      "name": "Moses Lake, WA"
+    }
+  },
+  "sources": [
+    {
+      "id": "sheet-001",
+      "number": 1,
+      "name": "Stacker Newswire",
+      "url": "https://stacker.com/publishers",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Published terms prohibit automated website scraping. A separate licensed publisher/feed arrangement is required.",
+      "evidence": [
+        "https://stacker.com/publishers",
+        "https://stacker.com/terms-and-conditions",
+        "https://stacker.com/terms-and-conditions"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Publisher onboarding; curated RSS or API feed into CMS; topic/location filters",
+      "sheet_conditions": "Apply publisher agreement, source/author credits, canonical links and item-level image conditions; check partner-funded content labeling",
+      "collection": null
+    },
+    {
+      "id": "sheet-002",
+      "number": 2,
+      "name": "States Newsroom / News From The States",
+      "url": "https://www.newsfromthestates.com/republishing-guidelines",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "unavailable",
+      "reason": "HTTP 403; access was not bypassed.",
+      "evidence": [
+        "https://www.newsfromthestates.com/republishing-guidelines"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 403,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Republish eligible stories via supplied story tools; request supported feed; API not verified",
+      "sheet_conditions": "Credit author and original newsroom with links; preserve required language; verify third-party images and edits",
+      "collection": null
+    },
+    {
+      "id": "sheet-003",
+      "number": 3,
+      "name": "Public News Service",
+      "url": "https://newsservice.org/about.php",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "unavailable",
+      "reason": "The listed newsservice.org endpoint failed certificate validation. Publisher identity/current endpoint and syndication access need verification.",
+      "evidence": [
+        "https://newsservice.org/about.php"
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Error: certificate has expired",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Publisher signup; request syndication delivery/feed; do not assume unauthenticated API",
+      "sheet_conditions": "Retain byline/source credit; credit original outlet for partner stories; confirm audio/image rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-004",
+      "number": 4,
+      "name": "KFF Health News",
+      "url": "https://kffhealthnews.org/syndication/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "Story-level syndication conditions are published, but the current rewrite pipeline is not a compliant full-story republication adapter. Image permissions are separate.",
+      "evidence": [
+        "https://kffhealthnews.org/syndication/",
+        "https://kffhealthnews.org/syndication/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official RSS ingestion or Republish This Story HTML; request topic feed",
+      "sheet_conditions": "Keep bylines, links and tagline; get permission for edits; exclude All Rights Reserved items; confirm image rights separately",
+      "collection": null
+    },
+    {
+      "id": "sheet-005",
+      "number": 5,
+      "name": "Grist",
+      "url": "https://grist.org/about/promote/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "Story-level syndication conditions are published, but the current rewrite pipeline is not a compliant full-story republication adapter. Image permissions are separate.",
+      "evidence": [
+        "https://grist.org/about/promote/",
+        "https://go.grist.org/signup/weekly/partner?utm_campaign=republish-content&utm_medium=syndication&utm_source=partner",
+        "https://grist.org/technology/how-do-you-tackle-microplastics-start-with-your-washing-machine/republish/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Story-level republication workflow; ask for approved feed before bulk ingestion",
+      "sheet_conditions": "Follow credit, links, edit and image requirements; do not treat all artwork as licensed",
+      "collection": null
+    },
+    {
+      "id": "sheet-006",
+      "number": 6,
+      "name": "The Hechinger Report",
+      "url": "https://hechingerreport.org/use-our-stories/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "Story-level syndication conditions are published, but the current rewrite pipeline is not a compliant full-story republication adapter. Image permissions are separate.",
+      "evidence": [
+        "https://hechingerreport.org/use-our-stories/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Republish This Story tool; obtain commercial permission before monetized use",
+      "sheet_conditions": "Commercial use requires discussion with publisher; follow credits and separate image permissions",
+      "collection": null
+    },
+    {
+      "id": "sheet-007",
+      "number": 7,
+      "name": "Documenters Network",
+      "url": "https://www.documenters.org/about/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.documenters.org/about/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Locate participating city's meeting/reporting pages; partnership/export request; no public API assumed",
+      "sheet_conditions": "Agree reuse with local program; independently check notes against records before reporting",
+      "collection": null
+    },
+    {
+      "id": "sheet-008",
+      "number": 8,
+      "name": "PR Newswire RSS",
+      "url": "https://www.prnewswire.com/rss/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Published terms prohibit automated website scraping. A separate licensed publisher/feed arrangement is required.",
+      "evidence": [
+        "https://www.prnewswire.com/rss/",
+        "https://www.prnewswire.com/news-releases/policy-public-interest-latest-news/legal-issues-list/",
+        "https://www.prnewswire.com/terms-of-use/",
+        "https://www.prnewswire.com/terms-of-use/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official RSS feeds; filter dateline, organization, location and topic",
+      "sheet_conditions": "Press releases are interested-party claims; label source and verify claims; confirm full-copy/image rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-009",
+      "number": 9,
+      "name": "Newswire RSS",
+      "url": "https://www.newswire.com/feeds",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows Bytespider",
+      "evidence": [
+        "https://www.newswire.com/feeds"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows Bytespider",
+        "crawl_delay": 5
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Published RSS feeds; entity/place matching and duplicate detection",
+      "sheet_conditions": "Attribute release issuer; verify claims; confirm republication/image rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-010",
+      "number": 10,
+      "name": "Associated Press Media API",
+      "url": "https://api.ap.org/media/v/docs/Getting_Started_API.htm",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots policy unavailable or not plain text",
+      "evidence": [
+        "https://api.ap.org/media/v/docs/Getting_Started_API.htm"
+      ],
+      "robots": {
+        "status": 401,
+        "allowed": false,
+        "reason": "robots policy unavailable or not plain text",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Contracted API access; secure backend middleware and x-api-key; feed/search",
+      "sheet_conditions": "Publish only licensed formats, territories and editions; enforce attribution and retention terms",
+      "collection": null
+    },
+    {
+      "id": "sheet-011",
+      "number": 11,
+      "name": "GDELT DOC API",
+      "url": "https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "GDELT supports headline/link discovery; it does not grant permission to scrape or republish the linked publishers. The existing news-search connector remains a separate integration.",
+      "evidence": [
+        "https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/",
+        "https://api.gdeltproject.org/api/v2/doc/doc?query=(%22wildlife%20crime%22%20OR%20poaching%20OR%20%22illegal%20fishing%22%20OR%20%22wildlife%20trade%22)&mode=artlist&maxrecords=100&timespan=1week"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "DOC 2.0 article-list JSON queries; place names plus source/topic filters",
+      "sheet_conditions": "Discovery does not license publisher articles or images; link sources and negotiate reuse",
+      "collection": null
+    },
+    {
+      "id": "sheet-012",
+      "number": 12,
+      "name": "NewsAPI",
+      "url": "https://newsapi.org/pricing",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://newsapi.org/pricing",
+        "https://newsapi.org/terms"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Paid production API; server-side key; query names/topics/domains",
+      "sheet_conditions": "Full articles not provided; API subscription does not grant third-party republication rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-013",
+      "number": 13,
+      "name": "GNews API (independent provider)",
+      "url": "https://docs.gnews.io/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://docs.gnews.io/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "REST /api/v4/search and /top-headlines with API key; town/entity keyword queries",
+      "sheet_conditions": "Provider access, including full text, is not blanket publisher reuse permission; verify display and storage rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-014",
+      "number": 14,
+      "name": "CivicPlus municipal RSS network",
+      "url": "https://www.civicengagecentral.civicplus.help/hc/en-us/articles/115004886473-Determine-if-an-RSS-Issue-is-With-CivicPlus-or-a-Third-Party",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://www.civicengagecentral.civicplus.help/hc/en-us/articles/115004886473-Determine-if-an-RSS-Issue-is-With-CivicPlus-or-a-Third-Party"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Discover published RSS links on each city's official site; shared XML parser; do not guess category IDs",
+      "sheet_conditions": "Attribute city, preserve notice dates; confirm reuse of descriptions/images; RSS availability is not a full-content license",
+      "collection": null
+    },
+    {
+      "id": "sheet-015",
+      "number": 15,
+      "name": "Granicus Legistar Web API",
+      "url": "https://webapi.legistar.com/Help",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://webapi.legistar.com/Help"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "HTTPS API; client-specific Events/Matters queries and attachments; JSON/OData where supported",
+      "sheet_conditions": "Use records as evidence; link originals; distinguish draft/proposed/adopted outcomes; review attachment rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-016",
+      "number": 16,
+      "name": "WordPress-based publishers and community organizations",
+      "url": "https://developer.wordpress.org/rest-api/reference/posts/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developer.wordpress.org/rest-api/reference/posts/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "GET /wp-json/wp/v2/posts on consenting/enabled source sites; published RSS fallback; paginate by date",
+      "sheet_conditions": "Technical access does not license posts/photos; obtain reuse scope or use approved discovery/linking",
+      "collection": null
+    },
+    {
+      "id": "sheet-017",
+      "number": 17,
+      "name": "Socrata / Tyler Data & Insights",
+      "url": "https://dev.socrata.com/consumers/getting-started",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://dev.socrata.com/consumers/getting-started"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Dataset APIs; filter date/geography; follow current endpoint/auth rules and pagination",
+      "sheet_conditions": "Check dataset license, timestamps and coverage; aggregate sensitive records rather than publishing personal details",
+      "collection": null
+    },
+    {
+      "id": "sheet-018",
+      "number": 18,
+      "name": "ArcGIS Hub / public Feature Services",
+      "url": "https://developers.arcgis.com/hub/services/overview/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developers.arcgis.com/hub/services/overview/",
+        "https://www.esri.com/legal/copyright-trademarks",
+        "https://www.esri.com/legal/software-license"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Hub discovery; query published FeatureServer/MapServer REST services; CSV/GeoJSON downloads when enabled",
+      "sheet_conditions": "Check item-level license and service restrictions; preserve spatial accuracy and update time",
+      "collection": null
+    },
+    {
+      "id": "sheet-019",
+      "number": 19,
+      "name": "CKAN open-data portals",
+      "url": "https://docs.ckan.org/en/latest/api/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://docs.ckan.org/en/latest/api/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Action API package_search/package_show; DataStore queries where enabled; otherwise resource downloads",
+      "sheet_conditions": "Honor dataset licenses and access restrictions; catalog availability does not guarantee fresh usable data",
+      "collection": null
+    },
+    {
+      "id": "sheet-020",
+      "number": 20,
+      "name": "The Events Calendar websites",
+      "url": "https://theeventscalendar.com/knowledgebase/exporting-events/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://theeventscalendar.com/knowledgebase/exporting-events/",
+        "https://docs.nexcess.com/software/the-events-calendar/user-roles-events/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Use published ICS/RSS subscription exports; REST access only when confirmed on source site",
+      "sheet_conditions": "Obtain event-description/image rights; retain registration link, timezone and cancellations",
+      "collection": null
+    },
+    {
+      "id": "sheet-021",
+      "number": 21,
+      "name": "Ticketmaster Discovery API",
+      "url": "https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/",
+        "https://developer.ticketmaster.com/support/terms-of-use/",
+        "https://developer.ticketmaster.com/support/terms-of-use/partner/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "API-key JSON event search; geographic radius/date filters",
+      "sheet_conditions": "Follow API display/attribution terms; keep booking links; check image/caching rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-022",
+      "number": 22,
+      "name": "Eventbrite: organizer-authorized event supply",
+      "url": "https://www.eventbrite.com/platform/docs/by-date",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://www.eventbrite.com/platform/docs/by-date"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Organizer-authorized integration/export; do not assume open citywide event-search access",
+      "sheet_conditions": "Obtain organizer permissions and follow platform terms; no blanket public scraping assumption",
+      "collection": null
+    },
+    {
+      "id": "sheet-023",
+      "number": 23,
+      "name": "OpenAgenda",
+      "url": "https://developers.openagenda.com/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developers.openagenda.com/",
+        "https://www.data.gouv.fr/pages/legal/licences/etalab-2.0/"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Authenticated REST: /v2/agendas and /v2/agendas/{uid}/events; ICS exports also documented",
+      "sheet_conditions": "Published calendar data described as openly licensed; check exact license, attribution and separate image rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-024",
+      "number": 24,
+      "name": "PredictHQ Events API",
+      "url": "https://docs.predicthq.com/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://docs.predicthq.com/",
+        "https://www.predicthq.com/legal/terms"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Authenticated Events API; location/date/category queries; reusable saved locations",
+      "sheet_conditions": "Confirm public display, redistribution and retention rights before purchase; analytical access is not publishing permission",
+      "collection": null
+    },
+    {
+      "id": "sheet-025",
+      "number": 25,
+      "name": "National Weather Service API",
+      "url": "https://www.weather.gov/documentation/services-web-API",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "weather",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "Use the documented public government API for attributed factual data only; no third-party images, seals or endorsements.",
+      "evidence": [
+        "https://www.weather.gov/documentation/services-web-API",
+        "https://www.weather.gov/disclaimer"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "JSON/GeoJSON; /points/{lat},{lon} for forecast grid; alerts filtered by geography; identifying User-Agent",
+      "sheet_conditions": "Follow NWS usage guidance; retain alert text, issuer, urgency and expiry",
+      "collection": {
+        "source_id": "hazards:nws",
+        "reader": "hazards",
+        "params": {},
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-026",
+      "number": 26,
+      "name": "EPA AirNow API",
+      "url": "https://docs.airnowapi.org/webservices",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots policy unavailable or not plain text",
+      "evidence": [
+        "https://docs.airnowapi.org/webservices"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots policy unavailable or not plain text",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Registered API key; query reporting area via ZIP/coordinates; cache responses",
+      "sheet_conditions": "Label observations preliminary; follow Data Use Guidelines and notification requirements",
+      "collection": null
+    },
+    {
+      "id": "sheet-027",
+      "number": 27,
+      "name": "US Census Bureau APIs",
+      "url": "https://www.census.gov/data/developers/data-sets.html",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://www.census.gov/data/developers/data-sets.html",
+        "https://www.census.gov/data/developers/about/terms-of-service.html",
+        "https://www.census.gov/data/developers/terms-of-service.html"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Dataset-specific JSON API; use official place/county geographic IDs",
+      "sheet_conditions": "Cite dataset and year; show ACS margins of error; do not present estimates as live counts",
+      "collection": null
+    },
+    {
+      "id": "sheet-028",
+      "number": 28,
+      "name": "Library of Congress: historic newspapers",
+      "url": "https://www.loc.gov/apis/additional-apis/chronicling-america-api/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://www.loc.gov/apis/additional-apis/chronicling-america-api/",
+        "https://www.loc.gov/legal/",
+        "https://www.loc.gov/legal/standard-disclaimer-for-external-links/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 5
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "loc.gov JSON API; search newspaper collection by place/date",
+      "sheet_conditions": "Check item-level rights and digitization quality; cite newspaper/date/page",
+      "collection": null
+    },
+    {
+      "id": "sheet-029",
+      "number": 29,
+      "name": "USGS Earthquake GeoJSON feeds",
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "weather",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "Use the documented public government API for attributed factual data only; no third-party images, seals or endorsements.",
+      "evidence": [
+        "https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php",
+        "https://earthquake.usgs.gov/data/comcat/data-eventterms.php",
+        "https://www.usgs.gov/policies-and-notices",
+        "https://www.usgs.gov/faqs/are-usgs-reportspublications-copyrighted"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public GeoJSON summary feeds; geofence by town/radius; upsert event ID and revision time",
+      "sheet_conditions": "Preserve reviewed/preliminary status and update time; do not infer damage or tsunami warnings from magnitude alone",
+      "collection": {
+        "source_id": "hazards:usgs",
+        "reader": "hazards",
+        "params": {},
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-030",
+      "number": 30,
+      "name": "api.data.gov agency API directory",
+      "url": "https://api.data.gov/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://api.data.gov/"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Discover agency-specific APIs; obtain required keys; integrate each actual dataset separately",
+      "sheet_conditions": "Check each agency's dataset license, geographic coverage and third-party exclusions",
+      "collection": null
+    },
+    {
+      "id": "sheet-031",
+      "number": 31,
+      "name": "YouTube official local channels via Data API",
+      "url": "https://developers.google.com/youtube/v3/docs/search/list",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developers.google.com/youtube/v3/docs/search/list",
+        "https://developers.google.com/youtube/terms/api-services-terms-of-service",
+        "https://developers.google.com/youtube/terms/developer-policies"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "API-key discovery by approved channel ID; use supported video/player embeds; prefer known channels over broad searches",
+      "sheet_conditions": "Embed only where allowed; API metadata does not grant download, transcript extraction or rehosting rights",
+      "collection": null
+    },
+    {
+      "id": "sheet-032",
+      "number": 32,
+      "name": "Local civic, school, chamber and nonprofit sites via approved feeds",
+      "url": "https://developer.wordpress.org/rest-api/reference/posts/",
+      "communities": [
+        "beacon-hill",
+        "wedgwood",
+        "ballard",
+        "moses-lake"
+      ],
+      "scope": "shared_integration",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "This row describes a shared provider, API or software platform, not a ready-to-collect community source. Configure the supported endpoint/account and its terms first.",
+      "evidence": [
+        "https://developer.wordpress.org/rest-api/reference/posts/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Per-town source registry; discover actual RSS/ICS/API; request email/export if absent; HTML extraction only when permitted",
+      "sheet_conditions": "Get distribution scope and image rights; verify official organization and correct locality",
+      "collection": null
+    },
+    {
+      "id": "sheet-033",
+      "number": 33,
+      "name": "WCC news",
+      "url": "https://www.wedgwoodcc.org/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.wedgwoodcc.org/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Website ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:f076ae9f4047",
+        "reader": "web",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-034",
+      "number": 34,
+      "name": "WCC meetings",
+      "url": "https://www.wedgwoodcc.org/about/meetings/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.wedgwoodcc.org/about/meetings/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Website (",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:4f36215dc62f",
+        "reader": "web",
+        "params": {
+          "url": "https://www.wedgwoodcc.org/about/meetings/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-035",
+      "number": 35,
+      "name": "Wedgwood Elementary calendar",
+      "url": "https://wedgwoodes.seattleschools.org/calendar/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://wedgwoodes.seattleschools.org/calendar/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "School calendar",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:ca29ba4a38db",
+        "reader": "web",
+        "params": {
+          "url": "https://wedgwoodes.seattleschools.org/calendar/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-036",
+      "number": 36,
+      "name": "Wedgwood PTA newsletter",
+      "url": "https://www.wedgwoodpta.org/newsletter",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.wedgwoodpta.org/newsletter"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "PTA newsletter",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:e3ee472dac74",
+        "reader": "web",
+        "params": {
+          "url": "https://www.wedgwoodpta.org/newsletter",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-037",
+      "number": 37,
+      "name": "Wedgwood PTA",
+      "url": "https://www.wedgwoodpta.org/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.wedgwoodpta.org/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "PTA website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:c4e80dbd1009",
+        "reader": "web",
+        "params": {
+          "url": "https://www.wedgwoodpta.org/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-038",
+      "number": 38,
+      "name": "Northeast Library events",
+      "url": "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "SPL publishes a supported RSS calendar, but the onboarded Wedgwood boundary contains no selected library system. Confirm Northeast branch coverage before enabling; no citywide fallback.",
+      "evidence": [
+        "https://www.spl.org/hours-and-locations/northeast-branch/northeast-branch-events",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.spl.org/using-the-library/using-this-website/using-our-online-calendar",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.trumba.com/calendars/kalendaro.rss",
+        "https://www.trumba.com/robots.txt"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Library calendar",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "library:WA0064",
+        "reader": "library",
+        "params": {
+          "fscskey": "WA0064",
+          "reviewed_feed_url": "https://www.trumba.com/calendars/kalendaro.rss",
+          "reviewed_branches": [
+            "Northeast Branch Library"
+          ]
+        },
+        "allowed_urls": [
+          "https://www.trumba.com/calendars/kalendaro.rss"
+        ]
+      }
+    },
+    {
+      "id": "sheet-039",
+      "number": 39,
+      "name": "Dahl Playfield",
+      "url": "https://seattle.gov/parks/parks/dahl-playfield",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://seattle.gov/parks/parks/dahl-playfield"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Parks website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:97c44319e271",
+        "reader": "web",
+        "params": {
+          "url": "https://seattle.gov/parks/parks/dahl-playfield",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-040",
+      "number": 40,
+      "name": "Dahl restroom project",
+      "url": "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Project page",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:52f9f986e298",
+        "reader": "web",
+        "params": {
+          "url": "https://seattle.gov/parks/about-us/projects/dahl-playfield-restroom-renovation",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-041",
+      "number": 41,
+      "name": "New Wedgwood park",
+      "url": "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "unavailable",
+      "reason": "Error [ERR_TLS_CERT_ALTNAME_INVALID]: Hostname/IP does not match certificate's altnames: Host: legacywww.seattle.gov. is not in the cert's altnames: DNS:www.seattle.gov, DNS:seattle.gov",
+      "evidence": [
+        "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development"
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Error [ERR_TLS_CERT_ALTNAME_INVALID]: Hostname/IP does not match certificate's altnames: Host: legacywww.seattle.gov. is not in the cert's altnames: DNS:www.seattle.gov, DNS:seattle.gov",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Project page",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:58cd32996ecc",
+        "reader": "web",
+        "params": {
+          "url": "https://legacywww.seattle.gov/parks/about-us/projects/wedgwood-landbanked-site-park-development",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-042",
+      "number": 42,
+      "name": "KC home sales",
+      "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+        "https://www.kingcounty.gov/depts/dnrp/solid-waste/programs/litter-dumping/report-dumping.aspx",
+        "https://info.kingcounty.gov/assessor/esales/Residential.aspx"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Sales search (test)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:45520f28fcfc",
+        "reader": "web",
+        "params": {
+          "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-043",
+      "number": 43,
+      "name": "KC property lookup",
+      "url": "https://kingcounty.gov/en/dept/assessor",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://kingcounty.gov/en/dept/assessor",
+        "https://kingcounty.gov/en/dept/sheriff/courts-jails-legal-system/sheriff-services/concealed-pistol-license",
+        "https://kingcounty.gov/en/court/courts-jails-legal-system/jury-duty"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Property search (test)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:40b13f61de21",
+        "reader": "web",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/assessor",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-044",
+      "number": 44,
+      "name": "KC open GIS data",
+      "url": "https://gis-kingcounty.opendata.arcgis.com/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "crawl-delay 60s exceeds Newsbee limit",
+      "evidence": [
+        "https://gis-kingcounty.opendata.arcgis.com/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "crawl-delay 60s exceeds Newsbee limit",
+        "crawl_delay": 60
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Data portal ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:dea207140ee2",
+        "reader": "web",
+        "params": {
+          "url": "https://gis-kingcounty.opendata.arcgis.com/",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-045",
+      "number": 45,
+      "name": "SPD crime maps",
+      "url": "https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/police/information-and-data/data/online-crime-maps"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Crime map (test)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:d05c151ee203",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/police/information-and-data/data/online-crime-maps",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-046",
+      "number": 46,
+      "name": "SPD incident reports",
+      "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://spdblotter.seattle.gov/significant-incident-reports/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Police blog ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:271a5f509c23",
+        "reader": "web",
+        "params": {
+          "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-047",
+      "number": 47,
+      "name": "SPD open data",
+      "url": "https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/police/information-and-data/data/public-data-sets"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Open data ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:d23662d87f90",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/police/information-and-data/data/public-data-sets",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-048",
+      "number": 48,
+      "name": "SPD crime dashboard",
+      "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/police/information-and-data/data/crime-dashboard"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "dashboard ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:3e4b8fe9b734",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-049",
+      "number": 49,
+      "name": "Roosevelt sports",
+      "url": "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "School website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:f29c80a92710",
+        "reader": "web",
+        "params": {
+          "url": "https://roosevelths.seattleschools.org/student-life/athletics/teams-and-contact-information/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-050",
+      "number": 50,
+      "name": "Nathan Hale sports",
+      "url": "https://halehs.seattleschools.org/student-life/athletics/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://halehs.seattleschools.org/student-life/athletics/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "School website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:2d78a92112e7",
+        "reader": "web",
+        "params": {
+          "url": "https://halehs.seattleschools.org/student-life/athletics/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-051",
+      "number": 51,
+      "name": "Seattle schools athletics",
+      "url": "https://www.seattleschools.org/departments/athletics/contacts/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattleschools.org/departments/athletics/contacts/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "School website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:a52c44253e0e",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattleschools.org/departments/athletics/contacts/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-052",
+      "number": 52,
+      "name": "Roosevelt boosters",
+      "url": "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Boosters website",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:60241a9a3b69",
+        "reader": "web",
+        "params": {
+          "url": "https://www.rooseveltathleticboosters.org/page/show/3588212-teams-and-contact-information",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-053",
+      "number": 53,
+      "name": "Cascade Memorial",
+      "url": "https://cascadememorial.com/obituaries/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://cascadememorial.com/obituaries/",
+        "https://www.sci-corp.com/terms-of-service"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Obituary site ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:43290bc829a7",
+        "reader": "web",
+        "params": {
+          "url": "https://cascadememorial.com/obituaries/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-054",
+      "number": 54,
+      "name": "Elemental obituaries",
+      "url": "https://www.elementalnw.com/obituaries/",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://www.elementalnw.com/obituaries/",
+        "https://www.elementalnw.com/usage-policy/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Obituary site ",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:54c433a559d7",
+        "reader": "web",
+        "params": {
+          "url": "https://www.elementalnw.com/obituaries/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-055",
+      "number": 55,
+      "name": "WA death records",
+      "url": "https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record",
+      "communities": [
+        "wedgwood"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Restricted - :( skip?",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:e6216619e9cf",
+        "reader": "web",
+        "params": {
+          "url": "https://doh.wa.gov/licenses-permits-and-certificates/vital-records/ordering-vital-record/death-record",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-056",
+      "number": 56,
+      "name": "Moses Lake City Council meeting agendas",
+      "url": "https://www.cityofml.com/AgendaCenter/Agenda-Center-1",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.cityofml.com/AgendaCenter/Agenda-Center-1",
+        "https://www.cityofml.com/site/copyright"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Agenda Center posts agendas as PDFs; download each new PDF and extract the text",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:8305e1406936",
+        "reader": "web",
+        "params": {
+          "url": "https://www.cityofml.com/AgendaCenter/Agenda-Center-1",
+          "section": "civic",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-057",
+      "number": 57,
+      "name": "Moses Lake city events calendar",
+      "url": "https://www.cityofml.com/calendar.aspx?CID=34",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.cityofml.com/calendar.aspx?CID=34"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 10
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Calendar page; check for an iCal subscription or RSS option (URL pattern looks like a CivicPlus calendar)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:23dd4180ac33",
+        "reader": "web",
+        "params": {
+          "url": "https://www.cityofml.com/calendar.aspx?CID=34",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-058",
+      "number": 58,
+      "name": "Moses Lake city news",
+      "url": "https://www.cityofml.com/m/newsflash?cat=1",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.cityofml.com/m/newsflash?cat=1",
+        "https://www.cityofml.com/site/copyright"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "News Flash page; check for an RSS link (URL pattern looks like CivicPlus); see CivicPlus municipal RSS network row",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:e635a1a67965",
+        "reader": "web",
+        "params": {
+          "url": "https://www.cityofml.com/m/newsflash?cat=1",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-059",
+      "number": 59,
+      "name": "Moses Lake recreation guide (Fall/Winter 2026-27)",
+      "url": "https://www.cityofml.com/DocumentCenter/View/13814/Fall-_-Winter-202627-4?bidId=",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "Official PDF exists, but exceeds this bounded HTML audit limit and requires a PDF-specific reader plus confirmed reuse terms. This is not a robots prohibition.",
+      "evidence": [
+        "https://www.cityofml.com/DocumentCenter/View/13814/Fall-_-Winter-202627-4?bidId="
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Error: Image response has an unsupported type or size",
+        "crawl_delay": null
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "PDF in the city Document Center; download each season's guide when published and extract the text",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:88f6afd5985d",
+        "reader": "web",
+        "params": {
+          "url": "https://www.cityofml.com/DocumentCenter/View/13814/Fall-_-Winter-202627-4?bidId=",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-060",
+      "number": 60,
+      "name": "Moses Lake Quarterly newsletter (Fall 2026)",
+      "url": "https://www.cityofml.com/DocumentCenter/View/13810/Moses-Lake-Quarterly---Fall-2026?bidId=",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "Official PDF exists, but exceeds this bounded HTML audit limit and requires a PDF-specific reader plus confirmed reuse terms. This is not a robots prohibition.",
+      "evidence": [
+        "https://www.cityofml.com/DocumentCenter/View/13810/Moses-Lake-Quarterly---Fall-2026?bidId="
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Error: Image response has an unsupported type or size",
+        "crawl_delay": null
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "PDF in the city Document Center; download each issue when published and extract the text",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:af4a043106e4",
+        "reader": "web",
+        "params": {
+          "url": "https://www.cityofml.com/DocumentCenter/View/13810/Moses-Lake-Quarterly---Fall-2026?bidId=",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-061",
+      "number": 61,
+      "name": "Moses Lake land use notices and permits",
+      "url": "https://cityofml.com/753/Notices",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://cityofml.com/753/Notices",
+        "https://cityofml.com/site/copyright"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Notices page and archive page; check each for RSS or archive feeds; HTML extraction only when permitted",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:02b53102088d",
+        "reader": "web",
+        "params": {
+          "url": "https://cityofml.com/753/Notices",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-062",
+      "number": 62,
+      "name": "Moses Lake Fire Department updates (X)",
+      "url": "https://x.com/MosesLakeFFs",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Platform excluded by Newsbee crawling policy",
+      "evidence": [
+        "https://x.com/MosesLakeFFs"
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Platform excluded by Newsbee crawling policy",
+        "crawl_delay": null
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Department X account; X API access and terms need review. Detailed records typically require a written public records request",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:ef5b140c734c",
+        "reader": "web",
+        "params": {
+          "url": "https://x.com/MosesLakeFFs",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-063",
+      "number": 63,
+      "name": "Moses Lake Police Department updates (Facebook)",
+      "url": "https://www.facebook.com/people/Moses-Lake-Police-Department/100064833845077/",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Platform excluded by Newsbee crawling policy",
+      "evidence": [
+        "https://www.facebook.com/people/Moses-Lake-Police-Department/100064833845077/"
+      ],
+      "robots": {
+        "status": null,
+        "allowed": false,
+        "reason": "Platform excluded by Newsbee crawling policy",
+        "crawl_delay": null
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Department Facebook page; the call log is comprehensive and uses abbreviations that need to be expanded into full words",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:54e4fb83d15f",
+        "reader": "web",
+        "params": {
+          "url": "https://www.facebook.com/people/Moses-Lake-Police-Department/100064833845077/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-064",
+      "number": 64,
+      "name": "Columbia Basin Herald (current official newspaper)",
+      "url": "https://columbiabasinherald.com/",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://columbiabasinherald.com/",
+        "https://columbiabasinherald.com/news/records/legals/",
+        "https://columbiabasinherald.com/terms-of-use/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Monitor headlines; check for an RSS feed; request permission before republishing any text",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:ffcef1cfa6cd",
+        "reader": "web",
+        "params": {
+          "url": "https://columbiabasinherald.com/",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-065",
+      "number": 65,
+      "name": "Moses Lake High School Athletics",
+      "url": "https://www.gomlmavericks.com/calendar",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.gomlmavericks.com/calendar"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Calendar page; check for an iCal subscription or RSS option (URL pattern looks like a CivicPlus calendar)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:dedae95554f1",
+        "reader": "web",
+        "params": {
+          "url": "https://www.gomlmavericks.com/calendar",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-066",
+      "number": 66,
+      "name": "Moses Lake Youth Basketball",
+      "url": "https://mlbasketballacademy.org/fall-league-schedule.html",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://mlbasketballacademy.org/fall-league-schedule.html"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:2f4d005182e7",
+        "reader": "web",
+        "params": {
+          "url": "https://mlbasketballacademy.org/fall-league-schedule.html",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-067",
+      "number": 67,
+      "name": "Moses Lake Youth Hockey",
+      "url": "https://www.mlyha.net/season_management_division_page/tab_standings?page_node_id=9546260",
+      "communities": [
+        "moses-lake"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "robots disallows ClaudeBot",
+      "evidence": [
+        "https://www.mlyha.net/season_management_division_page/tab_standings?page_node_id=9546260"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "robots disallows ClaudeBot",
+        "crawl_delay": 0
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:4c2fe8077bcf",
+        "reader": "web",
+        "params": {
+          "url": "https://www.mlyha.net/season_management_division_page/tab_standings?page_node_id=9546260",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-068",
+      "number": 68,
+      "name": "SDOT current projects",
+      "url": "https://seattle.gov/transportation/projects-and-programs/current-projects",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://seattle.gov/transportation/projects-and-programs/current-projects",
+        "https://seattle.gov/transportation/permits-and-services/permits/parking-permits/over-legal-trucks-permits"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Search specifically for Ballard (manual: cntr+f; automated; search params)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:69027324571b",
+        "reader": "web",
+        "params": {
+          "url": "https://seattle.gov/transportation/projects-and-programs/current-projects",
+          "section": "civic",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-069",
+      "number": 69,
+      "name": "Ship Canal Water Quality Project",
+      "url": "https://www.seattle.gov/utilities/neighborhood-projects/ship-canal",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/utilities/neighborhood-projects/ship-canal",
+        "https://www.seattle.gov/utilities/neighborhood-projects/utilities/protecting-our-environment/seattle-clean-city/illegal-dumping",
+        "https://www.seattle.gov/utilities/about/reports/solid-waste/recycler-annual-reports"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Sign up to their meails",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:72715825036f",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/utilities/neighborhood-projects/ship-canal",
+          "section": "civic",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-070",
+      "number": 70,
+      "name": "King County Metro service alerts",
+      "url": "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+        "https://kingcounty.gov/en/dept/sheriff/courts-jails-legal-system/sheriff-services/concealed-pistol-license",
+        "https://kingcounty.gov/en/court/courts-jails-legal-system/jury-duty"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Input Ballard specific routes and track",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:dce6dc6bac29",
+        "reader": "web",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/metro/rider-tools/service-advisories",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-071",
+      "number": 71,
+      "name": "WA LCB New License Actions",
+      "url": "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Search specifically for Ballard (manual: cntr+f; automated; search params)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:a876b559d525",
+        "reader": "web",
+        "params": {
+          "url": "https://licensinginfo.lcb.wa.gov/MediaReleasesReport3.asp",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-072",
+      "number": 72,
+      "name": "King County Food Establishment Inspection Data",
+      "url": "https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "business",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "Dataset metadata returned PUBLIC_DOMAIN and documented Socrata fields. Use the API with geographic filtering and existing personal-data exclusions; no photo permission implied.",
+      "evidence": [
+        "https://data.kingcounty.gov/Health-Wellness/Food-Establishment-Inspection-Data/r878-4sxa",
+        "https://data.kingcounty.gov/api/views/r878-4sxa.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Search for Ballard specific zipcodes",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "opendata:data.kingcounty.gov:r878-4sxa",
+        "reader": "opendata",
+        "params": {
+          "domain": "data.kingcounty.gov",
+          "dataset": "r878-4sxa",
+          "topic": "inspections",
+          "filter": "city",
+          "agency": "Public Health - Seattle & King County",
+          "license": "Public Domain"
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-073",
+      "number": 73,
+      "name": "Ballard Alliance",
+      "url": "https://ballardalliance.com/about/news/",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://ballardalliance.com/about/news/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "All latest posts - but this is secondary",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:129482f4771d",
+        "reader": "web",
+        "params": {
+          "url": "https://ballardalliance.com/about/news/",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-074",
+      "number": 74,
+      "name": "Ballard Community Center (Seattle Parks)",
+      "url": "https://www.seattle.gov/parks/community-centers/ballard-community-center",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/parks/community-centers/ballard-community-center"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Parks page (from memory; URL confirmed 10/31/26)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:0116fc5538f6",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/parks/community-centers/ballard-community-center",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-075",
+      "number": 75,
+      "name": "Ballard Parks",
+      "url": "https://www.seattle.gov/parks/parks#/1",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/parks/parks#/1"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Find ballard specific parks > crawl events in each park",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:f72f3114d563",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/parks/parks#/1",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-076",
+      "number": 76,
+      "name": "Seattle Public Library Ballard Branch events",
+      "url": "https://www.spl.org/hours-and-locations/ballard-branch/ballard-branch-events",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_feed",
+      "reason": "SPL explicitly publishes calendar RSS subscriptions; Trumba endpoint and robots verified. Read selected-branch event facts only, with photos disabled.",
+      "evidence": [
+        "https://www.spl.org/hours-and-locations/ballard-branch/ballard-branch-events",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.spl.org/using-the-library/using-this-website/using-our-online-calendar",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.trumba.com/calendars/kalendaro.rss",
+        "https://www.trumba.com/robots.txt"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Branch events page (from memory; URL confirmed 10/31/26)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "library:WA0064",
+        "reader": "library",
+        "params": {
+          "fscskey": "WA0064",
+          "reviewed_feed_url": "https://www.trumba.com/calendars/kalendaro.rss",
+          "reviewed_branches": [
+            "Ballard Branch Library"
+          ]
+        },
+        "allowed_urls": [
+          "https://www.trumba.com/calendars/kalendaro.rss"
+        ]
+      }
+    },
+    {
+      "id": "sheet-077",
+      "number": 77,
+      "name": "SPD Crime Data: 2008-Present (data.seattle.gov)",
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "Dataset metadata returned PUBLIC_DOMAIN and documented Socrata fields. Use the API with geographic filtering and existing personal-data exclusions; no photo permission implied.",
+      "evidence": [
+        "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+        "https://data.seattle.gov/api/views/tazs-3rd5.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Search for Ballard (manual search bar)",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "opendata:data.seattle.gov:tazs-3rd5",
+        "reader": "opendata",
+        "params": {
+          "domain": "data.seattle.gov",
+          "dataset": "tazs-3rd5",
+          "topic": "police",
+          "filter": "radius",
+          "agency": "SPD",
+          "license": "Public Domain"
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-078",
+      "number": 78,
+      "name": "Crime Dashboard",
+      "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "PUBLIC_DOMAIN license verified, but arrest-specific field interpretation and reporting must be implemented before enabling this dataset.",
+      "evidence": [
+        "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+        "https://data.seattle.gov/api/views/9bjs-7a7w.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Pick neighborhoods in ballards",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:3e4b8fe9b734",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/police/information-and-data/data/crime-dashboard",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-079",
+      "number": 79,
+      "name": "Arrest Dashboard",
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "PUBLIC_DOMAIN license verified, but arrest-specific field interpretation and reporting must be implemented before enabling this dataset.",
+      "evidence": [
+        "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+        "https://data.seattle.gov/api/views/9bjs-7a7w.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Pick neighborhoods in ballards",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:8a06f71f8b52",
+        "reader": "web",
+        "params": {
+          "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-080",
+      "number": 80,
+      "name": "Crisis Contact",
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "The Crisis Contact row duplicates the SPD Arrest Data URL; it is not a distinct crisis dataset. PUBLIC_DOMAIN license verified, but arrest-specific field interpretation and reporting must be implemented before enabling this dataset.",
+      "evidence": [
+        "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+        "https://data.seattle.gov/api/views/9bjs-7a7w.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Pick neighborhoods in ballards",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:8a06f71f8b52",
+        "reader": "web",
+        "params": {
+          "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w/data_preview",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-081",
+      "number": 81,
+      "name": "Seattle Fire Real-Time 911",
+      "url": "https://web.seattle.gov/sfd/realtime911/",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://web.seattle.gov/sfd/realtime911/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "From memory; URL confirmed 10/31/26",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:4c691d431f1b",
+        "reader": "web",
+        "params": {
+          "url": "https://web.seattle.gov/sfd/realtime911/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-082",
+      "number": 82,
+      "name": "Councilmember Dan Strauss (District 6)",
+      "url": "https://council.seattle.gov/councilmembers/councilmember-dan-strauss/",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://council.seattle.gov/councilmembers/councilmember-dan-strauss/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "News from Ballard's City Councelor",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:021f3ac8659a",
+        "reader": "web",
+        "params": {
+          "url": "https://council.seattle.gov/councilmembers/councilmember-dan-strauss/",
+          "section": "civic",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-083",
+      "number": 83,
+      "name": "District 6 town hall notices",
+      "url": "https://council.seattle.gov/2026/03/19/district-6-town-hall/",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "community",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://council.seattle.gov/2026/03/19/district-6-town-hall/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Ballard/ town 6 news",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:156ac664f5a2",
+        "reader": "web",
+        "params": {
+          "url": "https://council.seattle.gov/2026/03/19/district-6-town-hall/",
+          "section": "community",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-084",
+      "number": 84,
+      "name": "Sound Transit Ballard light rail (via council coverage)",
+      "url": "https://council.seattle.gov/category/news-releases/strauss/page/2/",
+      "communities": [
+        "ballard"
+      ],
+      "scope": "community",
+      "section": "civic",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://council.seattle.gov/category/news-releases/strauss/page/2/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Specifically serch for Ballard",
+      "sheet_conditions": "",
+      "collection": {
+        "source_id": "web:6d14482b5cb3",
+        "reader": "web",
+        "params": {
+          "url": "https://council.seattle.gov/category/news-releases/strauss/page/2/",
+          "section": "civic",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-085",
+      "number": 85,
+      "name": "SPD Crime Data: 2008-Present",
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "Dataset metadata returned PUBLIC_DOMAIN and documented Socrata fields. Use the API with geographic filtering and existing personal-data exclusions; no photo permission implied.",
+      "evidence": [
+        "https://data.seattle.gov/Public-Safety/SPD-Crime-Data-2008-Present/tazs-3rd5",
+        "https://data.seattle.gov/api/views/tazs-3rd5.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Socrata API/CSV; verify schema; filter incident locations to Beacon Hill",
+      "sheet_conditions": "Review dataset license and City terms; aggregate where possible; avoid victim identifiers; reported offenses are not convictions.",
+      "collection": {
+        "source_id": "opendata:data.seattle.gov:tazs-3rd5",
+        "reader": "opendata",
+        "params": {
+          "domain": "data.seattle.gov",
+          "dataset": "tazs-3rd5",
+          "topic": "police",
+          "filter": "radius",
+          "agency": "SPD",
+          "license": "Public Domain"
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-086",
+      "number": 86,
+      "name": "SPD Arrest Data",
+      "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "integration_required",
+      "reason": "PUBLIC_DOMAIN license verified, but arrest-specific field interpretation and reporting must be implemented before enabling this dataset.",
+      "evidence": [
+        "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w",
+        "https://data.seattle.gov/api/views/9bjs-7a7w.json"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 1
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Socrata API/CSV after field review; use geography where supplied",
+      "sheet_conditions": "Review license/City terms; arrest is not proof of guilt; exclude sensitive identifiers and protected cases.",
+      "collection": {
+        "source_id": "web:0f55ad770639",
+        "reader": "web",
+        "params": {
+          "url": "https://data.seattle.gov/Public-Safety/SPD-Arrest-Data/9bjs-7a7w",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-087",
+      "number": 87,
+      "name": "SPD Blotter RSS",
+      "url": "https://spdblotter.seattle.gov/feed/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://spdblotter.seattle.gov/feed/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Verified RSS; filter locality and event date; corroborate police claims",
+      "sheet_conditions": "RSS access does not license all content; attribute SPD, use factual summaries, protect victims and distinguish allegations from outcomes.",
+      "collection": {
+        "source_id": "web:f53d3b0bdc76",
+        "reader": "web",
+        "params": {
+          "url": "https://spdblotter.seattle.gov/feed/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-088",
+      "number": 88,
+      "name": "SPD Significant Incident Reports",
+      "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://spdblotter.seattle.gov/significant-incident-reports/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Read official HTML reports; approved bounded parser; deduplicate against SPD Blotter",
+      "sheet_conditions": "Review City terms; factual summaries only; no identifying victims or minors; source classifications can change.",
+      "collection": {
+        "source_id": "web:271a5f509c23",
+        "reader": "web",
+        "params": {
+          "url": "https://spdblotter.seattle.gov/significant-incident-reports/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-089",
+      "number": 89,
+      "name": "Seattle Fire Real-Time 911",
+      "url": "https://web.seattle.gov/sfd/realtime911/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://web.seattle.gov/sfd/realtime911/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official dispatch table; prefer documented data export if available",
+      "sheet_conditions": "Review City terms; dispatch codes do not establish diagnosis, criminal activity or death; omit medical/person identifiers.",
+      "collection": {
+        "source_id": "web:4c691d431f1b",
+        "reader": "web",
+        "params": {
+          "url": "https://web.seattle.gov/sfd/realtime911/",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-090",
+      "number": 90,
+      "name": "King County Prosecuting Attorney official updates",
+      "url": "https://kingcounty.gov/en/legacy/depts/prosecutor",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://kingcounty.gov/en/legacy/depts/prosecutor",
+        "https://kingcounty.gov/en/dept/sheriff/courts-jails-legal-system/sheriff-services/concealed-pistol-license",
+        "https://kingcounty.gov/en/court/courts-jails-legal-system/jury-duty"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Follow official newsroom/media links; request approved feed/export",
+      "sheet_conditions": "Use attributable court/prosecutor facts; charges are allegations; exclude minors and sensitive cases under editorial policy.",
+      "collection": {
+        "source_id": "web:df89efa28dcb",
+        "reader": "web",
+        "params": {
+          "url": "https://kingcounty.gov/en/legacy/depts/prosecutor",
+          "section": "safety",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-091",
+      "number": 91,
+      "name": "U.S. Attorney Western District of Washington",
+      "url": "https://www.justice.gov/usao-wdwa/pr",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "safety",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_api",
+      "reason": "DOJ publishes a public-domain information policy and a documented press-release API. Use official text with attribution and locality checks; no third-party photos or seals.",
+      "evidence": [
+        "https://www.justice.gov/usao-wdwa/pr",
+        "https://www.justice.gov/legalpolicies",
+        "https://www.justice.gov/developer"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Use RSS linked by official news page; locality and case matching",
+      "sheet_conditions": "Attribute DOJ; separate allegations, pleas and sentences; verify third-party media rights and current case status.",
+      "collection": {
+        "source_id": "justice:doj",
+        "reader": "justice",
+        "params": {},
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-092",
+      "number": 92,
+      "name": "Columbia Funeral Home and Crematory",
+      "url": "https://columbiafuneralhome.com/seattle-obituaries/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://columbiafuneralhome.com/seattle-obituaries/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Request authorized feed/export; approved public obituary pages only",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:4620dba5f200",
+        "reader": "web",
+        "params": {
+          "url": "https://columbiafuneralhome.com/seattle-obituaries/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-093",
+      "number": 93,
+      "name": "BONNEY WATSON obituaries",
+      "url": "https://bonneywatson.com/obituaries/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://bonneywatson.com/obituaries/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Request provider-approved feed/export or limited permitted HTML collection",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:0a0977509845",
+        "reader": "web",
+        "params": {
+          "url": "https://bonneywatson.com/obituaries/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-094",
+      "number": 94,
+      "name": "Elemental Cremation and Burial obituaries",
+      "url": "https://www.elementalnw.com/obituaries/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://www.elementalnw.com/obituaries/",
+        "https://www.elementalnw.com/usage-policy/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Request permission and provider export; search public listing only as allowed",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:54c433a559d7",
+        "reader": "web",
+        "params": {
+          "url": "https://www.elementalnw.com/obituaries/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-095",
+      "number": 95,
+      "name": "Emmick Family Funeral and Cremation Services",
+      "url": "https://www.emmickfunerals.com/obituaries",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://www.emmickfunerals.com/obituaries"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Ask for approved obituary feed/export; no private-family or guestbook data",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:e2e0e2ad5c65",
+        "reader": "web",
+        "params": {
+          "url": "https://www.emmickfunerals.com/obituaries",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-096",
+      "number": 96,
+      "name": "Washelli / Dignity Memorial",
+      "url": "https://www.dignitymemorial.com/funeral-homes/washelli",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://www.dignitymemorial.com/funeral-homes/washelli",
+        "https://sci-corp.com/terms-of-service"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Request licensed/provider-approved supply; do not assume site scraping permitted",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:6412afd62d2a",
+        "reader": "web",
+        "params": {
+          "url": "https://www.dignitymemorial.com/funeral-homes/washelli",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-097",
+      "number": 97,
+      "name": "M B Daniel Mortuary",
+      "url": "https://www.mbdanielsmortuary.com/listings",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://www.mbdanielsmortuary.com/listings"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 403,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Request provider-approved feed/export; explicit neighborhood confirmation",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:2eb3872d26ca",
+        "reader": "web",
+        "params": {
+          "url": "https://www.mbdanielsmortuary.com/listings",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-098",
+      "number": 98,
+      "name": "The Seattle Times obituary portal",
+      "url": "https://obituaries.seattletimes.com/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "obituaries",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Permission-first obituary/vital-record source: no publisher/family authorization was supplied. No scraping or photo copying enabled.",
+      "evidence": [
+        "https://obituaries.seattletimes.com/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 403,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Publisher-approved syndication/export only; manual link discovery pending agreement",
+      "sheet_conditions": "Permission-first: obtain funeral-home/publisher and appropriate family authorization; confirm Beacon Hill connection; no copied text, photos, guestbooks or survivor details without rights.",
+      "collection": {
+        "source_id": "web:1533929b5503",
+        "reader": "web",
+        "params": {
+          "url": "https://obituaries.seattletimes.com/",
+          "section": "obituaries",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-099",
+      "number": 99,
+      "name": "Seattle Public Library - Beacon Hill Branch",
+      "url": "https://www.spl.org/hours-and-locations/beacon-hill-branch/beacon-hill-branch-events",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "approved_feed",
+      "reason": "SPL explicitly publishes calendar RSS subscriptions; Trumba endpoint and robots verified. Read selected-branch event facts only, with photos disabled.",
+      "evidence": [
+        "https://www.spl.org/hours-and-locations/beacon-hill-branch/beacon-hill-branch-events",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.spl.org/using-the-library/using-this-website/using-our-online-calendar",
+        "https://www.spl.org/about-us/policies/online-privacy-and-terms-of-use",
+        "https://www.trumba.com/calendars/kalendaro.rss",
+        "https://www.trumba.com/robots.txt"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Verified Trumba RSS https://www.trumba.com/calendars/kalendaro.rss; retain Beacon Hill branch",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights.",
+      "collection": {
+        "source_id": "library:WA0064",
+        "reader": "library",
+        "params": {
+          "fscskey": "WA0064",
+          "reviewed_feed_url": "https://www.trumba.com/calendars/kalendaro.rss",
+          "reviewed_branches": [
+            "Beacon Hill Branch Library"
+          ]
+        },
+        "allowed_urls": [
+          "https://www.trumba.com/calendars/kalendaro.rss"
+        ]
+      }
+    },
+    {
+      "id": "sheet-100",
+      "number": 100,
+      "name": "El Centro de la Raza calendar",
+      "url": "https://www.elcentrodelaraza.org/events/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Page/feed directives restrict the current Newsbee reuse path: noindex.",
+      "evidence": [
+        "https://www.elcentrodelaraza.org/events/",
+        "https://www.elcentrodelaraza.org/event/free-legal-clinic-2/2026-11-11/",
+        "https://www.elcentrodelaraza.org/series/free-legal-clinic-2/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Verified iCalendar https://www.elcentrodelaraza.org/events/?ical=1",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights.",
+      "collection": {
+        "source_id": "web:b8f2baa242d0",
+        "reader": "web",
+        "params": {
+          "url": "https://www.elcentrodelaraza.org/events/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-101",
+      "number": 101,
+      "name": "Beacon Hill Council meetings and events",
+      "url": "https://www.beaconhillcouncilseattle.org/upcoming-meetings",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.beaconhillcouncilseattle.org/upcoming-meetings"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Verified RSS using ?format=rss; use actual event dates rather than feed-update dates",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Do not use export paths disallowed by current robots rules.",
+      "collection": {
+        "source_id": "web:373019bf7e1f",
+        "reader": "web",
+        "params": {
+          "url": "https://www.beaconhillcouncilseattle.org/upcoming-meetings",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-102",
+      "number": 102,
+      "name": "Estelita's Library",
+      "url": "https://estelitaslibrary.org/events-calendar/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://estelitaslibrary.org/events-calendar/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Embedded public Google Calendar; ask organizer for authorized ICS/API export",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights.",
+      "collection": {
+        "source_id": "web:2204b0d1b3ae",
+        "reader": "web",
+        "params": {
+          "url": "https://estelitaslibrary.org/events-calendar/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-103",
+      "number": 103,
+      "name": "Beacon Food Forest",
+      "url": "https://www.beaconfoodforest.org/events",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.beaconfoodforest.org/events"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Permitted public HTML; request approved event export; do not use robots-disallowed ICS/JSON paths",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Earlier robots review disallowed ?format=ical and JSON export paths.",
+      "collection": {
+        "source_id": "web:69832d157f81",
+        "reader": "web",
+        "params": {
+          "url": "https://www.beaconfoodforest.org/events",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-104",
+      "number": 104,
+      "name": "Beacon Arts",
+      "url": "https://www.beacon-arts.org/calendar-1",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.beacon-arts.org/calendar-1"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Review calendar and organizer pages; request public export/approved HTML collection",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights.",
+      "collection": {
+        "source_id": "web:237aa04eea2c",
+        "reader": "web",
+        "params": {
+          "url": "https://www.beacon-arts.org/calendar-1",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-105",
+      "number": 105,
+      "name": "Beacon Business Alliance",
+      "url": "https://www.beaconbusinessalliance.org/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.beaconbusinessalliance.org/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Use public event/blog links after terms review; request export; /feed/ previously returned 404",
+      "sheet_conditions": "Site states all rights reserved; seek approved automated access; factual event details only; copied text/images need rights.",
+      "collection": {
+        "source_id": "web:f7aac2535cd4",
+        "reader": "web",
+        "params": {
+          "url": "https://www.beaconbusinessalliance.org/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-106",
+      "number": 106,
+      "name": "Clock-Out Lounge",
+      "url": "https://clockoutlounge.com/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://clockoutlounge.com/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 10
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official dated listings; approved HTML/structured-event parser; follow crawl delay",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Prior robots file specified at least 10 seconds between requests; recheck before collection.",
+      "collection": {
+        "source_id": "web:e45900414c2d",
+        "reader": "web",
+        "params": {
+          "url": "https://clockoutlounge.com/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-107",
+      "number": 107,
+      "name": "Jefferson Community Center",
+      "url": "https://www.seattle.gov/parks/community-centers/jefferson-community-center",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/parks/community-centers/jefferson-community-center"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official program page and published schedules; approved bounded extraction",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Review City and registration-platform terms separately.",
+      "collection": {
+        "source_id": "web:874c5b2e3f07",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/parks/community-centers/jefferson-community-center",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-108",
+      "number": 108,
+      "name": "Van Asselt Community Center",
+      "url": "https://www.seattle.gov/parks/community-centers/van-asselt-community-center",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.seattle.gov/parks/community-centers/van-asselt-community-center"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official venue page; request accessible schedule/calendar export if blocked",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Review City and registration-platform terms separately.",
+      "collection": {
+        "source_id": "web:097e33b62f0d",
+        "reader": "web",
+        "params": {
+          "url": "https://www.seattle.gov/parks/community-centers/van-asselt-community-center",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-109",
+      "number": 109,
+      "name": "Beacon Hill International Elementary calendar",
+      "url": "https://beaconhilles.seattleschools.org/events/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://beaconhilles.seattleschools.org/events/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public HTML calendar; discover actual export link; ?ical=1 returned HTML",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Publish only events actually open to the intended audience; no student details.",
+      "collection": {
+        "source_id": "web:b8aaaf64d88d",
+        "reader": "web",
+        "params": {
+          "url": "https://beaconhilles.seattleschools.org/events/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-110",
+      "number": 110,
+      "name": "Kimball Elementary calendar",
+      "url": "https://kimballes.seattleschools.org/events/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://kimballes.seattleschools.org/events/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public HTML calendar; discover actual export link; ?ical=1 returned HTML",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Verify audience eligibility; no student or classroom-private information.",
+      "collection": {
+        "source_id": "web:28f44629f5f4",
+        "reader": "web",
+        "params": {
+          "url": "https://kimballes.seattleschools.org/events/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-111",
+      "number": 111,
+      "name": "Maple Elementary calendar",
+      "url": "https://maplees.seattleschools.org/events/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://maplees.seattleschools.org/events/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public HTML calendar; discover actual export link; ?ical=1 returned HTML",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Verify audience eligibility and avoid private school details.",
+      "collection": {
+        "source_id": "web:096a39e6f989",
+        "reader": "web",
+        "params": {
+          "url": "https://maplees.seattleschools.org/events/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-112",
+      "number": 112,
+      "name": "Cleveland High School calendar",
+      "url": "https://clevelandhs.seattleschools.org/events/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "events",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://clevelandhs.seattleschools.org/events/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public school HTML calendar; use actual approved export rather than guessed ICS path",
+      "sheet_conditions": "Permission/terms review pending; publish factual event details in Newsbee-authored wording with organizer link; images and copied descriptions need separate rights. Keep public event details separate from student records.",
+      "collection": {
+        "source_id": "web:816773c2df7c",
+        "reader": "web",
+        "params": {
+          "url": "https://clevelandhs.seattleschools.org/events/",
+          "section": "events",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-113",
+      "number": 113,
+      "name": "King County Assessor sales extracts",
+      "url": "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+        "https://www.kingcounty.gov/depts/dnrp/solid-waste/programs/litter-dumping/report-dumping.aspx",
+        "https://www.kingcounty.gov/about/website/termsofuse"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official bulk sales extract after terms review; join parcel/address data and Beacon Hill boundary",
+      "sheet_conditions": "Review County terms and commercial-purpose restrictions on lists of individuals; collect property facts only; omit buyer/seller names; verify nominal/non-arm-length transfers before calling them home sales.",
+      "collection": {
+        "source_id": "web:f0fd7b9545e7",
+        "reader": "web",
+        "params": {
+          "url": "https://info.kingcounty.gov/assessor/DataDownload/default.aspx",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-114",
+      "number": 114,
+      "name": "King County eSales residential search",
+      "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+        "https://www.kingcounty.gov/depts/dnrp/solid-waste/programs/litter-dumping/report-dumping.aspx",
+        "https://info.kingcounty.gov/assessor/esales/Residential.aspx"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official date/area search; prefer approved bulk extract over repeated form scraping",
+      "sheet_conditions": "Review County terms and commercial-purpose restrictions on lists of individuals; collect property facts only; omit buyer/seller names; verify nominal/non-arm-length transfers before calling them home sales.",
+      "collection": {
+        "source_id": "web:45520f28fcfc",
+        "reader": "web",
+        "params": {
+          "url": "https://info.kingcounty.gov/assessor/esales/Residential.aspx",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-115",
+      "number": 115,
+      "name": "King County eReal Property",
+      "url": "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Page/feed directives restrict the current Newsbee reuse path: noindex.",
+      "evidence": [
+        "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+        "https://www.kingcounty.gov/depts/dnrp/solid-waste/programs/litter-dumping/report-dumping.aspx",
+        "https://www.kingcounty.gov/about/website/termsofuse"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Official parcel lookup for verification; request bulk source for systematic collection",
+      "sheet_conditions": "Review County terms and commercial-purpose restrictions on lists of individuals; collect property facts only; omit buyer/seller names; verify nominal/non-arm-length transfers before calling them home sales.",
+      "collection": {
+        "source_id": "web:a4a8604fc339",
+        "reader": "web",
+        "params": {
+          "url": "https://blue.kingcounty.com/Assessor/eRealProperty/default.aspx",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-116",
+      "number": 116,
+      "name": "King County Recorder's Office",
+      "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+        "https://kingcounty.gov/en/dept/sheriff/courts-jails-legal-system/sheriff-services/concealed-pistol-license",
+        "https://kingcounty.gov/en/court/courts-jails-legal-system/jury-duty"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official records search; request approved index/export for systematic collection",
+      "sheet_conditions": "Review County terms and commercial-purpose restrictions on lists of individuals; collect property facts only; omit buyer/seller names; verify nominal/non-arm-length transfers before calling them home sales. Recording date is not necessarily sale/closing date; exclude signatures and personal identifiers.",
+      "collection": {
+        "source_id": "web:81b4eccf293c",
+        "reader": "web",
+        "params": {
+          "url": "https://kingcounty.gov/en/dept/executive-services/certificates-permits-licenses/records-licensing/recorders-office/records-search",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-117",
+      "number": 117,
+      "name": "King County GIS parcel data",
+      "url": "https://gisdata.kingcounty.gov/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "real_estate",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "crawl-delay 60s exceeds Newsbee limit",
+      "evidence": [
+        "https://gisdata.kingcounty.gov/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": false,
+        "reason": "crawl-delay 60s exceeds Newsbee limit",
+        "crawl_delay": 60
+      },
+      "page_status": null,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Use documented public GIS download/API after layer/license review; spatial join sales",
+      "sheet_conditions": "Review exact layer license/disclaimer; omit owner names; geography does not prove a sale occurred.",
+      "collection": {
+        "source_id": "web:d70cf62eea3e",
+        "reader": "web",
+        "params": {
+          "url": "https://gisdata.kingcounty.gov/",
+          "section": "real_estate",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-118",
+      "number": 118,
+      "name": "Cleveland High School athletics",
+      "url": "https://clevelandhs.seattleschools.org/student-life/athletics/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://clevelandhs.seattleschools.org/student-life/athletics/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public athletic news; follow school-linked Metro League schedules",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records.",
+      "collection": {
+        "source_id": "web:c2ff048a2a8f",
+        "reader": "web",
+        "params": {
+          "url": "https://clevelandhs.seattleschools.org/student-life/athletics/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-119",
+      "number": 119,
+      "name": "Cleveland Metro League schedule",
+      "url": "https://www.metroleaguewa.org/school/?schoolid=75",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://www.metroleaguewa.org/school/?schoolid=75"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "School-linked league page; verify public schedule/export and operator terms",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records. Deduplicate against school announcements; league page is the same schedule family.",
+      "collection": {
+        "source_id": "web:ee1229cfef93",
+        "reader": "web",
+        "params": {
+          "url": "https://www.metroleaguewa.org/school/?schoolid=75",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-120",
+      "number": 120,
+      "name": "Franklin High School athletics",
+      "url": "https://franklinhs.seattleschools.org/student-life/athletics/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://franklinhs.seattleschools.org/student-life/athletics/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official school page and linked Metro League schedules; opt-in team coverage",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records.",
+      "collection": {
+        "source_id": "web:4aab163b5294",
+        "reader": "web",
+        "params": {
+          "url": "https://franklinhs.seattleschools.org/student-life/athletics/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-121",
+      "number": 121,
+      "name": "Mercer International Middle School athletics",
+      "url": "https://mercerms.seattleschools.org/student-life/athletics/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://mercerms.seattleschools.org/student-life/athletics/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Official school page plus district-linked public middle-school schedules",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records.",
+      "collection": {
+        "source_id": "web:bb1e4494cf01",
+        "reader": "web",
+        "params": {
+          "url": "https://mercerms.seattleschools.org/student-life/athletics/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-122",
+      "number": 122,
+      "name": "Beacon Hill Youth Soccer",
+      "url": "https://beaconhillsoccerclub.org/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://beaconhillsoccerclub.org/"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public club announcements; request public fixture/calendar export",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records.",
+      "collection": {
+        "source_id": "web:416adb2ef126",
+        "reader": "web",
+        "params": {
+          "url": "https://beaconhillsoccerclub.org/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-123",
+      "number": 123,
+      "name": "Bill Wright Golf and Social Club at Jefferson Park",
+      "url": "https://jpmgc.net/tournaments.html",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://jpmgc.net/tournaments.html"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Public HTML tournament table; results links only after rights/access review",
+      "sheet_conditions": "Review club terms/permission; use factual tournament details; avoid republishing full player/member lists.",
+      "collection": {
+        "source_id": "web:9a48cc874417",
+        "reader": "web",
+        "params": {
+          "url": "https://jpmgc.net/tournaments.html",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-124",
+      "number": 124,
+      "name": "Jefferson Park Lawn Bowling Club",
+      "url": "https://seattlebowls.org/calendar",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "permission_required",
+      "reason": "Public access was checked, but no affirmative automated-collection permission or suitable reuse scope was verified. Request approved delivery; keep paused.",
+      "evidence": [
+        "https://seattlebowls.org/calendar"
+      ],
+      "robots": {
+        "status": 200,
+        "allowed": true,
+        "reason": "Robots permits this path; terms still require review",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [],
+      "photos": "permission_required",
+      "proposed_method": "Embedded Google Calendar; request approved public ICS/export and event-level access",
+      "sheet_conditions": "Review organizer permission; distinguish public events from member-only activities; no member lists.",
+      "collection": {
+        "source_id": "web:8faeadfcad4e",
+        "reader": "web",
+        "params": {
+          "url": "https://seattlebowls.org/calendar",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    },
+    {
+      "id": "sheet-125",
+      "number": 125,
+      "name": "WIAA official news",
+      "url": "https://www.wiaa.com/feed/",
+      "communities": [
+        "beacon-hill"
+      ],
+      "scope": "community",
+      "section": "schools",
+      "checked_at": "2026-11-01",
+      "review_expires": "2026-12-01",
+      "decision": "blocked",
+      "reason": "Page/feed directives restrict the current Newsbee reuse path: noindex.",
+      "evidence": [
+        "https://www.wiaa.com/feed/"
+      ],
+      "robots": {
+        "status": 404,
+        "allowed": true,
+        "reason": "No robots file; this is not permission",
+        "crawl_delay": 0
+      },
+      "page_status": 200,
+      "page_flags": [
+        "noindex"
+      ],
+      "photos": "permission_required",
+      "proposed_method": "Verified RSS; retain relevant school/team headlines; no student names",
+      "sheet_conditions": "Permission/terms review pending; team-level schedules/results only; exclude student rosters, health data and private registration records. Treat linked third-party score/schedule services as separate access agreements.",
+      "collection": {
+        "source_id": "web:a0b0f07c95e3",
+        "reader": "web",
+        "params": {
+          "url": "https://www.wiaa.com/feed/",
+          "section": "schools",
+          "inside_area": false
+        },
+        "allowed_urls": []
+      }
+    }
+  ]
+}

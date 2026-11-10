@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { queryOverpass, QUERY_SECONDS, REQUEST_MS } from "../../connectors/overpass";
-import { methodDefinition, type DiscoveryContext } from "../../discovery/methods";
+import { osmPlaces, type DiscoveryContext } from "../../discovery/methods";
 import type { HttpRequest, HttpTransport } from "../../core/http";
 const response = (url: string, value: unknown, status = 200, headers = {}) => ({url,status,headers,body:new TextEncoder().encode(JSON.stringify(value))});
 it("uses bounded GET, preserves failures and fails over on HTTP-200 error remarks", async () => {
@@ -29,7 +29,7 @@ it("queries the saved bbox and filters institution types and location", async ()
   {lat:47.69,lon:-122.29,tags:{name:'Shop',shop:'clothes',website:'https://shop.example/'}},
  ]});};
  const context={transport,location:{latitude:47.69,longitude:-122.29,community:{name:'Test',parent_name:'Seattle',geography:{area:{method:'approximate_bbox',bbox:[-122.30808,47.6830397,-122.2797623,47.6975789]}}}}} as unknown as DiscoveryContext;
- const result=await methodDefinition('osm')!.run(context);
+ const result=await osmPlaces(context);
  expect(new URL(request!.url).searchParams.get('data')).toContain('(47.6830397,-122.30808,47.6975789,-122.2797623)');
- expect(result.candidates.map(c=>c.name)).toEqual(['Test School']);expect(result.detail).toContain('success');
+ expect(result.places.map(p=>p.name)).toEqual(['Test School']);expect(result.detail).toContain('success');
 });

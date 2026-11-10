@@ -1,4 +1,5 @@
 ---
+import StoryMedia from "./StoryMedia.astro";
 import NeighborhoodPage from "./NeighborhoodPage.astro";
 import ReportStory from "./ReportStory.astro";
 import { neighborhoodLinks, type Article, type EditionPage } from "../../lib/edition-view";
@@ -17,14 +18,7 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
       <h1 id="article-title">{article.headline}</h1>
       <p class="byline">Newsbee · Your community, this week</p>
     </header>
-    {article.image && <figure data-article-photo>
-      <img src={article.image} alt={article.imageCaption || article.headline} width="1600" height="1000" />
-      <figcaption>{article.imageCaption}{article.imageCaption ? " · " : ""}Photo: {article.imageCredit}</figcaption>
-    </figure>}
-    <div class="image-placeholder" data-photo-placeholder hidden={Boolean(article.image)} role="img" aria-label="No photo available for this story">
-      <span class="nb-label">Your community in focus</span>
-      <span>No photo available yet</span>
-    </div>
+    <StoryMedia photo={article.photo} illustration={article.illustration} lead />
     <div class="article-text">{paragraphs.map((text) => <p>{text}</p>)}</div>
     {article.whenWhere && <p class="when-where">{article.whenWhere}</p>}
     <div class="article-actions" data-print-hide>
@@ -44,14 +38,6 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
 </NeighborhoodPage>
 
 <script>
-  const photo = document.querySelector<HTMLImageElement>("[data-article-photo] img");
-  const photoUnavailable = () => {
-    const figure = photo?.closest("figure");
-    const placeholder = document.querySelector<HTMLElement>("[data-photo-placeholder]");
-    if (figure && placeholder) { figure.hidden = true; placeholder.hidden = false; }
-  };
-  photo?.addEventListener("error", photoUnavailable);
-  if (photo?.complete && !photo.naturalWidth) photoUnavailable();
   document.querySelector("[data-print-story]")?.addEventListener("click", () => window.print());
   const button = document.querySelector<HTMLButtonElement>("[data-share-story]");
   const status = document.querySelector<HTMLElement>("[data-share-status]");

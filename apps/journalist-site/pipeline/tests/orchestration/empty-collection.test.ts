@@ -12,7 +12,8 @@ import { CONNECTORS } from "../../connectors/registry";
 import { sourceResult, type CollectedEvent, type LocationProfile, type SourceTask } from "../../connectors/types";
 import { collectedItems, type CollectedItem } from "../../editions/assemble";
 import { locationHealth } from "../../orchestration/health";
-import { ensureJobIndexes, runJobs } from "../../orchestration/jobs";
+import { enqueue, ensureJobIndexes, readJobLog, runJobs } from "../../orchestration/jobs";
+import { logger } from "../../core/log";
 import { resumeRun, runOne, startMapRun, startRun, tick, triggerStage, type OrchestratorDeps } from "../../orchestration/orchestrator";
 import { collectionCandidateCount, ensureRunIndexes, getRun, newRun, runs, type RunStatus } from "../../orchestration/runs";
 import { LocalArtifacts } from "../../storage/artifacts";
@@ -158,6 +159,37 @@ it.each([false, true])("stops actual empty collection at the editor gate (no sou
   expect(model.calls).toHaveLength(0);
 });
 
+it("persists a job's detail log while its source reader is still running", async () => {
+  const run = await seed("collecting", [task]);
+  let release!: () => void;
+  let started!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  deps.connectors = { ...CONNECTORS, library: { ...CONNECTORS.library, collect: async () => {
+    logger("fixture-reader").info("waiting_for_source", { source_id: task.source_id });
+    started();
+    await gate;
+    return { result: sourceResult(task.source_id, task.name, "ingested", "Fixture collection"), events: [] };
+  } } };
+  await resumeRun(deps, run._id, "editor");
+  const work = runOne(deps, { kinds: ["collect_source"] });
+  try {
+    await entered;
+    const job = (await runJobs(db, run._id)).find((entry) => entry.kind === "collect_source")!;
+    expect(job.status).toBe("running");
+    let content: string | null = null;
+    for (let attempt = 0; attempt < 20 && !content?.includes("waiting_for_source"); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      content = await readJobLog(db, job._id);
+    }
+    expect(content).toContain("waiting_for_source");
+    expect((await runJobs(db, run._id)).find((entry) => entry._id === job._id)).toMatchObject({ status: "running", log_file: `mongo:${job._id}` });
+  } finally {
+    release();
+    await work;
+  }
+}, 15_000);
+
 it("allows freshly collected items through the gate into main's section-ranking flow", async () => {
   const run = await seed("collecting", [task]);
   collect([facts]);
@@ -204,6 +236,22 @@ it("won't start an edition with no source map, and a map run only maps", async (
   const kinds = (await runJobs(db, run._id)).map((job) => job.kind);
   expect(kinds.length).toBeGreaterThan(0);
   expect(kinds.every((kind) => kind === "discover")).toBe(true);
+});
+
+it("gives a map run its final review after the agent, and only then saves addresses", async () => {
+  const run = await seed("mapping");
+  await runs(db).updateOne({ _id: run._id }, { $set: { kind: "map" } });
+  const done = async (kind: "agent_round" | "review_map", payload: Record<string, unknown>, result: Record<string, unknown> = {}) => {
+    const id = await enqueue(db, { kind, run_id: run._id, location_id: location.id, payload, dedupe_key: `${kind}:${run._id}:0` });
+    await db.collection(COLLECTIONS.jobs).updateOne({ _id: id as never }, { $set: { status: "completed", result } });
+  };
+  await done("agent_round", { round: 0 });
+  await resumeRun(deps, run._id, "editor");
+  expect((await runJobs(db, run._id)).map((job) => job.kind).sort()).toEqual(["agent_round", "review_map"]);
+  await db.collection(COLLECTIONS.jobs).deleteMany({ kind: "review_map" });
+  await done("review_map", { step: 0 }, { more: false });
+  await resumeRun(deps, run._id, "editor");
+  expect((await runJobs(db, run._id)).map((job) => job.kind).sort()).toEqual(["agent_round", "finish_map", "review_map"]);
 });
 
 it("preserves main's location-removal precondition even with retained items", async () => {

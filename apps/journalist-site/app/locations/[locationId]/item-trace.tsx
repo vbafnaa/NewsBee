@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import type { EvidencePacket } from "@/pipeline/editions/evidence";
+import type { ImageResult } from "@/pipeline/images/pipeline";
 
 type Trace = {
   item: { _id: string; run_id: string; source_id: string; source_name: string; title: string; url: string | null; event_date: string | null; status: string; reason: string | null; step: string; section?: string | null; rank?: number | null; score?: number | null; why?: string | null; merge_group?: string | null; story_id?: string | null; locality?: unknown; facts: Record<string, unknown> | null; evidence?: EvidencePacket };
@@ -14,6 +15,9 @@ type Trace = {
   writing: { disposition: string; draft: { headline: string; summary: string } | null; errors: string[]; error: string | null; attempts: number; rejected_first: { draft: unknown; errors: string[] } | null; ranking: Record<string, unknown> | null } | null;
   text_excerpt: string | null;
   overrides: { include?: string[]; exclude?: string[]; pin?: string[] };
+  image?: ImageResult | null;
+  image_shadow?: ImageResult | null;
+  image_agent?: Record<string, unknown> | null;
 };
 
 const show = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -71,6 +75,17 @@ export default function ItemTrace({ runId, itemId, onClose, onChanged }: { runId
           {trace.writing.draft && <><p><strong>{trace.writing.draft.headline}</strong></p><p>{trace.writing.draft.summary}</p></>}
           {trace.writing.rejected_first && <details><summary>First draft (rejected)</summary><pre>{show(trace.writing.rejected_first)}</pre></details>}</> : "Not written"}</dd>
         <dt>Source text</dt><dd>{trace.text_excerpt ? <details><summary>Stored text (first 1,200 characters)</summary><pre>{trace.text_excerpt}</pre></details> : "None stored"}</dd>
+        <dt>Image</dt><dd>{trace.image ? <>
+          <strong>{trace.image.status.replace(/_/g, " ")}</strong>: {trace.image.reason.replace(/_/g, " ")}
+          <p>{trace.image.stages.join(" → ")}</p>
+          {trace.image.agent && <p>Visual review: {trace.image.agent.mode} · {trace.image.agent.calls ?? 0} model call attempts{trace.image.agent.reason ? ` · ${trace.image.agent.reason}` : ""}</p>}
+          {trace.image.image && <p><a href={trace.image.image.image_source_url} target="_blank" rel="noopener noreferrer">Photo source</a>
+            {trace.image.image.image_credit && ` · ${trace.image.image.image_credit}`}{trace.image.image.image_date && ` · Taken ${trace.image.image.image_date}`}
+            {trace.image.image.image_license_url && <> · <a href={trace.image.image.image_license_url} target="_blank" rel="noopener noreferrer">{trace.image.image.image_license}</a></>}</p>}
+          {trace.image.candidates.length > 0 && <details><summary>Photo candidates ({trace.image.candidates.length})</summary><ul>{trace.image.candidates.map((candidate, index) => <li key={index}>{candidate.title}: {candidate.reason.replace(/_/g, " ")}</li>)}</ul></details>}
+        </> : "Image stage has not run."}</dd>
+        {trace.image_shadow && <><dt>Photo comparison</dt><dd>{trace.image_shadow.status}: {trace.image_shadow.reason.replaceAll("_", " ")}</dd></>}
+        {trace.image_agent && <><dt>Photo editor trace</dt><dd><details><summary>Plan, searches, quality findings and rejection reasons</summary><pre>{show(trace.image_agent)}</pre></details></dd></>}
       </dl>
       <div className="card-actions">
         <button type="button" className="secondary" onClick={() => void act(on("include") ? "No longer forced in." : "Forced in: reassemble to apply.", { action: "include", item_id: item._id, on: !on("include") })}>{on("include") ? "Undo force in" : "Force in"}</button>

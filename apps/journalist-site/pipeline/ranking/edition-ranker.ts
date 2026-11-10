@@ -25,7 +25,7 @@ import { ModelRateLimitError } from "../model/runtime";
 import { pythonJson, type Category, type RankedCandidate } from "../model/newsworthiness";
 import { COLLECTIONS } from "../storage/mongo";
 
-export const RANKING_V5 = "edition_ranker_v5";
+export const RANKING_V5 = "edition_ranker_v5_source_identity";
 export const ENGAGEMENT = "reader_engagement";
 export const EDITIONS_CONSIDERED = 8;
 /** Prior click-through: about 1 open-or-share per 10 story views. */
@@ -48,7 +48,7 @@ export type Explain = {
   diversity_penalty: number;
   final: number;
 };
-export type Refined = RankedCandidate & { explain: Explain; source_type?: string };
+export type Refined = RankedCandidate & { explain: Explain; source_type?: string; source_id?: string };
 
 /** Small deterministic PRNG (mulberry32) so each run's samples are reproducible. */
 export function seededRandom(seed: string) {
@@ -171,7 +171,7 @@ export function similarity(a: Refined, b: Refined) {
   const left = tokens(a.title), right = tokens(b.title);
   const shared = [...left].filter((token) => right.has(token)).length;
   const jaccard = left.size + right.size ? shared / (left.size + right.size - shared) : 0;
-  return 0.5 * Number(a.rating.category === b.rating.category) + 0.3 * Number(!!a.source_type && a.source_type === b.source_type) + 0.2 * jaccard;
+  return 0.5 * Number(a.rating.category === b.rating.category) + 0.3 * Number(!!a.source_id && a.source_id === b.source_id) + 0.2 * jaccard;
 }
 /** Greedy maximal-marginal-relevance ordering. */
 export function diversify(candidates: Refined[], points = DIVERSITY_POINTS): Refined[] {
@@ -191,14 +191,14 @@ export function diversify(candidates: Refined[], points = DIVERSITY_POINTS): Ref
   return chosen;
 }
 
-export type RefineOptions = { runId: string; locationId: string; community: string; sourceTypes: Map<string, string>; mode?: string };
+export type RefineOptions = { runId: string; locationId: string; community: string; sourceTypes: Map<string, string>; sourceIds: Map<string, string>; mode?: string };
 
 /** Applies engagement, the editor pass and diversity to the model's rated candidates. */
 export async function refineRanking(db: Db, runtime: ModelRuntime, rated: RankedCandidate[], options: RefineOptions): Promise<[Refined[], Record<string, unknown>]> {
   const mode = options.mode ?? process.env.NEWSBEE_RANKING ?? "v5";
   const started = Date.now();
   const base: Refined[] = rated.map((item) => ({
-    ...item, source_type: options.sourceTypes.get(item.id),
+    ...item, source_type: options.sourceTypes.get(item.id), source_id: options.sourceIds.get(item.id),
     explain: { base: item.score, category: item.rating.category as Category, engagement: { multiplier: 1, views: 0, successes: 0, sampled: 0 }, rerank: { position: null, bonus: 0 }, diversity_penalty: 0, final: item.score },
   }));
   if (mode === "classic") return [base, { policy: "classic", candidates: base.length }];
