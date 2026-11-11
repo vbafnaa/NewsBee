@@ -39,6 +39,7 @@ describe("shared internal-map password", () => {
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), allowlist: vi.fn(), headers: vi.fn(), cookies: vi.fn(), deps: vi.fn(), database: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: mocks.auth, isAdminEmail: mocks.allowlist, getMongoDatabase: mocks.database }));
 vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
+vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: mocks.deps }));
 vi.mock("@/pipeline/storage/mongo", async (original) => ({ ...await original<object>(), getDatabase: mocks.database }));
 vi.mock("@/lib/pipeline-queue", () => ({ queueNextJob: vi.fn() }));
@@ -63,7 +64,7 @@ import { POST as runAction } from "../../../app/api/admin/runs/[runId]/actions/r
 import { GET as photoCatalog, POST as importPhotos } from "../../../app/api/admin/locations/[locationId]/photo-catalog/route";
 import SourceMapPage from "../../../app/source-map/page";
 import InterestUsagePage from "../../../app/interest-usage/page";
-import UsageMap from "../../../app/interest-usage/usage-map";
+import { GOOGLE_ANALYTICS_URL } from "../../../lib/analytics";
 import MapShell from "../../../app/components/map-shell";
 import InternalGate from "../../../app/components/internal-gate";
 
@@ -136,19 +137,17 @@ it("allows password-only reads without consulting an admin session and rejects w
   expect(handler).not.toHaveBeenCalled();
 });
 
-it("renders independent map gates without journalist sign-in and unlocks both with one cookie", async () => {
+it("renders the internal map gate without journalist sign-in and unlocks with a password cookie", async () => {
   vi.stubEnv("NEWSBEE_INTERNAL_PASSWORD", password);
-  for (const page of [await SourceMapPage({ searchParams: Promise.resolve({}) }), await InterestUsagePage({ searchParams: Promise.resolve({}) })]) {
-    expect(page.type).toBe(MapShell);
-    const gate = page.props.children.props;
-    const locked = renderToStaticMarkup(await InternalGate({ ...gate, children: "protected fixture" }));
-    expect(locked).toContain("Signed-in journalists open these maps directly");
-    expect(locked).toContain('action="/api/internal-access"');
-    expect(locked).not.toContain("protected fixture");
-    unlocked();
-    expect(await InternalGate({ ...gate, children: "protected fixture" })).toBe("protected fixture");
-    mocks.cookies.mockResolvedValue({ get: () => undefined });
-  }
+  const page = await SourceMapPage({ searchParams: Promise.resolve({}) });
+  expect(page.type).toBe(MapShell);
+  const gate = page.props.children.props;
+  const locked = renderToStaticMarkup(await InternalGate({ ...gate, children: "protected fixture" }));
+  expect(locked).toContain("Signed-in journalists open these maps directly");
+  expect(locked).toContain('action="/api/internal-access"');
+  expect(locked).not.toContain("protected fixture");
+  unlocked();
+  expect(await InternalGate({ ...gate, children: "protected fixture" })).toBe("protected fixture");
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
@@ -168,18 +167,11 @@ it("never grants admin data, source mutation or pipeline privileges to a map coo
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
-it("uses the normal usage map behind the password gate with production build settings and no activation flag, like the other maps", async () => {
-  unlocked();
-  vi.stubEnv("NODE_ENV", "production");
-  vi.stubEnv("VERCEL_ENV", "production");
-  const page = await InterestUsagePage({ searchParams: Promise.resolve({}) });
-  const gate = page.props.children;
-  expect(gate.type).toBe(InternalGate);
-  const content = await InternalGate(gate.props);
-  expect(content).toBe(gate.props.children);
-  expect(gate.props.children.type).toBe(UsageMap);
-  // Signed out, the page checks for a sign-in only; the map itself reads nothing until it loads.
-  expect(gate.props.children.props).toEqual({ signedIn: false });
+it("redirects the former interest and usage map route to Google Analytics", () => {
+  expect(GOOGLE_ANALYTICS_URL).toBe("https://analytics.google.com/analytics/web/#/a415516569p563321884/reports/intelligenthome?params=_u..nav%3Dmaui");
+  expect(() => InterestUsagePage()).toThrow(`redirect:${GOOGLE_ANALYTICS_URL}`);
+  const navigation = renderToStaticMarkup(MapShell({ page: "source-map", title: "Source map", description: "Map", children: "Map" }));
+  expect(navigation).toContain(`href="${GOOGLE_ANALYTICS_URL.replaceAll("&", "&amp;")}"`);
   expect(mocks.database).not.toHaveBeenCalled();
 });
 

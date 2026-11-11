@@ -110,49 +110,60 @@ const NOISE = /[^a-z0-9]+/g;
 export function headlineKey(title: string) {
   return title.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+[-|–—]\s+[^-|–—]{2,60}$/, "").replace(NOISE, " ").trim();
 }
-function streetOf(block: string) {
-  return /block of (.+)$/i.exec(block)?.[1]?.trim() ?? null;
-}
-
-/** Union-find over items: indices that share any key end up in one group. */
-function groupItems(items: CollectedEvent[]) {
-  const parent = items.map((_, index) => index);
-  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
-  const union = (a: number, b: number) => { const left = find(a), right = find(b); if (left !== right) parent[Math.max(left, right)] = Math.min(left, right); };
-  const byKey = new Map<string, number>();
-  const link = (key: string | null, index: number) => {
-    if (!key) return;
-    const seen = byKey.get(key);
-    if (seen === undefined) byKey.set(key, index); else union(seen, index);
+/** Conservative complete-link grouping: a bridge item cannot join unrelated groups. */
+export function groupItems(items: CollectedEvent[]) {
+  const canonical = (value: string) => {
+    try { const url = new URL(value); if (/^\/(?:news|blog|articles|updates)?\/?$/i.test(url.pathname) && !["p", "post", "id", "article"].some(key => url.searchParams.has(key))) return null; url.hash = ""; for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$)/.test(key)) url.searchParams.delete(key); return url.toString(); } catch { return null; }
   };
+  const news = new Set(["local_news", "news_report"]);
+  const words = (title: string) => new Set(headlineKey(title).split(" ").filter((word) => word.length > 2 && !["the", "and", "for", "with", "from", "after", "update", "updates", "city", "council", "local", "public", "news"].includes(word)));
+  const sameStory = (a: CollectedEvent, b: CollectedEvent) => {
+    const ak = String(a.kind ?? "event"), bk = String(b.kind ?? "event");
+    if (ak !== bk && !(news.has(ak) && news.has(bk))) return false;
+    // A direct citation to the other article plus shared topic words identifies
+    // a related report across publication dates. Generic site links never qualify.
+    const links = (item: CollectedEvent) => ((item.details as { links?: string[] } | undefined)?.links ?? []).map(canonical).filter(Boolean);
+    const aUrl = a.source_url ? canonical(a.source_url) : null, bUrl = b.source_url ? canonical(b.source_url) : null;
+    const cited = Boolean(aUrl && links(b).includes(aUrl) || bUrl && links(a).includes(bUrl));
+    const days = Math.abs(Date.parse(a.event_date ?? "") - Date.parse(b.event_date ?? "")) / 86400000;
+    const aw = words(a.title), bw = words(b.title);
+    const shared = [...aw].filter(word => bw.has(word));
+    const version = (item: CollectedEvent) => /\b(?:propos|consider|agenda)/i.test(item.title) ? "proposal" : /\b(?:approv|adopt|enact)/i.test(item.title) ? "approved" : null;
+    if (news.has(ak) && news.has(bk) && cited && days <= 14 && shared.length >= 2 && shared.length / new Set([...aw, ...bw]).size >= 0.35 && version(a) === version(b)) return true;
+    // Otherwise a new date/version remains separate.
+    if (!a.event_date || a.event_date !== b.event_date) return false;
+    if (["event", "meeting_preview"].includes(ak)) {
+      if (a.venue && b.venue && headlineKey(a.venue) !== headlineKey(b.venue)) return false;
+      if (a.schedule_text && b.schedule_text && headlineKey(a.schedule_text) !== headlineKey(b.schedule_text)) return false;
+    }
+    const left = headlineKey(a.title), right = headlineKey(b.title);
+    if (ak === "safety_incident") {
+      const block = (item: CollectedEvent) => (item.incident as { block?: string } | undefined)?.block;
+      if (a.source_event_id !== b.source_event_id || !block(a) || !block(b) || headlineKey(block(a)!) !== headlineKey(block(b)!)) return false;
+    }
+    if (left.length >= 12 && left === right) return true;
+    if (news.has(ak) && news.has(bk) && a.source_url && b.source_url && canonical(a.source_url) === canonical(b.source_url) && canonical(a.source_url)) return true;
+    // Reworded coverage needs several shared identifying words, the same day,
+    // and compatible numbers. Street and day alone never identify an incident.
+    if (!news.has(ak) || !news.has(bk)) return false;
+    const common = [...aw].filter((word) => bw.has(word)).length;
+    const nums = (title: string) => (title.match(/\d+/g) ?? []).sort().join(",");
+    if (nums(a.title) !== nums(b.title)) return false;
+    const names = (title: string) => [...new Set((title.match(/\b[A-Z][a-z]{2,}\b/g) ?? []).filter((word) => !["The", "New", "City", "Council", "Update", "Updated"].includes(word)))].sort().join(" ");
+    // Shared generic wording must not fuse reports about different named places.
+    if (names(a.title) !== names(b.title)) return false;
+    const status = (title: string) => /\b(?:propos|consider|agenda)/i.test(title) ? "proposal" : /\b(?:approv|adopt|enact)/i.test(title) ? "approved" : null;
+    if (status(a.title) !== status(b.title)) return false;
+    return common >= 3 && common / new Set([...aw, ...bw]).size >= 0.65;
+  };
+  const groups: number[][] = [];
   items.forEach((item, index) => {
-    const kind = String(item.kind ?? "event");
-    const headline = headlineKey(item.title);
-    // Calendar and public-record URLs may identify a whole list, not one occurrence.
-    if (["local_news", "news_report", "social_trend"].includes(kind) && item.source_url) {
-      try { const url = new URL(item.source_url); url.hash = ""; for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$)/.test(key)) url.searchParams.delete(key);
-        link(`url:${url.toString()}:${item.event_date}`, index); } catch { /* invalid URL cannot identify a story */ }
-    }
-    if (headline.length >= 12) link(kind === "event" || kind === "meeting_preview" ? `h:${headline}:${item.event_date}` : `h:${headline}`, index);
-    const incident = item.incident as { block?: string } | undefined;
-    if (kind === "safety_incident" && incident?.block) link(`incident:${incident.block.toLowerCase()}:${item.event_date}`, index);
-    if (kind === "business_opening" || kind === "public_record") {
-      const name = headlineKey(String(item.title).split(/ applies for| inspected/)[0]);
-      if (name.length >= 4 && !item.summary) link(`business:${name}`, index);
-    }
+    const group = groups.find((members) => members.every((member) => sameStory(item, items[member])));
+    if (group) group.push(index); else groups.push([index]);
   });
-  // A news report naming an incident's street on the same or next day joins the incident.
-  const incidents = items.map((item, index) => ({ item, index })).filter(({ item }) => item.kind === "safety_incident" && !item.summary && (item.incident as { block?: string } | undefined)?.block);
-  items.forEach((item, index) => {
-    if (item.kind === "safety_incident" || !["news_report", "local_news", "court_case", "state_news"].includes(String(item.kind))) return;
-    const text = `${item.title} ${item.description ?? ""}`;
-    for (const { item: incident, index: target } of incidents) {
-      const street = streetOf(String((incident.incident as { block: string }).block));
-      const days = Math.abs(Date.parse(`${item.event_date}T00:00:00Z`) - Date.parse(`${incident.event_date}T00:00:00Z`)) / 86400_000;
-      if (street && street.length > 5 && days <= 1 && mentions(text, street)) { union(index, target); break; }
-    }
-  });
-  return items.map((_, index) => find(index));
+  const roots = items.map((_, index) => index);
+  for (const members of groups) for (const index of members) roots[index] = members[0];
+  return roots;
 }
 
 const TIER_WEIGHT: Record<string, number> = { local: 3, nearby: 1, region: 1 };
@@ -214,7 +225,7 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
     }
     // A source may have been rejected or paused after its reader queued these items.
     const source = bySource.get(item.source_id);
-    const unapproved = source?.status === "proposed" && (context.settings.proposedUntilApproved || currentOptions().flow !== "agentic");
+    const unapproved = source?.status === "proposed";
     if (source?.status === "rejected" || source?.status === "paused" || unapproved) {
       await decide(item._id, { status: "dropped", reason: `source is ${source.status}; not eligible for this edition`, step: "source_review" }); continue;
     }
@@ -300,8 +311,15 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
       || factCount(mergeDetails(events[b].details as Details)) - factCount(mergeDetails(events[a].details as Details))
       || String(events[b].description ?? "").length - String(events[a].description ?? "").length);
     const lead = events[members[0]];
-    const key = `${lead.kind ?? "event"}:${headlineKey(lead.title)}${["event", "meeting_preview"].includes(String(lead.kind)) ? `:${lead.event_date}` : ""}`;
+    const incidentKey = lead.kind === "safety_incident" ? `:${lead.source_event_id}` : "";
+    const key = `${lead.kind ?? "event"}:${headlineKey(lead.title)}:${lead.event_date}:${headlineKey(lead.venue ?? "")}:${headlineKey(lead.schedule_text ?? "")}${incidentKey}`;
     groupKey.set(root, key);
+    lead.legacy_story_id = storyId(`${lead.kind ?? "event"}:${headlineKey(lead.title)}${["event", "meeting_preview"].includes(String(lead.kind)) ? `:${lead.event_date}` : ""}`);
+    const whens = [...new Set(members.map((index) => (events[index].details as Details | undefined)?.when?.replace(/\s+/g, " ").trim()).filter(Boolean))];
+    // Publication dates may differ across reports of one news story.
+    // Event times remain a hard conflict; factual disagreements in news stay
+    // in the evidence packet for the claim verifier.
+    lead.merge_conflicts = !NEWS_KINDS.has(String(lead.kind)) && whens.length > 1 ? ["conflicting_source_times"] : [];
     lead.details = mergeDetails(...members.map((index) => events[index].details as Details));
     lead.also_from = [...new Set(members.slice(1).map((index) => String(events[index].source_name ?? kept[index].source_name)))].filter((name) => name !== lead.source_name);
     lead.lead = true;
@@ -337,7 +355,7 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
   let stories = collapse(sourceEvents);
 
   // 3. Ledger: no repeats across editions.
-  const history = await ledgerHistory(db, location.id, stories.map((story) => story.id));
+  const history = await ledgerHistory(db, location.id, stories.flatMap((story) => [story.id, String(story.facts.legacy_story_id ?? story.id)]));
   const periodStart = editionPeriodStart(today);
   const tokens: Record<string, string[]> = {};
   const survivors: Story[] = [];
@@ -347,7 +365,9 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
     const storyText = `${story.title} ${story.description ?? ""} ${(details?.people ?? []).join(" ")} ${(details?.numbers ?? []).join(" ")}`;
     tokens[story.id] = storyTokens(storyText);
     const forced = overrides.include?.some((id) => story.occurrences.some((occurrence) => id.endsWith(`:${occurrence.source_event_id}`)));
-    const decision = forced ? { keep: true as const } : ledgerDecision(history.get(story.id) ?? [], { event_date: story.first.event_date, news: NEWS_KINDS.has(story.kind), tokens: tokens[story.id] }, today, periodStart);
+    const previous = [...(history.get(story.id) ?? []), ...(history.get(String(story.facts.legacy_story_id ?? story.id)) ?? [])];
+    const uniqueHistory = [...new Map(previous.map((entry) => [entry._id, entry])).values()];
+    const decision = forced ? { keep: true as const } : ledgerDecision(uniqueHistory, { event_date: story.first.event_date, news: NEWS_KINDS.has(story.kind), tokens: tokens[story.id] }, today, periodStart);
     if (!decision.keep) {
       const reason = `${decision.reason} (printed in the edition of ${decision.printed_on})`;
       if (rulesOff("quality")) {

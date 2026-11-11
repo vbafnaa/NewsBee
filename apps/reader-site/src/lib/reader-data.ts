@@ -1,9 +1,10 @@
+import type { StorySource } from "../../../../shared/source-attribution";
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { MongoClient, type Db } from "mongodb";
 import { communityName, matchingCommunities, onboardedCommunities, type Community } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
-import { resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
+import { isMongoChannelFolderId, resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
 import { uniquePhotoItems } from "../../../../shared/photo-identity";
 import { photoStoryMismatch } from "../../../../shared/photo-story-match";
 import { ARTIFACTS_COLLECTION, usesMongoArtifacts } from "../../../../shared/artifact-store";
@@ -18,6 +19,7 @@ export type EditionItem = Omit<Partial<StoryImage>, "image" | "image_caption" | 
   when_where: string;
   event_date: string;
   source_url: string | null;
+  sources?: StorySource[];
   rank?: number | null;
   kind?: "event" | "meeting_preview" | "meeting_outcome" | "state_news" | "earthquake" | "trending_topic" | "social_trend" | "safety_notice" | "housing_market" | "development" | "school_sports" | "game_result" | "home_sale" | "building_permit" | "weather_alert" | "court_case" | "local_news" | "business_opening" | "obituary" | "reader_story" | "safety_incident" | "news_report" | "public_record";
   source_name?: string;
@@ -222,7 +224,8 @@ export function parseEdition(value: unknown): Edition | null {
     if (!isRecord(item) || typeof item.headline !== "string" ||
       typeof item.blurb !== "string" || typeof item.when_where !== "string" ||
       typeof item.event_date !== "string" ||
-      !(typeof item.source_url === "string" || item.source_url === null)) return null;
+      !(typeof item.source_url === "string" || item.source_url === null) ||
+      (item.sources !== undefined && (!Array.isArray(item.sources) || item.sources.some((source: unknown) => !isRecord(source) || typeof source.name !== "string" || typeof source.url !== "string")))) return null;
   }
   // Malformed optional media must never make a published edition unreadable.
   return {
@@ -293,7 +296,7 @@ function localFolder(folderId: string): FolderReader {
 }
 
 /** NEWSBEE_ARTIFACT_STORE=mongo: the reader folder is a namespace in the pipeline's artifacts collection. */
-function mongoFolder(folderId: string): FolderReader {
+function mongoArtifactFolder(folderId: string): FolderReader {
   type ArtifactDoc = { _id: string; parent_id: string; name: string; folder: boolean; content?: string };
   const collection = async () => {
     const { client, databaseName } = await readerMongoClient();
@@ -318,8 +321,27 @@ export function isLocalMode() {
   return (process.env.NEWSBEE_MODE ?? "local") !== "cloud";
 }
 
+function mongoFolder(folderId: string): FolderReader {
+  return {
+    async list() {
+      const db = await readerDatabase();
+      return db.collection<{ _id: string; folder_id: string; name: string; value: string }>("output_channel_files")
+        .find({ folder_id: folderId }).project<{ _id: string; name: string }>({ _id: 1, name: 1 })
+        .map((file) => ({ id: file._id, name: file.name })).toArray();
+    },
+    async read(file) {
+      const db = await readerDatabase();
+      const document = await db.collection<{ _id: string; folder_id: string; value: string }>("output_channel_files")
+        .findOne({ _id: file.id, folder_id: folderId });
+      if (!document) throw new Error(`MongoDB channel file ${file.name} was not found`);
+      return JSON.parse(document.value) as unknown;
+    },
+  };
+}
+
 async function loadDriveData(folderId: string) {
-  const folder = usesMongoArtifacts() ? mongoFolder(folderId) : isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
+  // A MongoDB publishing channel's folder first, then this repository's artifact store when it is on, then local or Drive.
+  const folder = isMongoChannelFolderId(folderId) ? mongoFolder(folderId) : usesMongoArtifacts() ? mongoArtifactFolder(folderId) : isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
   const files = await folder.list();
 
   const jsonFiles = files.filter((file) => file.name.endsWith(".json"));

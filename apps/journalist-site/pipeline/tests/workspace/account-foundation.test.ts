@@ -194,11 +194,18 @@ describe("encrypted versioned personal profiles", () => {
     await revokeCredentialProfile(db, editor);
     expect(await credentialProfile(db, editor)).toMatchObject({ revoked: true, version: 2 });
   });
-  it("allows environment source only as an explicit owner choice, never inherited by editors", async () => {
-    await expect(saveCredentialProfile(db, editor, { source: "environment" })).rejects.toThrow("Only the owner");
-    expect(await saveCredentialProfile(db, owner, { source: "environment" })).toMatchObject({ source: "environment", config: null, revoked: false });
+  it("restricts environment profile reads and writes to the exact configured owner", async () => {
     expect(await credentialProfile(db, editor)).toBeNull();
+    await expect(saveCredentialProfile(db, editor, { source: "environment" })).rejects.toThrow("Editors must save personal API keys");
+    await expect(saveCredentialProfile(db, { ...editor, role: "owner" }, { source: "environment" })).rejects.toThrow("Only the owner configured");
+    expect(await db.collection("journalist_credentials").countDocuments()).toBe(0);
+    await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
+    expect(await credentialProfile(db, editor)).toMatchObject({ source: "environment", version: 4, revoked: true, config: null });
+    expect(await db.collection("journalist_credentials").findOne({ _id: editor.id })).toMatchObject({ version: 4, revoked: false });
+    expect(await saveCredentialProfile(db, owner, { source: "environment" })).toMatchObject({ source: "environment", config: null, revoked: false });
     expect(await credentialProfile(db, { ...owner, role: "editor" })).toMatchObject({ revoked: true });
+    vi.stubEnv("NEWSBEE_OWNER_EMAIL", "replacement@example.test");
+    expect(await credentialProfile(db, owner)).toMatchObject({ revoked: true });
   });
   it("validates structurally without performing provider calls", async () => {
     await expect(saveCredentialProfile(db, editor, { source: "personal", config: { modelDailyCalls: -1 } })).rejects.toThrow();
@@ -261,6 +268,7 @@ describe("settings API", () => {
     vi.stubEnv("NEWSBEE_LLM_FIXTURE_MODEL", "fixture-deployment-model");
     vi.stubEnv("NEWSBEE_LLM_FIXTURE_API_KEY", testKey);
     vi.stubEnv("NEWSBEE_SERPAPI_API_KEY", testKey);
+    vi.stubEnv("NEWSBEE_BRIGHTDATA_ZONE", "fixture-private-zone");
     const automatic = (await (await GET(request("GET"))).json()).profile;
     expect(automatic).toMatchObject({ source: "environment", version: 0, automatic: true, config: null, capabilities: { model: true, paidSearch: true } });
     expect(JSON.stringify(automatic)).not.toContain(testKey);
@@ -273,6 +281,8 @@ describe("settings API", () => {
       capabilities: { model: true, paidSearch: true, readyProviders: [{ name: "fixture", kind: "openai", model: "fixture-deployment-model" }] },
     });
     expect(JSON.stringify(metadata)).not.toContain(testKey);
+    expect(JSON.stringify(metadata)).not.toContain("fixture-private-zone");
+    expect(metadata.environmentDefaults.integrations.brightdataZone).toBe("configured");
     expect((await (await GET(request("GET"))).json()).profile).toEqual(metadata.profile);
     expect(await credentialProfile(db, owner)).toMatchObject({ source: "environment", version: 1, config: null });
   });
@@ -305,18 +315,50 @@ describe("settings API", () => {
     });
     expect((await DELETE(request("DELETE"))).status).toBe(200);
   });
-  it("reports missing owner configuration without elevating an existing editor or preventing settings reads", async () => {
+  it.each([owner.email, ""])("rejects direct editor environment submissions with owner designation %j", async (designation) => {
     await signedIn();
-    vi.stubEnv("NEWSBEE_OWNER_EMAIL", "");
+    vi.stubEnv("NEWSBEE_OWNER_EMAIL", designation);
+    vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", "{}"); vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "");
+    vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini"); vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
     const read = await GET(request("GET"));
-    expect(await read.json()).toMatchObject({ principal: { role: "editor" }, ownerConfigured: false, profile: null });
-    expect((await PUT(request("PUT", { source: "environment" }))).status).toBe(403);
+    expect(await read.json()).toMatchObject({ principal: { role: "editor" }, ownerConfigured: Boolean(designation), profile: null });
+    const saved = await PUT(request("PUT", { source: "environment" }));
+    expect(saved.status).toBe(400);
+    const data = await saved.json();
+    expect(data.detail).toContain("Editors must save personal API keys");
+    expect(await db.collection("journalist_credentials").countDocuments()).toBe(0);
+    expect(data).not.toHaveProperty("environmentDefaults");
+    expect(JSON.stringify(data)).not.toContain(testKey);
   });
-  it("permits unconfigured browsing and prevents cross-account/environment access", async () => {
+  it("reports persisted editor environment profiles as revoked without exposing server readiness and allows personal replacement", async () => {
+    await signedIn();
+    vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
+    vi.stubEnv("NEWSBEE_BRIGHTDATA_ZONE", "fixture-private-zone");
+    await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
+    const data = await (await GET(request("GET"))).json();
+    expect(data.profile).toMatchObject({ source: "environment", version: 4, revoked: true, capabilities: { model: false, paidSearch: false, readyProviders: [], integrations: [] } });
+    expect(data).not.toHaveProperty("environmentDefaults");
+    expect(JSON.stringify(data)).not.toContain(testKey);
+    expect(JSON.stringify(data)).not.toContain("fixture-private-zone");
+    const denied = await PUT(request("PUT", { source: "environment" }));
+    expect(denied.status).toBe(400);
+    expect(await credentialProfile(db, editor)).toMatchObject({ version: 4, revoked: true });
+    const replaced = await PUT(request("PUT", personal));
+    expect(replaced.status).toBe(200);
+    expect((await replaced.json()).profile).toMatchObject({ source: "personal", version: 5, revoked: false, capabilities: { model: true } });
+  });
+  it("allows revoking a historical editor environment selection without decryption", async () => {
+    await signedIn();
+    await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
+    vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", "{}"); vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "");
+    expect((await DELETE(request("DELETE"))).status).toBe(200);
+    expect(await effectiveCredentialProfile(db, editor)).toMatchObject({ revoked: true, version: 5 });
+  });
+  it("permits unconfigured browsing and prevents cross-account/cross-origin access", async () => {
     expect((await GET(request("GET"))).status).toBe(401);
     await signedIn();
     expect((await (await GET(request("GET"))).json()).profile).toBeNull();
-    expect((await PUT(request("PUT", { source: "environment" }))).status).toBe(403);
+    expect((await PUT(request("PUT", { source: "environment" }, "https://evil.example.test"))).status).toBe(403);
     expect((await PUT(request("PUT", personal, "https://evil.example.test"))).status).toBe(403);
     const response = await PUT(request("PUT", { ...personal, userId: owner.id }));
     expect(response.status).toBe(200);

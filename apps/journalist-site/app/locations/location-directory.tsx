@@ -4,10 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import LocationOnboarding from "../location-onboarding";
+import type { CurrentRun } from "@/pipeline/orchestration/runs";
+import { CurrentRuns } from "./current-runs";
 
 type Location = { id: string; name: string; state: string; removal_pending?: boolean; source_coverage?: { status: string } };
 export default function LocationDirectory({ owner = false }: { owner?: boolean }) {
   const [locations, setLocations] = useState<Location[] | null>(null);
+  const [currentRuns, setCurrentRuns] = useState<CurrentRun[] | null>(null);
+  const [runsError, setRunsError] = useState("");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -16,14 +20,29 @@ export default function LocationDirectory({ owner = false }: { owner?: boolean }
     try { setLocations((await adminApi<{ locations: Location[] }>("locations")).locations); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }, []);
+  const loadRuns = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const result = await adminApi<{ runs: CurrentRun[] }>("current-runs", { signal });
+      if (!signal?.aborted) { setCurrentRuns(result.runs); setRunsError(""); }
+    } catch (cause) {
+      if (!signal?.aborted) setRunsError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
   useEffect(() => {
     const removed = new URLSearchParams(window.location.search).get("removed");
     if (removed) setNotice(`Removed ${removed} and its tracked generated files. Shared and retained reader data were not deleted.`);
     void load();
   }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadRuns(controller.signal);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void loadRuns(controller.signal); }, 15_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [loadRuns]);
   return <>
     {error && <p className="alert" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
+    <CurrentRuns runs={currentRuns} error={runsError} onRefresh={() => { void loadRuns(); }} />
     <section className="panel">
       <div className="section-heading"><h2>Locations</h2></div>
       <label className="field">Find a workspace<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by location" /></label>

@@ -16,7 +16,7 @@ export default async function SourceMapPage({ searchParams }: { searchParams: Pr
   const principal = await currentPrincipal().catch(() => null);
   // Called directly, so the page is the shell it chose (the workspace, or the gated map layout).
   return await InternalMapPage({
-    page: "source-map", title: "Source map", description: "Every location's sources and source runs. Read-only.",
+    page: "source-map", title: "Source map", description: "Every location's sources and Collect sources activity. Read-only.",
     returnTo: `/source-map?${params}`, unlock: typeof query.unlock === "string" ? query.unlock : undefined,
     children: <SourceReview locationId={params.get("location") ?? ""} tab={tab} runId={params.get("run")} signedIn={Boolean(principal)} />,
   });

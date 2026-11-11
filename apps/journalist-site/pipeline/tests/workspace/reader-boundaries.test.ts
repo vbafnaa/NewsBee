@@ -59,7 +59,8 @@ it("keeps coverage notes but moves external source links and reports into the fu
   expect(legacy).toContain("Astro.redirect");
   expect(legacy).not.toMatch(/editionMap|reader-data|funnel|source\.items/);
   const article = await readFile(new URL("../../../../reader-site/src/components/edition/ArticlePage.astro", import.meta.url), "utf8");
-  expect(article).toContain("article.sourceUrl");
+  expect(article).toContain("article.sources");
+  expect(article).toContain("href={source.url}");
   expect(article).toContain("<ReportStory");
   expect(article).toContain("data-share-story");
   expect(article).toContain("window.print()");

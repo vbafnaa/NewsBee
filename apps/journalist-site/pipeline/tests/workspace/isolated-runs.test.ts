@@ -28,7 +28,7 @@ import { enqueue, ensureJobIndexes } from "../../orchestration/jobs";
 import { executeJob, startMapRun, type OrchestratorDeps } from "../../orchestration/orchestrator";
 import { ensureRunIndexes, getRun, runs, type PipelineRun } from "../../orchestration/runs";
 import { search } from "../../search/provider";
-import { pageDecisions, runSources, sourceMap, SOURCE_REVIEWS, upsertCandidates } from "../../sourcemap/store";
+import { pageDecisions, runSources, savePageDecision, sourceMap, SOURCE_REVIEWS, upsertCandidates } from "../../sourcemap/store";
 import { COLLECTIONS } from "../../storage/mongo";
 import { RUN_DECISIONS } from "../../trace/decisions";
 import { ensureApiCallIndexes, HARD_LIMITS, type HardLimit } from "../../trace/gateway";
@@ -108,6 +108,7 @@ async function agentRun(runId: string, urls: string[], isolated = true, transpor
   const fake = agentModel(urls);
   const context = { db, settings: SETTINGS, transport, fetcher: new Fetcher(transport, undefined, false), location: LOCATION, today: TODAY, log: { info() {}, warn() {}, error() {} }, model: asGemini(fake, "agent"), judgeModel: asGemini(fake, "discovery") } as unknown as DiscoveryContext;
   await withRunContext({ db, runId, locationId: LOCATION.id, options: OPTIONS, runKind: "map", startedAt: T, isolated }, () => agentJob(context, 0));
+  return fake;
 }
 const inRun = <T,>(runId: string, isolated: boolean, operation: () => Promise<T>, options: RunOptions = OPTIONS) => withRunContext({ db, runId, locationId: LOCATION.id, options, runKind: "map", startedAt: T, isolated }, operation);
 const stripVolatile = <T extends { last_seen?: string }>(rows: T[]) => rows.map(({ last_seen, ...row }) => row);
@@ -121,10 +122,11 @@ async function seedMap() {
 }
 
 describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
-  it("is on by default, and off restores runs that write the source map", () => {
-    expect(sourceRunsIsolated({})).toBe(true);
-    expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: "on" })).toBe(true);
-    for (const off of ["off", "0", "false", "no"]) expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: off })).toBe(false);
+  it("is off by default, so runs write the source map, and on turns test mode back on", () => {
+    expect(sourceRunsIsolated({})).toBe(false);
+    expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: "" })).toBe(false);
+    for (const on of ["on", "1", "true", "yes", " ON "]) expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: on })).toBe(true);
+    for (const off of ["off", "0", "false", "no", "maybe"]) expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: off })).toBe(false);
   });
 
   it("an isolated run writes its own store, not the source map, and its agent starts from an empty checklist", async () => {
@@ -133,7 +135,7 @@ describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
     expect(stripVolatile(await sourceMap(db).find({}).toArray())).toEqual(stripVolatile(before));
     const own = await runSources(db, "run-1").find({}).toArray();
     expect(own.map((row) => row.url)).toEqual([EVENTS]);
-    expect(own[0]).toMatchObject({ status: "proposed", gemini: { verdict: "accept", reason_code: "A1" } });
+    expect(own[0]).toMatchObject({ status: "active", gemini: { verdict: "accept", reason_code: "A1" } });
     // The map's accepted events page didn't count: the checklist came from this run alone.
     const state = (await db.collection<AgentState>(AGENT_STATE).findOne({ _id: "run-1" }))!;
     expect(state.checklist.events.accepted.map((item) => item.url)).not.toContain("https://old.example.org/events");
@@ -200,7 +202,7 @@ describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
     expect(await bulk.json()).toMatchObject({ saved: [{ source_id: police.source_id, status: "active" }], failed: [{ source_id: "web:missing", detail: "Unknown source: web:missing" }] });
     expect((await post("run-1", { source_ids: [police.source_id, events.source_id], decision: "accept" })).status).toBe(400);
     // The run's own records and the source map stay as the run left them.
-    expect((await runSources(db, "run-1").find({}).toArray()).map((row) => row.status)).toEqual(["proposed", "proposed"]);
+    expect((await runSources(db, "run-1").find({}).toArray()).map((row) => row.status)).toEqual(["active", "active"]);
     expect(await sourceMap(db).countDocuments({})).toBe(0);
 
     // A later run finds the accepted page again and shows the decision on its row; it doesn't propose the rejected page again.
@@ -230,21 +232,22 @@ describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
     expect(await db.listCollections({ name: "source_run_old-run" }).toArray()).toHaveLength(0);
     const detail = (await sourceRunDetail(db, LOCATION.id, "old-run"))!;
     expect(detail.run.isolated).toBe(false);
-    expect(detail.pages.find((row) => row.url === EVENTS)).toMatchObject({ status: "proposed", decision: { decision: null } });
+    expect(detail.pages.find((row) => row.url === EVENTS)).toMatchObject({ status: "active", decision: { decision: null } });
     const source = (await sourceMap(db).findOne({ url: EVENTS }))!;
     const refused = await post("old-run", { source_ids: [source.source_id], decision: "accept", reason_code: "A1" });
     expect(refused.status).toBe(400);
     expect((await refused.json()).detail).toMatch(/decide its sources in All sources/);
   });
 
-  it("starts a test-mode run with every fixed reader, and with the setting off only the due ones, as today", async () => {
+  it("starts a test-mode run with every fixed reader, and by default a run that writes the map with only the due ones", async () => {
     const deps = { db, settings: loadSettings({}) } as unknown as OrchestratorDeps;
     const due = METHODS.map((definition) => definition.method);
     await discoveryState(db).insertOne({ _id: `${LOCATION.id}:${due[0]}`, location_id: LOCATION.id, method: due[0], label: "", last_run_at: T, ok: true, found: 0, added: 0, detail: "", next_due_at: T + 86400 });
+    vi.stubEnv("NEWSBEE_SOURCE_RUNS_ISOLATED", "on");
     const isolated = (await startMapRun(deps, LOCATION.id, { by: "owner", kind: "manual" }, {}, false)).run;
     expect(isolated).toMatchObject({ kind: "map", isolated: true, discovery: due });
     await runs(db).deleteMany({});
-    vi.stubEnv("NEWSBEE_SOURCE_RUNS_ISOLATED", "off");
+    vi.unstubAllEnvs();
     const writing = (await startMapRun(deps, LOCATION.id, { by: "owner", kind: "manual" }, {}, false)).run;
     expect(writing.isolated).toBeUndefined();
     expect(writing.discovery).toEqual(due.slice(1));
@@ -264,5 +267,58 @@ describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
       expect((await db.collection(COLLECTIONS.locations).findOne({ _id: LOCATION.id as never }))!.source_map_version).toBe(isolated ? 4 : 5);
       expect(await sourceMap(db).countDocuments({})).toBe(isolated ? 0 : 1);
     }
+  });
+  it("a run that writes the map keeps the decisions made in test mode: accepted pages go on accepted, rejected ones aren't proposed again", async () => {
+    await agentRun("run-1", [EVENTS, POLICE]);
+    const events = (await runSources(db, "run-1").findOne({ url: EVENTS }))!;
+    const police = (await runSources(db, "run-1").findOne({ url: POLICE }))!;
+    expect((await post("run-1", { source_ids: [events.source_id], decision: "reject", reason_code: "R2" })).status).toBe(200);
+    expect((await post("run-1", { source_ids: [police.source_id], decision: "accept", reason_code: "A1" })).status).toBe(200);
+    expect(await sourceMap(db).countDocuments({})).toBe(0);
+
+    const fake = await agentRun("run-2", [EVENTS, POLICE], false);
+    // The rejected page isn't opened again; the accepted one goes on the map with the person's decision, not judged again.
+    const steps = (await db.collection<AgentState>(AGENT_STATE).findOne({ _id: "run-2" }))!.steps;
+    expect(steps.find((step) => step.action === "propose" && step.url === EVENTS)).toMatchObject({ outcome: "refused", result: expect.stringMatching(/rejected this page in an earlier run/) });
+    expect(await sourceMap(db).findOne({ url: EVENTS })).toBeNull();
+    expect(await sourceMap(db).findOne({ url: POLICE })).toMatchObject({ status: "active", review: { decision: "accept", reason_code: "A1", by: "labeller@example.test" } });
+    expect(fake.calls.filter((call) => /one verdict per source id/.test(call.prompt) && call.prompt.includes(POLICE))).toHaveLength(0);
+    // No new review rows: the decisions were already in the history when they were made.
+    expect(await db.collection(SOURCE_REVIEWS).countDocuments({ location_id: LOCATION.id })).toBe(2);
+    expect((await sourceRunDetail(db, LOCATION.id, "run-2"))!.pages.find((row) => row.url === POLICE)).toMatchObject({ status: "active", decision: { decision: "accept", reason_code: "A1" } });
+  });
+
+  it("any route that writes the map saves a page rejected in test mode as rejected, and a label on the map still wins", async () => {
+    const page = (source_id: string, url: string) => ({ source_id, name: source_id, url, reader: "web" as const, params: {}, section: "events" as const, inside_area: true, found_by: { method: "government" as const, detail: "City site" }, status: "proposed" as const, topics: ["events"] });
+    const decision = (url: string, key: string, choice: "accept" | "reject") => ({ _id: `${LOCATION.id}:${key}`, location_id: LOCATION.id, key, url, name: key, section: "events", source_id: null, decision: choice, reason_code: choice === "accept" ? "A1" : "R2", reason: null, by: "labeller@example.test", at: "2026-11-08T00:00:00Z", run_id: "run-1" });
+    await pageDecisions(db).insertMany([decision(EVENTS, "lib.example.org/events", "reject"), decision(POLICE, "police.example.gov/news", "reject")] as never);
+    // The police page is already on the map, accepted by a person on All sources: that label stands.
+    await upsertCandidates(db, LOCATION.id, [page("web:police", POLICE)]);
+    await sourceMap(db).updateOne({ url: POLICE }, { $set: { status: "active", review: { decision: "accept", reason_code: "A1", reason: null, initial_status: "proposed", by: "owner", at: "2026-11-09T00:00:00Z" } } });
+    await inRun("run-2", false, () => upsertCandidates(db, LOCATION.id, [page("web:events", EVENTS), page("web:police", POLICE)]));
+    expect(await sourceMap(db).findOne({ url: EVENTS })).toMatchObject({ status: "rejected", review: { decision: "reject", reason_code: "R2", initial_status: "proposed" } });
+    expect(await sourceMap(db).findOne({ url: POLICE })).toMatchObject({ status: "active", review: { decision: "accept", by: "owner" } });
+    // A test-mode run keeps its own records as they were found: the decision shows on its rows by page instead.
+    await inRun("run-3", true, () => upsertCandidates(db, LOCATION.id, [page("web:events", EVENTS)]));
+    expect(await runSources(db, "run-3").findOne({ url: EVENTS })).toMatchObject({ status: "proposed" });
+  });
+
+  it("keeps a pinned map source ahead of a rejection made in test mode", async () => {
+    const pinned = {
+      source_id: "web:police", name: "Pinned police news", url: POLICE, reader: "web" as const, params: {},
+      section: "crime" as const, inside_area: true, found_by: { method: "editor" as const, detail: "Pinned by editor" }, status: "pinned" as const,
+    };
+    await upsertCandidates(db, LOCATION.id, [pinned]);
+    await inRun("run-1", true, () => upsertCandidates(db, LOCATION.id, [{ ...pinned, status: "proposed" }]));
+    await savePageDecision(db, LOCATION.id, "run-1", pinned.source_id, { decision: "reject", reason_code: "R2" }, "labeller@example.test");
+
+    await inRun("run-2", false, () => upsertCandidates(db, LOCATION.id, [{
+      ...pinned, name: "Rediscovered police news", status: "proposed", found_by: { method: "government", detail: "City site" },
+    }]));
+    expect(await sourceMap(db).findOne({ source_id: pinned.source_id })).toMatchObject({
+      status: "pinned", name: pinned.name, found_by: pinned.found_by,
+    });
+    expect((await sourceMap(db).findOne({ source_id: pinned.source_id }))?.review?.decision).toBeFalsy();
+    expect(await db.collection(SOURCE_REVIEWS).countDocuments({ location_id: LOCATION.id })).toBe(1);
   });
 });

@@ -1,3 +1,4 @@
+import { storySources, type StorySource } from "../../../../shared/source-attribution";
 // A neighborhood's page (pages/[location_id].astro): the latest published edition for the
 // location, read the same way the rest of the reader reads it (readerData: the local Drive
 // folder in local mode, Google Drive in cloud mode), mapped onto the page's sections.
@@ -316,6 +317,7 @@ export type Article = {
   href: string;
   sourceName: string;
   sourceUrl: string | null;
+  sources: StorySource[];
   image: string | null;
   imageCaption: string | null;
   imageCredit: string | null;
@@ -362,9 +364,9 @@ export async function loadEditionPage(locationId: string, editionId?: string | n
       mediaMode: readerMediaMode(latest.media_mode),
       coverage: latest.coverage ?? [], corrections: latest.corrections ?? [],
     },
-    sources: [...latest.items].sort(byRank).map(({ source_url, source_name, headline, story_id }) => ({
-      source_url, source_name, headline, story_id,
-    })),
+    sources: [...latest.items].sort(byRank).flatMap((item) => storySources([
+      { name: sourceName(item), url: item.source_url ?? "" }, ...(item.sources ?? []),
+    ]).map((source) => ({ source_url: source.url, source_name: source.name, headline: item.headline, story_id: item.story_id }))),
     articles: latest.items.map((item, index) => {
       const photo = editionPhoto(item, latest);
       const illustration = illustrations.get(index);
@@ -376,6 +378,7 @@ export async function loadEditionPage(locationId: string, editionId?: string | n
       date: shortDate(new Date(`${item.event_date}T12:00:00Z`)),
       category: topicShort(topic(item)) ?? KIND_LABELS[item.kind ?? ""] ?? (EVENT_KINDS.includes(item.kind ?? "") ? "Events" : "News"),
       href: articleHref(latest, item), sourceName: sourceName(item), sourceUrl: publicUrl(item.source_url),
+      sources: storySources([{ name: sourceName(item), url: item.source_url ?? "" }, ...(item.sources ?? [])]),
       image: photo?.src ?? null,
       imageCaption: item.image_caption ?? null, imageCredit: item.image_credit ?? null,
     }); }),

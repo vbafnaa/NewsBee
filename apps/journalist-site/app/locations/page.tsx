@@ -8,7 +8,7 @@ export default async function LocationsPage() {
   if (!principal) redirect("/login");
   const email = principal.email;
   return <AdminShell email={email} page="locations" title="Overview"
-    description="Your newsroom locations and their current source coverage.">
+    description="Current runs across your newsroom, followed by locations and their source coverage.">
     <LocationDirectory owner={principal.role === "owner"} />
   </AdminShell>;
 }

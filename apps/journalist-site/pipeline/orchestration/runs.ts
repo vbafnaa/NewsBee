@@ -327,6 +327,16 @@ export async function cancelRun(db: Db, runId: string, by: string) {
   throw new RunConflict("Only waiting or in-progress stages can be cancelled; publication may already have started");
 }
 
+export type CurrentRun = Pick<PipelineRun, "_id" | "location_id" | "location_name" | "kind" | "status" | "created_at" | "execution_blocked">;
+
+export async function currentRuns(db: Db): Promise<CurrentRun[]> {
+  return runs(db)
+    .find({ status: { $in: ACTIVE_RUN_STATUSES } })
+    .sort({ created_at: -1, _id: -1 })
+    .project<CurrentRun>({ _id: 1, location_id: 1, location_name: 1, kind: 1, status: 1, created_at: 1, execution_blocked: 1 })
+    .toArray();
+}
+
 export async function recentRuns(db: Db, options: { locationId?: string; limit?: number; offset?: number } = {}) {
   return runs(db)
     .find(options.locationId ? { location_id: options.locationId } : {})

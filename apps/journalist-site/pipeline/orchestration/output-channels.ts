@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { LocationProfile } from "../connectors/types";
 import type { ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
+import { channelArtifactStore } from "../storage/mongo-channel-artifacts";
 
 export type OutputChannelDocument = {
   _id: string;
@@ -52,6 +53,7 @@ export type OutputChannelEditionDocument = {
   stories: ChannelEditionStory[];
   video_stories: Array<{ location_id: string; story_id: string }>;
   edition_ids: string[];
+  per_story?: boolean;
 };
 
 export type ChannelReaderEdition = {
@@ -118,11 +120,22 @@ export async function clearOutputChannelEditions(db: Db, store: ArtifactStore, c
     .toArray();
   for (const edition of editions) {
     for (let index = 0; index < edition.edition_ids.length; index += 1) {
-      await store.removeFile(channel.drive_folder_id, `channel-edition-${edition._id}-${index + 1}.json`);
+      await channelArtifactStore(db, store, channel.drive_folder_id).removeFile(channel.drive_folder_id, `channel-edition-${edition._id}-${index + 1}.json`);
     }
   }
   await db.collection<OutputChannelEditionDocument>(COLLECTIONS.outputChannelEditions)
     .deleteMany({ owner_id: channel.owner_id, channel_id: channel._id });
+}
+
+export async function publishedChannelStories(db: Db, ownerId: string, channelId: string, editionIds: string[]) {
+  if (!editionIds.length) return new Set<string>();
+  const editions = await db.collection<OutputChannelEditionDocument>(COLLECTIONS.outputChannelEditions)
+    .find({ owner_id: ownerId, channel_id: channelId, output_modes: "reader", "stories.edition_id": { $in: editionIds } })
+    .project<Pick<OutputChannelEditionDocument, "stories">>({ stories: 1 }).toArray();
+  const current = new Set(editionIds);
+  return new Set(editions.flatMap(({ stories }) => stories
+    .filter((story) => current.has(story.edition_id))
+    .map((story) => `${story.location_id}:${story.edition_id}:${story.story_id}`)));
 }
 
 export async function createOutputChannelEdition(
@@ -135,6 +148,7 @@ export async function createOutputChannelEdition(
   outputModes: Array<"reader" | "video">,
   videoStories: Array<{ location_id: string; story_id: string }>,
   editions: ChannelReaderEdition[],
+  perStory = false,
 ) {
   const id = randomUUID().replaceAll("-", "");
   const editionIds = editions.map((_, index) => `${id}-${index + 1}`);
@@ -148,15 +162,35 @@ export async function createOutputChannelEdition(
     stories,
     video_stories: videoStories,
     edition_ids: editionIds,
+    ...(perStory ? { per_story: true } : {}),
   };
   for (const [index, edition] of editions.entries()) {
-    await store.saveJson(channel.drive_folder_id, `channel-edition-${document._id}-${index + 1}.json`, {
+    await channelArtifactStore(db, store, channel.drive_folder_id).saveJson(channel.drive_folder_id, `channel-edition-${document._id}-${index + 1}.json`, {
       ...edition,
       id: editionIds[index],
     });
   }
   await db.collection<OutputChannelEditionDocument>(COLLECTIONS.outputChannelEditions).insertOne(document);
+  if (editions.length) {
+    for (const locationId of new Set(editions.map((edition) => edition.location_id))) {
+      await outputChannels(db).updateOne({ _id: channel._id, owner_id: ownerId }, { $addToSet: { published_location_ids: locationId } });
+    }
+    const fresh = await outputChannels(db).findOne({ _id: channel._id, owner_id: ownerId });
+    if (fresh) await writeOutputChannelDirectory(db, store, fresh);
+  }
   return document;
+}
+
+export async function latestChannelStoryEdition(db: Db, store: ArtifactStore, channel: OutputChannelDocument, locationId: string) {
+  const previous = await db.collection<OutputChannelEditionDocument>(COLLECTIONS.outputChannelEditions)
+    .find({ owner_id: channel.owner_id, channel_id: channel._id, per_story: true, output_modes: "reader", "stories.location_id": locationId })
+    .sort({ created_at: -1, _id: -1 }).limit(1).next();
+  if (!previous) return null;
+  const name = `channel-edition-${previous._id}-1.json`;
+  const files = channelArtifactStore(db, store, channel.drive_folder_id);
+  const file = (await files.list(channel.drive_folder_id)).find((item) => item.name === name);
+  if (!file) throw new Error(`Published channel story file ${name} is missing.`);
+  return { stories: previous.stories, edition: await files.readJson<ChannelReaderEdition>(file.id) };
 }
 
 export async function createOutputChannel(db: Db, ownerId: string, id: string, driveFolderId: string, input: OutputChannelInput) {
@@ -206,7 +240,7 @@ export async function writeOutputChannelDirectory(db: Db, store: ArtifactStore, 
       branch_count: profile.systems.reduce((total, system) => total + system.branches.length, 0),
     }] : [];
   });
-  await store.saveJson(channel.drive_folder_id, "locations.json", { locations });
+  await channelArtifactStore(db, store, channel.drive_folder_id).saveJson(channel.drive_folder_id, "locations.json", { locations });
 }
 
 export async function publishToOutputChannels(db: Db, store: ArtifactStore, edition: PublishableEdition) {
@@ -218,7 +252,7 @@ export async function publishToOutputChannels(db: Db, store: ArtifactStore, edit
   const published: string[] = [];
   for (const channel of channels) {
     if (!hasReaderDestination(channel)) continue;
-    await store.saveJson(channel.drive_folder_id, `${edition.id}.json`, edition);
+    await channelArtifactStore(db, store, channel.drive_folder_id).saveJson(channel.drive_folder_id, `${edition.id}.json`, edition);
     await outputChannels(db).updateOne({ _id: channel._id }, { $addToSet: { published_location_ids: edition.location_id } });
     const fresh = await outputChannels(db).findOne({ _id: channel._id });
     if (fresh) await writeOutputChannelDirectory(db, store, fresh);
@@ -242,7 +276,7 @@ export async function syncOutputChannelLocations(
     for (const locationId of locationIds) {
       const edition = await latest(locationId);
       if (!edition) continue;
-      await store.saveJson(channel.drive_folder_id, `${edition.id}.json`, edition);
+      await channelArtifactStore(db, store, channel.drive_folder_id).saveJson(channel.drive_folder_id, `${edition.id}.json`, edition);
       await outputChannels(db).updateOne({ _id: id }, { $addToSet: { published_location_ids: locationId } });
       copied.push(locationId);
     }
@@ -256,9 +290,9 @@ export async function clearOutputChannelFeed(db: Db, store: ArtifactStore, chann
   for (const locationId of new Set(channel.published_location_ids ?? [])) {
     const editions = await db.collection<{ id: string }>(COLLECTIONS.editions)
       .find({ location_id: locationId, id: { $exists: true } }).project<{ id: string }>({ id: 1 }).toArray();
-    for (const edition of editions) await store.removeFile(channel.drive_folder_id, `${edition.id}.json`);
+    for (const edition of editions) await channelArtifactStore(db, store, channel.drive_folder_id).removeFile(channel.drive_folder_id, `${edition.id}.json`);
   }
-  await store.removeFile(channel.drive_folder_id, "locations.json");
+  await channelArtifactStore(db, store, channel.drive_folder_id).removeFile(channel.drive_folder_id, "locations.json");
   await outputChannels(db).updateOne({ _id: channel._id }, { $set: { published_location_ids: [] } });
 }
 

@@ -182,7 +182,7 @@ it("preserves automatic deployment defaults for the configured owner only", asyn
   await expect(generate(run)).rejects.toThrow("owner-only");
   expect(requests).toHaveLength(1);
 });
-it("blocks non-owner historical environment bindings until reconnecting with personal keys", async () => {
+it("blocks historical editor environment bindings even with a current personal profile", async () => {
   await save();
   const run = await boundRun();
   run.execution!.source = "environment";
@@ -190,6 +190,35 @@ it("blocks non-owner historical environment bindings until reconnecting with per
   await expect(authorizePaidAction(db, run._id, editor)).rejects.toThrow("owner-only");
   await expect(generate(run)).rejects.toThrow("owner-only");
   expect(requests).toHaveLength(0);
+});
+it("blocks persisted editor environment profiles and matching unfinished bindings until personal replacement and reconnection", async () => {
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini");
+  vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-server-key");
+  await expect(boundRun(options(), editor)).rejects.toThrow("personal model API key");
+  const profile = { userId: editor.id, source: "environment" as const, version: 1, config: null, revoked: false };
+  await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 1, revoked: false } as never);
+  expect(() => personalSettings(deps.settings, editor, profile)).toThrow("restricted to the exact");
+  await expect(boundRun(options(), editor)).rejects.toThrow("revoked");
+  await expect(personalRequestDeps(deps, editor)).rejects.toThrow("revoked");
+  const run = newRun(location("one"), { by: editor.email, kind: "manual" }, "2099-01-01", ["2099-01-01", "2099-01-08"], [], null, null, options());
+  run.admission = "newsroom";
+  run.execution = {
+    sponsorId: editor.id, initiatedBy: editor.id, source: "environment", credentialVersion: 1,
+    planHash: createHash("sha256").update(JSON.stringify(normalizedPlan("one", "edition", options(), profile))).digest("hex"),
+  };
+  await runs(db).insertOne(run);
+  await expect(authorizePaidAction(db, run._id, editor)).rejects.toThrow("owner-only");
+  await expect(generate(run)).rejects.toThrow("owner-only");
+  expect((await getRun(db, run._id))?.execution_blocked?.reason).toContain("owner-only");
+  expect(requests).toHaveLength(0);
+  await save(editor, "fixture-own-key");
+  await expect(generate(run)).rejects.toThrow("owner-only");
+  const binding = await prepareBinding(db, deps.settings, editor, "one", "edition", run.options, run._id);
+  await runs(db).updateOne({ _id: run._id }, { $set: { execution: binding }, $unset: { execution_blocked: "" } });
+  expect(await generate((await getRun(db, run._id))!)).toBe("personal answer");
+  expect(requests).toHaveLength(1);
+  expect(requests[0].headers?.["x-goog-api-key"]).toBe("fixture-own-key");
+  expect(await db.collection("journalist_funding_audit").distinct("funding")).toEqual(["personal"]);
 });
 it("never inherits a same-name model key or adds deployment providers for an editor", async () => {
   vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini,other");

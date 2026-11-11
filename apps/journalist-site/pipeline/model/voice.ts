@@ -1,3 +1,4 @@
+import { quantities } from "./quantities";
 /**
  * The newsletter's voice. Stories are written to be enjoyed and shared, not just filed:
  * hooks, vivid verbs, warmth and good-natured wit, with the facts still locked to the
@@ -38,11 +39,11 @@ export function editionVoiceGuide(voice: Voice = configuredVoice()) {
 }
 
 const CLICKBAIT = /\b(you won['’]?t believe|shock(?:ing|ed|er)|jaw[- ]?dropping|mind[- ]?blowing|blow your mind|insane|unbelievable|what happens next|this one trick|outrage(?:ous)?|slams|destroys|epic fail|must[- ]see|breaking)\b/gi;
-const SUPERLATIVE = /\b(biggest|largest|best|worst|first[- ]ever|record[- ]breaking|record|unprecedented|historic)\b/gi;
+const SUPERLATIVE = /\b(biggest|largest|best|worst|first[- ]ever|record[- ]breaking|record(?= (?:high|low|number|attendance|turnout|crowd|sales|profit|loss))|unprecedented|historic)\b/gi;
 const NUMBER = /\d[\d,]*(?:\.\d+)?/g;
 
 function sourceText(allowed: string[]) { return allowed.join(" ").toLowerCase(); }
-function numbersIn(text: string) { return new Set((text.match(NUMBER) ?? []).map((n) => n.replace(/,/g, "").replace(/\.0+$/, ""))); }
+function numbersIn(text: string) { return new Set(quantities(text).map(quantity => quantity.value)); }
 
 /** Voice-specific checks on top of the writer's factual checks. */
 export function voiceErrors(value: string, allowed: string[], kind: string | undefined, part: "headline" | "summary" | "intro" | "blurb", voice: Voice = configuredVoice()) {

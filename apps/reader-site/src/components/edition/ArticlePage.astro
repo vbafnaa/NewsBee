@@ -30,8 +30,10 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
       <label data-share-fallback hidden>Story link <input type="url" readonly value={shareUrl} /></label>
     </div>
     <footer class="article-source">
-      <small>Source: {article.sourceName}.
-        {article.sourceUrl && <> <a class="nb-link" href={article.sourceUrl} target="_blank" rel="noopener noreferrer">Visit the original source</a> (opens in a new tab).</>}
+      <small>Sources:
+        {article.sources.length ? article.sources.map((source, index) => <>
+          {index > 0 && "; "}<a class="nb-link" href={source.url} target="_blank" rel="noopener noreferrer">{source.name}</a>
+        </>) : article.sourceName}
       </small>
     </footer>
   </article>

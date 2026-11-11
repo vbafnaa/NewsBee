@@ -1,6 +1,6 @@
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { collectedItems, type CollectedItem } from "../../editions/assemble";
 import { startAuthoring, rankSection, authorNextStory, finishAuthoring } from "../../editions/authoring";
 import { defaultRunOptions, withRunContext } from "../../core/run-options";
@@ -14,6 +14,7 @@ vi.mock("../../editions/edition-map", () => ({ writeEditionMap: vi.fn().mockReso
 let server: MongoMemoryServer, client: MongoClient, db: Db;
 beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("pipeline2-acceptance"); });
 afterAll(async () => { await client?.close(); await server?.stop(); });
+beforeEach(async () => { await db.dropDatabase(); });
 it("filters sources, merges copies, ranks, writes grounded articles and builds an unpublished edition", async () => {
   const location = { id: "fixture", name: "Fixture, WA", state: "WA", systems: [], community: { name: "Fixture", parent_name: "Town", coverage_terms: [] } } as LocationProfile;
   const title = "Cedar Park playground plans";
@@ -28,6 +29,14 @@ it("filters sources, merges copies, ranks, writes grounded articles and builds a
   await collectedItems(db).insertMany(rows.map((row) => ({ _id: row.id, run_id: "run", location_id: location.id, source_id: row.id, source_name: row.id, status: "collected", step: "reader", reason: null, created_at: 1, title: row.title, url: row.source_url, event_date: "2026-11-08", facts: { source_event_id: row.id, kind: "local_news", event_date: "2026-11-08", schedule_text: "November 8", venue: "Cedar Park", room: null, needs_locality: false, ...row } } as CollectedItem)));
   await saveText(db, rows[0].source_url, sourceText, { canonical_url: rows[0].source_url, reuse_allowed: true });
   const model = new FakeModel(({ prompt }) => {
+    if (prompt.startsWith("Independently fact-check")) {
+      const data = JSON.parse(prompt.split("Review data:\n")[1]);
+      const quote = sourceText.split(". ")[0];
+      return { claims: data.claims.map((claim: { id: string; text: string }) => {
+        const source = data.sources.find((source: { text: string }) => source.text.includes(claim.text)) ?? data.sources.find((source: { text: string }) => source.text.includes(quote))!;
+        return { id: claim.id, verdict: "supported", reason: "The fixture record explicitly states these facts.", evidence: [{ source_id: source.id, quote: source.text.includes(claim.text) ? claim.text : quote }] };
+      }) };
+    }
     if (prompt.startsWith("Rate each")) { const candidates = JSON.parse(prompt.split("Candidates:\n")[1]); return { ratings: candidates.map((c: { id: string }) => ({ id: c.id, category: "civic_and_practical", civic: 3, appeal: 2, special: 2 })) }; }
     if (prompt.startsWith("You edit")) return { headline: "Cedar Park playground plans receive $50,000", intro: "The council approved a playground budget." };
     if (prompt.startsWith("You write the email")) return { blurb: "Read about the $50,000 playground budget." };
@@ -39,7 +48,7 @@ it("filters sources, merges copies, ranks, writes grounded articles and builds a
     expect(started.sections).toHaveLength(1);
     for (const section of started.sections) await rankSection(deps, "run", section);
     const written = await authorNextStory(deps, "run");
-    expect(written.result).toMatchObject({ disposition: "checks_passed", source_url: rows[0].source_url });
+    expect(written.result, JSON.stringify(written.result?.validation_errors)).toMatchObject({ disposition: "checks_passed", source_url: rows[0].source_url });
     const built = await finishAuthoring(deps, "run");
     expect(built.edition?.items).toHaveLength(1);
     expect(built.edition?.items[0]).toMatchObject({ source_url: rows[0].source_url, blurb: expect.stringContaining("$50,000") });
@@ -50,4 +59,37 @@ it("filters sources, merges copies, ranks, writes grounded articles and builds a
   });
   expect(await collectedItems(db).findOne({ _id: "rejected" })).toMatchObject({ status: "dropped", step: "source_review" });
   expect(await collectedItems(db).findOne({ _id: "distant" })).toMatchObject({ status: "dropped" });
+});
+
+
+it.each(["conflicting_dates", "model_unavailable"])("keeps %s out of the built edition after assembly and ranking", async (scenario) => {
+  const location = { id: "fixture", name: "Fixture, WA", state: "WA", systems: [], community: { name: "Fixture", parent_name: "Town", coverage_terms: [] } } as LocationProfile;
+  const title = scenario === "conflicting_dates" ? "Community Board Meeting — November 10, 2026" : "Community garden meeting";
+  const description = scenario === "conflicting_dates" ? "The Community Board Meeting is scheduled for November 7, 2026." : "The community group announced a garden meeting. Further details have not been announced.";
+  const url = "https://community.example/meeting";
+  await db.collection("source_map").insertOne({ location_id: location.id, source_id: "official", status: "active", source_tier: "organisation", section: "news" });
+  await collectedItems(db).insertOne({ _id: "record", run_id: "run", location_id: location.id, source_id: "official", source_name: "Community group", status: "collected", step: "reader", reason: null, created_at: 1, title, url, event_date: "2026-11-08", facts: { source_event_id: "record", title, description, source_url: url, source_name: "Community group", kind: "local_news", event_date: "2026-11-08", schedule_text: "November 8", venue: "", room: null, needs_locality: false, tier: "local" } } as CollectedItem);
+  await saveText(db, url, `${title}. ${description}`.repeat(4), { canonical_url: url, reuse_allowed: true });
+  const model = new FakeModel(({ prompt }) => {
+    if (prompt.startsWith("Rate each")) {
+      const candidates = JSON.parse(prompt.split("Candidates:\n")[1]);
+      return { ratings: candidates.map((c: { id: string }) => ({ id: c.id, category: "civic_and_practical", civic: 3, appeal: 2, special: 2 })) };
+    }
+    if (scenario === "model_unavailable") throw new Error("Local model unavailable");
+    return { headline: "Community Board Meeting", summary: description };
+  });
+  const deps = { db, settings: loadSettings({ NEWSBEE_MODE: "local" }), model, transport: vi.fn(async () => { throw new Error("Unexpected external request"); }), log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
+  await withRunContext({ db, runId: "run", locationId: location.id, options: { ...defaultRunOptions({}), count_history: false } }, async () => {
+    const started = await startAuthoring(deps, { location, runId: "run", today: "2026-11-08", window: ["2026-11-08", "2026-11-14"], sourceResults: [] });
+    expect(started.sections).toHaveLength(1);
+    for (const section of started.sections) await rankSection(deps, "run", section);
+    const written = await authorNextStory(deps, "run");
+    expect(written.result).toMatchObject({ disposition: "held" });
+    if (scenario === "conflicting_dates") expect(written.result?.validation_errors).toContain("unsupported_source_conflict:event_dates");
+    else expect(written.result?.error).toContain("Local model unavailable");
+    const built = await finishAuthoring(deps, "run");
+    expect(built.edition?.items).toHaveLength(0);
+    expect(await db.collection(COLLECTIONS.storyCache).countDocuments()).toBe(0);
+    expect(await db.collection(COLLECTIONS.publishedStories).countDocuments()).toBe(0);
+  });
 });

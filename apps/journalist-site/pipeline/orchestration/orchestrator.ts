@@ -8,7 +8,7 @@
  *           -> review_map: the final review flags likely duplicates and each new source's strength
  *           -> finish_map: each source's working address is saved -> mapped
  *
- * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, on by default) a map run instead reads every fixed
+ * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, off by default) a map run instead reads every fixed
  * reader into its own store (`source_run_<run id>`), saves no addresses and leaves the source map,
  * the location's map version and so every edition as they were.
  *
@@ -561,8 +561,8 @@ async function planSources(deps: OrchestratorDeps, job: Job) {
   const { center, area } = locationCenter(location);
   await areaPlaces({ db: deps.db, location, today: run.today, transport: externalTransport(deps.transport ?? publicOnlyTransport(fetchTransport)), log }, center, area).catch(() => undefined);
   const flow = currentOptions().flow;
-  // While proposed-until-approved is on, an edition reads only what a person approved (or a source live before it).
-  const records = await collectableSources(deps.db, run.location_id, run.today, flow, { proposedUntilApproved: deps.settings.proposedUntilApproved !== false });
+  // An edition reads only live sources (active, pinned, dormant): a proposed one waits for a person, or for the model check.
+  const records = await collectableSources(deps.db, run.location_id, run.today, flow);
   const allowed = records.map(taskFor).filter((task) => connectorsOf(deps)[task.type] && (deps.settings.widerSources || !["hazards", "trending"].includes(task.type)));
   // The fastest and most useful first, so collection's time budget cuts the slow, quiet tail.
   const health = new Map((await locationHealth(deps.db, run.location_id)).map((row) => [row.source_id, row]));
@@ -579,7 +579,7 @@ async function planSources(deps: OrchestratorDeps, job: Job) {
     tier: record.source_tier ?? null, topics: record.topics ?? [], collected: collected.has(record.source_id),
     skip_reason: collected.has(record.source_id) ? null : record.link_only ? "link only: listed, never collected"
       : !reviewAllowsCollection(record.access_review, run.today) ? "source access review blocks collection"
-        : record.status === "proposed" ? deps.settings.proposedUntilApproved !== false ? "proposed: awaiting editorial acceptance" : "proposed: only agentic runs read it"
+        : record.status === "proposed" ? "proposed: awaiting review"
           : record.status === "dormant" ? `dormant until ${record.dormant_until ?? "retry"}` : record.status,
   }));
   const jobIds = new Map(tasks.map((task) => [task.source_id, randomUUID()]));

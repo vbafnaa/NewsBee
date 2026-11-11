@@ -93,9 +93,9 @@
             "housing_market",
             "development",
             "school_sports",
-          "game_result",
-          "home_sale",
-          "building_permit",
+            "game_result",
+            "home_sale",
+            "building_permit",
             "weather_alert",
             "court_case",
             "local_news",
@@ -157,6 +157,11 @@
           "default": false,
           "title": "Lead",
           "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "name": { "type": "string" }, "url": { "type": "string", "format": "uri" } }, "required": ["name", "url"] },
+          "description": "Original reporting and supporting sources used for this article"
         },
         "image": {
           "anyOf": [

@@ -94,7 +94,7 @@ export const STAGES = [
   { id: "link_only", label: "Kept as a link only", detail: "Couldn't be read (blocked, paywalled, a platform we never read), kept as a link and sent to the model check" },
   { id: "code_fail", label: "Rejected by code check", detail: "Dropped by a code check, never sent to the model check" },
   { id: "gemini_reject", label: "Rejected by the model check", detail: "Passed code, rejected by the model check" },
-  { id: "passed", label: "Passed both", detail: "Saved as proposed for your review" },
+  { id: "passed", label: "Passed both", detail: "Saved active, so editions read it (proposed for your review while proposed-until-approved is on)" },
 ] as const;
 export type StageId = typeof STAGES[number]["id"];
 

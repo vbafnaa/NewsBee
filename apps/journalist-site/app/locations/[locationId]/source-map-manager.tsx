@@ -185,7 +185,7 @@ function ReasonText({ review }: { review?: Review }) {
 }
 
 /**
- * The Decision and Reasoning cells. Each saves on its own, and a failure stays on screen until it is retried. The Source runs tab
+ * The Decision and Reasoning cells. Each saves on its own, and a failure stays on screen until it is retried. The Collect sources tab
  * uses them too, with its own `send` for a test-mode run, whose decisions are kept by page.
  */
 export function ReviewCells({ source, canLabel, onSaved, send }: { source: Pick<Source, "_id" | "location_id" | "source_id" | "name" | "review"> & { status?: string }; canLabel: boolean; onSaved: (id: string, change: { status: string; review: Review }) => void; send?: (change: Record<string, string | null>) => Promise<{ status: string; review: Review }> }) {

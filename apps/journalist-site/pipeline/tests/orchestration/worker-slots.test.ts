@@ -3,6 +3,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { acquireRunLease, acquireSlot, acquireWorker, claim, enqueue, enqueueMany, releaseLease, releaseWorker, type JobKind } from "../../orchestration/jobs";
 import { dispatchPlan } from "../../orchestration/dispatch";
+import { markQueueDelivery, queueConsumerActive, schedulerState } from "../../orchestration/scheduler";
 import { ensureRunIndexes, newRun, runs, stageKinds, workableRuns } from "../../orchestration/runs";
 import { defaultRunOptions, withRunContext } from "../../core/run-options";
 import { ensureApiCallIndexes, paidRefusal } from "../../trace/gateway";
@@ -77,6 +78,18 @@ it("serves editions before map runs, then oldest first", async () => {
   await enqueue(db, { kind: "plan_sources", run_id: older._id, location_id: "older" });
   expect((await workableRuns(db)).map((run) => run._id)).toEqual([older._id, map._id]);
   expect(stageKinds({ status: "mapping" })).toContain("finish_map");
+});
+
+it("uses HTTP recovery until a queue consumer actually runs, not just until a worker ticks", async () => {
+  const current = 2_000_000;
+  expect(queueConsumerActive(await schedulerState(db, current), current)).toBe(false);
+  await db.collection("pipeline_heartbeat").updateOne(
+    { _id: "scheduler" }, { $set: { last_tick_at: current } }, { upsert: true },
+  );
+  expect(queueConsumerActive(await schedulerState(db, current), current)).toBe(false);
+  await markQueueDelivery(db, current);
+  expect(queueConsumerActive(await schedulerState(db, current + 180), current + 180)).toBe(true);
+  expect(queueConsumerActive(await schedulerState(db, current + 181), current + 181)).toBe(false);
 });
 
 it("starts a worker for each free slot with work ready", async () => {

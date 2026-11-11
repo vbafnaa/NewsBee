@@ -7,15 +7,18 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vite
 import { POST as author } from "@/app/api/admin/runs/[runId]/authoring/route";
 import { POST as cancel } from "@/app/api/admin/runs/[runId]/cancel/route";
 import { POST as restart } from "@/app/api/admin/runs/[runId]/restart/route";
+import { POST as mapStage } from "@/app/api/admin/runs/[runId]/map-stage/route";
 import { loadSettings } from "../../core/config";
 import { CONNECTORS } from "../../connectors/registry";
 import { sourceResult, type CollectedEvent, type LocationProfile, type SourceTask } from "../../connectors/types";
 import { collectedItems, type CollectedItem } from "../../editions/assemble";
 import { locationHealth } from "../../orchestration/health";
 import { enqueue, ensureJobIndexes, readJobLog, runJobs } from "../../orchestration/jobs";
+import { availableMapStages } from "../../orchestration/map-stage-availability";
+import { retryFailedStep } from "../../orchestration/retry-step";
 import { logger } from "../../core/log";
 import { resumeRun, runOne, startMapRun, startRun, tick, triggerStage, type OrchestratorDeps } from "../../orchestration/orchestrator";
-import { collectionCandidateCount, ensureRunIndexes, getRun, newRun, runs, type RunStatus } from "../../orchestration/runs";
+import { collectionCandidateCount, ensureRunIndexes, failRun, getRun, newRun, runs, type RunStatus } from "../../orchestration/runs";
 import { LocalArtifacts } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
 import { FakeModel } from "../support/fake-model";
@@ -88,6 +91,43 @@ async function seed(status: RunStatus = "awaiting_authoring", tasks: SourceTask[
   await runs(db).insertOne(run);
   return run;
 }
+
+it("continues a failed source-map collection through review and address saving without restarting discovery", async () => {
+  const run = await seed("mapping");
+  const choices = resolveRunOptions({ mode: "manual", paid: { gemini: 200 } });
+  const binding = await prepareBinding(db, deps.settings, { id: "fixture-editor", email: "editor@example.org", role: "editor" }, location.id, "map", choices);
+  await runs(db).updateOne({ _id: run._id }, { $set: { kind: "map", execution: binding, stage_transitions: [{ status: "mapping", by: "editor", at: run.created_at }] } });
+  const discoveryId = await enqueue(db, { kind: "discover", run_id: run._id, location_id: location.id, payload: { method: "fixture" } });
+  await db.collection(COLLECTIONS.jobs).updateOne({ _id: discoveryId }, { $set: { status: "failed", error: "Discovery timed out" } });
+  await failRun(db, run._id, "Discovery timed out");
+  const postStage = (stage: string) => mapStage(new Request(`${origin}/api/admin/runs/${run._id}/map-stage`, {
+    method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ stage }),
+  }), context(run._id));
+
+  expect(availableMapStages((await getRun(db, run._id))!, await runJobs(db, run._id))).toEqual(["review"]);
+  expect((await postStage("save")).status).toBe(409);
+  expect((await postStage("review")).status).toBe(200);
+  expect((await postStage("review")).status).toBe(409);
+  expect((await runJobs(db, run._id)).map((job) => job.kind)).toEqual(["discover", "review_map"]);
+  await expect(retryFailedStep(db, run._id, discoveryId, "editor")).rejects.toThrow(/moved past that step/);
+  const review = (await runJobs(db, run._id)).find((job) => job.kind === "review_map")!;
+  await db.collection(COLLECTIONS.jobs).updateOne({ _id: review._id }, { $set: { status: "failed", error: "Review timed out" } });
+  const saveId = await enqueue(db, { kind: "finish_map", run_id: run._id, location_id: location.id, payload: { step: 0 }, dedupe_key: `finish_map:${run._id}:0` });
+  await failRun(db, run._id, "Review timed out");
+  expect(availableMapStages((await getRun(db, run._id))!, await runJobs(db, run._id))).toEqual(["save"]);
+  expect((await postStage("save")).status).toBe(200);
+  expect((await getRun(db, run._id))?.status).toBe("mapping");
+  expect((await runJobs(db, run._id)).find((job) => job._id === saveId)?.status).toBe("pending");
+  expect((await runJobs(db, run._id)).map((job) => job.kind)).toEqual(["discover", "review_map", "finish_map"]);
+  expect(runtime.callbacks).toHaveLength(2);
+  await tick(deps, { budgetMs: 10_000 });
+  expect((await getRun(db, run._id))?.status).toBe("mapped");
+});
+
+it("does not offer source-map continuation for failed edition runs", async () => {
+  const run = await seed("failed");
+  expect(availableMapStages(run, [])).toEqual([]);
+});
 
 function item(runId: string, id = "workshop"): CollectedItem {
   return {

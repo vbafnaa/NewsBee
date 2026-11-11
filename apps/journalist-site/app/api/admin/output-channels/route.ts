@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { listLocations } from "@/pipeline/communities/locations";
-import { latestPublished } from "@/pipeline/editions/authoring";
 import { logger } from "@/pipeline/core/log";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
 import {
@@ -12,13 +11,14 @@ import {
   getOutputChannel,
   listOutputChannels,
   outputChannels,
-  syncOutputChannelLocations,
   updateOutputChannel,
   writeOutputChannelDirectory,
   type OutputChannelInput,
   type OutputDestination,
 } from "@/pipeline/orchestration/output-channels";
 import { createUserDriveChannelFolder, hasGoogleDriveAuthorization } from "@/pipeline/storage/user-drive";
+import { channelArtifactStore, driveChannelFolderOrMongo } from "@/pipeline/storage/mongo-channel-artifacts";
+import { isMongoChannelFolderId } from "../../../../../../shared/reader-folder";
 
 type ChannelBody = { id?: unknown; name?: unknown; url?: unknown; destination?: unknown; destinations?: unknown; enabled?: unknown; selectedLocationIds?: unknown };
 
@@ -104,19 +104,21 @@ export async function POST(request: Request) {
       return Response.json({ detail: "One or more selected locations are no longer onboarded; reload the page." }, { status: 422 });
     }
     if (!deps.principal) throw new Error("Sign in as an approved journalist.");
+    const email = deps.principal.email;
     const id = randomUUID().replaceAll("-", "");
     let folderId: string;
     if (deps.store.kind === "drive") {
-      if (!await hasGoogleDriveAuthorization(request, deps.principal.email)) {
-        return Response.json({ detail: "Connect Google Drive with the currently signed-in account before creating a publishing channel." }, { status: 403 });
-      }
-      folderId = await createUserDriveChannelFolder(request, deps.principal.email, deps.settings.pipelineDriveFolderId, id);
+      folderId = await driveChannelFolderOrMongo(
+        deps.store, id, await hasGoogleDriveAuthorization(request, email),
+                () => createUserDriveChannelFolder(request, email, deps.settings.pipelineDriveFolderId, id),
+        (error) => logger("output-channels").warn("channel_drive_unavailable", { error: error instanceof Error ? error.message : String(error) }),
+      );
     } else {
       folderId = await channelFolder(deps.store, deps.settings.pipelineDriveFolderId, id);
     }
     const channel = await createOutputChannel(deps.db, ownerId(deps.principal), id, folderId, value);
-    await syncOutputChannelLocations(deps.db, deps.store, ownerId(deps.principal), channel.id, channel.selectedLocationIds, (locationId) =>
-      latestPublished({ db: deps.db, model: deps.model, settings: deps.settings, log: logger("output-channels") }, locationId));
+    const document = await outputChannels(deps.db).findOne({ _id: channel.id, owner_id: ownerId(deps.principal) });
+    if (document && isReaderDestination(channel.destinations)) await writeOutputChannelDirectory(deps.db, deps.store, document);
     return Response.json({ channel }, { status: 201 });
   });
 }
@@ -146,12 +148,6 @@ export async function PATCH(request: Request) {
         await clearOutputChannelFeed(deps.db, deps.store, document);
         await clearOutputChannelEditions(deps.db, deps.store, document);
       }
-    } else if (channelHasReader) {
-      const selected = !previousHasReader || (!previous.enabled && channel.enabled)
-        ? channel.selectedLocationIds
-        : channel.selectedLocationIds.filter((id) => !previous.selectedLocationIds.includes(id));
-      await syncOutputChannelLocations(deps.db, deps.store, owner, channel.id, selected, (locationId) =>
-        latestPublished({ db: deps.db, model: deps.model, settings: deps.settings, log: logger("output-channels") }, locationId));
     }
     const document = await outputChannels(deps.db).findOne({ _id: channel.id, owner_id: owner });
     if (document && channelHasReader) await writeOutputChannelDirectory(deps.db, deps.store, document);
@@ -168,13 +164,17 @@ export async function DELETE(request: Request) {
     const owner = ownerId(deps.principal);
     const channel = await outputChannels(deps.db).findOne({ _id: body.id, owner_id: owner });
     if (!channel) return Response.json({ detail: "Output channel was not found." }, { status: 404 });
+    const store = channelArtifactStore(deps.db, deps.store, channel.drive_folder_id);
     for (const locationId of new Set(channel.published_location_ids ?? [])) {
       const editions = await deps.db.collection<{ id: string }>(COLLECTIONS.editions)
         .find({ location_id: locationId, id: { $exists: true } }).project<{ id: string }>({ id: 1 }).toArray();
-      for (const edition of editions) await deps.store.removeFile(channel.drive_folder_id, `${edition.id}.json`);
+      for (const edition of editions) await store.removeFile(channel.drive_folder_id, `${edition.id}.json`);
     }
-    await deps.store.removeFile(channel.drive_folder_id, "locations.json");
+    await store.removeFile(channel.drive_folder_id, "locations.json");
     await clearOutputChannelEditions(deps.db, deps.store, channel);
+    if (isMongoChannelFolderId(channel.drive_folder_id)) {
+      await deps.db.collection(COLLECTIONS.outputChannelFiles).deleteMany({ folder_id: channel.drive_folder_id });
+    }
     await outputChannels(deps.db).deleteOne({ _id: body.id, owner_id: owner });
     return { deleted: body.id };
   });

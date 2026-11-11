@@ -25,7 +25,7 @@ export default async function LocationSourceMapPage({ params, searchParams }: {
   const tab = query.tab === "runs" ? "runs" : "sources";
   const runId = typeof query.run === "string" ? query.run : null;
   return <AdminShell email={principal.email} page="locations" title={`${location.name} source map`}
-    description="Sources and source runs for this location.">
+    description="Sources and Collect sources activity for this location.">
     <p className="breadcrumbs"><a href="/locations">Overview</a> / <a href={`/locations/${encodeURIComponent(locationId)}`}>{location.name}</a> / Source map</p>
     <SourceReview locationId={locationId} locationName={location.name} tab={tab} runId={runId} signedIn showLocationPicker={false}
       basePath={`/locations/${encodeURIComponent(locationId)}/source-map`} />

@@ -4,6 +4,7 @@ import { COLLECTIONS } from "../storage/mongo";
 import { runJobs, type Job } from "./jobs";
 import { getRun, RunConflict, runs, updateSource, type RunStatus } from "./runs";
 import { getLocation } from "../communities/locations";
+import { mapJobIsPast } from "./map-stage-availability";
 
 const stageFor = (job: Job, mapRun: boolean): RunStatus => mapRun ? "mapping" : ["discover", "plan_sources", "collect_source"].includes(job.kind) ? "collecting"
   : job.kind === "author_finish" ? "finishing" : "authoring";
@@ -14,11 +15,15 @@ export async function retryFailedStep(db: Db, runId: string, jobId: string, by: 
   const run = await getRun(db, runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   await getLocation(db, run.location_id);
-  const job = (await runJobs(db, runId)).find((item) => item._id === jobId);
+  const jobs = await runJobs(db, runId);
+  const job = jobs.find((item) => item._id === jobId);
   if (!job || !["failed", "cancelled"].includes(job.status)) {
     throw new RunConflict("Only a failed or interrupted step can be retried");
   }
   const stage = stageFor(job, run.kind === "map");
+  if (run.kind === "map" && mapJobIsPast(job.kind, jobs)) {
+    throw new RunConflict("This source-map run has moved past that step; restart to repeat discovery or review");
+  }
   if (["image_story", "stock_story"].includes(job.kind) && run.draft_id) {
     const draft = await db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id });
     if (Number(draft?.image_revision ?? 0) !== Number(job.payload.revision ?? 0)) throw new RunConflict("This image step belongs to an earlier draft; resume the current image stage instead");

@@ -1,9 +1,10 @@
 /** Narrow deterministic checks, not a substitute for semantic/editorial review. */
 const normal = (text: string) => text.toLowerCase().replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
-const NEGATED_OR_CONDITIONAL = /\b(?:not|never|no|cannot|can't|hasn't|haven't|hadn't|isn't|wasn't|weren't|wasn’t|hasn’t|isn’t|whether|if|would|could|may|might|will|pending)\b/i;
+const NEGATED_OR_CONDITIONAL = /\b(?:not|never|no|cannot|can't|hasn't|haven't|hadn't|isn't|wasn't|weren't|wasn’t|hasn’t|isn’t|whether|if|would|could|may|might|will|pending)\b|\b(?:plans? (?:to|on)|planning to|goals? (?:of|is|are)|aim(?:s|ing)? to|expect(?:s|ed|ing)? to|intend(?:s|ing)? to)\b/i;
 const ACTIONS = [
   { pattern: /\b(?:approved|adopted|enacted|passed)\b/gi, error: "unsupported_decision" },
   { pattern: /\b(?:completed|opened|began|started)\b/gi, error: "unsupported_completion" },
+  { pattern: /\b(?:under contract|(?:secured|signed|awarded) (?:a |the )?contract)\b/gi, error: "unsupported_contract_status" },
 ];
 function asserted(text: string, pattern: RegExp) {
   return [...text.matchAll(pattern)].some((match) => {
@@ -24,6 +25,8 @@ export function groundingErrors(value: string, allowed: string[]) {
     const verb = match[1].toLowerCase();
     if (!source.some((text) => new RegExp(`\\b${verb}\\w*\\b`, "i").test(text))) errors.push("unsupported_purpose");
   }
+  if (/\bback on (?:track|schedule)\b/i.test(value) && !allowed.some(text => /\bback on (?:track|schedule)\b/i.test(text))) errors.push("unsupported_recovery");
+  if (allowed.some(text => /\bno school\b|\bschools? (?:is |are )?closed\b/i.test(text)) && /\b(?:students|pupils) (?:will )?attend classes as usual\b|\bclasses (?:will )?continue as usual\b/i.test(value)) errors.push("unsupported_closure_contradiction");
   for (const action of ACTIONS) {
     if (asserted(value, action.pattern) && !allowed.some((text) => asserted(text, action.pattern))) errors.push(action.error);
   }
@@ -64,4 +67,19 @@ export function namedEntityErrors(value: string, allowed: string[]) {
     if (!known.has(stem(match[0])) && !grammar.has(match[0].toLowerCase())) unknown.add(match[0]);
   }
   return [...unknown].map((name) => `unsupported_name:${name}`);
+}
+
+/** Event notices also arrive as local_news. Inspect explicit event statements,
+ * not unrelated publication dates, deadlines or historical mentions. */
+export function sourceDateConflict(title: string, description: string) {
+  const parse = (text: string) => [...text.matchAll(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s*(?:\*\*)?(\d{1,2})(?:st|nd|rd|th)?\b/gi)]
+    .map(match => `${match[1].slice(0, 3).toLowerCase()}-${Number(match[2])}`);
+  if (!/\b(?:meeting|event|session|workshop|gathering|forum)\b/i.test(title)) return false;
+  const titleDates = parse(title);
+  if (titleDates.length !== 1) return false;
+  return Array.from(new Intl.Segmenter('en', { granularity: 'sentence' }).segment(description.slice(0, 2000)), ({ segment }) => segment).some(sentence => {
+    if (!/\b(?:meeting|event|session|workshop|gathering|forum)\b.{0,100}\b(?:on|scheduled for|set for|takes place(?: on)?|will take place(?: on)?|is(?: on)?)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s*,?\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(sentence)) return false;
+    const dates = parse(sentence);
+    return dates.length === 1 && dates[0] !== titleDates[0] && !/\b(?:previous|last|earlier|rescheduled from|moved from|formerly|cancelled|canceled)\b/i.test(sentence);
+  });
 }

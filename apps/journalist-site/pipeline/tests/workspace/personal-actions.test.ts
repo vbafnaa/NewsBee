@@ -38,6 +38,7 @@ import { GET as videoInfo, POST as videoAction } from "../../../app/api/admin/vi
 let server: MongoMemoryServer, client: MongoClient, db: Db, owner: Principal, editor: Principal;
 const store: ArtifactStore = {
   kind: "local", ensureFolder: async () => "fixture", saveText: async () => "fixture", saveJson: async () => "fixture",
+  saveBinary: async () => "stored-video",
   readText: async () => "", readJson: async <T>() => ({} as T), list: async () => [], findFolder: async () => null, removeFile: async () => 0,
 };
 const context = { params: Promise.resolve({ locationId: "one", storyId: "story" }) };
@@ -99,6 +100,20 @@ it("uses the owner's personal fal.ai key without requiring unused model credenti
   state.fetch.mockResolvedValueOnce(Response.json({ request_id: "fixture-request" }));
   expect((await videoAction(request({ action: "generate-video", package: {} }), context)).status).toBe(200);
   expect(state.fetch.mock.calls[0][1]?.headers).toMatchObject({ Authorization: "Key personal-fal" });
+});
+it("allows owner chunked uploads but blocks non-owners", async () => {
+  const mp4 = Buffer.from([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]);
+  expect((await videoAction(request({ action: "start-upload", size: mp4.length }), context)).status).toBe(403);
+  state.deps!.principal = owner;
+  const started = await videoAction(request({ action: "start-upload", size: mp4.length }), context);
+  expect(started.status).toBe(200);
+  const { uploadId } = await started.json() as { uploadId: string };
+  const chunkUrl = `https://fixture.example.test/api/admin/video-production/one/story?action=upload-chunk&uploadId=${uploadId}&index=0`;
+  const chunk = new Request(chunkUrl, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: mp4 });
+  expect((await videoAction(chunk, context)).status).toBe(200);
+  const finished = await videoAction(request({ action: "finish-upload", uploadId }), context);
+  expect(finished.status).toBe(200);
+  expect((await finished.json()).video).toMatchObject({ source: "upload", status: "complete", drive_file_id: "stored-video" });
 });
 it("blocks both video submission and refresh before provider calls when no fal.ai key is available", async () => {
   state.deps!.principal = owner;

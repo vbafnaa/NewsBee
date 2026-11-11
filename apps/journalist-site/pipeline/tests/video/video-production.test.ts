@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeModel } from "../support/fake-model";
-import { draftSubtitles, generateVideoPackage, validateVideoPackage, type VideoStory } from "../../video-production";
+import { draftSubtitles, generateVideoPackage, validateVideoPackage, videoPackagePrompt, type VideoStory } from "../../video-production";
 
 const story: VideoStory = {
   locationId: "moses-lake-wa",
@@ -29,6 +29,9 @@ describe("video production content", () => {
     const content = await generateVideoPackage(model, story);
     expect(model.calls).toHaveLength(1);
     expect(model.calls[0].prompt).toContain(story.sourceUrl!);
+    expect(content.generationPrompt).toBe(model.calls[0].prompt);
+    expect(videoPackagePrompt(story)).toBe(model.calls[0].prompt);
+    expect(validateVideoPackage({ ...content, generationPrompt: "tampered" })).not.toHaveProperty("generationPrompt");
     expect(content.videoPrompt).toContain("Vertical portrait 9:16 composition");
     expect(content.videoPrompt).toContain(generatedContent.spokenScript);
     expect(content.youtubeDescription).toContain("AI-generated presenter");

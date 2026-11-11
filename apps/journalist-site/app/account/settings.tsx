@@ -53,7 +53,7 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [ownerConfigured, setOwnerConfigured] = useState(true);
   function apply(value: Profile | null, defaults?: EnvironmentDefaults | null) {
-    setEnvironmentDefaults(owner ? defaults ?? null : null);
+    setEnvironmentDefaults(defaults ?? null);
     setSource(owner ? value?.source ?? "environment" : "personal");
     setProfile(value); setSecrets({});
     setProviders(value?.config?.modelProviders.map((p) => ({ ...p, apiKey: "" })) ?? []);
@@ -88,16 +88,17 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
   return <>
     {error && <p className="alert" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <section className="panel"><h2>Your execution profile</h2>
-      <p>{!loaded ? "Loading execution profile..." : !profile ? owner ? "No active profile. Choose deployment defaults or add personal keys." : "No personal profile. Add your own API keys to enable provider-backed actions." : profile.revoked ? `Revoked · version ${profile.version}` : profile.source === "environment" ? "Owner deployment defaults" : `Personal encrypted profile${owner ? " with owner deployment fallback" : ""} · version ${profile.version}`}</p>
+      <p>{!loaded ? "Loading execution profile..." : !profile ? owner ? "No active profile. Choose deployment defaults or add personal keys." : "No profile. Add your own API keys." : profile.revoked ? `Revoked · version ${profile.version}` : profile.source === "environment" ? `Server environment keys · version ${profile.version}` : `Personal encrypted profile${owner ? " with owner deployment fallback" : ""} · version ${profile.version}`}</p>
       <p className="chart-caption">{loaded && profile && !profile.revoked && <>Model {profile.capabilities.model ? "configured" : "not configured"} · Paid search {profile.capabilities.paidSearch ? "configured" : "off"}. </>}Configuration checks only; no provider calls.</p>
       {profile?.configurationError && <p className="alert" role="alert">{profile.configurationError}</p>}
       {!owner && !ownerConfigured && <p className="alert">Workspace owner not configured. Ask your administrator to complete owner setup; your account remains an editor.</p>}
-      <p>{owner ? "Only the configured owner may use deployment API credentials. Personal keys override matching deployment values; clearing an override returns to the deployment default." : "You must supply personal API keys for the services your actions use. Deployment API credentials are owner-only; clearing a key disables that service."} Keys are write-only: blank fields keep saved personal values. Revoke disables the entire profile.</p>
+      <p>{owner ? "Personal keys override matching server environment values; clearing an override returns to the server default." : "Your runs use only your personal keys, with no server environment fallback."} Keys are write-only: blank fields keep saved personal values. Revoke disables the entire profile.</p>
+      {!owner && profile?.source === "environment" && <p className="alert">Server environment keys are owner-only. Save personal API keys, then explicitly reconnect any unfinished runs before continuing.</p>}
       <form onSubmit={(event) => { event.preventDefault(); void save("PUT"); }}>
-        {owner && <label className="field">Credential source<select disabled={!loaded || busy} value={source} onChange={(e) => setSource(e.target.value as typeof source)}><option value="personal">My personal keys (owner overrides)</option><option value="environment">Deployment defaults (owner only)</option></select></label>}
-        {owner && source !== profile?.source && <p role="status">Unsaved credential source. Save this choice before leaving this page.</p>}
-        {source === "environment" && <p>The configured owner uses deployment defaults automatically without a saved profile. Save to explicitly select them after a personal or revoked profile.</p>}
-        {owner && environmentDefaults?.configurationError && <p className="alert" role="alert">{environmentDefaults.configurationError}</p>}
+        {owner && <label className="field">Credential source<select disabled={!loaded || busy} value={source} onChange={(e) => setSource(e.target.value as typeof source)}><option value="personal">My personal keys (owner overrides)</option><option value="environment">Use API keys from server environment</option></select></label>}
+        {source !== (profile?.source ?? (owner ? "environment" : "personal")) && <p role="status">Unsaved credential source. Save this choice before leaving this page.</p>}
+        {source === "environment" && <p>The configured owner uses server environment keys automatically without a saved profile. Save to explicitly select them after a personal or revoked profile.</p>}
+        {source === "environment" && environmentDefaults?.configurationError && <p className="alert" role="alert">{environmentDefaults.configurationError}</p>}
         {source === "personal" && <>
           <h3>Model providers (ordered fallback)</h3>
           <p className="chart-caption">{owner ? "Your providers override matching deployment providers. Other deployment providers remain available afterward (owner only)." : "Add your own providers to run AI pipeline work. Only your configured personal providers are tried."}</p>
@@ -135,7 +136,7 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
           </details>
         </>}
         <p>Replacing or revoking a profile invalidates its prior version for unfinished runs.</p>
-        <button disabled={busy || !loaded} type="submit">{busy ? "Saving…" : source === "environment" ? "Save deployment defaults" : "Save personal profile"}</button>
+        <button disabled={busy || !loaded} type="submit">{busy ? "Saving…" : source === "environment" ? "Save server environment selection" : "Save personal profile"}</button>
       </form>
       <button className="secondary" disabled={busy || !loaded || !profile || profile.revoked} type="button" onClick={() => { if (window.confirm("Revoke this profile and stop unfinished runs from using it?")) void save("DELETE"); }}>Revoke entire profile</button>
     </section>

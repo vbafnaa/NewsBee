@@ -150,7 +150,7 @@ async function write(db: Db, principal: Principal, input: CredentialInput | null
     const version = (old?.version ?? 0) + 1;
     const source = input?.source ?? old?.source ?? (isConfiguredOwner(principal) ? "environment" : "personal");
     if (input && source !== "personal" && source !== "environment") return invalid("Invalid credential source");
-    if (input && source === "environment" && !isConfiguredOwner(principal)) return invalid("Only the owner configured by NEWSBEE_OWNER_EMAIL may choose deployment defaults");
+    if (input && source === "environment" && !isConfiguredOwner(principal)) return invalid("Only the owner configured by NEWSBEE_OWNER_EMAIL may choose deployment defaults. Editors must save personal API keys.");
     const config = input && source === "personal" ? configFor(input.config, old && !old.revoked ? decrypt(old) : null) : null;
     const row: Stored = { _id: principal.id, version, source, revoked: !input };
     if (config) {

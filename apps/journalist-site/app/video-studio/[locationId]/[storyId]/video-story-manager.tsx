@@ -28,6 +28,7 @@ type Video = {
   _id: string;
   status: string;
   prompt: string;
+  source?: "upload";
   created_at: number;
   error?: string;
   drive_url?: string;
@@ -44,6 +45,9 @@ type Data = {
   detail?: string;
   story?: Story;
   package?: ContentPackage | null;
+  packagePrompt?: string;
+  packagePromptReconstructed?: boolean;
+  uploadId?: string;
   videos?: Video[];
   video?: Video;
   falConfigured?: boolean;
@@ -68,6 +72,8 @@ const emptyPackage: EditablePackage = {
   youtubeTitle: "", youtubeDescription: "", youtubeTags: [], tiktokCaption: "", spokenScript: "", videoPrompt: "", subtitlesSrt: "", tagsText: "",
 };
 const activeStatuses = new Set(["submitting", "queued", "processing", "uploading"]);
+const uploadChunkBytes = 2 * 1024 * 1024;
+const maxUploadBytes = 100 * 1024 * 1024;
 
 export default function VideoStoryManager({ locationId, storyId, accountEmail, owner, backHref }: {
   locationId: string; storyId: string; accountEmail: string; owner: boolean; backHref: string;
@@ -75,6 +81,10 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
   const [story, setStory] = useState<Story | null>(null);
   const [content, setContent] = useState<EditablePackage>(emptyPackage);
   const [videos, setVideos] = useState<Video[]>([]);
+  const [packagePrompt, setPackagePrompt] = useState("");
+  const [packagePromptReconstructed, setPackagePromptReconstructed] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [falConfigured, setFalConfigured] = useState(false);
   const [model, setModel] = useState("");
   const [youtube, setYoutube] = useState<Data["youtube"]>({ connected: false, email: null });
@@ -96,6 +106,8 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
     setStory(data.story ?? null);
     setVideos(data.videos ?? []);
+    setPackagePrompt(data.packagePrompt ?? "");
+    setPackagePromptReconstructed(Boolean(data.packagePromptReconstructed));
     setFalConfigured(Boolean(data.falConfigured));
     setModel(data.model ?? "");
     setYoutube(data.youtube ?? { connected: false, email: null });
@@ -216,6 +228,8 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
       const data = await response.json() as Data;
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       if (data.package) setContent({ ...data.package, tagsText: data.package.youtubeTags.join(", ") });
+      if (data.packagePrompt) setPackagePrompt(data.packagePrompt);
+      if (data.packagePromptReconstructed !== undefined) setPackagePromptReconstructed(data.packagePromptReconstructed);
       if (data.story) setStory(data.story);
       if (data.videos) setVideos(data.videos);
       if (data.video) setVideos((current) => current.map((video) => video._id === data.video!._id ? data.video! : video));
@@ -304,6 +318,52 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     }
   }
 
+  async function uploadVideo() {
+    if (!uploadFile) return;
+    setBusy("upload-video");
+    setError("");
+    setNotice("");
+    setUploadProgress(0);
+    const endpoint = `/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`;
+    try {
+      if (!uploadFile.name.toLowerCase().endsWith(".mp4") || uploadFile.type !== "video/mp4" ||
+          !uploadFile.size || uploadFile.size > maxUploadBytes) {
+        throw new Error("Choose an MP4 video no larger than 100 MB.");
+      }
+      const start = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start-upload", size: uploadFile.size }),
+      });
+      const started = await start.json() as Data;
+      if (!start.ok || !started.uploadId) throw new Error(started.detail ?? "Could not start video upload");
+      const count = Math.ceil(uploadFile.size / uploadChunkBytes);
+      for (let index = 0; index < count; index += 1) {
+        const response = await fetch(`${endpoint}?action=upload-chunk&uploadId=${encodeURIComponent(started.uploadId)}&index=${index}`, {
+          method: "POST", headers: { "Content-Type": "application/octet-stream" },
+          body: uploadFile.slice(index * uploadChunkBytes, (index + 1) * uploadChunkBytes),
+        });
+        if (!response.ok) {
+          const result = await response.json() as Data;
+          throw new Error(result.detail ?? `Upload failed (${response.status})`);
+        }
+        setUploadProgress(Math.round((index + 1) / count * 100));
+      }
+      const finish = await fetch(endpoint, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "finish-upload", uploadId: started.uploadId }),
+      });
+      const finished = await finish.json() as Data;
+      if (!finish.ok) throw new Error(finished.detail ?? `Could not save video (${finish.status})`);
+      setUploadFile(null);
+      setNotice("Video saved to this story. You can publish it to YouTube after saving a video package.");
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (!story && !error) return <p role="status">Loading story…</p>;
   return (
     <section className="workspace-panel">
@@ -368,6 +428,10 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
           </button>
         </div>}
         {!owner && !content.youtubeTitle && <p>No video package has been created for this story yet.</p>}
+        {packagePrompt && <details><summary>Full AI prompt for title, description and script</summary>
+          {packagePromptReconstructed && <p>Original prompt was not saved for this older package; this is reconstructed from the current story.</p>}
+          <pre className="artifact-preview">{packagePrompt}</pre>
+        </details>}
         {content.youtubeTitle && <>
           <div className="form-grid">
             <label>YouTube title<input maxLength={100} value={content.youtubeTitle} readOnly={!owner} onChange={(event) => setContent({ ...content, youtubeTitle: event.target.value })} /></label>
@@ -383,16 +447,27 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
             <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />
             I reviewed the facts and prompt, and will check the rendered speech and captions before posting.
           </label>}
-          {owner && <button type="button" disabled={Boolean(busy) || !falConfigured || !reviewed} onClick={() => void post("generate-video", toPayload())}>
-            {busy === "generate-video" ? "Submitting…" : "Generate video with fal.ai"}
-          </button>}
         </>}
+        {owner && <div className="button-row">
+          <button type="button" disabled={Boolean(busy) || !content.youtubeTitle || !falConfigured || !reviewed} onClick={() => void post("generate-video", toPayload())}>
+            {busy === "generate-video" ? "Submitting…" : "Generate video with fal.ai"}
+          </button>
+          {!content.youtubeTitle && <small>Generate the video package first to enable fal.ai generation.</small>}
+        </div>}
+        {owner && <div>
+          <label>Upload an MP4 video to this story (up to 100 MB)
+            <input type="file" accept="video/mp4,.mp4" disabled={Boolean(busy)} onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProgress(0); }} />
+          </label>
+          <button type="button" className="secondary" disabled={Boolean(busy) || !uploadFile} onClick={() => void uploadVideo()}>
+            {busy === "upload-video" ? `Uploading… ${uploadProgress}%` : "Upload video"}
+          </button>
+        </div>}
         {notice && <p role="status">{notice}</p>}
         {error && <p role="alert">{error}</p>}
         <h2>Generated videos</h2>
         {videos.length === 0 ? <p>No video generations yet.</p> : <div className="story-list">
           {videos.map((video) => <article className="story-card" key={video._id}>
-            <h3>{new Date(video.created_at).toLocaleString()} · {video.status.replaceAll("_", " ")}</h3>
+            <h3>{new Date(video.created_at).toLocaleString()} · {video.source === "upload" ? "Uploaded video" : video.status.replaceAll("_", " ")}</h3>
             {video.drive_url && <p><a href={video.drive_url} target="_blank" rel="noreferrer">Open video in Google Drive</a></p>}
             {video.drive_file_id && <p>Stored file reference: {video.drive_file_id}</p>}
             {video.youtube_url && <p>
@@ -408,7 +483,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
               <button type="button" className="secondary" disabled={Boolean(busy) || video.youtube_upload_status === "uploading"} onClick={() => void post("publish-youtube", toPayload(), { videoId: video._id, privacyStatus })}>
                 {video.youtube_upload_status === "playlist_failed" ? "Retry playlist add" : video.youtube_upload_status === "failed" ? "Retry YouTube upload" : `Upload to YouTube (${privacyStatus})`}
               </button>}
-            <details><summary>Prompt used for this generation</summary><pre className="artifact-preview">{video.prompt}</pre></details>
+            {video.source !== "upload" && <details><summary>Prompt used for this generation</summary><pre className="artifact-preview">{video.prompt}</pre></details>}
             {video.error && <p role="alert">{video.error}</p>}
             {owner && video.status === "upload_failed" && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void refreshVideo(video._id)}>Retry Google Drive upload</button>}
             {activeStatuses.has(video.status) && <p role="status">{owner ? "Generation status refreshes automatically." : "Generation status updates when the owner opens this story."}</p>}

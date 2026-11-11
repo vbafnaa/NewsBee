@@ -22,10 +22,12 @@ export async function POST(request: Request) {
     const executed = await runOne(deps);
     after(async () => {
       try {
-        // In the cloud the queue can delay a message. Locally a wait is left to the next poller tick.
+        // An HTTP recovery must keep handing off over HTTP even when cloud queue delivery is broken.
+        // Delayed retries still use the durable queue in cloud mode; Resume can recover them again.
         await continueQueue(deps, executed, async (delaySeconds) => {
-          if (deps.settings.mode === "cloud") await queueNextJob(delaySeconds);
-          else if (!delaySeconds) await callNextJob(request.url);
+          if (delaySeconds) {
+            if (deps.settings.mode === "cloud") await queueNextJob(delaySeconds);
+          } else await callNextJob(request.url);
         });
       } catch (error) {
         log.error("followup_failed", { error: String(error) });

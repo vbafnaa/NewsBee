@@ -64,3 +64,16 @@ it("rejects the local model's fabricated sparse-source article, even without num
   });
   expect(errors).toEqual(expect.arrayContaining(["summary:unsupported_name:Elm", "summary:unsupported_name:Oakwood"]));
 });
+it('does not convert a contractor plan into a secured contract or recovery', () => {
+  const source = ['Seattle Parks now plans on having the contractor under contract by early 2027 with the goal of construction beginning winter/spring 2027.'];
+  expect(groundingErrors('The city is now under contract with a contractor by early 2027.', source)).toContain('unsupported_contract_status');
+  expect(groundingErrors('Dahl Field renovation is back on track.', source)).toContain('unsupported_recovery');
+  expect(groundingErrors('Seattle Parks plans on having the contractor under contract by early 2027.', source)).toEqual([]);
+  expect(groundingErrors('The city is under contract.', ['The city is under contract.'])).toEqual([]);
+});
+it('rejects regular attendance claims that contradict a no-school notice', () => {
+  expect(groundingErrors('Students will attend classes as usual.', ['Veterans Day observed, no school.'])).toContain('unsupported_closure_contradiction');
+});
+it('preserves expected contract wording without turning it into a secured contract', () => {
+  expect(groundingErrors('The contractor is expected to be under contract by early 2027.', ['Seattle Parks plans on having the contractor under contract by early 2027.'])).toEqual([]);
+});

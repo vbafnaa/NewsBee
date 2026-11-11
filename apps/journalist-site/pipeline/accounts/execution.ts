@@ -82,7 +82,7 @@ export function deploymentCredentialDefaults() {
       modelDailyCalls: settings.modelDailyCalls,
       tavilySearchApiKey: settings.tavilySearchApiKey ? "configured" : null,
       integrations: Object.fromEntries(Object.entries(settings.integrations).map(([key, value]) => [
-        key, /Key$/.test(key) ? value ? "configured" : null : value,
+        key, /(?:Key|Zone)$/.test(key) ? value ? "configured" : null : value,
       ])),
       configurationError: null,
     };
@@ -143,9 +143,9 @@ export function capabilityReasons(settings: Settings, options: RunOptions, searc
     }
     if (needs.agent !== false && !localModel && !(options.paid.agent_model && options.paid.agent_model > 0)) reasons.push("Enable the agent model budget for agentic work.");
   }
-  if (options.classifier !== "off" && !(keys.typesafeKey || keys.openrouterKey)) reasons.push("Jev classification needs your own TypeSafe or OpenRouter key, or switch classification off.");
+  if (options.classifier !== "off" && !(keys.typesafeKey || keys.openrouterKey)) reasons.push(`Jev classification needs ${deployment ? "a deployment or personal" : "your own"} TypeSafe or OpenRouter key, or switch classification off.`);
   for (const [service, present] of Object.entries({ scrapingbee: keys.scrapingbeeKey, brightdata_open: keys.brightdataKey && keys.brightdataUnlockerZone, attom: keys.attomKey, jev: keys.typesafeKey || keys.openrouterKey })) {
-    if ((options.paid[service as keyof RunOptions["paid"]] ?? 0) > 0 && !present) reasons.push(`${service} is enabled but has no personal key. Disable it or add your own key.`);
+    if ((options.paid[service as keyof RunOptions["paid"]] ?? 0) > 0 && !present) reasons.push(`${service} is enabled but has no ${deployment ? "deployment" : "personal"} key. Disable it or add your own key.`);
   }
   return reasons;
 }

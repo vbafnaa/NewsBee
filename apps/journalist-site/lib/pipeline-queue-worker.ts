@@ -3,7 +3,7 @@ import { pipelineDeps } from "./pipeline";
 import { logger } from "@/pipeline/core/log";
 import { continueQueue, maintain } from "@/pipeline/orchestration/dispatch";
 import { runOne } from "@/pipeline/orchestration/orchestrator";
-import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
+import { markQueueDelivery, recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 
 const log = logger("pipeline-queue");
 
@@ -11,6 +11,7 @@ const log = logger("pipeline-queue");
 export async function processNextJob() {
   const deps = await pipelineDeps();
   try {
+    await markQueueDelivery(deps.db);
     const maintained = await maintain(deps);
     const executed = await runOne(deps);
     await continueQueue(deps, executed, queueNextJob);

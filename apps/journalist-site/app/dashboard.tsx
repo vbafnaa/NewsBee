@@ -10,6 +10,7 @@ import { ExecutionNotice, RunExecutionSummary, useExecutionPolicy, executionDisa
 import ExplainedButton from "./components/explained-button";
 import type { ExecutionBinding } from "@/pipeline/accounts/execution";
 import { editionPipelineProgress, sourcePipelineProgress, type RunProgressJob, type RunProgressStage } from "./run-progress";
+import { availableMapStages, mapJobIsPast } from "@/pipeline/orchestration/map-stage-availability";
 
 type System = { fscskey: string; name: string; website: string | null };
 type Government = { status?: string; platform?: string | null; tenant?: string | null };
@@ -43,8 +44,9 @@ type Health = {
   locations: LocationHealth[];
 };
 type RunSource = { source_id: string; job_id: string | null; name: string; status: string; result_status: string | null; detail: string | null; event_count: number; shortlisted: number; error: string | null };
-type Story = { story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[]; rank?: number | null; why?: string | null; image?: { status: string; reason: string; provider?: string | null } };
-type Job = RunProgressJob & { id: string; kind: string; status: string; attempts: number; error: string | null; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
+type Story = { when_where?: string | null; draft?: { headline: string; summary: string } | null; source_brief?: boolean; sources?: { name: string; url: string | null }[]; story_id: string; source_id: string; tier: string; disposition: string; title: string | null; reasons: string[]; rank?: number | null; why?: string | null; image?: { status: string; reason: string; provider?: string | null } };
+type AgentActivity = { pass: number; models: Array<{ role: string; provider: string; model: string }>; steps: number; round: number | null; stage: string | null; last_step: { action: string; tool: string | null; category: string | null; result: string } | null };
+type Job = RunProgressJob & { id: string; kind: string; status: string; attempts: number; error: string | null; discovery_label?: string; agent?: AgentActivity; log_file?: string | null; log_error?: string | null; dispatch_error?: string | null; dispatch_error_at?: number | null; dispatched_at?: number | null };
 type Run = { _id: string; kind?: string; execution?: ExecutionBinding; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; trigger: { by: string; kind: string }; published: { items: number; held: number } | null; error?: string | null; diagnostics?: Diagnostics | null; stage_transitions?: { status: string }[] };
 type RunDetail = {
   funding?: { funding: "personal" | "admin"; provider: string; model: string; reason: string | null; ok: boolean; at: number }[];
@@ -66,7 +68,12 @@ const stageIndex = (status: string) => status === "published" || status === "bui
   : ["awaiting_finish", "finishing", "publishing"].includes(status) ? 2
     : ["awaiting_authoring", "authoring"].includes(status) ? 1 : status === "collecting" ? 0 : -1;
 const stalled = (diagnostics: Diagnostics | null | undefined) => Boolean(diagnostics?.issues.some((issue) => issue.severity === "failed"));
-const jobLabel = (job: Job) => job.kind === "author_start" ? "Filter and merge items"
+const agentModels = (agent: AgentActivity) => agent.models.length
+  ? agent.models.map((call) => `${call.role === "discovery" ? "Source check" : "Planning & triage"}: ${call.provider} / ${call.model}`).join(" · ")
+  : "No model calls recorded for this job";
+const jobLabel = (job: Job) => job.kind === "agent_round" ? `Explore additional sources · agent job ${job.agent?.pass ?? "—"}`
+  : job.kind === "discover" && job.discovery_label ? `Discover ${job.discovery_label}`
+  : job.kind === "author_start" ? "Filter and merge items"
   : job.kind === "author_rank" ? `Rank ${String(job.payload?.section ?? "section")} candidates`
     : job.kind === "author_story" ? `Write story ${Number(job.payload?.step ?? 0) + 1}`
       : job.kind === "author_finish" ? "Build edition front page and email" : job.kind.replaceAll("_", " ");
@@ -142,7 +149,7 @@ function formatJobLog(content: string) {
   }).join("\n");
 }
 
-function JobLog({ job, source, initiallyOpen, retry, busy }: { job: Job; source?: RunSource; initiallyOpen: boolean; retry?: () => void; busy: boolean }) {
+export function JobLog({ job, run, source, initiallyOpen, retry, busy }: { job: Job; run?: Run; source?: RunSource; initiallyOpen: boolean; retry?: () => void; busy: boolean }) {
   const [expanded, setExpanded] = useState(initiallyOpen);
   const [content, setContent] = useState<string | null>(null);
   const [logError, setLogError] = useState("");
@@ -176,13 +183,20 @@ function JobLog({ job, source, initiallyOpen, retry, busy }: { job: Job; source?
 
   return <details className="job-log-entry" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
     <summary>
-      <span><strong>{source?.name ?? jobLabel(job)}</strong> <small>{job.kind.replaceAll("_", " ")} · {job.attempts} {job.attempts === 1 ? "attempt" : "attempts"} · {job.started_at ? `started ${time(job.started_at)}` : "queued"} · {job.id}</small></span>
+      <span><strong>{source?.name ?? jobLabel(job)}</strong> <small>{job.kind.replaceAll("_", " ")} · {job.attempts} {job.attempts === 1 ? "attempt" : "attempts"} · {job.started_at ? `started ${time(job.started_at)}` : "queued"} · {job.id}</small>
+        {job.agent && <small>{agentModels(job.agent)} · {job.agent.steps} steps recorded</small>}</span>
       <span className={`status-badge tone-${job.status === "running" || job.status === "pending" ? "running" : job.status}`}>{job.status}</span>
     </summary>
     <p className="chart-caption">{job.attempts} {job.attempts === 1 ? "attempt" : "attempts"}{job.started_at ? ` · started ${time(job.started_at)}` : ""}{job.completed_at ? ` · finished ${time(job.completed_at)}` : ""}
       {source && ` · ${source.result_status ?? source.status} · ${source.event_count} items kept`}
     </p>
     {source?.detail && <p className="chart-caption">{source.detail}</p>}
+    {job.agent && <div className="agent-job-detail">
+      <p>This agent looks for lasting local sources the fixed readers missed. It plans searches by category and tool, checks new pages, and uses a model check to judge proposed sources.</p>
+      <p className="chart-caption">{agentModels(job.agent)} · {job.agent.steps} steps recorded{job.agent.round ? ` · round ${job.agent.round}` : ""}{job.agent.stage ? ` · ${job.agent.stage.replaceAll("_", " ")}` : ""}</p>
+      {job.agent.last_step && <p className="chart-caption">Latest step: {job.agent.last_step.action.replaceAll("_", " ")}{job.agent.last_step.category ? ` · ${job.agent.last_step.category.replaceAll("_", " ")}` : ""}{job.agent.last_step.tool ? ` · ${job.agent.last_step.tool}` : ""} — {job.agent.last_step.result}</p>}
+      {run?.kind === "map" && <Link href={`/source-map?${new URLSearchParams({ location: run.location_id, tab: "runs", run: run._id })}`}>See all agent search steps and source decisions</Link>}
+    </div>}
     {errors.length > 0 && <p className="stage-error">{errors.join("; ")}</p>}
     {job.status === "running" && <p className="chart-caption" role="status">Live log updates every 3 seconds while this step runs.</p>}
     {retry && <button type="button" className="secondary" disabled={busy} onClick={retry}>
@@ -264,7 +278,7 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
   }, [locationId, openRun]);
 
   useEffect(() => {
-    if (detail && window.location.search.includes("run=")) {
+    if (detail && kind !== "map" && window.location.search.includes("run=")) {
       document.getElementById("run-inspector")?.scrollIntoView({ block: "start" });
     }
   }, [detail?.run._id]);
@@ -335,7 +349,8 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
 
   function canRetryStep(job: Job) {
     if (!detail || !["failed", "cancelled"].includes(job.status)) return false;
-    const stage = ["discover", "agent_round", "plan_sources", "collect_source"].includes(job.kind) ? "collecting" : job.kind === "author_finish" ? "finishing" : "authoring";
+    if (detail.run.kind === "map" && mapJobIsPast(job.kind, detail.jobs)) return false;
+    const stage = detail.run.kind === "map" ? "mapping" : ["discover", "agent_round", "plan_sources", "collect_source"].includes(job.kind) ? "collecting" : job.kind === "author_finish" ? "finishing" : "authoring";
     if (detail.run.status === "failed") {
       const last = detail.run.stage_transitions?.filter((transition) => PROCESSING.includes(transition.status)).at(-1)?.status;
       return (last === "publishing" ? "finishing" : last) === stage;
@@ -458,6 +473,12 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
             <h2>{detail.run.location_name} · {stageLabel(detail.run.status, detail.health.candidate_count)} · {detail.run.window.join(" to ")}</h2>
             <div className="card-actions">
               {stageAction(detail.run._id, detail.run.status, detail.health.candidate_count)}
+              {availableMapStages(detail.run, detail.jobs).map((stage) => <ExplainedButton key={stage} className="secondary"
+                disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "spend", detail.run._id)}
+                onClick={() => void act(stage === "review" ? "Source review started." : "Saving source addresses started.", () =>
+                  api(`runs/${encodeURIComponent(detail.run._id)}/map-stage`, { method: "POST", body: JSON.stringify({ stage }) }))}>
+                {stage === "review" ? "Review and deduplicate sources" : "Save source addresses"}
+              </ExplainedButton>)}
               {CANCELLABLE.includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
               {detail.run.status === "built" && <Link className="button" href={`/locations/${encodeURIComponent(detail.run.location_id)}?tab=published`}>Publish</Link>}
               {["mapped", "built", "published", "failed", "cancelled"].includes(detail.run.status) && <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "restart", detail.run._id)} onClick={() => void restartSelected(detail.run)}>Restart run</ExplainedButton>}
@@ -476,14 +497,26 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
           </>}
           {emptyCollection(detail.run, detail.run.status, detail.health.candidate_count)}
           <h3>Run log</h3>
-          {detail.run.status === "failed" && <p>Open the failed job and choose <strong>Retry failed step only</strong> to keep completed jobs and authored work. Restart run starts a new collection.</p>}
+          {detail.run.status === "failed" && <p>Open the failed job and choose <strong>Retry failed step only</strong> to keep completed work. For source maps, use the available review or save action above to continue with sources already found. Restart run starts a new collection.</p>}
           <div className="job-log-list">{detail.jobs.map((job) =>
-            <JobLog key={job.id} job={job} source={detail.run.sources.find((source) => source.job_id === job.id)}
+            <JobLog key={job.id} job={job} run={detail.run} source={detail.run.sources.find((source) => source.job_id === job.id)}
               initiallyOpen={job.id === defaultLogId} busy={busy}
               retry={canRetryStep(job) && canSpend(detail.run._id) ? () => void act("Retrying only the selected step; completed work is preserved.", () =>
                 api(`runs/${encodeURIComponent(detail.run._id)}/jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" })) : undefined} />
           )}</div>
           {!detail.jobs.length && <p>No work has been queued for this run.</p>}
+          <section aria-label="Generated articles" id="generated-articles">
+            <h3>Generated articles</h3>
+            {detail.stories.filter(story => story.draft).map(story => <article className="panel" key={story.story_id}>
+              <p>{story.disposition === "checks_passed" ? (detail.run.status === "published" ? "Validated article · published to Reader" : "Validated draft · not published to Reader") : "Held draft · needs review"}{story.source_brief ? " · exact-source brief" : ""}</p>
+              <h4>{story.draft!.headline}</h4>
+              <p>{story.draft!.summary}</p>
+              {story.when_where && <p>{story.when_where}</p>}
+              {Boolean(story.sources?.length) && <p>Sources: {story.sources!.map((source, index) => <span key={`${source.url}:${index}`}>{index > 0 ? " · " : ""}{source.url && /^https?:\/\//i.test(source.url) ? <a href={source.url} target="_blank" rel="noopener noreferrer">{source.name}</a> : source.name}</span>)}</p>}
+              {story.reasons.length > 0 && <p>Review: {story.reasons.join("; ")}</p>}
+            </article>)}
+            {!detail.stories.some(story => story.draft) && <p>No article drafts yet.</p>}
+          </section>
           <h3>Stories</h3>
           {detail.run.status === "awaiting_finish" && <button type="button" className="secondary" disabled={busy}
             onClick={() => void act("Retrying photo sourcing; validated story text is preserved.", () =>

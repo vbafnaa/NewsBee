@@ -8,7 +8,7 @@ import SourceMapManager from "../locations/[locationId]/source-map-manager";
 import SourceRuns from "./source-runs";
 
 /**
- * Source map: All sources (the source network) and Source runs (what each run did), read-only for
+ * Source map: All sources (the source network) and Collect sources (what each run did), read-only for
  * everyone. Sources are edited, and runs started, only in a location's workspace, under Sources.
  */
 export default function SourceReview({ locationId, tab, runId, signedIn, showLocationPicker = true, locationName, basePath }: { locationId: string; tab: "sources" | "runs"; runId: string | null; signedIn: boolean; showLocationPicker?: boolean; locationName?: string; basePath?: string }) {
@@ -32,12 +32,12 @@ export default function SourceReview({ locationId, tab, runId, signedIn, showLoc
   return <>
     <nav className="tabs" aria-label="Source map views">
       <Link aria-current={tab === "sources" ? "page" : undefined} href={path(locationId, "sources")}>All sources</Link>
-      <Link aria-current={tab === "runs" ? "page" : undefined} href={path(locationId, "runs")}>Source runs</Link>
+      <Link aria-current={tab === "runs" ? "page" : undefined} href={path(locationId, "runs")}>Collect sources</Link>
     </nav>
     {error && <p className="alert" role="alert">{error}</p>}
     {tab === "runs" ? <SourceRuns key={locationId} locationId={locationId} runId={runId} canEdit={false} locations={locations}
       routeFor={basePath ? (location, run) => path(location, "runs", run) : undefined}
-      editHref={signedIn && locationId ? `/locations/${encodeURIComponent(locationId)}?${new URLSearchParams({ tab: "sources", ...(runId ? { run: runId } : {}) })}` : null} /> : <>
+      editHref={signedIn && locationId ? `/locations/${encodeURIComponent(locationId)}?${new URLSearchParams({ tab: "collect-sources", ...(runId ? { run: runId } : {}) })}` : null} /> : <>
       <section className="workspace-toolbar panel">
         {showLocationPicker && <label className="field">Coverage area<select value={locationId} onChange={(event) => router.push(path(event.target.value))}>
           <option value="">All locations · source network</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}

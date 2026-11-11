@@ -1,3 +1,5 @@
+import { VERIFICATION_POLICY } from "../model/claim-verifier";
+import { storySources } from "../../../../shared/source-attribution";
 /**
  * Authoring: from a run's collected items to a published edition, in bounded steps.
  *
@@ -55,7 +57,7 @@ import { uniqueEditionPhotos } from "../images/uniqueness";
 import { planIllustrations, ILLUSTRATION_POLICY } from "../../../../shared/editorial-illustrations";
 
 export const DEFAULT_MODEL = "qwen3:4b";
-export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}+${EVIDENCE_POLICY}`;
+export const VALIDATION_POLICY = `${ranking.RANKING_POLICY}+${writer.WRITING_POLICY}+${policy.POLICY}+${EVIDENCE_POLICY}+${VERIFICATION_POLICY}`;
 export const WIDER_TIERS = new Set(["region", "nearby"]);
 const PRIORITY_SECTIONS = new Set<string>(["safety", "obituaries", "events", "real_estate", "sports"]);
 const PRIMARY_TIERS = new Set(["official", "organisation", "business"]);
@@ -85,7 +87,7 @@ function digestDraft(story: Story): writer.ItemDraft {
 }
 function community(name: string) { return name.split(",")[0]; }
 function storyCandidates(stories: Story[]) { return stories.map((story) => ({ id: story.id, title: story.title, description: rankingDescription(story), occurrences: story.scheduledOccurrences.length, venues: story.venues, first_date: story.first.event_date, kind: story.kind, tier: String(story.facts.tier ?? "local") })); }
-function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
+function recordStory(story: Story) { return { id: story.id, title: story.title, description: story.description, kind: story.kind, legacy_story_id: story.facts.legacy_story_id ?? null, occurrences: story.occurrences.map((item) => ({ ...item })) }; }
 const SECTION_ORDER = new Map(SECTIONS.map((section, index) => [section.id as string, index]));
 function heldReasons(entries: Array<{ disposition: string; result: Record<string, any> }>) {
   const counts: Record<string, number> = {};
@@ -94,7 +96,7 @@ function heldReasons(entries: Array<{ disposition: string; result: Record<string
 }
 function cacheKey(settings: Settings, locationId: string, candidate: writer.StoryInput & { venues: string[] }) {
   // The profile is part of the key, so an exploration draft is never reused by a strict run.
-  const values = { title: candidate.title, description: candidate.description ?? null, venues: candidate.venues, kind: candidate.kind ?? "event", floor_flags: candidate.floor_flags ?? null, people: candidate.people ?? [], ...(rulesOff("quality") || rulesOff("sensitive") || rulesOff("topic_content") || relaxedContentAllowed() ? { loosened: true } : {}) };
+  const values = { title: candidate.title, description: candidate.description ?? null, venues: candidate.venues, kind: candidate.kind ?? "event", as_of: candidate.as_of ?? null, source_date: candidate.source_date ?? null, floor_flags: candidate.floor_flags ?? null, people: candidate.people ?? [], verification_sources: candidate.verification_sources ?? [], ...(rulesOff("quality") || rulesOff("sensitive") || rulesOff("topic_content") || relaxedContentAllowed() ? { loosened: true } : {}) };
   const sortedContent = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)));
   const key = createHash("sha256").update(pythonJson([configuredModel(settings) || DEFAULT_MODEL, VALIDATION_POLICY, sortedContent])).digest("hex");
   return `${locationId}:${key}`;
@@ -102,8 +104,8 @@ function cacheKey(settings: Settings, locationId: string, candidate: writer.Stor
 async function checkedItem(deps: AuthoringDeps, candidate: writer.StoryInput & { community_id: string; venues: string[] }) {
   const key = cacheKey(deps.settings, candidate.community_id, candidate);
   const cached = await deps.db.collection(COLLECTIONS.storyCache).findOne({ cache_key: key });
-  if (cached?.result?.draft && writer.validateItem(candidate, cached.result.draft).length === 0) return { ...cached.result, cache_hit: true, wall_seconds: 0 };
-  const result = await writer.writeItem(deps.model, candidate);
+  if (cached?.result?.draft && cached.result.verification?.policy === VERIFICATION_POLICY && cached.result.verification.checks_passed === true && writer.validateItem(candidate, cached.result.draft).length === 0) return { ...cached.result, cache_hit: true, wall_seconds: 0 };
+  const result = await writer.writeItem(deps.model, candidate, { verify: true });
   if (result.disposition === "checks_passed") await deps.db.collection(COLLECTIONS.storyCache).updateOne({ cache_key: key }, { $set: { cache_key: key, location_id: candidate.community_id, result } }, { upsert: true });
   return { ...result, cache_hit: false };
 }
@@ -368,7 +370,11 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   // Strict sports coverage stays positive about students; exploration prints what's available.
   const sportsRule = candidate.section === "sports" && !rulesOff("topic_content") ? " Name students only for a win, award or honour. Leave out injuries and discipline." : "";
   const candidateForWrite = {
-    ...candidate, description: enriched, community_id: draft.location_id, venues: story.venues,
+    ...candidate, description: enriched, as_of: draft.today, source_date: story.first.event_date, community_id: draft.location_id, venues: story.venues,
+    verification_sources: [
+      { id: "source-record", url: story.first.source_url, text: [story.title, story.description ?? "", whenWhere(story)].join("\n") },
+      ...(usableText ? (packet?.sources ?? []).filter(source => source.passages.length).map((source, index) => ({ id: `source-page-${index}`, url: source.final_url ?? source.url, text: source.passages.join("\n") })) : []),
+    ],
     floor_flags: flags, floor_instructions: `${floorInstructions(flags)}${sportsRule}`, people: details.people, update_of: story.facts.update_of ?? null,
   };
   const eligibility = [...new Set([...policy.errors(candidateForWrite), ...policy.eventDateErrors({ ...story, first_date: story.first.event_date })])].concat(policy.sourceErrors(story.occurrences.map((item) => item.source_url)));
@@ -377,6 +383,7 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const blockedByRules: string[] = [];
   let result: Record<string, any>;
   if (withdrawn) result = { disposition: "held", checks_passed: false, validation_errors: [...eligibility, "previously_withdrawn"], attempts: 0, wall_seconds: 0 };
+  else if (Array.isArray(story.facts.merge_conflicts) && story.facts.merge_conflicts.length) result = { disposition: "held", checks_passed: false, validation_errors: story.facts.merge_conflicts, attempts: 0, wall_seconds: 0 };
   else if (eligibility.includes("conflicting_event_dates") || eligibility.length && !rulesOff("quality")) result = { disposition: "held", checks_passed: false, validation_errors: eligibility, attempts: 0, wall_seconds: 0 };
   else if (digest) result = { disposition: "checks_passed", checks_passed: true, draft: digest, digest: true, validation_errors: [], attempts: 0, wall_seconds: 0 };
   else {
@@ -398,6 +405,10 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
     story: recordStory(story), writing_source: { id: candidateForWrite.id, title: candidateForWrite.title, description: candidateForWrite.description, venues: candidateForWrite.venues, kind: candidateForWrite.kind }, details, floor: flags,
     ranking: { rank: candidate.rank, section_rank: candidate.section_rank, score: candidate.score, rated_by: candidate.rated_by, ...candidate.rating, ...(candidate.explain ? { explain: candidate.explain } : {}) },
     when_where: whenWhere(story), source_url: story.first.source_url, tier: candidate.tier, section: candidate.section, also_from: story.facts.also_from ?? [],
+    sources: storySources([
+      ...story.occurrences.map((item) => ({ url: item.source_url, name: item.source_name ?? draft.source_results.find((source) => source.source_id === item.source_id)?.name ?? hostOf(item.source_url) ?? "Local source" })),
+      ...(packet?.sources ?? []).filter((source) => source.passages.length > 0).map((source) => ({ url: source.final_url ?? source.url, name: hostOf(source.final_url ?? source.url) ?? "Supporting source" })),
+    ]),
     image_caption: story.facts.image_caption ?? null, image_credit: story.facts.image_credit ?? null,
   });
   const position = entries.length;
@@ -471,8 +482,9 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const approvedImages = illustrated ? new Map<string, StoryImage | null>() : new Map(await Promise.all(ordered.map(async (entry) => [entry.story_id,
     await publishableStoryImage(deps.db, draftId, entry.story_id, draft.location_id, entry.source_id, undefined, entry === lead)] as const)));
   const items = await uniqueEditionPhotos(deps.db, ordered.map((entry, index) => ({
-    story_id: entry.result.story.id, headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date,
+    story_id: entry.result.story.id, ...(entry.result.story.legacy_story_id ? { legacy_story_id: entry.result.story.legacy_story_id } : {}), headline: entry.result.draft.headline, blurb: entry.result.draft.summary, when_where: entry.result.when_where, event_date: entry.event_date,
     source_url: entry.result.source_url ?? null, rank: index + 1, kind: entry.result.story.kind ?? "event", source_name: sourceName(entry.source_id, entry.result.source_url),
+    sources: entry.result.sources ?? storySources([{ url: entry.result.source_url, name: sourceName(entry.source_id, entry.result.source_url) }]),
     section: sectionLabel(entry.section), section_id: entry.section, local: entry.tier === "local", also_from: entry.result.also_from ?? [],
     ...(entry.result.digest ? { digest: true } : {}),
     ...(entry === lead ? { lead: true } : {}),

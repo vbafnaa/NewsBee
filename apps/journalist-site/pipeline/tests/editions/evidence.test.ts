@@ -221,6 +221,13 @@ async function seed(transport: HttpTransport, lightModel?: FakeModel) {
   await db.collection<DraftDoc>(COLLECTIONS.editions).insertOne(draft);
   await collectedItems(db).insertOne({ _id: "item", run_id: "run", location_id: "fixture-wa", source_id: "web:garden", source_name: "Garden", title: "Garden plans", url: source, event_date: "2026-10-29", status: "pooled", reason: null, step: "ranking", facts: events[0].facts, story_id: id, section: "news", created_at: Date.now() / 1000 });
   const model = new FakeModel(({ prompt }) => {
+    if (prompt.startsWith("Independently fact-check")) {
+      const data = JSON.parse(prompt.split("Review data:\n")[1]);
+      return { claims: data.claims.map((claim: { id: string; text: string }) => {
+        const source = data.sources.find((source: { text: string }) => source.text.includes(claim.text)) ?? data.sources.find((source: { text: string }) => source.text.includes(opening))!;
+        return { id: claim.id, verdict: "supported", reason: "The fixture record explicitly states these facts.", evidence: [{ source_id: source.id, quote: source.text.includes(claim.text) ? claim.text : opening }] };
+      }) };
+    }
     if (prompt.includes("Candidates:\n")) {
       const candidates = JSON.parse(prompt.split("Candidates:\n")[1]) as Array<{ id: string }>;
       return prompt.startsWith("You are the editor") ? { order: candidates.map((item) => item.id) } : { ratings: candidates.map((item) => ({ id: item.id, category: "other", civic: 2, appeal: 1, special: 1 })) };
@@ -310,13 +317,16 @@ it("refetches relaxed-run cache text before strict ranking or writing", async ()
   expect(evidenceText(evidenceFor(item))).toContain(action);
 });
 
-it("holds unsupported numbers after source collection, evidence ranking and article generation", async () => {
+it("discards unsupported numbers after source collection and uses only a separately verified exact-source brief", async () => {
   const { deps, model } = await seed(transport());
   await rankSection(deps, "run", "news");
   vi.spyOn(model, "generateStructured").mockResolvedValue({ response: JSON.stringify({ headline: "Garden plans at Cedar Park", summary: "The council approved 999 playgrounds." }), done: true });
   const result = await authorNextStory(deps, "run");
-  expect(result.result).toMatchObject({ disposition: "held", attempts: 2, validation_errors: expect.arrayContaining(["summary:unsupported_number:999"]) });
-  expect(await db.collection(COLLECTIONS.storyCache).countDocuments()).toBe(0);
+  expect(result.result).toMatchObject({ disposition: "checks_passed", source_brief: true, attempts: 2, verification: { method: "exact_source_brief" }, rejected_final: { errors: expect.arrayContaining(["summary:unsupported_number:999"]) } });
+  expect(result.result?.draft.summary).not.toContain("999");
+  const cached = await db.collection(COLLECTIONS.storyCache).findOne({});
+  expect(cached?.result).toMatchObject({ source_brief: true, verification: { method: "exact_source_brief" } });
+  expect(cached?.result.draft.summary).not.toContain("999");
 });
 
 it("does not approve invented facts when quality selection is relaxed", async () => {
@@ -324,7 +334,8 @@ it("does not approve invented facts when quality selection is relaxed", async ()
   await rankSection(deps, "run", "news");
   vi.spyOn(model, "generateStructured").mockResolvedValue({ response: JSON.stringify({ headline: "Garden plans at Cedar Park", summary: "The council approved 999 playgrounds." }), done: true });
   const result = await withRunContext({ db, runId: "run", locationId: "fixture-wa", options: { ...defaultRunOptions({}), guardrails_off: ["quality"] } }, () => authorNextStory(deps, "run"));
-  expect(result.result).toMatchObject({ disposition: "held", validation_errors: expect.arrayContaining(["summary:unsupported_number:999"]) });
+  expect(result.result).toMatchObject({ disposition: "checks_passed", source_brief: true, rejected_final: { errors: expect.arrayContaining(["summary:unsupported_number:999"]) } });
+  expect(result.result?.draft.summary).not.toContain("999");
 });
 
 it("keeps the exact writing evidence for edition-front checks, not just the original feed snippet", async () => {
@@ -333,4 +344,35 @@ it("keeps the exact writing evidence for edition-front checks, not just the orig
   const result = await authorNextStory(deps, "run");
   expect(result.result?.writing_source.description).toContain(action);
   expect(result.result?.story.description).not.toContain(action);
+});
+
+it("holds conflicting merged source times before making a writer call", async () => {
+  const { deps, model } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  await db.collection(COLLECTIONS.editions).updateOne({ id: "run" }, { $set: { "events.0.facts.merge_conflicts": ["conflicting_source_times"] } });
+  const calls = model.calls.length;
+  const outcome = await authorNextStory(deps, "run");
+  expect(outcome.result).toMatchObject({ disposition: "held", validation_errors: ["conflicting_source_times"] });
+  expect(model.calls).toHaveLength(calls);
+});
+it("carries every merged report and fetched supporting source into attribution", async () => {
+  const { deps } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  const draft = await db.collection<DraftDoc>(COLLECTIONS.editions).findOne({ id: "run" });
+  const original = draft!.events[0];
+  const copy = { source_id: "web:secondary", facts: { ...original.facts, source_event_id: "secondary", source_name: "Community News", source_url: "https://community.example/report" } };
+  await db.collection(COLLECTIONS.editions).updateOne({ id: "run" }, { $set: { events: [original, copy] } });
+  const outcome = await authorNextStory(deps, "run");
+  expect(outcome.result?.sources).toEqual(expect.arrayContaining([
+    { name: "Community News", url: "https://community.example/report" },
+    expect.objectContaining({ url: original.facts.source_url }),
+  ]));
+});
+it("does not promote unsupported factual claims in exploration mode", async () => {
+  const { deps } = await seed(transport());
+  await rankSection(deps, "run", "news");
+  deps.model = new FakeModel(() => ({ headline: "Garden plans at Cedar Park", summary: "The garden will cost 987654 dollars." }));
+  const outcome = await withRunContext({ db, runId: "run", locationId: "fixture-wa", options: { ...defaultRunOptions({}), guardrails: "exploration" } }, () => authorNextStory(deps, "run"));
+  expect(outcome.result).toMatchObject({ disposition: "checks_passed", source_brief: true, rejected_final: { errors: expect.arrayContaining(["summary:unsupported_number:987654"]) } });
+  expect(outcome.result?.draft.summary).not.toContain("987654");
 });
