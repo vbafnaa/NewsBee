@@ -16,6 +16,7 @@ const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
 ---
 <EditionLayout title={title}>
   <SiteHeader town={page.town} today={page.today} visible={page.visible} homeHref={links.home} pageHref={pageHref} />
+  <slot name="welcome" />
   <main id="main" class="nb-container" data-api-url={links.home} data-location-id={page.location.id}
     data-edition-id={page.edition.id} data-track-view={String(!subPage)} data-article-story-id={articleStoryId ?? undefined}>
     {(past || page.edition.corrections.length > 0) && (

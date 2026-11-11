@@ -24,7 +24,7 @@ const locationId = "fixture-town-wa";
 const otherId = "other-town-wa";
 const collection = (name: string) => db.collection<{ _id: string; [key: string]: unknown }>(name);
 const scoped = [COLLECTIONS.manualLinks, COLLECTIONS.linkCache, COLLECTIONS.sourceResults, COLLECTIONS.shortlists,
-  COLLECTIONS.storyCache, COLLECTIONS.withdrawals, COLLECTIONS.videoPackages, "source_map", "discovery_state", "collected_items",
+  COLLECTIONS.storyCache, COLLECTIONS.withdrawals, COLLECTIONS.videoPackages, "source_map", "discovery_state", "collected_items", "story_decisions", "story_reviews",
   COLLECTIONS.youtubeLocationSettings, "edition_maps", "news_publishers", "source_suggestions", "photo_catalog_sources", "photo_catalog_cache", "photo_supply_invites", "photo_supply_submissions", "edition_photo_claims"];
 const retained = [COLLECTIONS.places, COLLECTIONS.libraryOutlets, COLLECTIONS.directorySetup, COLLECTIONS.wideCache,
   COLLECTIONS.publishedStories, COLLECTIONS.modelUsage, "reader_interest_signups", "reader_engagement",

@@ -15,7 +15,8 @@ const { location, town } = page;
 const links = neighborhoodLinks(page);
 ---
 <NeighborhoodPage page={page} title={`${town} | Newsbee`}>
-  <div class="edition-intro"><NeighborhoodWelcome locationId={location.id} mediaMode={page.edition.mediaMode} />
+  <NeighborhoodWelcome slot="welcome" locationId={location.id} mediaMode={page.edition.mediaMode} />
+  <div class="edition-intro">
   {page.articles.length === 0 && (
     <p class="empty">Nothing in {town}'s edition this week yet. Sign up below and we'll send the next one.</p>
   )}

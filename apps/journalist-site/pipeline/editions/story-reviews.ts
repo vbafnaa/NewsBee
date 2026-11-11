@@ -264,9 +264,9 @@ export const CSV_COLUMNS = COLUMNS.map(([name]) => name);
 /** One CSV cell. Text that a spreadsheet would run as a formula is prefixed with a quote mark. */
 export function csvCell(value: unknown) {
   if (value === null || value === undefined) return "";
-  let cell = Array.isArray(value) ? value.join("; ") : String(value);
-  if ((typeof value === "string" || Array.isArray(value)) && /^[=+\-@\t\r]/.test(cell)) cell = `'${cell}`;
-  return /[",\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
+  let text = Array.isArray(value) ? value.join("; ") : String(value);
+  if ((typeof value === "string" || Array.isArray(value)) && /^[=+\-@\t\r\n]/.test(text)) text = `'${text}`;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 export function storyReviewCsv(docs: StoryDecisionDoc[], exportedAt = new Date().toISOString()) {

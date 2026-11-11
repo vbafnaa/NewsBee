@@ -371,6 +371,15 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     const root = await fetchWithin(context, budget, record, new URL("/", home.url).toString(), ACCEPT_HTML);
     if (root) {
       const rootHtml = decode(root.body);
+      const rootFlags = pageRights(root.headers, rootHtml);
+      const rootRights = rightsAction(rootFlags);
+      if (rootRights === "skip") {
+        record.status = "blocked";
+        record.detail = "Site opts out of reuse (noindex, noai or a mining reservation)";
+        return [];
+      }
+      if (rootRights === "link-only") siteRights = "link-only";
+      siteImages = siteImages && imagesAllowed(rootFlags);
       siteName = siteName ?? siteNameOf(rootHtml, root.url);
       feeds.push(...advertisedFeeds(rootHtml, root.url).map((url) => httpsLink(url)).filter((url): url is string => Boolean(url)));
     }
