@@ -507,7 +507,7 @@ describe("proposing", () => {
     await job(0, { steps: 7 });
     const state = await stateOf();
     const saved = await sourceMap(db).findOne({ url: EVENTS });
-    expect(saved).toMatchObject({ status: "proposed", section: "events", gemini: { verdict: "accept", route: "agent" }, found_by: { method: "agent", tool: "dork", tools: ["dork"], query: "Lakeside events" } });
+    expect(saved).toMatchObject({ status: "active", section: "events", gemini: { verdict: "accept", route: "agent" }, found_by: { method: "agent", tool: "dork", tools: ["dork"], query: "Lakeside events" } });
     expect(state.sources[0]).toMatchObject({ url: EVENTS, verdict: "accept", good: true, pending: false, tool: "dork", found_at_step: state.searches![0].step });
     expect(state.checklist.events.accepted.map((item) => item.url)).toContain(EVENTS);
   });

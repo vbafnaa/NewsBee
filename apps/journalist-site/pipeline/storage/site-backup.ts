@@ -2,7 +2,7 @@ import { BSON } from "mongodb";
 import type { Db } from "mongodb";
 import { lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveReaderDriveFolderId } from "../../../../shared/reader-folder";
+import { isMongoChannelFolderId, resolveReaderDriveFolderId } from "../../../../shared/reader-folder";
 import { readerFolder } from "../orchestration/publish";
 import { getArtifacts, localDriveRoot, type ArtifactStore } from "./artifacts";
 import { DriveArtifacts } from "./drive";
@@ -185,7 +185,7 @@ export async function createSiteBackup(db: Db): Promise<SiteBackup> {
     const readerFolder = selectedReaderFolder;
     const pipelineFolder = "pipeline/.newsbee-pipeline";
     roots = [
-      { name: "reader-drive", files: await localFiles(path.join(root, readerFolder)) },
+      { name: "reader-drive", files: isMongoChannelFolderId(readerFolder) ? [] : await localFiles(path.join(root, readerFolder)) },
       { name: "pipeline-drive", files: await localFiles(path.join(root, "pipeline", ".newsbee-pipeline")) },
       { name: "local-drive-extra", files: await localFiles(root, [readerFolder, pipelineFolder]) },
     ];
@@ -196,7 +196,7 @@ export async function createSiteBackup(db: Db): Promise<SiteBackup> {
     if (!pipelineRoot) throw new Error("NEWSBEE_PIPELINE_DRIVE_FOLDER_ID is required to export a complete cloud backup");
     const readerRoot = selectedReaderFolder;
     roots = [
-      { name: "reader-drive", files: await driveFiles(drive, readerRoot) },
+      { name: "reader-drive", files: isMongoChannelFolderId(readerRoot) ? [] : await driveFiles(drive, readerRoot) },
       { name: "pipeline-drive", files: await driveFiles(drive, pipelineRoot) },
     ];
   } else throw new Error("NEWSBEE_MODE must be 'local' or 'cloud'");
@@ -265,7 +265,7 @@ export async function replaceSiteBackup(db: Db, input: unknown) {
     }
     const root = localDriveRoot();
     await rm(root, { recursive: true, force: true });
-    await writeLocalFiles(path.join(root, readerRoot), reader.files);
+    if (!isMongoChannelFolderId(readerRoot)) await writeLocalFiles(path.join(root, readerRoot), reader.files);
     await writeLocalFiles(path.join(root, "pipeline", ".newsbee-pipeline"), pipeline.files);
     if (extra) await writeLocalFiles(root, extra.files);
   } else if (mode === "cloud") {
@@ -279,7 +279,7 @@ export async function replaceSiteBackup(db: Db, input: unknown) {
     }
     const pipelineRoot = process.env.NEWSBEE_PIPELINE_DRIVE_FOLDER_ID?.trim();
     if (!pipelineRoot) throw new Error("Configure NEWSBEE_PIPELINE_DRIVE_FOLDER_ID before importing this backup");
-    await replaceDriveFiles(drive, readerRoot, reader.files);
+    if (!isMongoChannelFolderId(readerRoot)) await replaceDriveFiles(drive, readerRoot, reader.files);
     await replaceDriveFiles(drive, pipelineRoot, [
       ...pipeline.files,
       ...(extra?.files ?? []).map((file) => ({ ...file, path: `.newsbee-local-extra/${file.path}` })),

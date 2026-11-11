@@ -6,6 +6,7 @@ import { readerFolder, writeReaderDirectory } from "../orchestration/publish";
 import { removeLocationFromOutputChannels } from "../orchestration/output-channels";
 import { artifactSegment, type ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
+import { channelArtifactStore } from "../storage/mongo-channel-artifacts";
 import { assertLocationIdle, getLocation, LocationBusy, removeLocationRecords } from "./locations";
 
 type OwnedFile = { parent: string; name: string };
@@ -51,11 +52,12 @@ async function planRemoval(db: Db, store: ArtifactStore, id: string): Promise<Re
     artifactSegment(name);
     if (parent) files.push({ parent, name });
   };
-  const readerFiles = await store.list(readerRoot);
+  const readerStore = channelArtifactStore(db, store, readerRoot);
+  const readerFiles = await readerStore.list(readerRoot);
   for (const editionId of editionIds) {
     const name = `${editionId}.json`;
     for (const file of readerFiles.filter((file) => file.name === name)) {
-      const contents = await store.readJson<{ location_id?: string }>(file.id);
+      const contents = await readerStore.readJson<{ location_id?: string }>(file.id);
       if (contents.location_id !== id) throw new Error(`Reader file ownership does not match ${id}: ${name}`);
     }
     add(readerRoot, name);
@@ -117,7 +119,7 @@ export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
     stage = "removing generated files";
     for (const [index, file] of plan.files.entries()) {
       await renewWorkerLease(db, token);
-      removedFiles += await store.removeFile(file.parent, file.name);
+      removedFiles += await channelArtifactStore(db, store, file.parent).removeFile(file.parent, file.name);
       await locations.updateOne({ _id: id }, { $set: { "removal.plan.files": plan.files.slice(index + 1) } });
     }
     stage = "removing location pipeline records";

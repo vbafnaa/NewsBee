@@ -114,6 +114,11 @@ it.each(["MONGODB_URI", "MONGODB_DATABASE"])("surfaces missing %s instead of usi
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("resolves a MongoDB-backed channel without treating it as a malformed Drive folder", async () => {
+  mocks.findOne.mockResolvedValue({ _id: "fixture-channel", enabled: true, drive_folder_id: `mongo:${"a".repeat(32)}` });
+  await expect(readerFolderId()).resolves.toBe(`mongo:${"a".repeat(32)}`);
+});
+
 it("defaults to the reader-site channel id", async () => {
   const find = vi.fn(async () => null);
   await expect(resolveReaderDriveFolderId(find, {})).resolves.toBe(DEFAULT_READER_DRIVE_FOLDER_ID);

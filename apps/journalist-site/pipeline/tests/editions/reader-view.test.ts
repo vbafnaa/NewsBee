@@ -170,3 +170,19 @@ describe("server-rendered reader editions", () => {
     expect(page.articles[1]).toMatchObject({ image: credited.image, imageCredit: credited.image_credit });
   });
 });
+
+it("preserves linked secondary attribution, deduplicates tracking URLs and excludes unsafe links", async () => {
+  const story = item("multi", 1, "news_report", "Park renovation");
+  story.sources = [
+    { name: "Town newsroom", url: story.source_url! + "?utm_source=feed" },
+    { name: "Parks Department", url: "https://parks.example/record" },
+    { name: "Unsafe", url: "javascript:alert(1)" },
+  ];
+  data.readerData.mockResolvedValue({ locations: [{ id: "ballard-wa", name: "Ballard, Seattle, WA" }], editions: [edition("multi-edition", 3, [story])] });
+  const page = await loadEditionPage("ballard-wa");
+  expect(page?.articles[0].sources).toEqual([
+    { name: "Town newsroom", url: story.source_url },
+    { name: "Parks Department", url: "https://parks.example/record" },
+  ]);
+  expect(page?.sources).toHaveLength(2);
+});

@@ -1,15 +1,17 @@
+import { quantities } from "./quantities";
+import { verifyArticle, VERIFICATION_POLICY, verificationSources } from "./claim-verifier";
 /** Grounded story, edition-front and email-preview writing with fail-closed checks. */
 import type { ModelRuntime, JsonSchema } from "./runtime";
 import { decodeHTML } from "entities";
 import { ModelRateLimitError } from "./runtime";
-import { groundingErrors, reportingErrors, namedEntityErrors } from "./grounding";
-import { addedClaims } from "./news-blurb";
+import { groundingErrors, reportingErrors, namedEntityErrors, sourceDateConflict } from "./grounding";
+import { addedClaims, proseSentences } from "./news-blurb";
 import { NEWS_KINDS, PURPOSE } from "../editorial/kinds";
 import { editionVoiceGuide, explainVoice, voiceErrors, voiceGuide } from "./voice";
 import { explainFloor, floorErrors, type FloorFlags } from "../editorial/floor";
 export { NEWS_KINDS } from "../editorial/kinds";
 
-export const WRITING_POLICY = "story_v10_reported_grounding";
+export const WRITING_POLICY = "story_v20_sparse_notices";
 export const HEADLINE_MAX = 90;
 export const SUMMARY_MAX = 900;
 export const SUMMARY_WORDS_MAX = 120;
@@ -96,7 +98,7 @@ export function nameErrors(headline: string, title: string) { return title.split
 export function headlineErrors(value: string) {
   const errors: string[] = [];
   const trimmed = value.trim();
-  if (/(?:\.{3}|…)$/.test(trimmed) || /\b(?:a|an|the|and|or|but|for|with|to|of|in|on|at|from|by|as|into|through|because|that|which|its|their|our|your)\s*[.!?:;,]*$/i.test(trimmed)) errors.push("incomplete_headline");
+  if (/(?:\.{3}|…)$/.test(trimmed) || /(?<!-)\b(?:a|an|the|and|or|but|for|with|to|of|in|on|at|from|by|as|into|through|because|that|which|its|their|our|your)\s*[.!?:;,]*$/i.test(trimmed)) errors.push("incomplete_headline");
   if (/[,:;\-–—]$/.test(trimmed) || (trimmed.match(/\(/g)?.length ?? 0) !== (trimmed.match(/\)/g)?.length ?? 0)) errors.push("incomplete_headline");
   if (!trimmed || Array.from(trimmed).length > HEADLINE_MAX) errors.push("headline_length");
   return [...new Set(errors)];
@@ -105,6 +107,8 @@ export function storyAllowed(story: StoryInput) { return [story.title, story.des
 function editorialClaimErrors(value: string, allowed: string[]) {
   const source = allowed.join(" ");
   const claims = [
+    { pattern: /\b(?:longtime|lifelong|long-time|life-long) resident\b/i, evidence: /\b(?:longtime|lifelong|long-time|life-long) resident\b/i, label: "unsupported_residency_duration" },
+    { pattern: /\b(?:community|public|neighbou?rs?) (?:is|are) invited to (?:remember|mourn|honou?r|celebrate)\b/i, evidence: /\b(?:invited|memorial|service|celebration of life)\b/i, label: "unsupported_memorial_invitation" },
     { pattern: /\b(?:new (?:program|event|series|session|initiative)|launch(?:es|ed|ing)?|inaugural|first-ever)\b/i, evidence: /\b(?:new|launch(?:es|ed|ing)?|inaugural|first-ever)\b/i, label: "unsupported_novelty" },
     { pattern: /\bmoderat(?:ed|or|ors|ion)\b/i, evidence: /\bmoderat(?:ed|or|ors|ion)\b/i, label: "unsupported_moderation" },
     { pattern: /\borganizers? (?:say|says|note|notes|explain|explains)\b/i, evidence: /\borganizers? (?:say|says|note|notes|explain|explains)\b/i, label: "unsupported_attribution" },
@@ -126,15 +130,76 @@ function dateClaimErrors(value: string, allowed: string[]) {
  * and magnitude remain significant. This does not prove a number's semantic role.
  */
 export function numberClaimErrors(value: string, allowed: string[]) {
-  const quantities = (text: string) => [...text.matchAll(/(?:[$£€]\s*)?\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:%|percent\b|thousand\b|million\b|billion\b))?/gi)]
-    .map(([token]) => token.toLowerCase().replace(/,/g, "").replace(/\s+/g, "").replace(/percent$/, "%").replace(/\d+(?:\.\d+)?/, (number) => String(Number(number))));
-  const supported = new Set(allowed.flatMap(quantities));
-  return [...new Set(quantities(value).filter((token) => !supported.has(token)).map((token) => `unsupported_number:${token}`))];
+  const supported = new Set(allowed.flatMap(quantities).map(quantity => quantity.key));
+  return [...new Set(quantities(value).filter(quantity => !supported.has(quantity.key)).map(quantity => `unsupported_number:${quantity.display}`))];
+}
+
+/** Reject future/open deadline language when an explicit calendar deadline is past.
+ * Yearless dates are resolved only within six months of the edition date. */
+export function expiredDeadlineErrors(story: StoryInput, value: string) {
+  const asOf = typeof story.as_of === "string" ? story.as_of.slice(0, 10) : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return [];
+  const months = "January February March April May June July August September October November December".split(" ");
+  const sentences = Array.from(new Intl.Segmenter('en', { granularity: 'sentence' }).segment(value), x => x.segment);
+  return sentences.some(sentence => {
+    if (!/\b(?:deadline|bids?|applications?|registration|register|tickets?|rsvps?)\b/i.test(sentence)) return false;
+    if (!/\b(?:will|currently|still open|is open|are open|set to close|due|closes?|ends?|by|until)\b/i.test(sentence)) return false;
+    // Explicitly report the historical listing without asserting what happened.
+    if (/\b(?:listed|had listed|was scheduled|were scheduled|had been scheduled|originally scheduled)\b/i.test(sentence) && !/\b(?:currently|still open|is open|are open|will)\b/i.test(sentence)) return false;
+    const pattern = new RegExp(`\\b(${months.join("|")})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d{2}))?\\b`, "gi");
+    return [...sentence.matchAll(pattern)].some(match => {
+      const year = Number(match[3] ?? asOf.slice(0, 4));
+      const month = months.findIndex(m => m.toLowerCase() === match[1].toLowerCase());
+      const date = new Date(Date.UTC(year, month, Number(match[2])));
+      if (date.getUTCMonth() !== month) return false;
+      const age = Date.parse(asOf) - date.getTime();
+      return age > 0 && (Boolean(match[3]) || age < 183 * 86400000);
+    });
+  }) ? ["expired_deadline_presented_as_open"] : [];
+}
+
+/** Source-backed conditions readers need to act on a story. Never infer missing rules. */
+export function requiredDetails(story: StoryInput) {
+  const text = story.description ?? "";
+  const facts: Array<{ id: string; quote: string; present: (draft: string) => boolean }> = [];
+  const advance = text.match(/[^.!?\n]*(?:at least\s+)?(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:business\s+)?days?\s+(?:before|in advance)[^.!?\n]*/i);
+  if (advance && /accommodat|disabilit|LEAP/i.test(advance[0])) {
+    const quantity = advance[0].match(/(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:business\s+)?days?/i)!;
+    const words = ["zero","one","two","three","four","five","six","seven","eight","nine","ten"];
+    const n = /^\d+$/.test(quantity[1]) ? Number(quantity[1]) : words.indexOf(quantity[1].toLowerCase());
+    const count = `(?:${n}|${words[n] ?? n})`;
+    facts.push({ id: "accommodation_notice", quote: advance[0].trim(), present: draft => new RegExp(`\\b${count}[- ]+(?:business[- ]+)?days?\\b`, "i").test(draft) && /accommodat|disabilit|LEAP/i.test(draft) && /before|advance|ahead/i.test(draft) });
+  }
+  if (story.kind === "obituary") {
+    const death = text.match(/(?:died|passed away)\s+(?:on\s+)?((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)/i);
+    if (death) {
+      const date = death[1].replace(/(\d)(st|nd|rd|th)\b/gi, '$1').replace(/,/g, '').toLowerCase();
+      facts.push({ id: "death_date", quote: death[0], present: draft => draft.replace(/(\d)(st|nd|rd|th)\b/gi, '$1').replace(/,/g, '').toLowerCase().includes(date) });
+    }
+    const age = text.match(/(?:aged?|age of)\s+(\d{1,3})\b/i);
+    if (age) facts.push({ id: "age_at_death", quote: age[0], present: draft => new RegExp(`\\b${age[1]}\\b`).test(draft) });
+  }
+  const registration = text.match(/(?:registration|rsvp) (?:is |are )?(?:not required|optional)|no registration(?: is)? required/i);
+  if (registration) facts.push({ id: "registration_optional", quote: registration[0], present: draft => /(?:registration|rsvp) (?:is |are )?(?:not required|optional)|no registration(?: is)? required|no need to register|without registering/i.test(draft) });
+  return facts;
+}
+
+function publicationDateErrors(story: StoryInput, value: string) {
+  if (!NEWS_KINDS.has(story.kind ?? "") || typeof story.source_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(story.source_date)) return [];
+  const date = new Date(`${story.source_date}T00:00:00Z`);
+  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+  const day = date.getUTCDate();
+  const pattern = new RegExp(`\\b(?:survey|poll|interviews?)[^.!?]{0,180}\\b(?:from|on|starting) ${month} ${day}(?:st|nd|rd|th)?\\b`, 'i');
+  return pattern.test(value) && !pattern.test(story.description ?? "") ? ["unsupported_date_role:publication_date"] : [];
 }
 
 export function validateItem(story: StoryInput, draft: ItemDraft) {
   const allowed = storyAllowed(story);
   const errors: string[] = [];
+  errors.push(...publicationDateErrors(story, draft.summary));
+  errors.push(...expiredDeadlineErrors(story, `${draft.headline}. ${draft.summary}`));
+  errors.push(...requiredDetails(story).filter(fact => !fact.present(draft.summary)).map(fact => `missing_important_detail:${fact.id}`));
+  if (sourceDateConflict(story.title, story.description ?? "")) errors.push("unsupported_source_conflict:event_dates");
   errors.push(...namedEntityErrors(draft.summary, allowed).map((e) => `summary:${e}`));
   errors.push(...groundingErrors(draft.headline, allowed).map((e) => `headline:${e}`), ...groundingErrors(draft.summary, allowed).map((e) => `summary:${e}`));
   errors.push(...reportingErrors(draft.headline, story.title, true).map((e) => `headline:${e}`), ...reportingErrors(draft.summary, story.title).map((e) => `summary:${e}`));
@@ -159,14 +224,14 @@ export function validateItem(story: StoryInput, draft: ItemDraft) {
   return [...new Set(errors)];
 }
 export function itemPrompt(story: StoryInput) {
-  const data = { title: story.title, description: story.description ?? null, venues: story.venues ?? [] };
+  const data = { required_details: requiredDetails(story).map(({ id, quote }) => ({ id, quote })), title: story.title, description: story.description ? Array.from(new Intl.Segmenter("en", { granularity: "sentence" }).segment(story.description), ({ segment }) => segment).filter(segment => !expiredDeadlineErrors(story, segment).length).join("") : null, as_of: story.as_of ?? null, source_publication_date: NEWS_KINDS.has(story.kind ?? "") ? story.source_date ?? null : null, venues: story.venues ?? [] };
   const kind = story.kind ?? "event";
   const purpose = PURPOSE[kind] ?? PURPOSE.event;
   const rules = NEWS_KINDS.has(kind) ? NEWS_RULES : RULES;
   const people = "Readers connect with people and places: when the description names people, venues, streets or organisations, use those names, and lead with the most human or concrete detail.";
   const floor = typeof story.floor_instructions === "string" && story.floor_instructions ? ` ${story.floor_instructions}` : "";
   const update = story.update_of ? " This is an update to a story printed in an earlier edition: lead with what is new." : "";
-  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${people}${update}${floor} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a clear headline of at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. A one-sentence factual brief is better than invented purpose, emotion or a generic call to action. Do not write advertising language, address readers as us/our, or tell them to celebrate, join us or not miss out. ${rules} ${HEADLINE_GUIDE} The story's identifying name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
+  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${people}${update}${floor} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a short, complete headline, preferably 45–65 characters and always at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. A source_publication_date is when a report appeared, not when its survey, incident or other activity happened. Do not transfer dates between those roles. If as_of is supplied, do not describe past deadlines or expired invitations as currently open; report what the source listed without inferring an outcome. For example, after November 4 write "The source listed November 4 as the bid deadline", never "bids will close November 4" or "bids are due November 4". Do not add the as_of date to the article: it is editorial context, not a source fact. Omit expired procedural details when they add no current value. Include every required_details condition in the prose, preserving its meaning and any advance-notice period. These conditions must not be omitted for brevity. Keep URLs out of prose; the app displays source links separately. Avoid generic benefits and calls to visit a website. A one-sentence factual brief is better than invented purpose, emotion or a generic call to action. Do not write advertising language, address readers as us/our, or tell them to celebrate, join us or not miss out. ${rules} ${HEADLINE_GUIDE} The story's identifying name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
 }
 export function frontPrompt(context: Record<string, unknown>) {
   const stories = context.stories as StoryInput[];
@@ -189,6 +254,10 @@ async function generate<T extends object>(runtime: ModelRuntime, text: string, s
 }
 export function explain(errors: string[], title?: string) {
   const notes = ["unsupported_claim_word means the word is not in the story: remove it."];
+  if (errors.includes("unsupported_date_role:publication_date")) notes.push("The source publication date does not establish when the survey, poll or interviews took place. Remove that action date; report only the date role the source actually establishes.");
+  if (errors.some(error => error.startsWith("missing_important_detail:"))) notes.push("Include all required_details from the source, especially registration conditions, advance notice for accessibility requests, and a death notice’s stated death date and age. Do not shorten away these conditions.");
+  if (errors.includes("expired_deadline_presented_as_open")) notes.push("A deadline is already past as of the edition date. Omit it or say the source listed that date; never claim it is still open, will close, or has actually closed or resulted in an award.");
+  if (errors.some((error) => /unsupported_(?:status|quotation)/.test(error))) notes.push("Preserve exact source quotations, requirements and decision status. A proposal is not an approval. Remove unsupported assertions rather than guessing.");
   if (errors.some((error) => error.includes("unsupported_number:") || error.includes("unsupported_date_word:"))) notes.push("Use only numbers, amounts, percentages and calendar words explicitly present in the source. Preserve their units and meaning; remove unsupported dates or quantities.");
   if (title && errors.some((error) => error.endsWith("drops_event_name"))) notes.push(`drops_event_name means the headline must include the event's own name, ${JSON.stringify(eventName(title))}, written as is.`);
   if (errors.some((error) => error.endsWith("incomplete_headline"))) notes.push("incomplete_headline means the headline is cut off or leaves an unfinished thought. Rewrite a shorter complete headline; do not just remove the last word or add punctuation.");
@@ -204,22 +273,70 @@ export function explain(errors: string[], title?: string) {
 }
 export function rejection(text: string, rejected: object, errors: string[], title?: string) { return `${text}\nYour previous draft was rejected:\n${pythonJson(rejected)}\nProblems found: ${errors.join(", ")}. Rewrite it fixing every problem. ${explain(errors, title)}`; }
 export function retryPrompt(story: StoryInput, rejected: ItemDraft, errors: string[]) { return rejection(itemPrompt(story), rejected, errors, story.title); }
-export async function writeItem(runtime: ModelRuntime, story: StoryInput) {
+/** A short exact-source brief is preferable to invented padding. It must pass the
+ * same factual/style/floor checks and cannot override a known source conflict. */
+export function sourceBrief(story: StoryInput) {
+  const sources = verificationSources(story);
+  const source = sources.find(source => source.id === "source-record") ?? sources[0];
+  if (!source || sourceDateConflict(story.title, story.description ?? "")) return null;
+  const headline = decodeHTML(story.title).replace(/\s+/g, " ").trim();
+  if (headline.length > HEADLINE_MAX || /^(?:join|please|don't miss|discover)\b/i.test(headline)) return null;
+  const segmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
+  const candidates = source.text.split(/\n+|(?<=\.),\s*/).flatMap(part => proseSentences(part).map(segment => segment.trim().replace(/^(?:Registration Required|Detailed Description|Event Logistics|ADA Accommodations|Contact Us):\s*/i, "")));
+  // Preserve reader conditions even in an extractive fallback; do not turn a
+  // detailed source into a brief that drops registration or accessibility rules.
+  const conditions = requiredDetails(story);
+  const ordered = [...candidates].sort((a, b) => Number(conditions.some(f => f.present(b))) - Number(conditions.some(f => f.present(a))));
+  const selected: string[] = [];
+  for (const sentence of ordered) {
+    if (sentence === story.title || sentence.length < 20 || /^(?:When|Where|Reported|People named|Organisations|Places|Numbers|What happened|Next step|Quote):/i.test(sentence)) continue;
+    if (sentence.split(/\s+/).length < 10 && !/\b(?:is|are|was|were|has|have|had|will|can|must|should|hosts?|hosted|offers?|offered|provides?|provided|scheduled|born|died|passed|recorded|reported|closed|cancelled|canceled|postponed|no school|no classes)\b/i.test(sentence)) continue;
+    const errors = validateItem(story, { headline, summary: sentence }).filter(error => !error.startsWith("missing_important_detail:"));
+    if (errors.length || !source.text.includes(sentence) || selected.includes(sentence)) continue;
+    const combined = [...selected, sentence].join(" ");
+    if (combined.length > SUMMARY_MAX || combined.split(/\s+/).length > SUMMARY_WORDS_MAX) continue;
+    selected.push(sentence);
+    if (selected.length >= 3 && conditions.every(f => f.present(combined))) break;
+  }
+  selected.sort((a, b) => source.text.indexOf(a) - source.text.indexOf(b));
+  const summary = selected.join(" ");
+  const draft = { headline, summary };
+  if (!selected.length || !source.text.includes(story.title) || validateItem(story, draft).length) return null;
+  return { draft, disposition: "checks_passed", checks_passed: true, validation_errors: [], source_brief: true, verification: {
+    policy: VERIFICATION_POLICY, checks_passed: true, method: "exact_source_brief", errors: [], claims: [
+      { id: "headline", text: headline, verdict: "supported", reason: "Original source title.", evidence: [{ source_id: source.id, quote: story.title, url: source.url ?? null }] },
+      ...selected.map((sentence, index) => ({ id: `sentence-${index + 1}`, text: sentence, verdict: "supported", reason: "Exact source sentence, without generated additions.", evidence: [{ source_id: source.id, quote: sentence, url: source.url ?? null }] })),
+    ],
+  } };
+}
+export async function writeItem(runtime: ModelRuntime, story: StoryInput, options: { verify?: boolean } = {}) {
   const started = Date.now();
   const result: Record<string, unknown> = { policy: WRITING_POLICY, attempts: 0 };
   let text = itemPrompt(story);
   try {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       result.attempts = attempt + 1;
+      delete result.verification;
       const { draft, metrics } = await generate<ItemDraft>(runtime, text, ITEM_SCHEMA, ["headline", "summary"], { headline: HEADLINE_MAX, summary: SUMMARY_MAX });
       const errors = validateItem(story, draft);
-      if (errors.length && attempt < MAX_RETRIES) { result.rejected_first = { draft, errors }; text = retryPrompt(story, draft, errors); continue; }
+      if (!errors.length && options.verify) {
+        const verification = await verifyArticle(runtime, story, draft);
+        result.verification = verification;
+        errors.push(...verification.errors);
+      }
+      if (errors.length && attempt < MAX_RETRIES) { result.rejected_first = { draft, errors, ...(result.verification ? { verification: result.verification } : {}) }; text = retryPrompt(story, draft, errors) + (result.verification ? `\nEvidence review: ${JSON.stringify(result.verification)}\nRemove unsupported claims and preserve conflicts; never invent replacement details.` : ""); continue; }
       Object.assign(result, { draft, checks_passed: !errors.length, disposition: errors.length ? "held" : "checks_passed", validation_errors: errors, metrics });
       break;
     }
   } catch (error) {
     if (error instanceof ModelRateLimitError) throw error;
     Object.assign(result, { checks_passed: false, disposition: "held", validation_errors: [], error: `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}` });
+  }
+  const sourceConflict = [result.verification, (result.rejected_first as { verification?: unknown } | undefined)?.verification].some(report => ((report as { errors?: string[] } | undefined)?.errors ?? []).some(error => error.includes(":conflict:")));
+  const sourceFactualConflict = [...((result.validation_errors as string[] | undefined) ?? []), ...((result.rejected_first as { errors?: string[] } | undefined)?.errors ?? [])].some(error => /unsupported_source_conflict/.test(error));
+  if (options.verify && result.disposition === "held" && !result.error && !sourceConflict && !sourceFactualConflict) {
+    const brief = sourceBrief(story);
+    if (brief) Object.assign(result, { rejected_final: { draft: result.draft, errors: result.validation_errors, verification: result.verification }, ...brief, attempts: result.attempts });
   }
   result.wall_seconds = Math.round(Date.now() - started) / 1000;
   return result;

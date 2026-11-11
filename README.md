@@ -26,7 +26,7 @@ run side by side, and share everything from assembly onward:
 
 | Step | `current` flow | `agentic` flow |
 | --- | --- | --- |
-| **Stage 1:** find and save sources | Eleven fixed discovery methods, then the shared Model check and a final review; new sources are `proposed` until a person accepts them (testing phase) | Those, then a goal-driven mapping agent with search, site exploration, page opening and proposing tools, through the same code checks and Model check; new sources are `proposed` with evidence |
+| **Stage 1:** find and save sources | Eleven fixed discovery methods, then the shared Model check and a final review; a new source the Model check accepts goes on `active`; one it couldn't judge waits as `proposed` | Those, then a goal-driven mapping agent with search, site exploration, page opening and proposing tools, through the same code checks and Model check; saved the same way, with evidence |
 | **Stage 2:** read sources for the window | The readers | The readers, plus topic sweeps, tracing stories to original records, and agent extraction for pages the readers can't parse |
 | Assemble, rank, write, publish | Shared | Shared; the primary source leads a merged story |
 
@@ -63,8 +63,8 @@ NEWSBEE_GEMINI_LIGHT_MODEL=gemini-flash-lite-latest   # a Gemini provider's ligh
 NEWSBEE_MODEL_DAILY_CALLS=800                # cap for extraction and discovery (stay under your free tier)
 NEWSBEE_NEWS_SEARCH=gdelt                    # gdelt | llm | gdelt,llm | off
 NEWSBEE_LLM_DISCOVERY=on                     # a model suggests sources at discovery; each is checked
-NEWSBEE_PROPOSED_UNTIL_APPROVED=on           # testing phase: map runs save every source as proposed; editions read only accepted ones
-NEWSBEE_SOURCE_RUNS_ISOLATED=on              # testing only: every source run starts from scratch and leaves the source map alone
+NEWSBEE_PROPOSED_UNTIL_APPROVED=off          # on = map runs save every source as proposed; editions read only accepted ones
+NEWSBEE_SOURCE_RUNS_ISOLATED=off             # on = test mode: every source run starts from scratch and leaves the source map alone
 NEWSBEE_INTERNAL_PASSWORD=<set-a-private-password> # internal maps for people without an account
 ```
 
@@ -98,9 +98,12 @@ after collection and after writing, for debugging one stage.
 Paid services are off until you tick them for a run, so with the defaults a run makes no paid
 calls and uses Ollama. See [Run options](#run-options) and [APIs and paid calls](#apis-and-paid-calls).
 In the journalist workspace, **Operations → Environment & API settings** stores personal
-provider keys. All non-owner journalists must configure the personal keys needed by an action;
-deployment API credentials never fill their missing keys. Only the exact configured owner may
-use deployment defaults or personal overrides. Browsing and other keyless actions stay available.
+provider keys. Editors must use their own keys, with no server credential selection or fallback.
+Only the exact configured owner may select **Use API keys from server environment**;
+that owner uses server defaults automatically or may save personal
+overrides. Switching sources or revoking a profile pauses unfinished runs until reconnected.
+Historical editor environment selections are blocked until personal keys are saved and runs explicitly reconnected.
+Browsing and other keyless actions stay available.
 
 **Troubleshooting:** "No model provider can serve requests" means the API key is missing or
 wrong, or Ollama isn't running or the model isn't pulled (`ollama list`). Hosted models can
@@ -321,18 +324,29 @@ same feed, a page and its own feed, the same site, shared recent titles, or a me
 account beside an agenda page), the model confirms them, and each new source is marked `strong`,
 `usable` or `weak`. It only adds `review_flags`: it deletes nothing and changes no status.
 
-**Proposed until approved (testing phase).** While `NEWSBEE_PROPOSED_UNTIL_APPROVED` is on (the
-default), every source a map run finds, including the fixed pipeline's, is saved as `proposed`,
-and no edition, current or agentic, reads a proposed source: only what a person accepted, plus
-sources that were already live (active, pinned or dormant). A model check rejection is saved as a row
-with Initial Status Rejected and the model's reason, so a person can overrule it; clear code failures
-stay in the decision log only. Pinned, paused and dormant sources keep their status, and a person's
-decision stands on later runs. Set it to `0` after the testing phase to let the fixed pipeline's
-sources go live again and agentic editions read proposed ones.
+**What a map run saves.** A source that passes the code checks and that the model check accepts
+goes on the source map as `active` straight away, with no one approving it, so editions read it
+(a link-only source goes on active and link-only). A model check rejection is saved as a row with
+Initial Status Rejected and the model's reason, so a person can overrule it; clear code failures
+stay in the decision log only. A source that wasn't judged (the call failed, or a limit or the
+job's time stopped it) is saved as `proposed` with its note and never goes active until a later
+check accepts it or a person does. No edition, current or agentic, reads a proposed source. A
+person's accept or reject, a pin, a pause, a dormant source and a decision made in a test-mode run
+always win over the check, on every later run. A source the check made active stays the check's:
+a later rejection, when its details change, takes it off; a later check that can't judge it leaves
+it as it is.
 
-**Test mode: every source run from scratch (testing only).** While `NEWSBEE_SOURCE_RUNS_ISOLATED`
-is on (the default for now), a source map run builds its results for that run alone, so test runs
-on one place can be compared and none of them changes All sources or any edition:
+**Proposed until approved (off by default).** Set `NEWSBEE_PROPOSED_UNTIL_APPROVED=on` (or `1`,
+`true`, `yes`) to hold every source a map run finds, including ones the check accepted, as
+`proposed`, so editions read only what a person accepted, plus sources that were already live.
+It was on by default until Nov 10, 2026.
+
+**Test mode: every source run from scratch (off by default).** Source map runs write into the
+source map: they reuse discovery caches, leave sites already on the map out of their searches, and
+save what they find as described above (active when the model check accepts it). Set
+`NEWSBEE_SOURCE_RUNS_ISOLATED=on` to turn test mode back on (runs from Nov 7 to Nov 10, 2026 used it).
+In test mode a source map run builds its results for that run alone, so test runs on one place can
+be compared and none of them changes All sources or any edition:
 
 - It reads every fixed reader again, into its own store (`source_run_<run id>`, the same records
   the source map holds), and the agent's checklist starts from what this run accepted, never from
@@ -352,8 +366,12 @@ on one place can be compared and none of them changes All sources or any edition
   check's examples, and the agent doesn't propose a page you rejected again. All sources decisions
   are kept by page as well.
 
-Set it to `off` to roll back: map runs write into the source map as before, and Source runs reads
-them from it. Runs made in test mode stay readable either way.
+With it off, map runs write into the source map, and Source runs reads them from it; decide their
+pages in All sources (or on the run page, which saves to the same review). Runs made in test mode
+stay readable either way, and their page decisions still stand: a map-writing run that finds a page
+a person accepted or rejected in test mode saves it with that decision (accepted is active, rejected
+stays out), never judges it again, and the agent doesn't propose a rejected page again. No copy
+step is needed: a decision reaches the map when a run finds its page.
 - **The city's website:** the address on a location is checked as really being the city's before any `site:` query uses it, and corrected if not.
 
 To run the agent from a harness instead, [opencode.json](opencode.json) connects

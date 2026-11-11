@@ -760,7 +760,7 @@ async function openStage(input: StageInput): Promise<StageResult> {
     const url = item.url, key = normaliseUrl(sourceUrl(url));
     // The editor's decision stands: don't put a source back that a person has already labelled.
     const labelled = await sourceMap(context.db).findOne({ location_id: context.location.id, url: { $in: [url, sourceUrl(url)] }, "review.decision": { $in: ["accept", "reject"] } }, { projection: { review: 1, name: 1 } });
-    const rejected = !labelled && isolatedRunId() ? await pageDecisions(context.db).findOne({ location_id: context.location.id, key: { $in: [normaliseUrl(url), key] }, decision: "reject" }, { projection: { name: 1 } }) : null;
+    const rejected = !labelled ? await pageDecisions(context.db).findOne({ location_id: context.location.id, key: { $in: [normaliseUrl(url), key] }, decision: "reject" }, { projection: { name: 1 } }) : null;
     if (labelled || rejected || state.seen.includes(key)) {
       refused += 1;
       const why = labelled ? `the editor already ${labelled.review?.decision === "accept" ? "accepted" : "rejected"} this source (${labelled.name})` : rejected ? `the editor rejected this page in an earlier run (${rejected.name ?? url})` : "already proposed in this run";

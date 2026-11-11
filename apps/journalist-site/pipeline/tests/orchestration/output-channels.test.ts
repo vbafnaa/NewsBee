@@ -1,8 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import type { ArtifactStore } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
+import { channelArtifactStore, driveChannelFolderOrMongo } from "../../storage/mongo-channel-artifacts";
+import { mongoChannelFolderId } from "../../../../../shared/reader-folder";
+import { videoStoriesForLocation } from "../../video-production";
 import {
   createOutputChannel,
   createOutputChannelEdition,
@@ -35,6 +39,63 @@ beforeEach(async () => {
 afterAll(async () => { await client?.close(); await server?.stop(); });
 
 describe("journalist output channels", () => {
+  it("uses every story from the latest published location edition for a channel edition", async () => {
+    await db.collection(COLLECTIONS.editions).insertMany([
+      { id: "old", location_id: LOCATION, status: "published", published_at: 1,
+        published: { items: [{ story_id: "old-story", headline: "Old story" }] } },
+      { id: "latest", location_id: LOCATION, status: "published", published_at: 2,
+        published: { items: [{ story_id: "story-1", headline: "First" }, { story_id: "story-2", headline: "Second" }] } },
+    ]);
+    const { stories } = await videoStoriesForLocation(db, LOCATION, 1);
+    expect(stories.map(({ storyId }) => storyId)).toEqual(["story-1", "story-2"]);
+  });
+
+  it("defaults to a writable Drive folder, but falls back on missing authorization or Drive errors", async () => {
+    const id = "b".repeat(32);
+    const createFolder = vi.fn(async () => "drive-folder-123");
+    const failed = vi.fn();
+    const drive: ArtifactStore = { ...store, kind: "drive" };
+    expect(await driveChannelFolderOrMongo(drive, id, true, createFolder, failed)).toBe("drive-folder-123");
+    expect(saved).toMatchObject([{ folder: "drive-folder-123", name: "locations.json" }]);
+    expect(await driveChannelFolderOrMongo(drive, id, false, createFolder, failed)).toBe(`mongo:${id}`);
+    expect(createFolder).toHaveBeenCalledTimes(1);
+    createFolder.mockRejectedValueOnce(new Error("Drive unavailable"));
+    expect(await driveChannelFolderOrMongo(drive, id, true, createFolder, failed)).toBe(`mongo:${id}`);
+    expect(failed).toHaveBeenCalledTimes(1);
+    const unwritable: ArtifactStore = { ...drive, saveJson: async () => { throw new Error("Service account cannot write"); } };
+    expect(await driveChannelFolderOrMongo(unwritable, id, true, createFolder, failed)).toBe(`mongo:${id}`);
+    expect(failed).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists MongoDB fallback feeds without calling Drive and cleans them up", async () => {
+    const id = "a".repeat(32);
+    const folder = mongoChannelFolderId(id);
+    const drive: ArtifactStore = { ...store, kind: "drive", saveJson: async () => { throw new Error("Drive must not be used"); } };
+    const channel = await createOutputChannel(db, "journalist-1", id, folder, {
+      name: "Fallback", destinations: [{ type: "reader", url: "" }], enabled: true, selectedLocationIds: [LOCATION],
+    });
+    await syncOutputChannelLocations(db, drive, "journalist-1", id, [LOCATION], async () => ({ id: "edition-1", location_id: LOCATION }));
+    const files = channelArtifactStore(db, drive, folder);
+    expect(channel.driveFolderId).toBe(folder);
+    expect((await files.list(folder)).map((file) => file.name).sort()).toEqual(["edition-1.json", "locations.json"]);
+    expect(await files.readJson(`${folder}/edition-1.json`)).toMatchObject({ id: "edition-1" });
+    await files.saveJson(folder, "edition-1.json", {
+      id: "edition-1", location_id: LOCATION, location_name: "Town, WA", window_start: "2026-11-01",
+      window_end: "2026-11-08", published_at: 1, headline: "Local", intro: "Intro", items: [],
+    });
+    vi.stubEnv("MONGODB_URI", server.getUri());
+    vi.stubEnv("MONGODB_DATABASE", "output-channels");
+    vi.stubEnv("NEWSBEE_MODE", "cloud");
+    try {
+      expect(await readerData(folder)).toMatchObject({ locations: [{ id: LOCATION }], editions: [{ id: "edition-1" }] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    await db.collection(COLLECTIONS.editions).insertOne({ id: "edition-1", location_id: LOCATION });
+    await clearOutputChannelFeed(db, drive, (await outputChannels(db).findOne({ _id: id }))!);
+    expect(await files.list(folder)).toEqual([]);
+  });
+
   it("keeps each journalist's settings private", async () => {
     await createOutputChannel(db, "journalist-1", "1".repeat(32), "folder-1", { name: "First", destinations: [{ type: "reader", url: "https://first.example" }], enabled: true, selectedLocationIds: [] });
     await createOutputChannel(db, "journalist-2", "2".repeat(32), "folder-2", { name: "Second", destinations: [{ type: "reader", url: "https://second.example" }], enabled: true, selectedLocationIds: [] });
@@ -59,7 +120,8 @@ describe("journalist output channels", () => {
       coverage: [], corrections: [],
     }]);
 
-    expect(saved).toHaveLength(1);
+    expect(saved).toHaveLength(2);
+    expect(saved[1]).toMatchObject({ name: "locations.json", value: { locations: [{ id: LOCATION }] } });
     expect(saved[0]).toMatchObject({
       folder: "channel-folder",
       name: `channel-edition-${edition._id}-1.json`,

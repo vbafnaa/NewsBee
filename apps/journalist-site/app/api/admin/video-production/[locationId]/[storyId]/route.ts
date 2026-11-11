@@ -23,6 +23,7 @@ import {
   type VideoJob,
 } from "@/pipeline/video-production";
 import { falVideoResult, falVideoStatus, falVideoModel, falVideoConfigured, submitFalVideo } from "@/pipeline/connectors/fal-video";
+import { finishVideoUpload, saveVideoChunk, startVideoUpload, VIDEO_UPLOAD_CHUNK_BYTES } from "@/pipeline/video-upload";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -35,6 +36,8 @@ type ActionBody = {
   privacyStatus?: string;
   channelId?: string;
   playlistId?: string;
+  uploadId?: string;
+  size?: number;
 };
 
 function jobCollection(db: import("mongodb").Db) {
@@ -72,8 +75,29 @@ export async function POST(request: Request, context: Context) {
   if (denied) return denied;
   return adminRoute(request, async (deps) => {
     const { locationId, storyId } = await context.params;
-    const body = await jsonBody<ActionBody>(request);
     const story = await getVideoStory(deps.db, locationId, storyId);
+    const query = new URL(request.url).searchParams;
+    if (query.get("action") === "upload-chunk") {
+      const uploadId = query.get("uploadId");
+      const index = Number(query.get("index"));
+      if (!uploadId || !Number.isSafeInteger(index) || index < 0 || request.headers.get("content-type") !== "application/octet-stream" ||
+          Number(request.headers.get("content-length")) > VIDEO_UPLOAD_CHUNK_BYTES) {
+        throw new Error("Invalid video upload chunk");
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      await saveVideoChunk(deps.db, story, deps.principal!.id, uploadId, index, bytes);
+      return { uploaded: true };
+    }
+    const body = await jsonBody<ActionBody>(request);
+
+    if (body.action === "start-upload") {
+      return startVideoUpload(deps.db, story, deps.principal!.id, body.size ?? 0);
+    }
+
+    if (body.action === "finish-upload") {
+      if (!body.uploadId) throw new Error("Invalid video upload");
+      return { video: await finishVideoUpload(deps.db, deps.store, story, deps.principal!.id, body.uploadId) };
+    }
 
     if (body.action === "list-youtube-channels") {
       return { youtubeChannels: await listYouTubeChannels(request, deps.principal!.email) };
@@ -107,7 +131,7 @@ export async function POST(request: Request, context: Context) {
     if (body.action === "generate-content") {
       const personal = await personalRequestDeps(deps, deps.principal!, undefined, false, true);
       const content = await generateVideoPackage(personal.discoveryModel, story);
-      await saveVideoPackage(deps.db, story, content);
+      await saveVideoPackage(deps.db, story, content, content.generationPrompt);
       return { ...(await videoStoryManagement(deps.db, story)), falConfigured: falVideoConfigured(personal.settings.integrations.falKey), model: falVideoModel() };
     }
 

@@ -13,6 +13,7 @@ export { NEWS_LINES } from "../editorial/kinds";
 
 export type Occurrence = {
   source_id: string;
+  source_name?: string;
   source_event_id: string;
   event_date: string;
   schedule_text: string;
@@ -122,6 +123,7 @@ export function collapse(events: SourceEvent[]): Story[] {
     } else if (!story.facts.lead && description && description.length > (story.description ?? "").length) story.description = description;
     const occurrence: Occurrence = {
       source_id: event.source_id,
+      source_name: typeof facts.source_name === "string" ? facts.source_name : undefined,
       source_event_id: facts.source_event_id,
       event_date: facts.event_date,
       schedule_text: facts.schedule_text,

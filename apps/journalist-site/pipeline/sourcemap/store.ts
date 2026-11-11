@@ -4,10 +4,11 @@
  * reads only from here. A record's `_id` is `<location id>:<source id>`; the source id is
  * also the collection task's id, so run results, health and the edition map line up.
  *
- * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, on by default), a map run's jobs write their own
+ * In test mode (NEWSBEE_SOURCE_RUNS_ISOLATED, off by default), a map run's jobs write their own
  * store instead, `source_run_<run id>`, with the same records: `sourceMap` returns it inside such a
  * run, so the source map and editions are untouched and each run keeps exactly what it found. A
- * person's decisions on those runs' pages are kept by page (`page_decisions`), so they carry across runs.
+ * person's decisions on those runs' pages are kept by page (`page_decisions`), so they carry across
+ * runs, and a run that writes the source map saves a page it finds with that decision.
  */
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
@@ -66,9 +67,9 @@ export const METHOD_LABELS: Record<DiscoveryMethod, string> = {
 };
 
 /**
- * `proposed` sources wait for a person: while proposed-until-approved is on (the testing phase), every
- * source a map run finds is proposed, and no edition reads it until a person accepts it. With it off,
- * the fixed pipeline's sources go live as active, and agentic editions also read proposed ones.
+ * `proposed` sources wait, and no edition reads them: a source the model check couldn't judge, or,
+ * while proposed-until-approved is on, every source a map run finds, until a person accepts it. With
+ * it off (the default), a source the model check accepted goes on `active`.
  * `rejected` is a person's rejection, or the model check's (`gemini.verdict`), which a person can overrule.
  */
 export type SourceStatus = "active" | "pinned" | "paused" | "rejected" | "dormant" | "proposed";
@@ -167,9 +168,9 @@ export type SourceCandidate = Omit<SourceRecord, "_id" | "location_id" | "status
   route_status?: SourceStatus;
 };
 
-/** A source whose status is still the pipeline's to set: proposed, or rejected by the model check, and not labelled by a person. */
+/** A source whose status is still the pipeline's to set: proposed, or made active or rejected by the model check, and not labelled by a person. */
 export function checkOwned(record: Pick<SourceRecord, "status" | "review" | "gemini">) {
-  return !record.review?.decision && (record.status === "proposed" || (record.status === "rejected" && record.gemini?.verdict === "reject"));
+  return !record.review?.decision && (record.status === "proposed" || (record.status === "rejected" && record.gemini?.verdict === "reject") || (record.status === "active" && record.gemini?.verdict === "accept"));
 }
 
 /** The source map, or, inside a test-mode map run, that run's own store. */
@@ -194,6 +195,18 @@ export type PageDecision = { _id: string; location_id: string; key: string; url:
 export function pageDecisions(db: Db) { return db.collection<PageDecision>(PAGE_DECISIONS); }
 /** The key a page's decision is kept under: its normalised address, or its source id for a structured source. */
 export function pageKey(record: Pick<SourceRecord, "url" | "source_id">) { return record.url ? normaliseUrl(record.url) : `source:${record.source_id}`; }
+
+/**
+ * The accept or reject a person gave each of these pages in a test-mode run, by source id. Read only
+ * by a run that writes the source map, so those decisions stand there: an accepted page goes on the
+ * map accepted, a rejected one rejected, and neither is judged again.
+ */
+export async function earlierPageDecisions(db: Db, locationId: string, records: Array<Pick<SourceRecord, "url" | "source_id">>) {
+  if (isolatedRunId() || !records.length) return new Map<string, PageDecision>();
+  const ids = new Map(records.map((record) => [`${locationId}:${pageKey(record)}`, record.source_id]));
+  const found = await pageDecisions(db).find({ _id: { $in: [...ids.keys()] }, decision: { $in: ["accept", "reject"] } }).toArray();
+  return new Map(found.map((decision) => [ids.get(decision._id)!, decision]));
+}
 
 async function keepPageDecision(db: Db, locationId: string, record: Pick<SourceRecord, "url" | "source_id" | "name" | "section">, review: SourceReview, runId: string | null) {
   const key = pageKey(record);
@@ -289,17 +302,20 @@ export async function categoryCoverage(db: Db, locationId: string): Promise<Cate
  * (active when none); existing ones keep their editor status, note, review and health, and get
  * fresh details. A source a person labelled keeps its label, and one a person rejected stays
  * rejected. The pipeline still sets the status of what is its own (proposed, or rejected by the
- * Model check): a new verdict can reject it, or lift the check's own rejection back to proposed.
- * Nothing becomes active here. Returns how many were new.
+ * Model check): a new verdict can reject it, make it active when the check accepted it (see
+ * `applyStanding`), or lift the check's own rejection back to proposed. Returns how many were new.
  */
 export async function upsertCandidates(db: Db, locationId: string, candidates: SourceCandidate[]) {
   const now = new Date().toISOString();
   let added = 0;
   const seenHosts = new Map<string, number>();
+  const earlier = await earlierPageDecisions(db, locationId, candidates);
   for (const candidate of candidates) {
     const _id = `${locationId}:${candidate.source_id}`;
     const existing = await sourceMap(db).findOne({ _id }, { projection: { status: 1, found_by: 1, review: 1, gemini: 1 } });
     const owned = Boolean(existing && checkOwned(existing));
+    // A person's decision on this page in a test-mode run stands, unless the map already has a label or a pin.
+    const decided = !existing?.review?.decision && existing?.status !== "pinned" ? earlier.get(candidate.source_id) : undefined;
     // A checked page's id follows its feed, which can come and go. A page a person rejected stays out under either id.
     if (!existing && candidate.section_page && candidate.source_kind && await sourceMap(db).findOne({ location_id: locationId, url: candidate.url, status: "rejected", $or: [{ "review.decision": "reject" }, { "gemini.verdict": { $ne: "reject" } }] }, { projection: { _id: 1 } })) {
       await recordDecision({ stage: "source", actor: "rule", subject: candidate.url ?? candidate.source_id, decision: "not_added", reason: "This page was rejected under another address", rule: "rejected_page" });
@@ -316,7 +332,7 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
       if (candidate.status !== "pinned" && count >= cap) { await recordDecision({ stage: "source", actor: "rule", subject: candidate.url, decision: "not_added", reason: `${count} sources from ${host} are already on the map`, rule: "per_host_limit", topic: candidate.topics?.[0] ?? null }); continue; }
     }
     // A proposal never changes a source already on the map that isn't the pipeline's own: a person's label, and current runs' baseline, stand.
-    if (existing && !owned && (candidate.status === "proposed" || candidate.status === "rejected")) {
+    if (existing && !owned && !decided && (candidate.status === "proposed" || candidate.status === "rejected")) {
       await sourceMap(db).updateOne({ _id }, { $set: { last_seen: now }, $addToSet: { topics: { $each: candidate.topics ?? [] } } });
       await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: "already_on_map", reason: `Already on the map as ${existing.status}`, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, name: candidate.name } });
       continue;
@@ -333,16 +349,19 @@ export async function upsertCandidates(db: Db, locationId: string, candidates: S
       ...(candidate.access_overrides?.length ? { access_overrides: candidate.access_overrides } : {}),
       ...(candidate.scope ? { scope: candidate.scope } : {}), ...(candidate.source_kind ? { source_kind: candidate.source_kind } : {}),
       ...(candidate.latest_day ? { latest_day: candidate.latest_day } : {}), ...(candidate.checks ? { checks: candidate.checks } : {}),
-      ...(candidate.gemini ? { gemini: candidate.gemini } : {}), ...(candidate.recent_titles?.length ? { recent_titles: candidate.recent_titles } : {}),
+      // A check that couldn't judge it doesn't wipe the accept a source the check made active stands on.
+      ...(candidate.gemini && !(owned && existing!.status === "active" && candidate.gemini.verdict === null) ? { gemini: candidate.gemini } : {}), ...(candidate.recent_titles?.length ? { recent_titles: candidate.recent_titles } : {}),
     };
     // The pipeline's own source: the check can reject it, or lift its own rejection back to proposed.
-    const status = owned ? candidate.status === "rejected" ? "rejected" : existing!.status === "rejected" ? "proposed" : existing!.status : null;
+    const status = decided ? decided.decision === "accept" ? "active" : "rejected"
+      : owned ? candidate.status === "rejected" ? "rejected" : candidate.status === "active" && candidate.gemini?.verdict === "accept" ? "active" : existing!.status === "rejected" ? "proposed" : existing!.status : null;
+    const review: SourceReview | null = decided ? { decision: decided.decision, reason_code: decided.reason_code, reason: decided.reason, initial_status: existing?.status ?? candidate.status ?? "active", by: decided.by, at: decided.at } : null;
     await sourceMap(db).updateOne({ _id }, {
-      $set: { ...set, ...(status ? { status } : {}) },
+      $set: { ...set, ...(status ? { status } : {}), ...(review ? { review } : {}) },
       $setOnInsert: { ...(status ? {} : { status: candidate.status ?? "active" }), note: candidate.note ?? null, health: emptyHealth(), score: 0, first_seen: now, dormant_until: null },
     }, { upsert: true });
     if (!existing) added += 1;
-    await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: existing ? "refreshed" : candidate.status === "proposed" ? "proposed" : candidate.status === "rejected" ? "saved_rejected" : "added", reason: candidate.why ?? candidate.found_by.detail, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, tier: candidate.source_tier ?? null, name: candidate.name } });
+    await recordDecision({ stage: "source", actor: candidate.found_by.method === "agent" ? "agent" : "rule", subject: candidate.url ?? candidate.source_id, decision: decided ? `person_${decided.decision === "accept" ? "accepted" : "rejected"}` : existing ? "refreshed" : candidate.status === "proposed" ? "proposed" : candidate.status === "rejected" ? "saved_rejected" : "added", reason: decided ? `A person ${decided.decision === "accept" ? "accepted" : "rejected"} this page in an earlier run` : candidate.why ?? candidate.found_by.detail, topic: candidate.topics?.[0] ?? null, evidence: { method: candidate.found_by.method, query: candidate.found_by.query ?? null, tier: candidate.source_tier ?? null, name: candidate.name } });
   }
   return added;
 }

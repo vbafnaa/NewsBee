@@ -13,6 +13,7 @@ import {
 import type { Cell } from "@/pipeline/agent/search-grid";
 import type { AngleRow } from "@/pipeline/agent/search-angles";
 import { ReviewCells, ReviewKey, type Review } from "../locations/[locationId]/source-map-manager";
+import LiveSourceRun from "./live-source-run";
 
 type RunItem = { run_id: string; number: number; status: string; created_at: number; completed_at: number | null; summary: string; recorded: boolean; isolated: boolean };
 type Meter = { id: string; label: string; used: number; ceiling: number | null; unit: string; note: string | null };
@@ -36,7 +37,7 @@ type GridDetail = {
   angles: Array<{ category: string; label: string; angles: AngleRow[] }>;
 };
 const GRID_TOOLS: GridTool[] = ["dork", "exa", "tavily"];
-type Info = { defaults: RunOptions; deployed: boolean; configured: Record<PaidService, boolean>; isolated: boolean };
+type Info = { defaults: RunOptions; deployed: boolean; configured: Record<PaidService, boolean>; isolated: boolean; proposed_until_approved?: boolean };
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((section) => [section.id, section.label])) as Record<string, string>;
 const short = (url: string) => url.replace(/^https?:\/\/(www\.)?/, "");
@@ -72,7 +73,8 @@ function SettingsPanel({ settings, onChange, info, rebuild, onRebuild, isolated 
       <p>{editable ? "Free readers and the model check always run." : "Read only, from what the run recorded. Choose + New run to change them."}</p>
     </div></div>
     {isolated ? <p className="notice">Test mode: {editable ? "this run starts" : "this run started"} from scratch. It reads every fixed reader again, reuses no searches from earlier runs and keeps its results to itself; All sources and editions are untouched. Your decisions are kept by page, so they show in every run.</p>
-      : !editable && <p className="notice">Rows show the source map as it is now.</p>}
+      : editable ? <p className="notice">This run writes into All sources{info?.proposed_until_approved ? ": what it finds is saved as proposed, and no edition reads it until someone accepts it" : ": a source that passes the code check and the model check goes on active, one the model check rejects is saved rejected, and one not judged waits as proposed for your review"}. Sites already on the map are left out of its searches. Decisions made in test-mode runs still stand.</p>
+      : <p className="notice">Rows show the source map as it is now.</p>}
     <div className="settings-grid">
       <fieldset><legend>Access</legend>
         <Setting label="Respect site rules" checked={settings.respect} onChange={change("respect")}><small>Robots, AI opt-outs and terms. Off is Relaxed, a test option.</small></Setting>
@@ -438,7 +440,7 @@ function CompareRuns({ base, detail, runs }: { base: string; detail: Detail; run
 }
 
 /**
- * Source runs: start a source map run with chosen services, or read what a past run did, page by page.
+ * Collect sources: start a source map run with chosen services, or read what a past run did, page by page.
  * Editing (starting runs and recording decisions) happens only in a location's workspace, which passes
  * `canEdit`; the Source map page shows the same runs read-only, with a link to that workspace.
  */
@@ -489,7 +491,7 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
     setStarting(true); setError("");
     try {
       const result = await adminApi<{ run_id: string; started: boolean }>(`${base}/map-run`, { method: "POST", body: JSON.stringify({ options: choicesFor(settings, info.defaults), rebuild }) });
-      if (!result.started) setError("A run is already going. It&rsquo;s open below.");
+      if (!result.started) setError("A run is already going. It’s open below.");
       router.push(path(locationId, result.run_id));
     } catch (cause) { setError(message(cause)); } finally { setStarting(false); }
   }
@@ -518,14 +520,15 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
         {(list?.runs ?? []).map((run) => <option key={run.run_id} value={run.run_id}>{runLabel(run)}</option>)}
       </select></label>
       <div className="toolbar-end">
-        {isNew ? canEdit ? <button type="button" disabled={!locationId || !info || starting} onClick={() => void start()}>{starting ? "Starting…" : "Start source run"}</button>
+        {isNew ? canEdit ? <button type="button" disabled={!locationId || !info || starting} onClick={() => void start()}>{starting ? "Starting…" : "Start collecting sources"}</button>
             : editHref && locationId ? <a className="button" href={editHref}>Start a run in the workspace</a> : null
           : list && <span className="status-badge tone-ok">{list.completed} {list.completed === 1 ? "run" : "runs"} completed</span>}
         {!isNew && !canEdit && editHref && locationId && <a className="button secondary" href={editHref}>Review in the workspace</a>}
       </div>
     </section>
     {error && <p className="alert" role="alert">{error}</p>}
-    {!locationId ? <section className="panel"><h2>Choose a location above to start or review its source runs</h2></section> : isNew ? <>
+    {runId && canEdit && <LiveSourceRun key={runId} runId={runId} />}
+    {!locationId ? <section className="panel"><h2>Choose a location above to start or review its collection runs</h2></section> : isNew ? <>
       {!canEdit && <p className="notice">Read-only. Edit in the location&rsquo;s workspace.</p>}
       <SettingsPanel settings={settings} onChange={canEdit ? setSettings : undefined} info={info} rebuild={rebuild} onRebuild={setRebuild} isolated={info?.isolated ?? false} />
     </> : !detail ? <p role="status">Loading the run…</p> : <>

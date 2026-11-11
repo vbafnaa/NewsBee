@@ -8,7 +8,7 @@ import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { RunConflict } from "@/pipeline/orchestration/runs";
 import { dispatchPlan } from "@/pipeline/orchestration/dispatch";
-import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
+import { queueConsumerActive, recordSchedulerSafely, schedulerState } from "@/pipeline/orchestration/scheduler";
 import { adminGuard, currentPrincipal } from "./admin-session";
 import { ExecutionBlocked } from "@/pipeline/core/execution-errors";
 import { redact, safeError } from "@/pipeline/core/redaction";
@@ -39,7 +39,7 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
     const deps = await pipelineDeps();
     const principal = await currentPrincipal();
     if (!principal) return Response.json({ detail: "Sign in as an approved journalist." }, { status: 401 });
-    const paidAction = new URL(request.url).pathname.match(/\/runs\/([^/]+)\/(authoring|finish|resume|actions|jobs\/[^/]+\/retry)$/);
+    const paidAction = new URL(request.url).pathname.match(/\/runs\/([^/]+)\/(authoring|finish|resume|map-stage|actions|jobs\/[^/]+\/retry)$/);
     if (request.method === "POST" && paidAction) {
       const body = paidAction[2] === "actions" ? await request.clone().json().catch(() => ({})) as { action?: string } : {};
       if (!["include", "exclude", "pin"].includes(body.action ?? "")) await authorizePaidAction(deps.db, decodeURIComponent(paidAction[1]), principal);
@@ -85,8 +85,14 @@ export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
       if (deps.settings.mode === "cloud") {
-        const { send } = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
-        for (let index = 0; index < Math.max(1, send); index += 1) await queueNextJob();
+        const scheduler = await schedulerState(deps.db);
+        if (!queueConsumerActive(scheduler)) {
+          // A published queue message cannot revive a deployment whose consumer never runs.
+          await callNextJob(requestUrl);
+        } else {
+          const { send } = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
+          for (let index = 0; index < Math.max(1, send); index += 1) await queueNextJob();
+        }
       } else {
         await callNextJob(requestUrl);
       }

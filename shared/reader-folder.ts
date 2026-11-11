@@ -6,6 +6,16 @@
 export const DEFAULT_READER_DRIVE_FOLDER_ID = "1S2uePphOd_25yandeFtQJ6iZvSz2ydYw";
 
 const FOLDER_ID = /^[A-Za-z0-9_-]{10,200}$/;
+const MONGO_CHANNEL_ID = /^mongo:[a-f0-9]{32}$/;
+
+export function mongoChannelFolderId(channelId: string) {
+  if (!/^[a-f0-9]{32}$/.test(channelId)) throw new Error("Invalid publishing channel ID");
+  return `mongo:${channelId}`;
+}
+
+export function isMongoChannelFolderId(folderId: string) {
+  return MONGO_CHANNEL_ID.test(folderId);
+}
 
 export function readerDriveFolderId(env: Record<string, string | undefined> = process.env) {
   const configured = env.NEWSBEE_READER_DRIVE_FOLDER_ID?.trim();
@@ -25,7 +35,7 @@ export async function resolveReaderDriveFolderId(
   if (!channel) return readerDriveFolderId(env);
   if (typeof channel.enabled !== "boolean" ||
     typeof channel.drive_folder_id !== "string" ||
-    !FOLDER_ID.test(channel.drive_folder_id)) {
+    !FOLDER_ID.test(channel.drive_folder_id) && !isMongoChannelFolderId(channel.drive_folder_id)) {
     throw new Error(`Reader output channel ${channelId} configuration is malformed`);
   }
   if (!channel.enabled) throw new Error(`Reader output channel ${channelId} is disabled`);

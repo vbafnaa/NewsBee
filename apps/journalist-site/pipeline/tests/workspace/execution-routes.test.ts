@@ -100,6 +100,30 @@ it("never reports deployment integrations as available personal run options", as
   expect(JSON.stringify(info)).not.toContain("fixture-exa-key");
   expect(JSON.stringify(info)).not.toContain("fixture-tavily-key");
 });
+it("blocks an editor's old environment selection and reconnects only after personal replacement", async () => {
+  const run = await seedRun();
+  await db.collection("journalist_credentials").replaceOne({ _id: editor.id }, { _id: editor.id, source: "environment", version: 1, revoked: false } as never);
+  await runs(db).updateOne({ _id: run._id }, { $set: { "execution.source": "environment" } });
+  vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-server-not-live");
+  const url = new Request("https://fixture.example.test/api/admin/execution");
+  const data = await (await permissions(url)).json();
+  expect(data).toMatchObject({ canStart: false, editionReasons: [expect.stringContaining("revoked")] });
+  expect(data.permissions[run._id]).toMatchObject({ canSpend: false, canReconnect: true });
+  const info = await (await runOptions(url)).json();
+  expect(info.configured).toMatchObject({ model: false, agent_model: false, serpapi: false });
+  expect(JSON.stringify(info)).not.toContain("fixture-server-not-live");
+  expect((await reconnect(request("execution", { action: "reconnect", runId: run._id }))).status).toBe(403);
+  expect(state.kick).not.toHaveBeenCalled();
+  expect((await getRun(db, run._id))?.execution?.source).toBe("environment");
+  await save();
+  const before = await (await permissions(url)).json();
+  expect(before.permissions[run._id].canSpend).toBe(false);
+  expect((await reconnect(request("execution", { action: "reconnect", runId: run._id }))).status).toBe(200);
+  expect((await getRun(db, run._id))?.execution).toMatchObject({ sponsorId: editor.id, source: "personal", credentialVersion: 2 });
+  const after = await (await permissions(url)).json();
+  expect(after.permissions[run._id].canSpend).toBe(true);
+  expect(state.kick).toHaveBeenCalledOnce();
+});
 it("checks missing owner deployment configuration and personal budgets", async () => {
   state.deps!.principal = owner;
   vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini");

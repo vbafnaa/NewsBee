@@ -71,7 +71,7 @@ export function ExecutionNotice({ policy, error, runId, refresh }: { policy: Exe
     {!policy && !error && <p role="status">Checking execution access...</p>}
     {policy?.blocker && <p>Newsroom slot held by <Link href={`/locations/${encodeURIComponent(policy.blocker.locationId)}?tab=edition&run=${policy.blocker.id}`}>{policy.blocker.locationName}</Link>: {policy.blocker.paused ? "paused" : policy.blocker.status.replaceAll("_", " ")}. Queued and editor-waiting work also holds the slot.</p>}
     {!!policy?.reasons.length && <p>{policy.reasons.join(" ")} <Link href="/account">My API settings</Link></p>}
-    <p>{policy?.principal.role === "owner" ? "The configured owner may use deployment defaults or personal API keys." : "Your runs require your own API keys from Account & API settings; deployment keys are owner-only."} Provider-backed actions stay blocked until their required credentials are configured.</p>
+    <p>{policy?.principal.role === "owner" ? "The configured owner uses server environment keys by default or may save personal API keys." : "Your runs require personal API keys in Environment & API settings, with no server environment fallback."} Provider-backed actions stay blocked until their required credentials are configured.</p>
     {permission?.reason && <p>{permission.reason}</p>}
     {permission?.restartReason && permission.restartReason !== permission.reason && <p>Restart: {permission.restartReason}</p>}
     {permission?.canReconnect && <button className="secondary" disabled={busy} onClick={() => void reconnect("reconnect")}>Reconnect this run to my current API settings</button>}

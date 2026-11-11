@@ -48,5 +48,11 @@ This is a checklist, not code. Once testing is done, decide and change each item
 
 ## 5. Roll back test mode
 
-- [ ] Set `NEWSBEE_SOURCE_RUNS_ISOLATED=off` so runs write the source map again, instead of a
-      store of their own that leaves All sources and editions untouched.
+- [x] Runs write the source map again: `NEWSBEE_SOURCE_RUNS_ISOLATED` is off by default (Nov 10, 2026),
+      and decisions made on test-mode pages still stand. Check that the deployment doesn't set it
+      to `on` in its environment, which would still win.
+- [x] What passes both checks goes live: `NEWSBEE_PROPOSED_UNTIL_APPROVED` is off by default
+      (Nov 10, 2026). A source that passes the code check and that the model check accepts goes on
+      active with no approval; a model check rejection is a rejected row a person can overrule; a
+      source not judged waits as proposed and is never read. Check the deployment doesn't set it
+      to `on`, which would still hold everything as proposed.

@@ -45,3 +45,60 @@ it.each(["rejected", "paused", "proposed"])("does not pool previously collected 
   expect(result.funnel.pooled).toBe(0);
   expect(await collectedItems(db).findOne({ _id: "run:0" })).toMatchObject({ status: "dropped", step: "source_review", reason: expect.stringContaining(status) });
 });
+
+it('keeps same-title reports on different days separate',async()=>{
+  const result=await pool(['2026-11-02','2026-11-03'].map(event_date=>({title:'Council considers housing proposal',kind:'news_report',event_date,source_url:`https://example.org/${event_date}`,tier:'local'})));
+  expect(result.funnel.after_merge).toBe(2);expect(result.funnel.pooled).toBe(2);
+});
+it('keeps identically named events at different venues separate',async()=>{
+  const result=await pool(['North Library','South Library'].map(venue=>({title:'Family Story Time',kind:'event',event_date:'2026-11-10',venue,source_url:'https://example.org/calendar',tier:'local'})));
+  expect(result.funnel.after_merge).toBe(2);expect(result.funnel.pooled).toBe(2);
+});
+it('does not join an unrelated report to an incident on the same street',async()=>{
+  const result=await pool([{title:'Vehicle collision reported',kind:'safety_incident',event_date:'2026-11-05',incident:{block:'100 block of Example Avenue'},source_url:'https://example.org/incident',tier:'local'},{title:'Example Avenue park receives funding',description:'Example Avenue park funding was announced.',kind:'news_report',event_date:'2026-11-05',source_url:'https://example.org/park',tier:'local'}]);
+  expect(result.funnel.after_merge).toBe(2);
+});
+it('merges strongly matching reworded reports while retaining both occurrences',async()=>{
+  const result=await pool([{title:'Dahl park restroom renovation schedule',kind:'local_news',event_date:'2026-11-05',source_url:'https://primary.example/renovation',tier:'local',source_tier:'official',source_name:'Parks Department'},{title:'Dahl park restroom renovation schedule update',kind:'news_report',event_date:'2026-11-05',source_url:'https://news.example/renovation',tier:'local',source_tier:'local_reporting',source_name:'Local News'}]);
+  expect(result.funnel.after_merge).toBe(1);expect(result.events).toHaveLength(2);
+});
+it('does not transitively merge reports whose endpoints lack shared identity',async()=>{
+  const result=await pool(['Dahl park restroom renovation','Dahl park restroom renovation project','Dahl park restroom project'].map((title,i)=>({title,kind:'news_report',event_date:'2026-11-05',source_url:`https://example.org/${i}`,tier:'local'})));
+  expect(result.funnel.after_merge).toBe(2);
+});
+it('records conflicting structured times instead of silently choosing one',async()=>{
+  const result=await pool(['10:00 AM','11:00 AM'].map((when,i)=>({title:'Library genealogy workshop',kind:'event',event_date:'2026-11-10',source_url:`https://example.org/${i}`,tier:'local',details:{when}})));
+  expect(result.events.find(event=>event.facts.lead)?.facts.merge_conflicts).toEqual(['conflicting_source_times']);
+});
+it('preserves publication history across the more precise story identity',async()=>{
+  const { recordPublished } = await import('../../editions/ledger');
+  const { storyId } = await import('../../editions/stories');
+  const legacy = storyId('news_report:council considers housing proposal');
+  await recordPublished(db,'2026-10-26',{id:'old',location_id:'test',items:[{story_id:'precise-earlier-id',legacy_story_id:legacy,event_date:'2026-10-25',kind:'news_report'}]});
+  const result=await pool([{title:'Council considers housing proposal',kind:'news_report',event_date:'2026-11-02',source_url:'https://example.org/report',tier:'local'}]);
+  expect(result.funnel.pooled).toBe(0);
+});
+it('keeps the chosen primary source first after collapsing merged occurrences',async()=>{
+  const { collapse } = await import('../../editions/stories');
+  const result=await pool([{title:'Dahl park restroom renovation schedule',kind:'local_news',event_date:'2026-11-05',source_url:'https://primary.example/record',tier:'local',source_tier:'official',schedule_text:'November 5 afternoon'},{title:'Dahl park restroom renovation schedule update',kind:'news_report',event_date:'2026-11-05',source_url:'https://news.example/report',tier:'local',source_tier:'local_reporting',schedule_text:'November 5 morning'}]);
+  expect(collapse(result.events)[0].first.source_url).toBe('https://primary.example/record');
+});
+it('keeps similarly worded reports about different named places separate',async()=>{
+  const result=await pool(['Cedar','Maple'].map((park,i)=>({title:`Council approves new park renovation project at ${park}`,kind:'news_report',event_date:'2026-11-05',source_url:`https://example.org/${i}`,tier:'local'})));
+  expect(result.funnel.after_merge).toBe(2);
+});
+it('does not treat a newsroom listing URL as the identity of every story on it',async()=>{
+  const result=await pool([{title:'Cedar playground renovation announcement',kind:'news_report',event_date:'2026-11-05',source_url:'https://example.org/news',tier:'local'},{title:'Maple library opens for residents',kind:'news_report',event_date:'2026-11-05',source_url:'https://example.org/news',tier:'local'}]);
+  expect(result.funnel.after_merge).toBe(2);
+});
+it('assembles cited real-source coverage as one story without treating publication dates as conflicting event times',async()=>{
+ const original='https://www.wedgwoodcc.org/2026/09/06/wedgwood-center-development-hits-a-pause-again/';
+ const result=await pool([
+  {title:'Wedgwood Center Development Hits a Pause Again',kind:'local_news',event_date:'2026-09-06',source_url:original,source_tier:'organisation',source_name:'Wedgwood Community Council',description:'The property owner confirmed Madison Development Group chose not to move forward.',details:{when:'September 6, 2026',links:[]}},
+  {title:'Development Watch: A Wedgwood Center Pause',kind:'news_report',event_date:'2026-09-08',source_url:'https://www.neseattlewire.com/p/another-developer-walks-away-from-wedgwood-center-the-seahawks-play-on-a-wednesday',source_tier:'local_reporting',source_name:'Northeast Seattle Wire',description:'The owner is looking for a developer, according to the Wedgwood Community Council.',details:{when:'September 8, 2026',links:[original]}},
+ ]);
+ expect(result.funnel.after_merge).toBe(1);
+ expect(result.events).toHaveLength(2);
+ expect(result.events.find(x=>x.facts.lead)?.facts.source_url).toBe(original);
+ expect(result.events.find(x=>x.facts.lead)?.facts.merge_conflicts).toEqual([]);
+});

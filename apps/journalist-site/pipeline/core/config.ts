@@ -60,7 +60,7 @@ export type Settings = {
   newsSearch: Array<"gdelt" | "llm">;
   /** NEWSBEE_LLM_DISCOVERY: Gemini suggests sources at discovery time (every suggestion is checked). */
   llmDiscovery: boolean;
-  /** NEWSBEE_PROPOSED_UNTIL_APPROVED: for the testing phase, every source a map run finds is saved as proposed, and editions read only what a person accepted. On by default. */
+  /** NEWSBEE_PROPOSED_UNTIL_APPROVED: when on, every source a map run finds is saved as proposed, so editions read only what a person accepted. Off by default: a source the model check accepted goes on active. */
   proposedUntilApproved: boolean;
   /** NEWSBEE_MODEL_DAILY_CALLS: model calls per day for detail extraction and discovery. */
   modelDailyCalls: number;
@@ -164,7 +164,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     collectBudgetSeconds: Math.round((nonNegative(env.NEWSBEE_COLLECT_BUDGET_MINUTES, "NEWSBEE_COLLECT_BUDGET_MINUTES") ?? DEFAULT_COLLECT_BUDGET_MINUTES) * 60) || null,
     newsSearch: newsSearchValue(env.NEWSBEE_NEWS_SEARCH),
     llmDiscovery: flag(env.NEWSBEE_LLM_DISCOVERY, true),
-    proposedUntilApproved: flag(env.NEWSBEE_PROPOSED_UNTIL_APPROVED, true),
+    proposedUntilApproved: flag(env.NEWSBEE_PROPOSED_UNTIL_APPROVED, false),
     modelDailyCalls: nonNegative(env.NEWSBEE_MODEL_DAILY_CALLS, "NEWSBEE_MODEL_DAILY_CALLS") ?? DEFAULT_MODEL_DAILY_CALLS,
     lightModel: blank(env.NEWSBEE_GEMINI_LIGHT_MODEL) ?? DEFAULT_LIGHT_MODEL,
     integrations: {

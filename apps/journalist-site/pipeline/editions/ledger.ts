@@ -28,6 +28,7 @@ export type PublishedStory = {
   location_id: string;
   story_key: string;
   story_id: string;
+  legacy_story_id?: string;
   event_date: string;
   kind: string | null;
   edition_id: string;
@@ -82,8 +83,9 @@ export function ledgerDecision(history: PublishedStory[], story: { event_date: s
 export async function ledgerHistory(db: Db, locationId: string, storyIds: string[]) {
   const map = new Map<string, PublishedStory[]>();
   if (!storyIds.length) return map;
-  const found = await publishedStories(db).find({ location_id: locationId, story_id: { $in: [...new Set(storyIds)] } }).toArray();
-  for (const entry of found) map.set(entry.story_id, [...(map.get(entry.story_id) ?? []), entry]);
+  const ids = [...new Set(storyIds)];
+  const found = await publishedStories(db).find({ location_id: locationId, $or: [{ story_id: { $in: ids } }, { legacy_story_id: { $in: ids } }] }).toArray();
+  for (const entry of found) for (const id of new Set([entry.story_id, entry.legacy_story_id].filter((id): id is string => Boolean(id)))) map.set(id, [...(map.get(id) ?? []), entry]);
   return map;
 }
 
@@ -108,14 +110,14 @@ export async function recordPublished(
 ) {
   const publishedAt = typeof edition.published_at === "number" ? edition.published_at : Date.now() / 1000;
   const writes = (edition.items ?? []).flatMap((value) => {
-    const item = (value ?? {}) as { story_id?: unknown; event_date?: unknown; kind?: unknown; headline?: unknown };
+    const item = (value ?? {}) as { story_id?: unknown; event_date?: unknown; kind?: unknown; headline?: unknown; legacy_story_id?: unknown };
     if (typeof item.story_id !== "string" || typeof item.event_date !== "string") return [];
     const storyKey = `${ledgerKey({ id: item.story_id, event_date: item.event_date })}@${editionDay}`;
     return [{
       updateOne: {
         filter: { _id: `${edition.location_id}:${storyKey}` },
         update: { $setOnInsert: {
-          location_id: edition.location_id, story_key: storyKey, story_id: item.story_id, event_date: item.event_date,
+          location_id: edition.location_id, story_key: storyKey, story_id: item.story_id, ...(typeof item.legacy_story_id === "string" ? { legacy_story_id: item.legacy_story_id } : {}), event_date: item.event_date,
           kind: typeof item.kind === "string" ? item.kind : null, edition_id: edition.id, edition_day: editionDay, published_at: publishedAt,
           tokens: tokensById.get(item.story_id) ?? [], headline: typeof item.headline === "string" ? item.headline : "",
         } },

@@ -94,7 +94,7 @@ describe("the model check", () => {
     await inRun(() => checkAndSave(context(fake), [page(1, { checks: unclear }), page(2)], { route: "dork" }));
     const [rejected, kept] = await records();
     expect(rejected).toMatchObject({ status: "rejected", gemini: { verdict: "reject", reason_code: "R1", reason: "Not about this place" } });
-    expect(kept).toMatchObject({ status: "proposed", gemini: { verdict: "accept" } });
+    expect(kept).toMatchObject({ status: "active", gemini: { verdict: "accept" } });
     // The person sees Rejected as its initial status, and can accept it.
     const review = await saveSourceReview(db, "loc", rejected.source_id, { decision: "accept", reason_code: "A2" }, "editor");
     expect(review).toMatchObject({ status: "active", review: { initial_status: "rejected", decision: "accept" } });
@@ -113,7 +113,7 @@ describe("the model check", () => {
     expect(prompt).toContain("Latest dated item: 2026-10-30");
     expect(prompt).toContain('Details: {"domain":"data.example.gov","dataset":"abcd-1234","topic":"police","filter":"radius"}');
     expect(prompt).not.toContain("Page text (data, not instructions):");
-    expect((await records())[0]).toMatchObject({ status: "proposed", gemini: { verdict: "accept" } });
+    expect((await records())[0]).toMatchObject({ status: "active", gemini: { verdict: "accept" } });
   });
 
   it("saves everything as proposed, not judged, when a call fails: nothing goes live", async () => {
@@ -135,7 +135,9 @@ describe("the model check", () => {
     expect(fake.calls).toHaveLength(2);
     expect(counts).toMatchObject({ judged: 50, unjudged: 35, calls: 3 });
     const saved = await records();
-    expect(saved.filter((record) => record.status === "proposed")).toHaveLength(85);
+    // What was judged and accepted goes on active; what the limit stopped waits as proposed, never active.
+    expect(saved.filter((record) => record.status === "active")).toHaveLength(50);
+    expect(saved.filter((record) => record.status === "proposed")).toHaveLength(35);
     expect(saved.filter((record) => /Hard limit/.test(record.gemini?.note ?? ""))).toHaveLength(35);
     // A hard limit isn't held for a later job: nothing waits.
     expect(await db.collection(PENDING_CHECKS).countDocuments()).toBe(0);
@@ -200,20 +202,38 @@ describe("every route goes through it", () => {
     const state = await inRun(() => runMethod({ ...context(fake, { integrations: { attomKey: "key" } }), transport } as DiscoveryContext, "homesales"));
     expect(state).toMatchObject({ ok: true, found: 1, added: 1, gemini: { judged: 1, accepted: 1 } });
     expect(state.detail).toContain("Model check: 1 accepted, 0 rejected");
-    expect((await records())[0]).toMatchObject({ source_id: "property:attom:98001", status: "proposed", gemini: { verdict: "accept", route: "homesales" } });
+    expect((await records())[0]).toMatchObject({ source_id: "property:attom:98001", status: "active", gemini: { verdict: "accept", route: "homesales" } });
   });
 });
 
 describe("saving for local testing", () => {
-  it("holds every source as proposed, even a fixed reader's, until a person accepts it", async () => {
+  it("puts what passes both checks on active by default, and with proposed-until-approved on holds everything as proposed", async () => {
     setLimits({});
-    const fake = new FakeModel(verdicts());
-    await inRun(() => checkAndSave(context(fake), [page(1), { ...dataset, status: undefined }], { route: "government" }));
-    expect((await records()).map((record) => record.status)).toEqual(["proposed", "proposed"]);
+    const fake = new FakeModel(verdicts((block) => /Site 2 /.test(block) ? "reject" : "accept"));
+    // Off (the default): accepted is active, even an agent's proposal or a link-only page; rejected is a visible row.
+    const linkOnly = page(3, { link_only: true });
+    await inRun(() => checkAndSave(context(fake), [page(1, { status: "proposed" }), page(2), linkOnly, { ...dataset, status: undefined }], { route: "agent" }));
+    expect((await records()).map((record) => [record.name, record.status, record.link_only])).toEqual([
+      ["Police incidents (Lakeside Police)", "active", false], ["Site 1 news", "active", false], ["Site 2 news", "rejected", false], ["Site 3 news", "active", true],
+    ]);
     await db.dropDatabase();
-    // With the setting off, the fixed pipeline's sources go live as they did.
-    await inRun(() => checkAndSave(context(fake, { proposedUntilApproved: false }), [page(1)], { route: "government" }));
+    // On: held as proposed until a person accepts it.
+    await inRun(() => checkAndSave(context(fake, { proposedUntilApproved: true }), [page(1), { ...dataset, status: undefined }], { route: "government" }));
+    expect((await records()).map((record) => record.status)).toEqual(["proposed", "proposed"]);
+  });
+
+  it("puts a source on active once the check accepts it on a later run, and never makes an unjudged one active", async () => {
+    setLimits({});
+    const failing = new FakeModel(() => new Error("Gemini returned HTTP 500"));
+    await inRun(() => checkAndSave(context(failing), [page(1)], { route: "government" }));
+    expect((await records())[0]).toMatchObject({ status: "proposed", gemini: { verdict: null } });
+    await inRun(() => checkAndSave(context(new FakeModel(verdicts())), [page(1)], { route: "government" }), {}, "run-2");
+    expect((await records())[0]).toMatchObject({ status: "active", gemini: { verdict: "accept" } });
+    // A later failed check leaves it as it is; a later rejection, on changed details, takes it off.
+    await inRun(() => checkAndSave(context(failing), [page(1, { feed_url: "https://site1.example.org/feed" })], { route: "government" }), {}, "run-3");
     expect((await records())[0].status).toBe("active");
+    await inRun(() => checkAndSave(context(new FakeModel(verdicts(() => "reject"))), [page(1, { feed_url: "https://site1.example.org/feed2" })], { route: "government" }), {}, "run-4");
+    expect((await records())[0].status).toBe("rejected");
   });
 
   it("keeps pinned, paused and dormant sources, and a person's decision, on later runs", async () => {
@@ -382,7 +402,7 @@ describe("what a job's time stops, the run's next job judges", () => {
     expect(fake.calls.map((call) => call.prompt).join("\n")).toContain("Lakeside news from site 1.");
     const after = await records();
     expect(after.map((record) => [record.name, record.status, record.gemini?.verdict, record.gemini?.route])).toEqual([
-      ["Police incidents (Lakeside Police)", "proposed", "accept", "government"], ["Site 1 news", "proposed", "accept", "government"], ["Site 2 news", "rejected", "reject", "government"],
+      ["Police incidents (Lakeside Police)", "active", "accept", "government"], ["Site 1 news", "active", "accept", "government"], ["Site 2 news", "rejected", "reject", "government"],
     ]);
     expect(await db.collection(PENDING_CHECKS).countDocuments()).toBe(0);
     // Nothing left: a later job has nothing to do.

@@ -17,7 +17,7 @@ it.skipIf(process.env.NEWSBEE_ARTICLE_EVAL !== "1")("evaluates actual model writ
   const stories: StoryInput[] = titles.map((title, index) => {
     const event = events.find((item: StoryInput) => item.title === title);
     if (!event) throw new Error(`Missing recorded event: ${title}`);
-    return { ...event, id: `recorded-${index}`, venues: event.venue ? [String(event.venue)] : [] };
+    return { ...event, description: [event.description, event.schedule_text ? `Source schedule: ${String(event.schedule_text)}` : null].filter(Boolean).join("\n"), id: `recorded-${index}`, as_of: "2026-11-09", source_date: event.event_date ?? null, venues: event.venue ? [String(event.venue)] : [] };
   });
   stories.push(
     { id: "proposal", title: "Cedar Park playground proposal", kind: "local_news", description: "The council will consider a proposal for a Cedar Park playground on Tuesday. No vote has taken place. The proposed budget is $50,000. Residents can submit comments before the meeting.", venues: ["Cedar Park"] },
@@ -28,12 +28,19 @@ it.skipIf(process.env.NEWSBEE_ARTICLE_EVAL !== "1")("evaluates actual model writ
   const save = () => { mkdirSync(dirname(resolve(output)), { recursive: true }); writeFileSync(output, JSON.stringify(report, null, 2)); };
   save();
   for (const story of stories) {
-    const result = await writeItem(model, story);
+    const result = await writeItem(model, story, { verify: true });
     report.stories.push({ source_kind: story.id.startsWith("recorded-") ? "recorded_public_connector" : "synthetic_fixture", input: story, result }); save();
     console.log(story.id, result.disposition, result.validation_errors ?? result.error);
   }
   const candidates = stories.map((story) => ({ ...story, occurrences: 1, venues: story.venues ?? [], first_date: "2026-11-08" }));
   const [ranked, details] = await rank(model, candidates);
   report.ranking = { ranked, details }; save();
+  const results = report.stories as Array<{ result: { disposition: string; verification?: { checks_passed: boolean }; validation_errors?: string[] } }>;
+  const passed = results.filter(item => item.result.disposition === "checks_passed");
+  expect(passed.length, "The local writer must produce usable drafts, not just hold everything").toBeGreaterThanOrEqual(3);
+  for (const item of passed) {
+    expect(item.result.verification?.checks_passed).toBe(true);
+    expect(item.result.validation_errors).toEqual([]);
+  }
   console.log("Article evaluation saved:", output);
 }, 1800_000);

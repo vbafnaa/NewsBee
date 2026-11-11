@@ -59,7 +59,7 @@ describe("creating an edition and publishing it are separate steps", () => {
     expect((await sourceMap(db).findOne({ _id: `${LOCATION}:src-1` } as never))?.health).toEqual({ items_published: 1 });
   });
 
-  it("also publishes an edition to each selected journalist channel", async () => {
+  it("publishes to the default reader without automatically publishing to journalist channels", async () => {
     await seedEdition("ed-1", 100);
     await outputChannels(db).insertOne({
       _id: "channel-1", owner_id: "journalist-1", name: "Neighbourhoods", url: "https://news.example",
@@ -72,8 +72,8 @@ describe("creating an edition and publishing it are separate steps", () => {
 
     expect(result.reader_folder).toBe("reader-channel-folder");
     expect(saved.map(({ folder, name }) => [folder, name])).toContainEqual(["reader-channel-folder", "ed-1.json"]);
-    expect(saved.map(({ folder, name }) => [folder, name])).toContainEqual(["channel-folder", "ed-1.json"]);
-    expect(await outputChannels(db).findOne({ _id: "channel-1" })).toMatchObject({ published_location_ids: [LOCATION] });
+    expect(saved.map(({ folder }) => folder)).not.toContain("channel-folder");
+    expect(await outputChannels(db).findOne({ _id: "channel-1" })).toMatchObject({ published_location_ids: [] });
   });
 
   it("does not mark an edition published or count history when the Reader channel is disabled", async () => {

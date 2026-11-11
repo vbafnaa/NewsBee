@@ -12,7 +12,7 @@ const CHOICES: [SourceClearType, string, string][] = [
   ["reviews", "Reviews and labels", "Accept and reject decisions on All sources, reasons and their history, which the model check learns from. This is your labelled data: download a copy first."],
   ["page_decisions", "Decisions on source-run pages", "Decisions made on pages in test-mode source runs, which carry across runs by page. Later runs show those pages undecided again."],
   ["gemini_checks", "Model check verdicts and review flags", "The model check's verdicts and the final review's strong, usable, weak and duplicate flags on All sources. The next run judges them again."],
-  ["test_runs", "Test-mode source runs", "Each test-mode run's own results. The runs stay in the list, but their pages can no longer be opened or compared."],
+  ["test_runs", "Test-mode collection runs", "Each test-mode run's own results. The runs stay in the list, but their pages can no longer be opened or compared."],
   ["settings", "Pins, pauses and lookup windows", "Settings editors chose per source. Sources go back to default reading rules."],
   ["discovery_history", "Discovery history", "Each method's last result and due date. Every method is due on the next source map run."],
   ["cached_discovery", "Cached discovery", "Area facts, newsrooms, saved search results and the agent's notes. The next run fetches and searches again, which can use paid calls."],

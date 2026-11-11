@@ -73,14 +73,14 @@ export function isDeployed(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /**
- * NEWSBEE_SOURCE_RUNS_ISOLATED, for the testing phase (on by default): every source map run starts
+ * NEWSBEE_SOURCE_RUNS_ISOLATED, test mode (off by default): when on, every source map run starts
  * from scratch and keeps its results to itself. It reads every fixed reader again into its own store
  * (`source_run_<run id>`, see sourcemap/store.ts), reuses no search results or source-finding caches
- * from earlier runs, and leaves the source map, and so editions, untouched. Off restores runs that
- * write into the source map.
+ * from earlier runs, and leaves the source map, and so editions, untouched. Off, runs write into the
+ * source map, and the decisions people made on test-mode runs' pages still stand there.
  */
 export function sourceRunsIsolated(env: NodeJS.ProcessEnv = process.env) {
-  return !["0", "off", "false", "no"].includes((env.NEWSBEE_SOURCE_RUNS_ISOLATED ?? "on").trim().toLowerCase());
+  return ["1", "on", "true", "yes"].includes((env.NEWSBEE_SOURCE_RUNS_ISOLATED ?? "off").trim().toLowerCase());
 }
 
 /** Merge kick-off choices over the defaults, and refuse what this environment does not allow. */

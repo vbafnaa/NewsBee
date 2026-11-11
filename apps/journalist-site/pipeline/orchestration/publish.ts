@@ -11,12 +11,12 @@ import type { Db } from "mongodb";
 import type { LocationProfile } from "../connectors/types";
 import type { ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
+import { channelArtifactStore } from "../storage/mongo-channel-artifacts";
 import { resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
 import { correctedEdition, type DraftDoc } from "../editions/authoring";
 import { writeEditionMap } from "../editions/edition-map";
 import { recordPublished } from "../editions/ledger";
 import { recordPublishedCounts } from "../sourcemap/store";
-import { publishToOutputChannels } from "./output-channels";
 import { runs } from "./runs";
 import { uniqueEditionPhotos } from "../images/uniqueness";
 import { photoStoryMismatch } from "../../../../shared/photo-story-match";
@@ -61,7 +61,7 @@ export async function writeReaderDirectory(db: Db, store: ArtifactStore, folderI
     const profile = byId.get(id);
     return profile ? [directoryEntry({ ...profile, id })] : [];
   });
-  await store.saveJson(selectedFolderId, "locations.json", { locations });
+  await channelArtifactStore(db, store, selectedFolderId).saveJson(selectedFolderId, "locations.json", { locations });
   return locations.map((location) => location.id);
 }
 
@@ -71,7 +71,7 @@ export async function publishToReader(db: Db, store: ArtifactStore, edition: Pub
   const items = Array.isArray(edition.items) ? edition.items.map(item => photoStoryMismatch(item, item)
     ? Object.fromEntries(Object.entries(item).filter(([key]) => key !== "image" && !key.startsWith("image_"))) : item) : null;
   const payload = items ? { ...edition, items: await uniqueEditionPhotos(db, items) } : edition;
-  await store.saveJson(selectedFolderId, editionFileName(edition), payload);
+  await channelArtifactStore(db, store, selectedFolderId).saveJson(selectedFolderId, editionFileName(edition), payload);
   await writeReaderDirectory(db, store, selectedFolderId);
   return selectedFolderId;
 }
@@ -108,7 +108,6 @@ export async function publishEdition(db: Db, store: ArtifactStore, locationId: s
     await recordPublishedCounts(db, locationId, new Map(Object.entries((draft.source_counts as Record<string, number> | undefined) ?? {})));
   }
   const folder = await publishToReader(db, store, payload, selectedFolderId);
-  const outputChannels = await publishToOutputChannels(db, store, payload);
   if (run) {
     await runs(db).updateOne({ _id: run._id }, { $set: {
       status: "published", updated_at: at, "published.reader_folder": folder, "published.by": by, "published.at": at,
@@ -116,7 +115,7 @@ export async function publishEdition(db: Db, store: ArtifactStore, locationId: s
     } });
     await writeEditionMap(db, run._id).catch(() => undefined);
   }
-  return { edition_id: editionId, run_id: draft.run_id, published_at: at, first, reader_folder: folder, output_channels: outputChannels };
+  return { edition_id: editionId, run_id: draft.run_id, published_at: at, first, reader_folder: folder, output_channels: [] };
 }
 
 /** A location's finished editions, newest first, with which one the reader shows. */

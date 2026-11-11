@@ -38,7 +38,7 @@ describe("observed source navigation", () => {
 
 it("retains validated distinct pages and explicit editor additions beyond the root-host cap", async () => {
   const updateOne = vi.fn(async () => ({}));
-  const db = { collection: () => ({ findOne: async () => null, countDocuments: async () => 2, updateOne }) } as unknown as Db;
+  const db = { collection: () => ({ findOne: async () => null, find: () => ({ toArray: async () => [] }), countDocuments: async () => 2, updateOne }) } as unknown as Db;
   expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "generic" }])).toBe(0);
   expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "calendar", source_kind: "calendar", params: { discovery_parent_url: parent.url } }])).toBe(1);
   expect(await upsertCandidates(db, "place", [{ ...parent, source_id: "editor", status: "pinned", found_by: { method: "editor", detail: "verified registry entry" } }])).toBe(1);

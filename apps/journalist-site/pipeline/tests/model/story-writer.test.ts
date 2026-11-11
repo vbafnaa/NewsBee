@@ -179,3 +179,62 @@ describe("source-grounded quantities and news dates", () => {
     expect(await writeItem(new FakeModel(() => ({ headline: " ", summary: " " })), story)).toMatchObject({ disposition: "held", error: expect.stringContaining("Invalid structured response") });
   });
 });
+
+it("checks numeric claims independently of the configured voice", () => {
+  const previous = process.env.NEWSBEE_VOICE;
+  process.env.NEWSBEE_VOICE = "plain";
+  try {
+    expect(validateItem({ id: "homes", title: "Council housing proposal", kind: "news_report", description: "The council will consider a proposal for 20 homes." }, { headline: "Council housing proposal", summary: "The council approved 200 homes." }))
+      .toEqual(expect.arrayContaining(["summary:unsupported_number:200", "summary:unsupported_status:approval"]));
+  } finally { if (previous === undefined) delete process.env.NEWSBEE_VOICE; else process.env.NEWSBEE_VOICE = previous; }
+});
+it("rejects reversed registration requirements but accepts supported negation", () => {
+  const input = { id: "lab", title: "Robot Lab", description: "Registration is not required." };
+  expect(validateItem(input, draft("Registration is required."))).toContain("summary:unsupported_status:registration");
+  expect(validateItem(input, draft("Registration is not required."))).toEqual([]);
+  expect(validateItem({ ...input, description: "Registration is required." }, draft("Registration is not required."))).toContain("summary:unsupported_status:registration");
+});
+it("rejects invented news dates as well as event dates", () => {
+  expect(validateItem({ ...story, kind: "news_report" }, draft("Robot Lab opens on Wednesday."))).toContain("summary:unsupported_date_word:wednesday");
+});
+it("rejects invented direct quotations", () => {
+  expect(validateItem(story, draft('The speaker said “Robots will save the world.”'))).toContain("summary:unsupported_quotation");
+});
+it("does not infer rejection from a pending proposal, or approval from a negated source", () => {
+  const input = { id: "housing", title: "Council housing proposal", kind: "news_report", description: "The council will consider a proposal for 20 homes." };
+  expect(validateItem(input, { headline: input.title, summary: "The council has not approved 20 homes." })).toContain("summary:unsupported_status:approval");
+  expect(validateItem({ ...input, description: "The council has not approved 20 homes." }, { headline: input.title, summary: "The council approved 20 homes." })).toContain("summary:unsupported_status:approval");
+});
+
+it("does not treat stress-free enrollment as evidence of free admission", () => {
+  const input = { id: "enrollment", title: "Enrollment Info Session", description: "Learn about school choice. Make enrollment stress-free." };
+  const article = { headline: input.title, summary: "The session is free and open to all families." };
+  expect(validateItem(input, article)).toContain("summary:unsupported_claim_word:free");
+  expect(validateItem({ ...input, description: `${input.description} Admission is free.` }, article)).not.toContain("summary:unsupported_claim_word:free");
+});
+it("checks present-tense approval claims as well as past-tense approval", () => {
+  const input = { id: "permit", title: "City Building Project", kind: "development", description: "City recorded a building project. Window replacement is subject to field inspection." };
+  expect(validateItem(input, { headline: "City Building Project: City Approves Work", summary: "Window replacement is subject to field inspection." })).toContain("headline:unsupported_status:approval");
+});
+it('normalizes monetary scale without losing currency or meaning', () => {
+  const input = { id: 'budget', title: 'Council housing project', kind: 'news_report', description: 'The council recorded a $1,000,000 project estimate.' };
+  expect(validateItem(input, { headline: input.title, summary: 'The council recorded a $1 million project estimate.' })).toEqual([]);
+  expect(validateItem(input, { headline: input.title, summary: 'The project estimate is £1 million.' })).toContain('summary:unsupported_number:£1million');
+});
+it('holds source-internal meeting date conflicts even for news-classified notices', () => {
+  const input = { id: 'meeting', title: 'November Board Meeting on November 10th', kind: 'local_news', description: 'Please note a schedule change. Our board meeting is on November 7th at 7 p.m.' };
+  expect(validateItem(input, { headline: input.title, summary: 'The board meeting is on November 10th.' })).toContain('unsupported_source_conflict:event_dates');
+});
+it('keeps ordinary permit records distinct from superlative records', () => {
+  const input = { id: 'permit', title: 'Council Building Project', kind: 'development', description: 'The city recorded window replacement work.' };
+  expect(validateItem(input, { headline: input.title, summary: 'The permit record describes window replacement work.' })).not.toContain('summary:unsupported_superlative:record');
+});
+it('preserves a complete hyphenated program name such as Genealogy Drop-In', () => {
+  expect(headlineErrors('Genealogy Drop-In')).toEqual([]);
+  expect(headlineErrors('Genealogy welcomes people in')).toContain('incomplete_headline');
+});
+
+it.each(['is scheduled for', 'is set for', 'will take place on', 'is on'])('holds an unresolved event date conflict expressed as %s', wording => {
+ const input={id:'board',title:'Community Board Meeting — November 10, 2026',kind:'local_news',description:`The Community Board Meeting ${wording} November 7, 2026.`};
+ expect(validateItem(input,{headline:'Community Board Meeting',summary:input.description})).toContain('unsupported_source_conflict:event_dates');
+});

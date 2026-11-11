@@ -19,10 +19,13 @@
  * or whose details changed since they were last judged; a source a person decided on is never
  * re-judged.
  *
- * Saving (`checkAndSave`): a Gemini rejection is saved as a row with status `rejected` and its
- * reason, so a person can overrule it. While `NEWSBEE_PROPOSED_UNTIL_APPROVED` is on (the default,
- * for the testing phase), everything else is saved as `proposed`, so nothing is used until a
- * person accepts it. Page text is data, not instructions.
+ * Saving (`checkAndSave`): a source that passed the code checks and that Gemini accepted is saved
+ * `active`, so editions read it with no one approving it. A Gemini rejection is saved as a row with
+ * status `rejected` and its reason, so a person can overrule it. A source that wasn't judged (the
+ * check failed, or a limit or the time stopped it) is saved `proposed` with its note, never active.
+ * With `NEWSBEE_PROPOSED_UNTIL_APPROVED` on (off by default), accepted sources are held as
+ * `proposed` too, so nothing is used until a person accepts it. A person's label, a pin and a
+ * test-mode page decision always win. Page text is data, not instructions.
  */
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
@@ -32,7 +35,7 @@ import type { ModelRuntime } from "../model/runtime";
 import { fill, limit, PLAYBOOK_RULES, template } from "../playbook";
 import { decisionOf, REASONS, reasonLabel, type ReasonCode } from "../sourcemap/reasons";
 import { SECTION_LABELS, type SectionId } from "../sourcemap/sections";
-import { checkOwned, sourceMap, SOURCE_REVIEWS, upsertCandidates, type SourceCandidate, type SourceReviewEntry } from "../sourcemap/store";
+import { checkOwned, earlierPageDecisions, sourceMap, SOURCE_REVIEWS, upsertCandidates, type SourceCandidate, type SourceReviewEntry } from "../sourcemap/store";
 import { recordDecisions, type Decision } from "../trace/decisions";
 import type { DiscoveryContext } from "./methods";
 
@@ -61,8 +64,8 @@ export type CheckCounts = { judged: number; accepted: number; rejected: number; 
 
 /** On unless a baseline test switched it off. */
 export function geminiCheckOn() { return currentOptions().gemini_check !== false; }
-/** Proposed until a person approves: the testing-phase default. */
-export function proposedUntilApproved(settings: Partial<Settings> | null | undefined) { return settings?.proposedUntilApproved !== false; }
+/** Proposed until a person approves: only when NEWSBEE_PROPOSED_UNTIL_APPROVED is on. */
+export function proposedUntilApproved(settings: Partial<Settings> | null | undefined) { return settings?.proposedUntilApproved === true; }
 /** The check's own model: the light model, separate from the agent's. */
 export function checkModel(context: Pick<DiscoveryContext, "model" | "judgeModel">) { return context.judgeModel === undefined ? context.model ?? null : context.judgeModel; }
 
@@ -208,11 +211,13 @@ export async function geminiCheck(context: DiscoveryContext, candidates: SourceC
   const decisions: Array<Omit<Decision, "run_id" | "location_id" | "at">> = [];
   const subject = (candidate: SourceCandidate) => candidate.url ?? candidate.source_id;
   const existing = new Map((await sourceMap(context.db).find({ _id: { $in: candidates.map((candidate) => `${context.location.id}:${candidate.source_id}`) } }, { projection: { status: 1, review: 1, gemini: 1 } }).toArray()).map((record) => [record._id, record]));
+  // A page a person decided in a test-mode run keeps that decision, so it isn't judged again.
+  const decided = await earlierPageDecisions(context.db, context.location.id, candidates);
   const pending: SourceCandidate[] = [];
   for (const candidate of candidates) {
     const record = existing.get(`${context.location.id}:${candidate.source_id}`);
     const print = fingerprint(candidate);
-    if (record && !checkOwned(record)) { counts.skipped += 1; continue; }
+    if ((record && !checkOwned(record)) || decided.has(candidate.source_id)) { counts.skipped += 1; continue; }
     if (record?.gemini?.verdict && record.gemini.fingerprint === print) {
       candidate.gemini = record.gemini;
       counts.kept += 1;
@@ -291,14 +296,18 @@ export async function geminiCheck(context: DiscoveryContext, candidates: SourceC
 
 /**
  * The status each candidate is saved with: a Gemini rejection is a `rejected` row, so a person can
- * overrule it; while proposed-until-approved is on, everything else is `proposed`. The status the
- * route gave it is kept for the per-site limits.
+ * overrule it; a Gemini accept is `active` (link-only stays link-only); one not judged is `proposed`.
+ * While proposed-until-approved is on, everything not rejected is `proposed`. A pin or a pause the
+ * route gave it stays. The status the route gave it is kept for the per-site limits.
  */
 export function applyStanding(candidates: SourceCandidate[], held: boolean) {
   for (const candidate of candidates) {
-    candidate.route_status = candidate.status ?? "active";
+    const route = candidate.status ?? "active";
+    candidate.route_status = route;
     if (candidate.gemini?.verdict === "reject") candidate.status = "rejected";
     else if (held) candidate.status = "proposed";
+    else if (route === "pinned" || route === "paused") candidate.status = route;
+    else candidate.status = candidate.gemini?.verdict === "accept" ? "active" : "proposed";
   }
   // Rejections go last, so they never take a site's place from a source that passed.
   return [...candidates.filter((candidate) => candidate.status !== "rejected"), ...candidates.filter((candidate) => candidate.status === "rejected")];

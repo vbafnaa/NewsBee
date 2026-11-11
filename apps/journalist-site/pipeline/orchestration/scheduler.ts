@@ -23,6 +23,7 @@ const LABELS: Record<SchedulerChannel, string> = {
 export type SchedulerIssue = { channel: SchedulerChannel; at: number; message: string };
 export type SchedulerState = {
   last_tick_at: number | null;
+  last_queue_at: number | null;
   last_tick_finished_at: number | null;
   seconds_since_tick: number | null;
   status: "ok" | "stale";
@@ -31,6 +32,10 @@ export type SchedulerState = {
 };
 
 const now = () => Date.now() / 1000;
+
+export function queueConsumerActive(state: SchedulerState, current = now()) {
+  return state.last_queue_at !== null && current - state.last_queue_at <= STALE_TICK_SECONDS;
+}
 
 function heartbeat(db: Db) {
   return db.collection<Record<string, unknown>>(COLLECTIONS.heartbeat);
@@ -49,6 +54,10 @@ export async function recordSchedulerSafely(db: Db | null, channel: SchedulerCha
   } catch {
     // The original failure is already logged by the caller.
   }
+}
+
+export async function markQueueDelivery(db: Db, at = now()) {
+  await heartbeat(db).updateOne({ _id: "scheduler" as never }, { $set: { last_queue_at: at } }, { upsert: true });
 }
 
 export async function markDispatch(db: Db, jobId: string, error: string | null, at = now()) {
@@ -86,6 +95,7 @@ export async function schedulerState(db: Db, current = now()): Promise<Scheduler
   }
   return {
     last_tick_at: lastTick,
+    last_queue_at: number(doc?.last_queue_at),
     last_tick_finished_at: number(doc?.last_tick_finished_at),
     seconds_since_tick: age,
     status: age !== null && age <= STALE_TICK_SECONDS ? "ok" : "stale",

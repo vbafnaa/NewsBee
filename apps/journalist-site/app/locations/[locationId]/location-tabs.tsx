@@ -138,7 +138,7 @@ export default function LocationTabs({ locationId, tab, name, owner = false, run
     </>}
     {tab === "collect-sources" && <>
       {state && <SourcesGuide state={state} />}
-      <h2>Source runs</h2>
+      <h2>Collect sources</h2>
       {runId && <Dashboard locationId={locationId} kind="map" inspectorOnly />}
       <SourceRuns locationId={locationId} runId={runId} canEdit locations={[]} routeFor={(_, run) => `${base}?${new URLSearchParams({ tab: "collect-sources", ...(run ? { run } : {}) })}`} />
     </>}
@@ -153,7 +153,7 @@ export default function LocationTabs({ locationId, tab, name, owner = false, run
     {tab === "edition" && <>
       {state && (!state.sources || state.unreviewed > 0) && <p className="notice" role="status">
         {!state.sources ? <>No sources yet. <Link href={`${base}?tab=sources`}>Start with sources</Link>.</>
-          : <>{state.unreviewed} sources to review{state.acceptedOnly ? " (not read until accepted)" : ""}. <Link href={`${base}?tab=sources`}>Review</Link></>}
+          : <>{state.unreviewed} sources to review (not read until accepted). <Link href={`${base}?tab=sources`}>Review</Link></>}
       </p>}
       <p className="chart-caption">Collects source items, ranks and writes stories, then prepares the edition front page and email. Review held stories and reader submissions here; publish the finished edition in <Link href={`${base}?tab=published`}>Publish</Link>.</p>
       <Dashboard locationId={locationId} owner={owner} kind="edition" />

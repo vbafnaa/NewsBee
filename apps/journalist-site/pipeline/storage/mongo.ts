@@ -56,7 +56,10 @@ export const COLLECTIONS = {
   readerDataClears: "reader_data_clears",
   videoPackages: "video_production_packages",
   videoJobs: "video_production_jobs",
+  videoUploadSessions: "video_upload_sessions",
+  videoUploadChunks: "video_upload_chunks",
   youtubeLocationSettings: "youtube_location_settings",
   outputChannels: "output_channels",
   outputChannelEditions: "output_channel_editions",
+  outputChannelFiles: "output_channel_files",
 } as const;

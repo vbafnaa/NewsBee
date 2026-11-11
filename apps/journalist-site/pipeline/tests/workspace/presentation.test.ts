@@ -2,11 +2,30 @@ import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import AccountSettings from "../../../app/account/settings";
 import { ExecutionNotice, RunExecutionSummary, type ExecutionPolicy } from "../../../app/components/execution-policy";
 import { ReviewKey } from "../../../app/locations/[locationId]/source-map-manager";
+import { CurrentRuns } from "../../../app/locations/current-runs";
 
 const source = (path: string) => readFile(new URL(`../../../app/${path}`, import.meta.url), "utf8");
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+it("puts all current runs above locations and links each run to its own workspace tab", async () => {
+  const directory = await source("locations/location-directory.tsx");
+  expect(directory.indexOf("<CurrentRuns")).toBeLessThan(directory.indexOf("<h2>Locations</h2>"));
+  const runs = [
+    { _id: "map /1", location_id: "north /1", location_name: "North", kind: "map" as const, status: "mapping" as const, created_at: 1_700_000_000 },
+    { _id: "edition-2", location_id: "south", location_name: "South", status: "awaiting_authoring" as const, created_at: 1_700_000_001, execution_blocked: { reason: "keys", at: 1 } },
+  ];
+  const { document } = parseHTML(renderToStaticMarkup(createElement(CurrentRuns, { runs, error: "", onRefresh: () => {} })));
+  expect(document.querySelector('a[href="/locations/north%20%2F1?tab=collect-sources&run=map%20%2F1"]')?.textContent).toBe("North");
+  expect(document.querySelector('a[href="/locations/south?tab=edition&run=edition-2"]')?.textContent).toBe("South");
+  expect(document.querySelectorAll(".location-directory-row").length).toBe(2);
+  expect(document.querySelector(".location-directory-row:last-child .status-badge")?.textContent).toContain("Paused · awaiting authoring");
+  expect(document.querySelector("button")?.textContent).toBe("Refresh runs");
+  expect(parseHTML(renderToStaticMarkup(createElement(CurrentRuns, { runs: [], error: "", onRefresh: () => {} }))).document.querySelector(".current-runs > p")?.textContent).toBe("No runs in progress.");
+});
 
 it("presents source refresh before edition creation, with no approval requests beside them", async () => {
   const dashboard = await source("dashboard.tsx");
@@ -53,7 +72,7 @@ it("keeps execution blockers and reconnect guidance visible", () => {
   const { document } = parseHTML(renderToStaticMarkup(createElement(ExecutionNotice, { policy, runId: "busy" })));
   expect(document.querySelector("details")).toBeNull();
   const notice = document.querySelector('[aria-label="Execution access"]')?.textContent ?? "";
-  expect(notice).toContain("Your runs require your own API keys");
+  expect(notice).toContain("personal API keys in Environment & API settings, with no server environment fallback");
   expect(notice).not.toContain("Admin");
   expect(document.querySelector('a[href="/locations/other?tab=edition&run=busy"]')?.textContent).toBe("Other desk");
   expect(document.querySelector("button")?.textContent).toContain("Reconnect this run");
@@ -72,13 +91,23 @@ it("uses the account's own profile status instead of repeating global readiness 
   const [shell, account] = await Promise.all([source("admin-shell.tsx"), source("account/settings.tsx")]);
   expect(shell).toContain('principal && page !== "account"');
   expect(shell).toContain('isConfiguredOwner(principal) ? " · Owner deployment fallback" : " · No deployment fallback"');
-  expect(account).toContain("No personal profile. Add your own API keys");
+  expect(account).toContain("No profile. Add your own API keys.");
   expect(account).not.toContain("Set NEWSBEE_OWNER_EMAIL on the server");
   expect(account).toContain("Ask your administrator to complete owner setup");
   expect(account).toContain("Configuration checks only; no provider calls.");
-  expect(account).toContain("Deployment API credentials are owner-only; clearing a key disables that service");
+  expect(account).toContain("Your runs use only your personal keys, with no server environment fallback.");
+  expect(account).toContain('setSource(owner ? value?.source ?? "environment" : "personal")');
+  expect(account).toContain("Save personal API keys, then explicitly reconnect any unfinished runs");
   expect(account).not.toContain('placeholder={defaultKey ? "****"');
   expect(account).toContain("Revoke disables the entire profile");
+});
+
+it("offers the server credential selector only to the configured owner", () => {
+  const editor = parseHTML(renderToStaticMarkup(createElement(AccountSettings, { owner: false }))).document;
+  expect(editor.querySelector('option[value="environment"]')).toBeNull();
+  expect(editor.querySelector(".panel")?.textContent).not.toContain("opt in");
+  const owner = parseHTML(renderToStaticMarkup(createElement(AccountSettings, { owner: true }))).document;
+  expect(owner.querySelector('option[value="environment"]')?.textContent).toBe("Use API keys from server environment");
 });
 
 it("explains Decision and Reasoning apart, groups their columns, and has no separate Pin or Pause buttons", async () => {
@@ -115,7 +144,7 @@ it("keeps video creation in publishing channels and the other production steps i
     source("admin-shell.tsx"),
     source("locations/[locationId]/tabs.ts"),
     source("publishing/channels.tsx"),
-    source("publishing/channel-edition-creator.tsx"),
+    source("publishing/channel-stories.tsx"),
     source("locations/location-directory.tsx"),
     source("locations/[locationId]/page.tsx"),
     source("video-studio/page.tsx"),
@@ -131,7 +160,10 @@ it("keeps video creation in publishing channels and the other production steps i
   for (const view of ["overview", "sources", "collect-sources", "edition", "published"]) expect(workflow).toContain(`tab === "${view}"`);
   expect(workflow).toContain('tab: "collect-sources"');
   expect(workflow).toContain("All sources");
-  expect(workflow).toContain("Source runs");
+  expect(workflow).toContain("Collect sources");
+  expect(workflow).not.toContain("<h2>Source runs</h2>");
+  expect(await source("source-map/source-review.tsx")).toContain('href={path(locationId, "runs")}>Collect sources</Link>');
+  expect(await source("source-map/source-runs.tsx")).toContain('<LiveSourceRun key={runId} runId={runId} />');
   expect(workflow).toContain("ranks and writes stories");
   expect(workflow).not.toContain("VideoStudio");
   expect(workflow).not.toContain('tab === "videos"');
@@ -140,18 +172,24 @@ it("keeps video creation in publishing channels and the other production steps i
   expect(workflow).toContain("<RemembranceReview locationId={locationId} />");
   expect(workflow).toContain('only={["reports"]}');
   expect(channels).not.toContain("LocationTabs");
-  expect(channels).toContain("<ChannelEditionCreator key={`${channel.id}-${editionRefreshKey}`} channelId={channel.id} owner={owner} />");
+  expect(channels).toContain("<ChannelStories key={`${channel.id}-${editionRefreshKey}`} channelId={channel.id} owner={owner} />");
   expect(channels).not.toContain("VideoStudio");
-  expect(creator).toContain("Create a channel edition");
-  expect(creator).toContain("Edition outputs");
-  expect(creator).toContain("Reader mode");
-  expect(creator).toContain("Generate video for this story");
-  expect(creator).toContain("Open video & YouTube workflow");
-  expect(creator).toContain("Create edition");
+  expect(creator).toContain("Channel stories");
+  expect(creator).toContain('aria-label="Channel stories"');
+  expect(creator).toContain('story.published ? "Published" : "Publish"');
+  expect(creator).toContain('stories: [{ locationId: story.locationId, storyId: story.storyId, editionId: story.editionId }]');
+  expect(creator).toContain('outputModes: ["reader"]');
+  expect(creator).toContain("Generate video");
+  expect(creator).toContain("/video-studio/");
+  expect(creator).not.toContain("Create edition");
+  expect(creator).not.toContain("Edition outputs");
   expect(channels).not.toContain("AlertsList");
   expect(channels).not.toContain("Publishing workflow");
-  expect(channels).toContain('destinations: [{ type: "reader", url: "" }]');
-  expect(channels).toContain('className="channel-destinations"');
+  expect(channels).toContain('destinations: [{ type: "reader", url: "" }, { type: "video", url: "" }]');
+  expect(channels).not.toContain('className="channel-destinations"');
+  expect(channels).not.toContain('Connect Google Drive</button>');
+  expect(channels).not.toContain('toggleDestination(');
+  expect(channels.slice(channels.indexOf('<form className="output-channel-form"'), channels.indexOf('</form>'))).not.toContain('destinationUrls(');
   expect(channels).toContain('type="search"');
   expect(channels).toContain('aria-label={`Remove ${name}`}');
   expect(channels).not.toContain("channel-location-options");

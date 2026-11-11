@@ -59,10 +59,12 @@ The bundled watercolor illustrations require no image-generation API key.
 After review, production deployment follows the normal PR merge into `main`;
 an edition still needs the workspace's separate **Publish** action.
 
-Set `NEWSBEE_INTERNAL_PASSWORD` to a strong private value to enable `/source-map` and
-`/interest-usage`. Use one server-side value for both; never prefix it with `NEXT_PUBLIC_`
-or `PUBLIC_`. These independently reachable pages and their `/api/maps/*` read endpoints
-require only the shared password, not a Google account or journalist administrator.
+Set `NEWSBEE_INTERNAL_PASSWORD` to a strong private value for the internal maps and
+`/api/maps/*` read endpoints. Use one server-side value; never prefix it with `NEXT_PUBLIC_`
+or `PUBLIC_`. The source and edition maps and their read endpoints require only the shared
+password, not a Google account or journalist administrator. The former `/interest-usage`
+page now redirects to Google Analytics, which requires separate Google account access;
+its existing aggregate `/api/maps/usage-map` endpoint remains password-protected.
 Unlock sets an eight-hour signed, HttpOnly, SameSite=Strict cookie; production cookies
 are Secure. Journalist sign-in does not bypass the password. An unset/empty value
 fails closed (data APIs return 503); rotating it invalidates existing map cookies.
@@ -95,18 +97,11 @@ record. Older ambiguous consent histories are counted separately and excluded fr
 totals; no migration or invented historical split is performed. The map API returns only
 aggregates, never signup emails. Optional date filters use inclusive UTC calendar dates.
 
-### Preprod-only interactive usage map
+### Development-only interactive usage map preview
 
-The interactive viewport is the normal map implementation on this preprod branch.
-Preprod-only describes repository/branch scope, not a runtime environment gate:
-it also works when a preprod instance uses a production build or
-`VERCEL_ENV=production`. No activation variable is required. This follow-up does
-not change deployment configuration or enable branch deployments; keep promotion
-to the production repository separate and subject to approval. No paid map
-account, external tiles or client-side credentials are needed. Password-only map
-access and administrator boundaries remain unchanged.
-
-In preprod, use the zoom buttons, wheel/trackpad, drag or touch pinch/pan. Focus the
+The former `/interest-usage` dashboard redirects to Google Analytics. The retained
+sample preview uses fictional data and does not require a Google account or map password.
+To explore the sample, use the zoom buttons, wheel/trackpad, drag or touch pinch/pan. Focus the
 map for arrow-key panning, `+` / `-` zoom and `Home` reset. **Reset extent** fits all
 mapped communities in the current metric/location/date selection. Changing these
 filters refits the map and recalculates the heat cells and marker groups. Panning
@@ -122,7 +117,7 @@ and open `http://127.0.0.1:3000/interest-usage/preview`. This development-only r
 loads fictional in-memory counts for October 1–2, 2026, including nearby, coincident
 and unmapped communities; it never calls live map APIs. Date and location filters
 use the sample data. It returns 404 outside development and does not bypass the
-password gate on `/interest-usage` or any `/api/maps/*` endpoint.
+password gate on any `/api/maps/*` endpoint.
 
 ## Run options when deployed
 

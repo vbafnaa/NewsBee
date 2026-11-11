@@ -6,6 +6,7 @@ import { currentPrincipal } from "@/lib/admin-session";
 import { effectiveCredentialProfile } from "@/pipeline/accounts/credentials";
 import { infrastructureSettings, personalSettings, profileMetadata } from "@/pipeline/accounts/execution";
 import { isConfiguredOwner } from "@/pipeline/accounts/identity";
+import { GOOGLE_ANALYTICS_URL } from "@/lib/analytics";
 
 type AdminPage = "alerts" | "locations" | "inbox" | "source-map" | "edition-map" | "interest-usage" | "discovery" | "model-usage" | "health" | "neighbour-stories" | "remembrance" | "drive-diagnostics" | "clear-data" | "site-backup" | "administrators" | "account" | "output-channels";
 
@@ -48,7 +49,7 @@ export default async function AdminShell({
       { id: "edition-map", label: "Edition map", href: "/edition-map", note: "Moved from Source map" },
     ] },
     { label: "Analytics", items: [
-      { id: "interest-usage", label: "Interest and usage map", href: "/interest-usage" },
+      { id: "interest-usage", label: "Interest and usage map", href: GOOGLE_ANALYTICS_URL },
     ] },
     { label: "Operations", items: [
       { id: "health", label: "System", href: "/health" },

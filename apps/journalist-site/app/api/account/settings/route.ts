@@ -17,14 +17,14 @@ async function handle(request: Request) {
     if (request.method === "PUT") {
       let input: CredentialInput;
       try { input = await request.json(); } catch { return Response.json({ detail: "Invalid JSON" }, { status: 400 }); }
-      if (input?.source === "environment" && principal.role !== "owner") return Response.json({ detail: "Owner access required" }, { status: 403 });
       await saveCredentialProfile(db, principal, input);
     }
     if (request.method === "DELETE") await revokeCredentialProfile(db, principal);
+    const profile = await effectiveCredentialProfile(db, principal);
     return Response.json({
       principal,
       ownerConfigured: Boolean(ownerEmail()),
-      profile: profileMetadata(principal, await effectiveCredentialProfile(db, principal)),
+      profile: profileMetadata(principal, profile),
       ...(isConfiguredOwner(principal) ? { environmentDefaults: deploymentCredentialDefaults() } : {}),
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {

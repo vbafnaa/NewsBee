@@ -240,7 +240,6 @@ th { font-size: .82rem; }
 .channel-story-main > input { margin-top: .25rem; }
 .channel-story-main > span { display: grid; gap: .3rem; min-width: 0; }
 .channel-story-main small { color: var(--muted); overflow-wrap: anywhere; }
-.channel-video-selection { margin-left: 1.8rem; font-size: .85rem; }
 .channel-edition-creator > button { justify-self: start; }
 .channel-edition-creator .card-actions { justify-content: space-between; flex-wrap: wrap; }
 .channel-enabled { margin: 1rem 0; }
@@ -505,7 +504,8 @@ caption { text-align: left; color: var(--muted); font-size: .8rem; padding: 1rem
 .item-trail { margin-top: 1rem; }
 .selected-row { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Source runs: settings by stage, what happened, every page, by tool and the agent log */
+/* Collect sources: settings by stage, what happened, every page, by tool and the agent log */
+.source-live-log { max-height: 32rem; overflow: auto; padding: 1rem; border-radius: .5rem; background: #172724; color: #e3efdc; font: .8rem/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 :root { --tool-fixed: #596961; --tool-dork: #5285b4; --tool-exa: #8d7cc4; --tool-tavily: #c39237; --tool-link: #a0806a; --tool-agent: #367857; }
 .source-runs .settings-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .85rem; }
 .source-runs fieldset { margin: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .6rem; background: #fff; min-width: 0; }

@@ -109,3 +109,11 @@ it("publishes distinct illustration references and retains story text without ph
   expect(await db.collection(COLLECTIONS.editions).findOne({ id: payload.id })).toMatchObject({ status: "built" });
   expect(await db.collection(COLLECTIONS.publishedStories).countDocuments()).toBe(0);
 });
+
+it("publishes secondary source links without losing original attribution", async () => {
+  await seed("ready", [candidate(0)]);
+  await entry(0);
+  const sources = [{ name: "Original newsroom", url: "https://example.test/news" }, { name: "City records", url: "https://city.example/record" }];
+  await db.collection(COLLECTIONS.editionEntries).updateOne({ story_id: "story-0" }, { $set: { "result.sources": sources } });
+  expect((await finishAuthoring(deps, "run")).edition?.items[0].sources).toEqual(sources);
+});
