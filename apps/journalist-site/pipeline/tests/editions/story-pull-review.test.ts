@@ -203,16 +203,19 @@ describe("story reviews", () => {
   }
 
   it("checks a review: a reason from the decision's list, and an explanation for Other", () => {
-    expect(storyReviewChange({ decision: "accept", reason_code: "SA1" })).toEqual({ decision: "accept", reason_code: "SA1", reason: null });
+    expect(storyReviewChange({ decision: "accept", reason_code: "SA1", category: "events" })).toEqual({ decision: "accept", reason_code: "SA1", reason: null, category: "events" });
+    expect(() => storyReviewChange({ decision: "accept", reason_code: "SA1" })).toThrow("choose the newsletter category");
+    expect(() => storyReviewChange({ decision: "accept", reason_code: "SA1", category: "gossip" })).toThrow("Invalid category");
+    expect(storyReviewChange({ decision: "reject", reason_code: "SR6" })).toEqual({ decision: "reject", reason_code: "SR6", reason: null, category: null });
     expect(() => storyReviewChange({ decision: "accept", reason_code: "SR1" })).toThrow("doesn't belong");
     expect(() => storyReviewChange({ decision: "reject" })).toThrow("choose a reason");
     expect(() => storyReviewChange({ decision: "reject", reason_code: "SR8" })).toThrow("explain the Other reason");
-    expect(storyReviewChange({ decision: null, reason_code: "SA1", reason: "x" })).toEqual({ decision: null, reason_code: null, reason: null });
+    expect(storyReviewChange({ decision: null, reason_code: "SA1", reason: "x" })).toEqual({ decision: null, reason_code: null, reason: null, category: null });
   });
 
   it("saves one decision for every copy of a link, keeps history, and exports it", async () => {
     await seedRun();
-    const saved = await saveStoryReview(db, "run", "run:2", { decision: "accept", reason_code: "SA2", reason: "Residents need this" }, "editor@example.org");
+    const saved = await saveStoryReview(db, "run", "run:2", { decision: "accept", reason_code: "SA2", reason: "Residents need this", category: "safety" }, "editor@example.org");
     expect(saved).toMatchObject({ item_ids: ["run:1", "run:2"], source_names: ["Herald", "Herald police"], story_date: "2026-11-08", location_name: "Test, WA", pipeline_status: "published", by: "editor@example.org" });
     const csv = storyReviewCsv(await reviewedStories(db, { locationId: "test" }), "2026-11-10T00:00:00.000Z");
     const [header, row] = csv.trim().split("\r\n");
@@ -222,7 +225,7 @@ describe("story reviews", () => {
     expect(row).toContain("Fire destroys mobile home");
     expect(row).toContain("SA2");
     expect(await db.collection("story_reviews").countDocuments()).toBe(1);
-    await saveStoryReview(db, "run", "run:1", { decision: null, reason_code: null, reason: null }, "editor@example.org");
+    await saveStoryReview(db, "run", "run:1", { decision: null, reason_code: null, reason: null, category: null }, "editor@example.org");
     expect(await reviewedStories(db, { runId: "run" })).toHaveLength(0);
     expect(await db.collection("story_reviews").countDocuments()).toBe(2);
   });
@@ -236,13 +239,13 @@ describe("story reviews", () => {
 
   it("counts editors' decisions per source for the pre-ranker", async () => {
     await seedRun();
-    await saveStoryReview(db, "run", "run:1", { decision: "reject", reason_code: "SR6", reason: null }, "editor@example.org");
+    await saveStoryReview(db, "run", "run:1", { decision: "reject", reason_code: "SR6", reason: null, category: null }, "editor@example.org");
     expect((await sourceAcceptRates(db, "test")).get("s1")).toEqual({ accepted: 0, rejected: 1 });
   });
 
   it("lists every link once with its copies, the sources' findings, and the review", async () => {
     await seedRun();
-    await saveStoryReview(db, "run", "run:1", { decision: "accept", reason_code: "SA1", reason: null }, "editor@example.org");
+    await saveStoryReview(db, "run", "run:1", { decision: "accept", reason_code: "SA1", reason: null, category: "news" }, "editor@example.org");
     const page = await pulledStories(db, "run");
     expect(page.summary).toMatchObject({ items: 3, links: 2, repeated_links: 1, repeated_copies: 1, title_rejected: 1, reviewed: { accept: 1, reject: 0 } });
     expect(page.groups[0]).toMatchObject({ status: "published", copies: 2, sources: 2, review: { decision: "accept", reason_code: "SA1" } });

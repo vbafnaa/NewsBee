@@ -11,6 +11,7 @@ type Group = {
   key: string; url: string | null; title: string; event_date: string | null; item_id: string; status: string; step: string; reason: string | null;
   section: string | null; rank: number | null; score: number | null; why: string | null; copies: number; sources: number; source_names: string[]; items: Copy[];
   replication: { copies: number; sources: number; independent: number; publishers: string[] } | null; pre_rank: number | null; review: StoryReviewValue;
+  crawl_depth: number | null; found_on: string | null;
 };
 type Source = { source_id: string; name: string; url: string | null; collection: string | null; detail: string | null; found: number; kept: number; dropped: number; published: number; reasons: Array<{ reason: string; count: number }> };
 type Summary = { items: number; links: number; repeated_links: number; repeated_copies: number; merged_into_stories: number; repeats_of_printed: number; title_rejected: number; by_status: Record<string, number>; reviewed: { accept: number; reject: number }; truncated: boolean };
@@ -67,9 +68,12 @@ export default function RunItems({ locationId }: { locationId: string }) {
         `reviewed: ${summary.reviewed.accept} accepted, ${summary.reviewed.reject} rejected`,
       ].join(" · ") : "Loading…"}{summary?.truncated && " · Only the first 8,000 items are shown."}</p></div>
       <div className="card-actions">
-        {reviewed ? <a className="button secondary" href={`/api/admin/runs/${encodeURIComponent(runId)}/story-reviews/export`}>Export this run's reviews (CSV)</a>
-          : <button type="button" className="secondary" disabled title="Accept or reject a story first">Export this run's reviews (CSV)</button>}
+        {reviewed ? <>
+          <a className="button secondary" href={`/api/admin/runs/${encodeURIComponent(runId)}/story-reviews/export`}>Export this run's reviews (CSV)</a>
+          <a className="button secondary" href={`/api/admin/runs/${encodeURIComponent(runId)}/story-reviews/export?format=jsonl`} title="Every detail of each reviewed story, one JSON object per line">JSONL</a>
+        </> : <button type="button" className="secondary" disabled title="Accept or reject a story first">Export this run's reviews (CSV)</button>}
         <a className="button secondary" href={`/api/admin/locations/${encodeURIComponent(locationId)}/story-reviews/export`}>Export all reviews for this location</a>
+        <a className="button secondary" href={`/api/admin/locations/${encodeURIComponent(locationId)}/story-reviews/export?format=jsonl`} title="Every detail of each reviewed story, one JSON object per line">JSONL</a>
         <button type="button" className="secondary" disabled={busy || !policy?.permissions[runId]?.canSpend} onClick={() => void reassemble()}>Reassemble and rewrite</button>
       </div></div>
     {error && <p className="alert" role="alert">{error}</p>}
@@ -105,12 +109,13 @@ export default function RunItems({ locationId }: { locationId: string }) {
           {group.copies > 1 && <details><summary><small>{group.copies} copies of this link from {group.sources} source{group.sources === 1 ? "" : "s"}</small></summary>
             <ul>{group.items.map((copy) => <li key={copy._id}><small>{copy.source_name} · {label(copy.status)}{copy.reason ? `: ${copy.reason}` : ""} </small><button type="button" className="run-inspect-link" onClick={() => setTrace(copy._id)}>Trace</button></li>)}</ul>
           </details>}
-          {group.replication && group.replication.copies > 1 && <div><small>Story reported {group.replication.copies} times by {group.replication.independent} independent publisher{group.replication.independent === 1 ? "" : "s"}</small></div>}</td>
+          {group.replication && group.replication.copies > 1 && <div><small>Story reported {group.replication.copies} times by {group.replication.independent} independent publisher{group.replication.independent === 1 ? "" : "s"}</small></div>}
+          {(group.crawl_depth ?? 1) > 1 && <div><small>Found {group.found_on ? `on a ${group.found_on.replace(/^listing link /, "listing page ")}` : "on a listing page"} · depth {group.crawl_depth}</small></div>}</td>
         <td><small>{group.source_names.join(", ")}</small></td>
         <td><small>{group.section ? label(group.section) : "—"}</small></td>
         <td>{group.rank ?? "—"}{group.score !== null && <small> ({group.score})</small>}{group.pre_rank !== null && <div><small>pre-rank {group.pre_rank}</small></div>}</td>
         <td><small>{group.reason ?? group.why ?? group.step}</small></td>
-        <td><StoryReview key={`${group.key}:${group.review?.at ?? "none"}`} runId={runId} itemId={group.item_id} review={group.review} onSaved={() => void load()} /></td>
+        <td><StoryReview key={`${group.key}:${group.review?.at ?? "none"}`} runId={runId} itemId={group.item_id} review={group.review} section={group.section} onSaved={() => void load()} /></td>
         <td><button type="button" className="run-inspect-link" onClick={() => setTrace(group.item_id)}>Trace</button></td>
       </tr>)}</tbody>
     </table></div>

@@ -48,7 +48,7 @@ export default function ItemTrace({ runId, itemId, onClose, onChanged, review }:
       <dl className="trace">
         <dt>Item</dt><dd>{item.url ? <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a> : item.title}{item.event_date && ` · ${item.event_date}`}</dd>
         <dt>Outcome</dt><dd><span className={`item-status ${item.status}`}>{item.status.replace(/_/g, " ")}</span> at the {item.step} step{item.reason ? `: ${item.reason}` : ""}</dd>
-        {review !== undefined && <><dt>Editor review</dt><dd><StoryReview key={`${item._id}:${review?.at ?? "none"}`} runId={runId} itemId={item._id} review={review} onSaved={() => onChanged?.()} /></dd></>}
+        {review !== undefined && <><dt>Editor review</dt><dd><StoryReview key={`${item._id}:${review?.at ?? "none"}`} runId={runId} itemId={item._id} review={review} section={item.section ?? null} onSaved={() => onChanged?.()} /></dd></>}
         <dt>Source</dt><dd>{trace.source ? <>{trace.source.url ? <a href={trace.source.url} target="_blank" rel="noopener noreferrer">{trace.source.name}</a> : trace.source.name} · {trace.source.reader} · found by {trace.source.found_by.method} ({trace.source.found_by.detail}) · {trace.source.status}{trace.source.inside_area ? " · inside the area" : ""}</> : item.source_name}</dd>
         <dt>Window</dt><dd>{trace.window ?? "—"}</dd>
         <dt>Locality</dt><dd><pre>{item.locality ? show(item.locality) : item.facts?.locality ? show(item.facts.locality) : item.facts?.needs_locality ? "Not checked yet" : "—"}</pre></dd>

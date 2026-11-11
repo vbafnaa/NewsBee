@@ -213,6 +213,72 @@ export function storyLinks(html: string, pageUrl: string, cap: number): string[]
   return out;
 }
 
+/**
+ * Kinds of listing page, most wanted first, each with the newsletter section its items most likely
+ * belong to. Matched against a link's path and its text. A listing is a short address (a section of
+ * the site), never a single story.
+ */
+export const LISTING_KINDS = [
+  { kind: "events", section: "events", pattern: /\b(events?|calendars?|happenings|what'?s-?on|things-to-do|activities|programs?)\b/i },
+  { kind: "sports", section: "sports", pattern: /\b(sports?|athletics?|schedules?|scores|results|teams?)\b/i },
+  { kind: "obituaries", section: "obituaries", pattern: /\b(obituar(y|ies)|obits?|memorials?|tributes?)\b/i },
+  { kind: "meetings", section: "civic", pattern: /\b(meetings?|agendas?|minutes|hearings?|public-notices?)\b/i },
+  { kind: "safety", section: "safety", pattern: /\b(alerts?|police|fire|safety|emergenc(y|ies)|crime)\b/i },
+  { kind: "news", section: null, pattern: /\b(news|press|press-releases?|releases?|announcements?|notices?|updates|blog|stories)\b/i },
+] as const;
+export type ListingKind = typeof LISTING_KINDS[number]["kind"];
+export type ListingLink = { url: string; kind: ListingKind; section: string | null; label: string };
+
+function anchors(html: string, pageUrl: string) {
+  const out: Array<{ url: URL; text: string }> = [];
+  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]{0,300}?)<\/a>/gi)) {
+    try { out.push({ url: new URL(decodeHTML(match[1]), pageUrl), text: plainText(match[2], 120) ?? "" }); } catch { /* ignore bad hrefs */ }
+  }
+  return out;
+}
+const sameSite = (url: URL, pageUrl: string) => url.protocol === "https:" && url.hostname.replace(/^www\./, "") === new URL(pageUrl).hostname.replace(/^www\./, "");
+
+/**
+ * Same-site listing pages a page links to (events, calendar, sports, obituaries, meetings, safety, news),
+ * most wanted kind first, at most `cap`. A story-like address (a date, or a long slug) is never a listing.
+ */
+export function listingLinks(html: string, pageUrl: string, cap: number): ListingLink[] {
+  const found = new Map<string, ListingLink & { rank: number }>();
+  const here = pageUrl.replace(/\/$/, "");
+  for (const { url, text } of anchors(html, pageUrl)) {
+    if (!sameSite(url, pageUrl) || SKIP_PATH.test(url.pathname) || /ical|\.ics$/i.test(url.pathname + url.search)) continue;
+    url.hash = "";
+    const link = url.toString();
+    if (link.replace(/\/$/, "") === here || found.has(link)) continue;
+    const segments = url.pathname.split("/").filter(Boolean);
+    const slug = segments.at(-1) ?? "";
+    if (!segments.length || segments.length > 3 || /\/20\d{2}\//.test(url.pathname) || (slug.match(/-/g) ?? []).length >= 3 || /\.(pdf|jpe?g|png|docx?)$/i.test(slug)) continue;
+    const words = `${segments.join(" ").replace(/[-_]/g, " ")} ${text}`;
+    const rank = LISTING_KINDS.findIndex((listing) => listing.pattern.test(words));
+    if (rank < 0) continue;
+    const listing = LISTING_KINDS[rank];
+    found.set(link, { url: link, kind: listing.kind, section: listing.section, label: (text || slug).slice(0, 60), rank });
+  }
+  return [...found.values()].sort((a, b) => a.rank - b.rank).slice(0, cap).map(({ rank: _rank, ...link }) => link);
+}
+
+/**
+ * The single stories and events a listing page links to: same-site pages below the listing's own address
+ * (/events/fall-festival under /events), and anything that looks like a story. At most `cap`.
+ */
+export function deepLinks(html: string, listingUrl: string, cap: number): string[] {
+  const base = new URL(listingUrl).pathname.replace(/\/$/, "");
+  const out = new Set(storyLinks(html, listingUrl, cap));
+  for (const { url } of anchors(html, listingUrl)) {
+    if (out.size >= cap) break;
+    if (!sameSite(url, listingUrl) || SKIP_PATH.test(url.pathname) || /ical|\.ics$/i.test(url.pathname + url.search)) continue;
+    url.hash = "";
+    const path = url.pathname.replace(/\/$/, "");
+    if (base && path.startsWith(`${base}/`) && path.length > base.length + 3) out.add(url.toString());
+  }
+  return [...out].slice(0, cap);
+}
+
 export function calendarLinks(html: string, pageUrl: string): string[] {
   const out: string[] = [];
   for (const match of html.matchAll(/href=["']([^"']*(?:\.ics\b|[?&]ical=1|\/ical\/?|\/ics\/?|webcal:)[^"']*)["']/gi)) {

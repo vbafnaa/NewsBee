@@ -77,6 +77,10 @@ export type PriorityTopic = typeof PRIORITY_TOPICS[number]["id"];
 export const SEARCH_PROVIDERS = ["serpapi", "searchapi", "brightdata", "exa", "tavily", "fixture"] as const;
 export type SearchProvider = typeof SEARCH_PROVIDERS[number];
 export const CLASSIFIER_MODES = ["off", "shadow", "jev"] as const;
+export const SCRAPE_DEPTHS = [1, 2] as const;
+export type ScrapeDepth = typeof SCRAPE_DEPTHS[number];
+/** New runs read listing pages too unless NEWSBEE_SCRAPE_DEPTH or the run says otherwise. */
+export const DEFAULT_SCRAPE_DEPTH: ScrapeDepth = 2;
 export type ClassifierMode = typeof CLASSIFIER_MODES[number];
 
 export type RunOptions = {
@@ -108,6 +112,12 @@ export type RunOptions = {
   gemini_check?: boolean;
   /** Write at most this many stories, across sections: for quick test runs on a local model. */
   story_limit?: number | null;
+  /**
+   * How deep the website reader goes on each site. 1: the home page's feed, calendars, sitemap and story
+   * links. 2: also listing pages it links to (events, calendar, news, sports, obituaries, meetings,
+   * notices) and the stories and events on them. Absent (a run from before it existed) means 1.
+   */
+  scrape_depth?: ScrapeDepth;
   /**
    * A map run's search depth. Exhaustive: the agent keeps finding new good sources until every
    * category × search tool goes dry. Enough: it stops once every category has an accepted source.

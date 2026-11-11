@@ -129,6 +129,7 @@ on the run, so a resumed run keeps them.
 | `NEWSBEE_EXTERNAL_OFF` | Service ids | Free external APIs to switch off |
 | `NEWSBEE_SEARCH_PROVIDER` | `serpapi`, `searchapi`, `brightdata`, `exa`, `tavily`, `fixture` | The search behind the agentic flow; `fixture` is a free, local-only test that answers from the location's own source map |
 | `NEWSBEE_URL_CLASSIFIER` | `off`, `shadow`, `jev` | Whether Jev scores are ignored, recorded or used |
+| `NEWSBEE_SCRAPE_DEPTH` | `2`, `1` | Website depth: 2 also reads each site's listing pages (events, news, sports…) and the stories and events on them; the run option **Website depth** |
 | `NEWSBEE_PRIORITY_TOPICS` | `crime`, `deaths`, `events`, `home_sales`, `sports`, `government`, `schools`, `business`, `community`, `news` | Topics that drive search and the coverage report; default all |
 | Story limit (kick-off panel only) | A number | Write at most this many stories, for quick test runs on a local model |
 | Model check (kick-off panel only, `gemini_check`) | on, off | Map runs: the shared Model check and the final review. Off is for baseline tests (the fixed pipeline alone), locally or deployed; each run records it |

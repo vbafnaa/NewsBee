@@ -1089,7 +1089,7 @@ has lives in the source map.
 
 | Reader | Reads | Window |
 | --- | --- | --- |
-| `web` | Any website on the map: its feed (on record, advertised or a common path), iCal links, schema.org events and articles, recent sitemap pages, story-like links, and each page's title, date, description, authors, image and main text; 10 requests per site; full text kept 30 days (`item_texts`) for details and locality, never republished | News since the last edition (up to 14 days); events 30 days ahead |
+| `web` | Any website on the map: its feed (on record, advertised or a common path), iCal links, schema.org events and articles, recent sitemap pages, story-like links, at website depth 2 its listing pages (events, news, sports…) and what they list, and each page's title, date, description, authors, image and main text; 10 requests per site (22 at depth 2); full text kept 30 days (`item_texts`) for details and locality, never republished | News since the last edition (up to 14 days); events 30 days ahead |
 | `opendata` | Any Socrata dataset on the map, columns read from the dataset's own metadata; police and fire calls grouped into incidents (same block within 2 hours) with plain-word call types, block-level places, unit counts and outcomes, notable ones as stories and the rest in one summary; permits (block level), licence applications, inspections; 311 as one summary. Personal columns are never selected | Calls 7 days; records 21 days |
 | `newssearch` | GDELT DOC API, three topic searches per place (`NEWSBEE_NEWS_SEARCH`, default `gdelt`; `llm` adds web-grounded model search, on the first configured model that can search the web). Google News RSS is not used (its robots.txt disallows `/rss`) | Since the last edition (up to 14 days) |
 | `library`, `meetings`, `hazards`, `trending`, `homesafety`, `housing`, `justice`, `community`, `remembrance` | Library calendars, Legistar/CivicClerk meetings, NWS and USGS, Wikipedia and Bluesky, EPA water records, Census permits, Justice Department releases, reader stories, family notices | Per reader |
@@ -1168,14 +1168,31 @@ word count. The web reader also takes a story's date from its address
 (`/2026/nov/08/`) when the page has none, and a source saved as one dated story reads its publisher's
 feed from the site's home page.
 
+**Website depth** (`scrape_depth`, the **Website depth** run option, `NEWSBEE_SCRAPE_DEPTH`; 2 for new
+runs, 1 for runs from before it). At depth 1 the web reader reads a site's feed, calendars, sitemap and the
+story links on its home page. At depth 2 it also reads the listing pages the home page links to (events and
+calendars first, then sports, obituaries, meetings, safety and news; `listingLinks` in `connectors/web/page.ts`):
+each listing's own schema.org events and calendar file, then the single stories and events it links to
+(`deepLinks`). A site with a news feed still has its event listings read, because events are rarely in the
+feed. Each item records its `crawl_depth`, the page it was found on and the listing's section as a hint.
+Each listing page shows in **Stories pulled** with what was followed. A listing with nothing to follow is read
+as a page, so in agentic runs the agent picks out its items, each with a verbatim quote. With caps on, depth
+2 reads at most 4 listing pages and 8 pages from them per site, with 12 extra requests; the site's
+two-minute budget always applies.
+
 **Story review and export.** On **Stories pulled** or the item trace, an editor accepts or rejects a
-story with a reason code (`editions/story-reasons.ts`, prefixed S so they never mix with source codes)
-and a note; Other needs a note. One decision covers every copy of the link in that run. Decisions are
-kept in `story_decisions` (one per run and link, with a snapshot of the story's date, sources, outcome,
-ranking and replication) and every save is appended to `story_reviews`. **Export** gives a CSV for the
-run or for every run at the location: location, run date, export date, story title, link and date,
-section, sources and their sites, copies and independent publishers, outcome and reason, rank, score,
-model rating, pre-rank score, decision, reason code and note, reviewer and time.
+story with a reason code (`editions/story-reasons.ts`, prefixed S so they never mix with source codes),
+a newsletter category (a section id; required on Accept, so a story the pipeline dropped before placing it
+still says where it belongs; it starts at the pipeline's section) and a note; Other needs a note. One
+decision covers every copy of the link in that run. Decisions are kept in `story_decisions`, one per run
+and link, with a full snapshot of what the pipeline knew: description, kind, venue and schedule, area and
+locality evidence, every copy and source (reader, tier, how it was found), where the page was found and
+how deep, replication, outcome and reason, whether the editor overruled the pipeline (`disagrees`), the
+model's and pre-ranker's ratings, evidence, extracted details, the written draft, a text excerpt and the
+run's settings. Items expire after 90 days and page text after 30, so the snapshot keeps an annotation
+usable. Every save is appended to `story_reviews`. **Export** gives the run's or the location's reviews as
+CSV, one column per fact (`CSV_COLUMNS` in `editions/story-reviews.ts`), or as JSONL (`?format=jsonl`),
+the whole snapshot one story per line, for training and testing a ranking model or skill.
 
 `model/voice.ts` sets the writing voice (`NEWSBEE_VOICE`: `plain`, `lively` (default) or
 `bold`). Court cases, deaths, safety notices, weather alerts and earthquakes are always
