@@ -85,6 +85,8 @@ export type CollectedItem = {
   merge_group?: string | null;
   story_id?: string | null;
   replication?: Replication;
+  /** The rating ranking used: the model's, or the pre-ranker's or the rule rating where the model gave none. */
+  model_rating?: { rated_by: string; category: string; civic: number; appeal: number; special: number };
   /** The local pre-ranker's rating, saved next to the model's in every rated section (`ranking/pre-ranker.ts`). */
   pre_rank?: { score: number; civic: number; appeal: number; special: number; rules: string[]; policy: string };
   locality?: unknown;

@@ -12,9 +12,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Db } from "mongodb";
 import {
-  ACCESS_RULES, CLASSIFIER_MODES, FREE_SERVICES, GUARDRAIL_GROUPS, LEGACY_MODEL_SERVICES, PAID_SERVICE_IDS, PAID_SERVICES, PRIORITY_TOPICS, SEARCH_PROVIDERS,
-  type AccessRule, type FreeService, type GuardrailGroup, type PaidService, type PriorityTopic, type RunOptions,
+  ACCESS_RULES, CLASSIFIER_MODES, DEFAULT_SCRAPE_DEPTH, FREE_SERVICES, GUARDRAIL_GROUPS, LEGACY_MODEL_SERVICES, PAID_SERVICE_IDS, PAID_SERVICES, PRIORITY_TOPICS, SCRAPE_DEPTHS, SEARCH_PROVIDERS,
+  type AccessRule, type FreeService, type GuardrailGroup, type PaidService, type PriorityTopic, type RunOptions, type ScrapeDepth,
 } from "./run-values";
+
+/** A website depth: 1 or 2, else the fallback when nothing was given. */
+function scrapeDepth(value: unknown, fallback: ScrapeDepth, name: string): ScrapeDepth {
+  if (value === undefined || value === null || value === "") return fallback;
+  const depth = Number(value);
+  if (!(SCRAPE_DEPTHS as readonly number[]).includes(depth)) throw new Error(`${name} must be one of: ${SCRAPE_DEPTHS.join(", ")}`);
+  return depth as ScrapeDepth;
+}
 
 export * from "./run-values";
 
@@ -62,6 +70,7 @@ export function defaultRunOptions(env: NodeJS.ProcessEnv = process.env): RunOpti
     external_off: within<FreeService>(env.NEWSBEE_EXTERNAL_OFF, FREE_SERVICES.map((service) => service.id), "NEWSBEE_EXTERNAL_OFF"),
     search_provider: choice(env.NEWSBEE_SEARCH_PROVIDER, SEARCH_PROVIDERS, "serpapi", "NEWSBEE_SEARCH_PROVIDER"),
     classifier: choice(env.NEWSBEE_URL_CLASSIFIER, CLASSIFIER_MODES, "off", "NEWSBEE_URL_CLASSIFIER"),
+    scrape_depth: scrapeDepth(env.NEWSBEE_SCRAPE_DEPTH, DEFAULT_SCRAPE_DEPTH, "NEWSBEE_SCRAPE_DEPTH"),
     topics: env.NEWSBEE_PRIORITY_TOPICS?.trim() ? within<PriorityTopic>(env.NEWSBEE_PRIORITY_TOPICS, PRIORITY_TOPICS.map((topic) => topic.id), "NEWSBEE_PRIORITY_TOPICS") : PRIORITY_TOPICS.map((topic) => topic.id),
   };
 }
@@ -117,6 +126,7 @@ export function resolveRunOptions(input: unknown, env: NodeJS.ProcessEnv = proce
       topics: choices.topics === undefined ? base.topics : within<PriorityTopic>(choices.topics, PRIORITY_TOPICS.map((topic) => topic.id), "Priority topics"),
       gemini_check: choices.gemini_check === undefined ? true : choices.gemini_check !== false,
       story_limit: Number(choices.story_limit) > 0 ? Math.floor(Number(choices.story_limit)) : null,
+      scrape_depth: scrapeDepth(choices.scrape_depth, base.scrape_depth ?? DEFAULT_SCRAPE_DEPTH, "Website depth"),
       // Every run is exhaustive now; a run that recorded a search depth keeps it, so its saved plan and display stay as they were.
       ...(choices.search_depth === undefined ? {} : { search_depth: choice(choices.search_depth, SEARCH_DEPTHS, "enough", "Search depth") }),
     };
@@ -196,6 +206,10 @@ export function limits() {
     webPageBudget: itemCap(10),
     webMaxItems: itemCap(25),
     webMaxPages: itemCap(5),
+    /** Website depth 2: listing pages read per site, the pages they link to, and the extra requests both may use. */
+    webListingPages: itemCap(4),
+    webDeepPages: itemCap(8),
+    webDeepBudget: itemCap(12),
     newWebPerHost: itemCap(2),
   };
 }

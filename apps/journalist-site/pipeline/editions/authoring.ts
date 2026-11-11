@@ -192,6 +192,7 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
       await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: candidate.id }, { $set: {
         rank: candidate.section_rank, score: (candidate.explain as { final?: number } | undefined)?.final ?? candidate.score,
         why: `${candidate.rated_by === "pre_ranker" ? "pre-ranker (no model rating): " : ""}${candidate.rating.category.replace(/_/g, " ")}; civic ${candidate.rating.civic}, appeal ${candidate.rating.appeal}, special ${candidate.rating.special}`,
+        model_rating: { rated_by: candidate.rated_by, category: candidate.rating.category, civic: candidate.rating.civic, appeal: candidate.rating.appeal, special: candidate.rating.special },
         ...(pre ? { pre_rank: { score: pre.score, civic: pre.rating.civic, appeal: pre.rating.appeal, special: pre.rating.special, rules: pre.rules, policy: pre.policy } } : {}),
       } });
     }
