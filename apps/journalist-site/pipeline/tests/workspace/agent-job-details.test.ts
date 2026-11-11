@@ -4,7 +4,7 @@ import { parseHTML } from "linkedom";
 import { expect, it, vi } from "vitest";
 vi.mock("@/lib/admin-api", () => ({ adminRoute: vi.fn() }));
 import { JobLog } from "../../../app/dashboard";
-import { agentJobDetails } from "../../../app/api/admin/runs/[runId]/route";
+import { agentJobDetails } from "../../../lib/agent-job-details";
 
 type Job = Parameters<typeof agentJobDetails>[0];
 type State = Parameters<typeof agentJobDetails>[2];

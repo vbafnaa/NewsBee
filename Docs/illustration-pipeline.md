@@ -19,6 +19,8 @@ Wedgwood's reviewed cues come from the [community council boundary description](
 
 Neighborhood art is selected by reviewed location IDs in `shared/neighborhood-illustrations.ts`. Local story variants remain subject-matched: a Moses Lake football scene is never used for a basketball story, and a reading nook never substitutes for a person portrait. Other communities receive the shared subject collection rather than another community's panorama.
 
+Community welcomes also support animated watercolor portraits. Motion regions and mobile focal points are configured per community; the reusable renderer provides pause controls, reduced-motion and static fallbacks. See [animated community portraits](community-scenes.md) for the behavior and steps to add another community.
+
 ## Selection and publication
 
 `shared/editorial-illustrations.ts` contains the reviewed subjects, asset IDs and deterministic selector. A subject must match the headline; incidental words in the article body, source name or venue cannot qualify an otherwise unrelated image. Body text helps compare already-qualified matches. Comedy, mime, improv, music and tree planting have separate subjects. Canceled events, sensitive incidents, death notices, police/court/census records and unsupported topics remain text-only.

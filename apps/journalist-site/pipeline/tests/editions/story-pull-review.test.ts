@@ -60,6 +60,32 @@ describe("title rules", () => {
 });
 
 describe("the web reader on a source saved as one dated story", () => {
+  it.each(["noai", "nosnippet", "noimageindex"])("honours the publisher home page's %s restriction before reading its feed", async (restriction) => {
+    const root = "https://restricted.example/";
+    const story = `${root}news/2026/nov/01/old-story/`;
+    const pages: Record<string, string> = {
+      [`${root}robots.txt`]: "User-agent: *\nAllow: /\n",
+      [story]: '<html><head><title>Old story | Herald</title></head><body></body></html>',
+      [root]: `<html><head><meta name="robots" content="${restriction}"><link type="application/rss+xml" rel="alternate" href="/rss/"></head><body></body></html>`,
+      [`${root}rss/`]: `<rss><channel><item><title>Library opens new wing downtown</title><link>${root}new-story/</link><description>Full story summary</description><pubDate>Sun, 08 Nov 2026 11:21:00 -0700</pubDate></item></channel></rss>`,
+    };
+    const transport: HttpTransport = vi.fn(async (request) => ({
+      url: request.url, status: pages[request.url] ? 200 : 404, headers: {}, body: new TextEncoder().encode(pages[request.url] ?? ""),
+    }));
+    const context = { today: "2026-11-09", transport, fetcher: new Fetcher(transport, undefined, false) } as unknown as ConnectorContext;
+    const record = sourceResult("web:herald", "Herald", "ingested", "");
+    const items = await readSite({ type: "web", source_id: "web:herald", name: "Old story", params: { url: story } }, context, record);
+    if (restriction === "noai") {
+      expect(items).toEqual([]);
+      expect(record.status).toBe("blocked");
+      expect(vi.mocked(transport).mock.calls.some(([request]) => request.url === `${root}rss/`)).toBe(false);
+    } else {
+      expect(items).toHaveLength(1);
+      expect(items[0].image_blocked).toBe(true);
+      if (restriction === "nosnippet") expect(items[0]).toMatchObject({ description: null, link_only: true });
+    }
+  });
+
   it("reads the publisher's feed from its home page, and names the home page instead of calling it undated", async () => {
     const root = "https://herald.example/";
     const story = `${root}news/2026/nov/01/old-police-logs/`;
@@ -234,6 +260,10 @@ describe("story reviews", () => {
     expect(csvCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
     expect(csvCell('say "hi", then')).toBe('"say ""hi"", then"');
     expect(csvCell(["a", "b"])).toBe("a; b");
+    expect(csvCell(["=1+1", "another source"])).toBe("'=1+1; another source");
+    expect(csvCell(["@SUM(1)", "another source"])).toBe("'@SUM(1); another source");
+    expect(csvCell("\n=1+1")).toBe('"\'\n=1+1"');
+    expect(csvCell(-1)).toBe("-1");
     expect(csvCell(null)).toBe("");
   });
 
@@ -253,5 +283,22 @@ describe("story reviews", () => {
     expect((await pulledStories(db, "run", { decision: "unreviewed" })).groups.map((group) => group.title)).toEqual(["Herald"]);
     expect((await pulledStories(db, "run", { reason: "site's name" })).total).toBe(1);
     expect(reasonKind(null, "reader")).toBe("left out by the reader");
+  });
+
+  it("pages beyond 500 links without omitting or repeating a story", async () => {
+    await seedRun();
+    const template = (await collectedItems(db).findOne({ _id: "run:3" }))!;
+    await collectedItems(db).insertMany(Array.from({ length: 501 }, (_, index) => ({
+      ...template, _id: `extra:${index}`, url: `https://herald.example/extra/${index}`, title: `Extra story ${String(index).padStart(3, "0")}`,
+    })));
+    const keys: string[] = [];
+    for (let offset = 0; offset < 503; offset += 100) {
+      const page = await pulledStories(db, "run", { offset, limit: 100 });
+      expect(page.total).toBe(503);
+      expect(page.offset).toBe(offset);
+      keys.push(...page.groups.map((group) => group.key));
+    }
+    expect(keys).toHaveLength(503);
+    expect(new Set(keys).size).toBe(503);
   });
 });

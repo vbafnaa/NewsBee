@@ -10,6 +10,7 @@ import { loadSettings } from "../../core/config";
 import type { HttpTransport } from "../../core/http";
 import { COLLECTIONS } from "../../storage/mongo";
 import { collectedItems } from "../../editions/assemble";
+import * as storyReviews from "../../editions/story-reviews";
 import { FakeModel } from "../support/fake-model";
 import { ModelRateLimitError } from "../../model/runtime";
 import { mainText, supportingLinks } from "../../connectors/web/page";
@@ -248,6 +249,15 @@ it("ranks with gathered evidence, persists it, and writes from it even without a
   expect(outcome.result?.draft.summary).toContain(action);
   expect(model.calls.at(-1)!.prompt).toContain(action);
   expect((await collectedItems(db).findOne({ _id: "item" }))?.evidence).toMatchObject({ extraction: "model_unavailable" });
+});
+it("reports unavailable editor signals while keeping ranking usable", async () => {
+  const { deps } = await seed(transport());
+  const rates = vi.spyOn(storyReviews, "sourceAcceptRates").mockRejectedValueOnce(new Error("fixture reviews unavailable"));
+  try {
+    await rankSection(deps, "run", "news");
+    expect(log.warn).toHaveBeenCalledWith("source_accept_rates_failed", { run_id: "run", error: "Error: fixture reviews unavailable" });
+    expect((await collectedItems(db).findOne({ _id: "item" }))?.pre_rank?.score).toBeTypeOf("number");
+  } finally { rates.mockRestore(); }
 });
 it("fetches useful text even when the daily extraction budget is exhausted", async () => {
   const light = new FakeModel(() => { throw new Error("Must not call extraction"); });

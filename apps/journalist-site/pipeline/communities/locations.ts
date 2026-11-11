@@ -188,6 +188,7 @@ const LOCATION_COLLECTIONS = [
   ["youtube_location_settings", COLLECTIONS.youtubeLocationSettings],
   ["story_cache", COLLECTIONS.storyCache], ["withdrawals", COLLECTIONS.withdrawals],
   ["source_map", "source_map"], ["discovery_state", "discovery_state"], ["collected_items", "collected_items"],
+  ["story_decisions", "story_decisions"], ["story_reviews", "story_reviews"],
   ["edition_maps", "edition_maps"], ["news_publishers", "news_publishers"], ["source_suggestions", "source_suggestions"],
   ["photo_catalog_sources", "photo_catalog_sources"], ["photo_catalog_cache", "photo_catalog_cache"],
   ["photo_supply_invites", "photo_supply_invites"], ["photo_supply_submissions", "photo_supply_submissions"],

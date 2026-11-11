@@ -1190,9 +1190,11 @@ locality evidence, every copy and source (reader, tier, how it was found), where
 how deep, replication, outcome and reason, whether the editor overruled the pipeline (`disagrees`), the
 model's and pre-ranker's ratings, evidence, extracted details, the written draft, a text excerpt and the
 run's settings. Items expire after 90 days and page text after 30, so the snapshot keeps an annotation
-usable. Every save is appended to `story_reviews`. **Export** gives the run's or the location's reviews as
-CSV, one column per fact (`CSV_COLUMNS` in `editions/story-reviews.ts`), or as JSONL (`?format=jsonl`),
-the whole snapshot one story per line, for training and testing a ranking model or skill.
+usable. Every save is appended to `story_reviews`. The list uses 100-link pages with **Previous** and
+**Next**, including runs with more than 500 links. Removing a location also removes its story decisions
+and review history. **Export** gives the run's or the location's reviews as CSV, one column per fact
+(`CSV_COLUMNS` in `editions/story-reviews.ts`), or as JSONL (`?format=jsonl`), the whole snapshot one
+story per line, for training and testing a ranking model or skill.
 
 `model/voice.ts` sets the writing voice (`NEWSBEE_VOICE`: `plain`, `lively` (default) or
 `bold`). Court cases, deaths, safety notices, weather alerts and earthquakes are always

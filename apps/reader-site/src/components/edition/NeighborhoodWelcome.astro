@@ -1,24 +1,28 @@
 ---
-import { neighborhoodArt, neighborhoodArtAsset } from "../../../../../shared/neighborhood-illustrations";
+import { neighborhoodArt } from "../../../../../shared/neighborhood-illustrations";
+import CommunityScene from "./CommunityScene.astro";
 interface Props { locationId: string; mediaMode?: string }
 const { locationId, mediaMode } = Astro.props;
 const profile = mediaMode === "illustrated" ? neighborhoodArt(locationId) : null;
-const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
-{profile && <section class={`neighborhood-welcome ${profile.id}`} aria-labelledby="neighborhood-welcome-heading">
-  <div class="welcome-copy"><p class="nb-label">A note from your neighborhood</p><h1 id="neighborhood-welcome-heading">Hello, {profile.name}.</h1><p>{profile.intro}</p></div>
-  <figure>
-    <img src={neighborhoodArtAsset(profile, base)} srcset={`${neighborhoodArtAsset(profile, base, true)} 960w, ${neighborhoodArtAsset(profile, base)} 2172w`}
-      sizes="(max-width: 70rem) calc(100vw - 2rem), 1052px" alt={profile.alt} width="2172" height="724" loading="eager" decoding="async" />
-  </figure>
+{profile && <section class="neighborhood-welcome" aria-labelledby="neighborhood-welcome-heading"
+  style={`--community-sky:${profile.presentation?.sky ?? "#edf0e6"};--community-glow:${profile.presentation?.glow ?? "#f6ecd8"}`}>
+  <div class="welcome-copy"><h1 id="neighborhood-welcome-heading">Hello, {profile.name}.</h1></div>
+  <CommunityScene profile={profile} eager layout="immersive" />
 </section>}
 <style>
-  .neighborhood-welcome { display: grid; gap: var(--space-5); padding-top: var(--space-6); min-width: 0; }
-  .welcome-copy { display: grid; gap: var(--space-4); text-align: center; margin-inline: auto; max-width: 42rem; }
-  h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.12; letter-spacing: -.02em; }
-  .welcome-copy > p:last-child { color: var(--color-muted); line-height: 1.65; max-width: 48ch; margin-inline: auto; }
-  figure { margin: 0; min-width: 0; }
-  img { display: block; width: 100%; height: auto; mix-blend-mode: multiply;
-    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent), linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent); mask-composite: intersect; }
-  @media (max-width: 40rem) { .neighborhood-welcome { padding-top: 0; } .welcome-copy > p:last-child { font-size: var(--text-sm); } }
+  .neighborhood-welcome { position: relative; isolation: isolate; overflow: clip; width: 100%;
+    min-height: clamp(38rem, calc(100svh - 8.75rem), 58rem);
+    background: radial-gradient(ellipse at 12% 58%, var(--community-sky), transparent 68%),
+      radial-gradient(ellipse at 88% 38%, var(--community-glow), transparent 65%), var(--color-paper); }
+  .neighborhood-welcome::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(to bottom, var(--color-surface) 0%, rgb(255 255 255 / .4) 19%, transparent 43%, transparent 78%, var(--color-surface) 100%); }
+  .welcome-copy { position: relative; z-index: 2; text-align: center; pointer-events: none;
+    width: min(100% - 2rem, 66rem); margin-inline: auto; padding-top: clamp(2rem, 5svh, 4rem); padding-bottom: 24rem; }
+  .welcome-copy > * { pointer-events: auto; }
+  h1 { font-size: clamp(2.75rem, 6.6vw, 6rem); line-height: 1.06; letter-spacing: -.035em; }
+  @media (max-width: 40rem) {
+    .neighborhood-welcome { min-height: max(40rem, calc(100svh - 7.75rem)); }
+    .welcome-copy { padding-top: var(--space-8); padding-bottom: 25rem; }
+  }
 </style>

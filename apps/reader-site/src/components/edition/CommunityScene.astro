@@ -1,0 +1,150 @@
+---
+import { neighborhoodArtAsset, type NeighborhoodArt } from "../../../../../shared/neighborhood-illustrations";
+import SceneActor from "./SceneActor.astro";
+interface Props { profile: NeighborhoodArt; eager?: boolean; layout?: "inline" | "immersive" }
+const { profile, eager = false, layout = "inline" } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const focus = layout === "immersive" ? profile.presentation?.focalPoint ?? profile.motion?.focalPoint ?? [0.5, 0.5]
+  : profile.motion?.focalPoint ?? [0.5, 0.5];
+const motion = profile.motion ? { ...profile.motion, focalPoint: focus } : undefined;
+const waterClip = `scene-water-${profile.id}`;
+const actorClip = `scene-actor-${profile.id}`;
+---
+<community-scene data-community={profile.id} data-scene-name={profile.name} data-scene-config={motion ? JSON.stringify(motion) : undefined}
+  data-playing="false" data-motion="static" data-interactive={String(Boolean(motion?.interaction))} data-scene-layout={layout}
+  data-scene-backdrop={motion?.cast ? `${base}/illustrations/${motion.cast.backdrop}` : undefined}
+  style={`--scene-focus-x: ${focus[0] * 100}%; --scene-focus-y: ${focus[1] * 100}%`}>
+  <figure class="scene-frame" data-scene-frame>
+    <img class="scene-poster" src={neighborhoodArtAsset(profile, base)}
+      srcset={layout === "immersive" ? `${neighborhoodArtAsset(profile, base)} 2172w`
+        : `${neighborhoodArtAsset(profile, base, true)} 960w, ${neighborhoodArtAsset(profile, base)} 2172w`}
+      sizes={layout === "immersive" ? "100vw" : "(max-width: 40rem) 180vw, (max-width: 70rem) calc(100vw - 2rem), 1052px"}
+      alt={profile.alt} width="2172" height="724" loading={eager ? "eager" : "lazy"} decoding="async" />
+    {motion && <>
+      <canvas class="scene-canvas" aria-hidden="true"></canvas>
+      <svg class="scene-ornaments" viewBox="0 0 2172 724" fill="none" aria-hidden="true" focusable="false">
+        {motion.cast && <>
+          <defs>{motion.cast.actors.map(actor => <clipPath id={`${actorClip}-${actor.id}`}><path d={actor.outline} /></clipPath>)}</defs>
+          {motion.cast.actors.filter(actor => !actor.parent).map(actor => <SceneActor actor={actor} actors={motion.cast!.actors}
+            source={neighborhoodArtAsset(profile, base)} prefix={actorClip} />)}
+        </>}
+        {motion.water && motion.water.length > 0 && <defs><clipPath id={waterClip}>
+          {motion.water.map(([x, y, rx, ry]) => <ellipse cx={x * 2172} cy={y * 724} rx={rx * 2172} ry={ry * 724} />)}
+        </clipPath></defs>}
+        {motion.birds.map(bird => <g transform={`translate(0 ${bird.y * 724})`}>
+          <g class="bird-flight" style={`--flight-duration:${bird.duration}s;--motion-delay:${bird.delay}s`}>
+            <g transform={`scale(${bird.scale})`}>
+              <path class="bird-wings" d="M-13 1Q-6-7 0 0Q6-7 13 1" stroke="#686f60" stroke-width="2" stroke-linecap="round" />
+            </g>
+          </g>
+        </g>)}
+        {motion.leaves?.map(leaf => <g transform={`translate(${leaf.x * 2172} ${leaf.y * 724})`}>
+          <g class="falling-leaf" style={`--leaf-duration:${leaf.duration}s;--motion-delay:${leaf.delay}s;--leaf-drift:${leaf.drift}px`}>
+            <g transform={`scale(${leaf.scale ?? 1})`}>
+              <path d="M0-11C12-10 14 0 0 11C-11 4-12-6 0-11Z" fill={leaf.color} fill-opacity=".7" />
+              <path d="M-2-8 2 10" stroke="#867247" stroke-width=".9" />
+            </g>
+          </g>
+        </g>)}
+        {motion.steam && <g transform={`translate(${motion.steam[0] * 2172} ${motion.steam[1] * 724})`}>
+          <path class="cup-steam steam-one" d="M0 0C-9-10 10-17 1-28C-6-39 9-44 3-56" stroke="#9d927d" stroke-width="2.2" stroke-linecap="round" />
+          <path class="cup-steam steam-two" d="M10 2C1-7 18-14 10-26C3-37 18-42 11-52" stroke="#b5aa95" stroke-width="1.8" stroke-linecap="round" />
+        </g>}
+        {motion.boats?.map(boat => <g transform={`translate(${boat.from[0] * 2172} ${boat.from[1] * 724})`}>
+          <g class="boat-crossing" style={`--boat-duration:${boat.duration}s;--motion-delay:${boat.delay}s;--boat-x:${(boat.to[0] - boat.from[0]) * 2172}px;--boat-y:${(boat.to[1] - boat.from[1]) * 724}px`}>
+            <g class="boat-bob"><g transform={`scale(${boat.scale})`}>
+              <path class="boat-wake" d="M-54 11q16 5 31 1M-60 17q22 4 42 0M-44 23q12 2 23-1" stroke="#edf5df" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M-33 1Q-5 9 34 0Q23 14-10 13Q-26 12-33 1Z" fill="#c88c58" stroke="#877657" stroke-width="1.2" />
+              <path d="M-25 2Q0 7 26 2" stroke="#eed9a5" stroke-width="1.5" />
+              <path d="M-7-3Q-9-13-3-16Q5-18 9-7L14 1H-7Z" fill="#7b8f67" stroke="#66765a" stroke-width="1" />
+              <ellipse cx="0" cy="-21" rx="4.4" ry="4.8" fill="#cba77f" />
+              <path d="M-7-23Q0-29 6-23L10-21H-8Z" fill="#c7b67e" stroke="#958865" stroke-width=".8" />
+              <g class="boat-paddle"><path d="m-8 14 23-39" stroke="#8f7853" stroke-width="2" stroke-linecap="round" />
+                <path d="m-8 12-8 11q3 7 8 2l6-10Z" fill="#c5a963" stroke="#9b874e" stroke-width=".8" /></g>
+            </g></g>
+          </g>
+        </g>)}
+        <g data-breeze-effects></g>
+        <g data-water-effects clip-path={motion.water?.length ? `url(#${waterClip})` : undefined}></g>
+      </svg>
+      {motion.cast?.actions.map(action => <button class="scene-action-target" type="button" data-scene-action={action.id}
+        aria-label={action.label} hidden></button>)}
+    </>}
+  </figure>
+</community-scene>
+
+<script>
+  import { registerCommunityScenes } from "../../lib/community-scene";
+  registerCommunityScenes();
+</script>
+
+<style>
+  community-scene { display: block; position: relative; min-width: 0; }
+  community-scene:has(.scene-frame:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 4px; border-radius: var(--radius-lg); }
+  [data-motion="ready"][data-interactive="true"]:not([data-scene-paused="true"]) .scene-frame { cursor: pointer; }
+  [data-scene-paused="true"] .scene-frame { cursor: default; }
+  .scene-frame { position: relative; width: 100%; aspect-ratio: 3 / 1; overflow: hidden; margin: 0; isolation: isolate;
+    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent), linear-gradient(to bottom, transparent, #000 6%, #000 94%, transparent);
+    mask-composite: intersect; }
+  .scene-poster, .scene-canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+  .scene-poster { object-fit: cover; object-position: var(--scene-focus-x) var(--scene-focus-y); }
+  .scene-canvas { opacity: 0; transition: opacity 650ms ease; }
+  [data-motion="ready"] .scene-canvas { opacity: 1; }
+  .scene-ornaments { position: absolute; left: var(--scene-art-left, 0px); top: var(--scene-art-top, 0px);
+    width: var(--scene-art-width, 100%); height: var(--scene-art-height, 100%); opacity: 0; pointer-events: none; }
+  [data-motion="ready"] .scene-ornaments { opacity: 1; }
+  .bird-flight, .bird-wings, .falling-leaf, .cup-steam, .boat-crossing, .boat-bob, .boat-paddle, .boat-wake { animation-play-state: paused; }
+  [data-playing="true"] :is(.bird-flight, .bird-wings, .falling-leaf, .cup-steam, .boat-crossing, .boat-bob, .boat-paddle, .boat-wake) { animation-play-state: running; }
+  .bird-flight { animation: bird-crossing var(--flight-duration) linear var(--motion-delay) infinite; animation-play-state: paused; }
+  .bird-wings { transform-box: fill-box; transform-origin: center; animation: wings 1.6s ease-in-out infinite alternate; animation-play-state: paused; }
+  .falling-leaf { animation: leaf-fall var(--leaf-duration) ease-in-out var(--motion-delay) infinite; animation-play-state: paused; }
+  .cup-steam { animation: steam-rise 4.5s ease-in-out infinite; animation-play-state: paused; }
+  .steam-two { animation-delay: -2s; }
+  .boat-crossing { animation: boat-journey var(--boat-duration) linear var(--motion-delay) infinite; animation-play-state: paused; }
+  .boat-bob { transform-box: fill-box; transform-origin: center; animation: boat-bob 3s ease-in-out infinite alternate; animation-play-state: paused; }
+  .boat-paddle { transform-box: fill-box; transform-origin: center; animation: paddle 2.8s ease-in-out infinite alternate; animation-play-state: paused; }
+  .boat-wake { animation: wake 3s ease-in-out infinite alternate; animation-play-state: paused; }
+  .scene-action-target { position: absolute; z-index: 2; background: transparent; border: 0; border-radius: 35%;
+    padding: 0; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .scene-action-target:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; }
+  .scene-action-target[hidden] { display: none; }
+  @keyframes bird-crossing {
+    0% { transform: translate(-30px, 0); opacity: 0; }
+    5%, 93% { opacity: .65; }
+    100% { transform: translate(2220px, -26px); opacity: 0; }
+  }
+  @keyframes wings { from { transform: scaleY(.6); } to { transform: scaleY(1); } }
+  @keyframes leaf-fall {
+    0%, 10% { transform: translate(0, 0) rotate(-20deg); opacity: 0; }
+    20% { opacity: .7; }
+    80% { opacity: .55; }
+    100% { transform: translate(var(--leaf-drift), 215px) rotate(155deg); opacity: 0; }
+  }
+  @keyframes steam-rise {
+    0%, 100% { transform: translate(0, 2px); opacity: 0; }
+    35% { opacity: .65; }
+    80% { transform: translate(4px, -16px); opacity: 0; }
+  }
+  @keyframes boat-journey {
+    0% { transform: translate(0, 0); opacity: 0; }
+    8%, 90% { opacity: 1; }
+    100% { transform: translate(var(--boat-x), var(--boat-y)); opacity: 0; }
+  }
+  @keyframes boat-bob { from { transform: translateY(-2px) rotate(-1deg); } to { transform: translateY(2px) rotate(1deg); } }
+  @keyframes paddle { from { transform: rotate(-15deg); } to { transform: rotate(12deg); } }
+  @keyframes wake { from { opacity: .35; } to { opacity: .75; } }
+  @media (max-width: 40rem) {
+    .scene-frame { aspect-ratio: 16 / 9; }
+  }
+  [data-scene-layout="immersive"] { position: absolute; inset: 0; width: 100%; height: 100%; }
+  [data-scene-layout="immersive"] .scene-frame { position: absolute; inset: 10% 0 0; height: 90%; aspect-ratio: auto;
+    z-index: 0; mix-blend-mode: multiply;
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 15%, #000 80%, transparent 100%); }
+  @media (max-width: 40rem) {
+    [data-scene-layout="immersive"] .scene-frame { top: 24%; height: 76%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .scene-canvas, .scene-ornaments, .scene-action-target { display: none; }
+    .scene-canvas { transition: none; }
+  }
+</style>

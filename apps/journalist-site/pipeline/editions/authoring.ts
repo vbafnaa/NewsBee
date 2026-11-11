@@ -157,7 +157,10 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
     if (Object.keys(evidenceFields).length) await drafts(deps.db).updateOne({ id: draftId }, { $set: evidenceFields });
     const rankingModel = deps.rankingModel ?? deps.model;
     // The local pre-ranker rates every story in shadow, and stands in where the model gives no rating.
-    const rates = await sourceAcceptRates(deps.db, draft.location_id).catch(() => undefined);
+    const rates = await sourceAcceptRates(deps.db, draft.location_id).catch((error) => {
+      deps.log.warn("source_accept_rates_failed", { run_id: draft.run_id, error: String(error) });
+      return undefined;
+    });
     const preRanks = new Map<string, PreRank>(active.map((story) => [story.id, preRate({
       id: story.id, title: story.title, description: story.description, kind: story.kind, tier: String(story.facts.tier ?? "local"),
       source_tier: story.facts.source_tier as string | undefined, section: sectionId, first_date: story.first.event_date, occurrences: story.scheduledOccurrences.length,

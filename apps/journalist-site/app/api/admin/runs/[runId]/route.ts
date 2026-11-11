@@ -1,7 +1,7 @@
 import { adminRoute } from "@/lib/admin-api";
+import { agentJobDetails, type AgentCall } from "@/lib/agent-job-details";
 import { methodDefinition } from "@/pipeline/discovery/methods";
 import { AGENT_STATE, type AgentState } from "@/pipeline/agent/map-sources";
-import type { Job } from "@/pipeline/orchestration/jobs";
 import { expireOverdueRuns } from "@/pipeline/orchestration/diagnostics";
 import { locationHealth } from "@/pipeline/orchestration/health";
 import { runJobs } from "@/pipeline/orchestration/jobs";
@@ -9,25 +9,6 @@ import { getRun } from "@/pipeline/orchestration/runs";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
 
 type Context = { params: Promise<{ runId: string }> };
-type AgentCall = { at: number; role: string; provider: string; model: string };
-
-export function agentJobDetails(job: Job, calls: AgentCall[], state: Pick<AgentState, "steps" | "round"> | null) {
-  const pass = Number(job.payload.round ?? 0);
-  const steps = state?.steps.filter((step) => step.job === pass) ?? [];
-  const last = steps.at(-1);
-  const models = calls.filter((call) => job.started_at != null && call.at >= job.created_at && (job.completed_at == null || call.at <= job.completed_at))
-    .sort((a, b) => a.at - b.at)
-    .map(({ role, provider, model }) => ({ role, provider, model }))
-    .filter((call, index, all) => all.findIndex((other) => other.role === call.role && other.provider === call.provider && other.model === call.model) === index);
-  return {
-    pass: pass + 1,
-    models,
-    steps: steps.length || (typeof job.result?.steps === "number" ? job.result.steps : 0),
-    round: job.status === "running" ? state?.round?.n ?? last?.round ?? null : last?.round ?? null,
-    stage: job.status === "running" ? state?.round?.stage ?? null : typeof job.result?.stage === "string" ? job.result.stage : null,
-    last_step: last ? { action: last.action, tool: last.tool, category: last.category, result: last.result.slice(0, 180) } : null,
-  };
-}
 
 /** One line on why a story ranked where it did (ranking v5 explain record). */
 function rankingWhy(ranking: { category?: string; explain?: { base: number; engagement: { multiplier: number; views: number }; rerank: { position: number | null; bonus: number }; diversity_penalty: number; final: number } } | undefined) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import ItemTrace from "./item-trace";
 import StoryReview, { type StoryReviewValue } from "./story-review";
@@ -23,38 +23,51 @@ const label = (value: string) => value.replace(/_/g, " ");
 /** Everything the selected run pulled: one row per link with its copies, each traceable and reviewable, and what each source found. */
 export default function RunItems({ locationId }: { locationId: string }) {
   const [runId, setRunId] = useState<string | null>(null);
+  useEffect(() => {
+    setRunId(new URLSearchParams(window.location.search).get("run"));
+    const inspect = (event: Event) => setRunId((event as CustomEvent<{ runId: string }>).detail.runId);
+    window.addEventListener("newsbee:inspect-run", inspect);
+    return () => window.removeEventListener("newsbee:inspect-run", inspect);
+  }, []);
+  if (!runId) return <section className="panel"><h2>Stories pulled</h2><p>Inspect a run to see every story it pulled.</p></section>;
+  return <RunStoryItems key={runId} locationId={locationId} runId={runId} />;
+}
+
+function RunStoryItems({ locationId, runId }: { locationId: string; runId: string }) {
   const [page, setPage] = useState<Page | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [decision, setDecision] = useState("");
   const [reason, setReason] = useState("");
   const [source, setSource] = useState("");
-  const [limit, setLimit] = useState(PAGE);
+  const [offset, setOffset] = useState(0);
   const [trace, setTrace] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const requestId = useRef(0);
   const { policy } = useExecutionPolicy();
-  useEffect(() => {
-    setRunId(new URLSearchParams(window.location.search).get("run"));
-    const inspect = (event: Event) => { setRunId((event as CustomEvent<{ runId: string }>).detail.runId); setTrace(null); };
-    window.addEventListener("newsbee:inspect-run", inspect);
-    return () => window.removeEventListener("newsbee:inspect-run", inspect);
-  }, []);
   const load = useCallback(async () => {
-    if (!runId) return;
-    const params = new URLSearchParams({ q: query, status, decision, reason, source, limit: String(limit) });
-    try { setPage(await adminApi<Page>(`runs/${encodeURIComponent(runId)}/pulled?${params}`)); setError(""); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-  }, [runId, query, status, decision, reason, source, limit]);
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { setLimit(PAGE); }, [runId, query, status, decision, reason, source]);
+    const id = ++requestId.current;
+    const params = new URLSearchParams({ q: query, status, decision, reason, source, offset: String(offset), limit: String(PAGE) });
+    try {
+      const result = await adminApi<Page>(`runs/${encodeURIComponent(runId)}/pulled?${params}`);
+      if (id !== requestId.current) return;
+      setPage(result); setError("");
+    } catch (cause) { if (id === requestId.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+  }, [runId, query, status, decision, reason, source, offset]);
+  useEffect(() => {
+    setPage(null);
+    void load();
+    return () => { requestId.current += 1; };
+  }, [load]);
+  useEffect(() => { setOffset(0); }, [query, status, decision, reason, source]);
+  useEffect(() => { setTrace(null); }, [query, status, decision, reason, source, offset]);
   async function reassemble() {
     if (!runId || !window.confirm("Throw away this run's ranking and drafts and assemble again from the collected items?")) return;
     setBusy(true);
     try { await adminApi(`runs/${encodeURIComponent(runId)}/actions`, { method: "POST", body: JSON.stringify({ action: "reassemble" }) }); window.dispatchEvent(new Event("newsbee:runs-changed")); await load(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } finally { setBusy(false); }
   }
-  if (!runId) return <section className="panel"><h2>Stories pulled</h2><p>Inspect a run to see every story it pulled.</p></section>;
   const summary = page?.summary;
   const reviewed = summary ? summary.reviewed.accept + summary.reviewed.reject : 0;
   return <section className="panel" id="run-items">
@@ -119,6 +132,10 @@ export default function RunItems({ locationId }: { locationId: string }) {
         <td><button type="button" className="run-inspect-link" onClick={() => setTrace(group.item_id)}>Trace</button></td>
       </tr>)}</tbody>
     </table></div>
-    {page && page.total > page.groups.length && <button type="button" className="secondary" onClick={() => setLimit(limit + PAGE)}>Show more ({page.total - page.groups.length} left)</button>}
+    {page && <div className="card-actions">
+      <button type="button" className="secondary" disabled={page.offset === 0} onClick={() => setOffset(Math.max(0, page.offset - PAGE))}>Previous</button>
+      <small>{page.total ? `${page.offset + 1}–${page.offset + page.groups.length} of ${page.total}` : "No matching links"}</small>
+      <button type="button" className="secondary" disabled={page.offset + page.groups.length >= page.total} onClick={() => setOffset(page.offset + PAGE)}>Next</button>
+    </div>}
   </section>;
 }

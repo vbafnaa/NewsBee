@@ -1,0 +1,14 @@
+---
+import type { SceneActor, ScenePoint } from "../../../../../shared/community-scenes";
+interface Props { actor: SceneActor; actors: readonly SceneActor[]; source: string; prefix: string; parentPivot?: ScenePoint }
+const { actor, actors, source, prefix, parentPivot = [0, 0] } = Astro.props;
+const [x, y] = actor.pivot;
+---
+<g transform={`translate(${(x - parentPivot[0]) * 2172} ${(y - parentPivot[1]) * 724})`}>
+  <g data-scene-actor={actor.id} style={actor.restOpacity !== undefined ? `opacity:${actor.restOpacity}` : undefined}>
+    <g transform={`translate(${-x * 2172} ${-y * 724})`}>
+      <image href={source} width="2172" height="724" clip-path={`url(#${prefix}-${actor.id})`} />
+    </g>
+    {actors.filter(child => child.parent === actor.id).map(child => <Astro.self actor={child} actors={actors} source={source} prefix={prefix} parentPivot={actor.pivot} />)}
+  </g>
+</g>

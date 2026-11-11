@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-11-10",
+  "tool": "Built-in image_gen (imagegen skill; no CLI or project API key)",
+  "use": "Bundled animation background plates. Actors are clipped from the original portraits. Runtime does not generate imagery or call model services.",
+  "assets": [
+    {
+      "source": "apps/reader-site/public/illustrations/wedgwood-welcome-v1.webp",
+      "output": "apps/reader-site/public/illustrations/wedgwood-welcome-backdrop-v1.webp",
+      "width": 2172,
+      "height": 724,
+      "prompt": "Use case: precise-object-edit. Asset type: clean background plate for an interactive watercolor neighborhood scene. Edit target: the attached original 3:1 Wedgwood panorama. Remove ONLY the two adult neighbors waving to one another on the sidewalk near the center, and the two tiny patrons seated inside the cafe window on the right. Reconstruct continuous sidewalk, low fence, shrubs and foliage behind the standing figures; reconstruct the warm interior/window behind the cafe patrons, retaining the cafe table and cups. Keep ALL other pixels/composition as faithful as possible: same canvas/aspect ratio, exact scale and placement of houses, tree trunks, shop facade, awning, furniture, paths, surrounding foliage, colors and watercolor ink texture. No new people, no lettering or watermark. This is an animation background plate, so absolutely no layout changes or perspective changes. Preserve the full 3:1 panorama with original margins."
+    },
+    {
+      "source": "apps/reader-site/public/illustrations/moses-lake-welcome-v1.webp",
+      "output": "apps/reader-site/public/illustrations/moses-lake-welcome-backdrop-v1.webp",
+      "width": 2172,
+      "height": 724,
+      "prompt": "Use case: precise-object-edit. Asset type: clean background plate for an interactive watercolor lakeshore scene. Edit target: the attached original 3:1 Moses Lake panorama. Remove ONLY the empty orange kayak/rowboat and its diagonal yellow paddle resting on the bank near the lower center-left. Reconstruct the sandy/gravel shoreline, a few small stones, subtle shadows and the same water behind where the boat and paddle were. Keep all other composition as faithful as possible: exact scale and placement of the lake, distant small town and dry hills, big tree and bench on the left, walking neighbors and golden reeds. Preserve colors, ink lines, watercolor paper and full 3:1 original panoramic aspect ratio and margins. No other changes, no new people/boats, text or watermark. This is an animation background plate, so no layout, perspective or framing changes."
+    }
+  ]
+}
