@@ -28,11 +28,14 @@ describe("title rules", () => {
     expect(siteNameProblem("Minor injuries, mobile home destroyed in Moses Lake fire Sunday", ["Columbia Basin Herald"])).toBeNull();
   });
 
-  it("requires four words only of publishers' headlines", () => {
-    expect(titleProblem("Council meets", "local_news", [])).toBe('title under 4 words ("Council meets")');
-    expect(titleProblem("Council meets | Herald", "news_report", [])).toContain("under 4 words");
-    expect(titleProblem("Council approves new park budget", "local_news", [])).toBeNull();
-    for (const kind of ["event", "obituary", "game_result", "meeting_preview", "home_sale"]) expect(titleProblem("Storytime", kind, [])).toBeNull();
+  it("requires four words only of news publishers' headlines", () => {
+    expect(titleProblem("Council meets", "news_report", [])).toBe('title under 4 words ("Council meets")');
+    expect(titleProblem("Council approves budget | Herald", "news_report", ["Herald"])).toContain("under 4 words");
+    expect(titleProblem("Council approves new park budget", "news_report", [])).toBeNull();
+    // A date after a dash is part of the title, not a site name.
+    expect(titleProblem("Board Meeting — November 10, 2026", "news_report", ["Herald"])).toBeNull();
+    // Local organisations' own posts, events and notices are often short and still real.
+    for (const kind of ["local_news", "event", "obituary", "game_result", "meeting_preview", "home_sale"]) expect(titleProblem("Community garden meeting", kind, [])).toBeNull();
   });
 
   it("reads a full date from a story's address", () => {
@@ -119,7 +122,7 @@ describe("assembly", () => {
   it("leaves out titles that fail the title rules, with the reason, and counts them", async () => {
     const result = await pool([
       { title: "Fixture News", source_url: "https://news.example/" },
-      { title: "Short headline", source_url: "https://news.example/a" },
+      { title: "Short headline", kind: "news_report", source_url: "https://news.example/a" },
       { title: "Storytime", kind: "event", source_url: "https://library.example/storytime" },
       { title: "Fixture council approves the park budget", source_url: "https://news.example/b" },
     ]);

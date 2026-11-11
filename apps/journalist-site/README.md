@@ -1160,10 +1160,11 @@ from editors: a source whose stories editors accepted 70% of the time or more (5
 gains a point, and one at 30% or less loses one.
 
 **Title rules** (`editions/title-rules.ts`). A title that is only the site's name, or a navigation
-heading such as "Latest stories", is a page of the site, not a story; a publisher's headline under four
-words is too thin. Both are left out with the reason (step `title`, or the reader's own reason for site
-pages), so they stay visible in **Stories pulled**. Events, meetings, obituaries, results and record
-digests are exempt from the word count. The web reader also takes a story's date from its address
+heading such as "Latest stories", is a page of the site, not a story; a news publisher's headline under
+four words (not counting a trailing "| Site name") is too thin. Both are left out with the reason (step
+`title`, or the reader's own reason for site pages), so they stay visible in **Stories pulled**. Local
+organisations' own posts, events, meetings, obituaries, results and record digests are exempt from the
+word count. The web reader also takes a story's date from its address
 (`/2026/nov/08/`) when the page has none, and a source saved as one dated story reads its publisher's
 feed from the site's home page.
 

@@ -3,16 +3,17 @@
  *
  *   site name   a title that is only the site's or the source's name ("Columbia Basin Herald") or a
  *               navigation heading ("Latest stories", "Home") is a page of the site, not a story.
- *   word count  a headline from a publisher needs at least MIN_TITLE_WORDS words. Events, meetings,
- *               obituaries, sports results and record digests are exempt: "Storytime", "Jane Doe" and
- *               "Boys Basketball" are real titles there.
+ *   word count  a news publisher's headline needs at least MIN_TITLE_WORDS words, not counting a
+ *               trailing "| Site name". Local organisations' own posts, events, meetings, obituaries,
+ *               sports results and record digests are exempt: "Community garden meeting", "Storytime",
+ *               "Jane Doe" and "Boys Basketball" are real titles there.
  *
  * Both are left out with the reason, so the run's item list shows what was rejected and why.
  */
 export const MIN_TITLE_WORDS = 4;
 
-/** Kinds whose titles are a publisher's headline, so a very short one isn't a story. */
-export const HEADLINE_KINDS = new Set(["local_news", "news_report", "state_news", "trending_topic", "social_trend", "court_case"]);
+/** Kinds whose titles are a news publisher's headline, so a very short one isn't a story. */
+export const HEADLINE_KINDS = new Set(["news_report", "state_news", "trending_topic", "social_trend", "court_case"]);
 
 /** Headings of listing and navigation pages, compared after the site name is cut off. */
 const NAVIGATION = new Set(["home", "homepage", "home page", "welcome", "news", "latest news", "latest stories", "top stories", "all stories", "local news", "events", "calendar", "obituaries", "sports", "archive", "archives", "search", "page not found", "not found"]);
@@ -41,11 +42,18 @@ export function siteNameProblem(title: string, names: Array<string | null | unde
   return null;
 }
 
+/** The title without a trailing "| Site name", only when that part is one of `names`. */
+function withoutSiteName(title: string, names: Array<string | null | undefined>) {
+  const suffix = /\s+[|–—-]\s+([^|–—-]{2,80})$/.exec(title);
+  const known = names.map(normaliseName).filter((name) => name.length >= 3);
+  return suffix && known.includes(normaliseName(suffix[1])) ? title.slice(0, suffix.index).trim() : title;
+}
+
 /** Why a title fails the title rules, or null when it passes. */
 export function titleProblem(title: string, kind: string | null | undefined, names: Array<string | null | undefined>) {
   const named = siteNameProblem(title, names);
   if (named) return named;
-  if (HEADLINE_KINDS.has(String(kind ?? "")) && wordCount(withoutSuffix(title)) < MIN_TITLE_WORDS) return `title under ${MIN_TITLE_WORDS} words ("${title.trim()}")`;
+  if (HEADLINE_KINDS.has(String(kind ?? "")) && wordCount(withoutSiteName(title, names)) < MIN_TITLE_WORDS) return `title under ${MIN_TITLE_WORDS} words ("${title.trim()}")`;
   return null;
 }
 
