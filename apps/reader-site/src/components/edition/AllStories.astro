@@ -1,6 +1,7 @@
 ---
 import StoryMedia from "./StoryMedia.astro";
 import NeighborhoodPage from "./NeighborhoodPage.astro";
+import ShareEdition from "./ShareEdition.astro";
 import { neighborhoodLinks, type EditionPage } from "../../lib/edition-view";
 interface Props { page: EditionPage }
 const { page } = Astro.props;
@@ -8,9 +9,10 @@ const links = neighborhoodLinks(page);
 ---
 <NeighborhoodPage page={page} title={`All stories in ${page.town} | Newsbee`} subPage>
   <section class="all-stories" aria-labelledby="all-stories-title">
-    <a class="nb-link" href={links.page}>Back to {page.town}</a>
+    <a class="back" href={links.page}><span aria-hidden="true">← </span>Back to {page.town}</a>
     <h1 id="all-stories-title">All stories in this edition</h1>
     <p>{page.articles.length} published stories, including news, alerts and events.</p>
+    <ShareEdition locationId={page.location.id} editionId={page.edition.id} town={page.town} />
     <ol>
       {page.articles.map((article) => <li>
         <StoryMedia photo={article.photo} illustration={article.illustration} />
@@ -25,6 +27,8 @@ const links = neighborhoodLinks(page);
 </NeighborhoodPage>
 <style>
   .all-stories { width: 100%; max-width: 48rem; margin-inline: auto; display: grid; gap: var(--space-5); }
+  .back { justify-self: start; color: var(--color-ink); text-decoration: none; }
+  .back:hover { text-decoration: underline; text-underline-offset: .2em; }
   h1 { font-size: var(--text-h1); line-height: var(--leading-h1); }
   h2 { font-size: var(--text-h3); }
   ol { margin: 0; padding: 0; list-style: none; }

@@ -1,7 +1,7 @@
 ---
 import { neighborhoodArtAsset, type NeighborhoodArt } from "../../../../../shared/neighborhood-illustrations";
 import SceneActor from "./SceneActor.astro";
-interface Props { profile: NeighborhoodArt; eager?: boolean; layout?: "inline" | "immersive" }
+interface Props { profile: NeighborhoodArt; eager?: boolean; layout?: "inline" | "immersive" | "welcome" }
 const { profile, eager = false, layout = "inline" } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const focus = layout === "immersive" ? profile.presentation?.focalPoint ?? profile.motion?.focalPoint ?? [0.5, 0.5]
@@ -18,7 +18,9 @@ const actorClip = `scene-actor-${profile.id}`;
     <img class="scene-poster" src={neighborhoodArtAsset(profile, base)}
       srcset={layout === "immersive" ? `${neighborhoodArtAsset(profile, base)} 2172w`
         : `${neighborhoodArtAsset(profile, base, true)} 960w, ${neighborhoodArtAsset(profile, base)} 2172w`}
-      sizes={layout === "immersive" ? "100vw" : "(max-width: 40rem) 180vw, (max-width: 70rem) calc(100vw - 2rem), 1052px"}
+      sizes={layout === "immersive" ? "100vw" : layout === "welcome"
+        ? "(max-width: 40rem) 300vw, (max-width: 93rem) 125vw, 1800px"
+        : "(max-width: 40rem) 180vw, (max-width: 70rem) calc(100vw - 2rem), 1052px"}
       alt={profile.alt} width="2172" height="724" loading={eager ? "eager" : "lazy"} decoding="async" />
     {motion && <>
       <canvas class="scene-canvas" aria-hidden="true"></canvas>
@@ -135,6 +137,10 @@ const actorClip = `scene-actor-${profile.id}`;
   @keyframes wake { from { opacity: .35; } to { opacity: .75; } }
   @media (max-width: 40rem) {
     .scene-frame { aspect-ratio: 16 / 9; }
+  }
+  [data-scene-layout="welcome"] .scene-frame { aspect-ratio: 12 / 5; }
+  @media (max-width: 40rem) {
+    [data-scene-layout="welcome"] .scene-frame { aspect-ratio: 1; }
   }
   [data-scene-layout="immersive"] { position: absolute; inset: 0; width: 100%; height: 100%; }
   [data-scene-layout="immersive"] .scene-frame { position: absolute; inset: 10% 0 0; height: 90%; aspect-ratio: auto;

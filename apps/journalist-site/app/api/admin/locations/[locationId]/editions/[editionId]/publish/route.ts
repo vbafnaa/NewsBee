@@ -1,6 +1,8 @@
 import { adminRoute } from "@/lib/admin-api";
 import { getLocation } from "@/pipeline/communities/locations";
 import { PublishConflict, publishEdition } from "@/pipeline/orchestration/publish";
+import { DriveArtifacts } from "@/pipeline/storage/drive";
+import { editorDriveAccess } from "@/pipeline/storage/drive-consent";
 
 type Context = { params: Promise<{ locationId: string; editionId: string }> };
 export const dynamic = "force-dynamic";
@@ -14,7 +16,8 @@ export async function POST(request: Request, context: Context) {
   return adminRoute(request, async ({ db, store, principal }) => {
     if (!principal) return Response.json({ detail: "Sign in as an approved journalist." }, { status: 403 });
     await getLocation(db, locationId);
-    try { return await publishEdition(db, store, locationId, editionId, principal.email); }
+    const artifacts = store instanceof DriveArtifacts ? new DriveArtifacts(() => editorDriveAccess(db, principal.email)) : store;
+    try { return await publishEdition(db, artifacts, locationId, editionId, principal.email); }
     catch (error) {
       if (error instanceof PublishConflict) return Response.json({ detail: error.message }, { status: 409 });
       throw error;

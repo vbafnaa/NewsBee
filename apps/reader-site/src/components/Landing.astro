@@ -11,6 +11,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <link rel="stylesheet" href={`${apiUrl}/fonts/reader-fonts.css`} />
     <GoogleAnalytics />
     <title>Newsbee</title>
   </head>
@@ -19,28 +20,29 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
     <main data-api-url={apiUrl} class="is-landing">
       <header class="masthead">
         <div class="ears">
-          <span>Your community, this week</span>
           <button id="edition-toggle" type="button" hidden>Find another neighborhood</button>
         </div>
         <h1 class="title">Newsbee</h1>
         <p class="subtitle" id="edition-name">Local news. Shared stories.</p>
       </header>
       <section id="landing" aria-labelledby="landing-title">
-        <div class="landing-ornament" aria-hidden="true"><span></span><svg viewBox="0 0 40 36" fill="none">
-          <path d="M19 15C3-1 2 20 17 21M22 15C37-1 39 20 24 21" fill="#f7e9a9" stroke="currentColor" />
-          <ellipse cx="20.5" cy="23" rx="6" ry="9" fill="#fbe274" stroke="currentColor" />
-          <path d="M15 21h11M16 26h9M18 14l-3-4M23 14l3-4" stroke="currentColor" stroke-width="2" />
-        </svg><span></span></div>
+        <div class="landing-ornament" aria-hidden="true">
+          <span></span>
+          <img src={`${apiUrl}/figma/landing/bee.svg`} width="35.19" height="32.0023" alt="" />
+          <span></span>
+        </div>
         <h2 id="landing-title" tabindex="-1">Good stories start <em>nearby.</em></h2>
-        <p class="landing-intro">Discover what's happening around you, from civic updates to weekend plans.</p>
+        <p class="landing-intro">
+          <span>Find news covering your community. No coverage yet?</span>
+          <span><a href={`${apiUrl}/contact`}>Request it</a> and help bring local reporting here.</span>
+        </p>
         <div class="picker">
               <label class="visually-hidden" for="location">Find your neighborhood</label>
               <div class="location-field">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  stroke-width="1.5" aria-hidden="true">
-                  <circle cx="10.5" cy="10.5" r="6.5" />
-                  <path d="m15.5 15.5 5 5" />
-                </svg>
+                <span class="search-icon" aria-hidden="true">
+                  <img class="search-ring" src={`${apiUrl}/figma/landing/search-ring.svg`} width="11.594" height="11.594" alt="" />
+                  <img class="search-handle" src={`${apiUrl}/figma/landing/search-handle.svg`} width="4.84548" height="4.84548" alt="" />
+                </span>
                 <input id="location" type="text" role="combobox" aria-autocomplete="list"
                   aria-expanded="false" aria-controls="location-options" aria-describedby="location-help"
                   placeholder="Find your neighborhood" autocomplete="off" maxlength="80" disabled />
@@ -51,7 +53,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
               </div>
               <div id="edition-picker" hidden>
                 <div id="published-group">
-                  <p class="picker-heading">Published editions</p>
+                  <p class="picker-heading">Communities with published editions</p>
                   <div id="onboarded-editions" aria-label="Published editions"></div>
                   <p id="published-empty" hidden>No editions yet. Search for your neighborhood to help bring Newsbee here.</p>
                 </div>
@@ -61,36 +63,22 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
                 <p class="geographic-attribution" hidden>Search by Photon / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a></p>
               </div>
         </div>
-        <svg class="neighborhood-art" viewBox="0 0 800 165" fill="none" aria-hidden="true">
-          <circle cx="652" cy="45" r="27" fill="#e8cc8e" stroke="none" />
-          <path d="M20 149h760M40 155h120m465 0h110" stroke="#bdb19a" />
-          <g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M100 147V85l42-35 42 35v62" fill="#e8dbc4" />
-            <path d="m91 87 51-43 51 43M126 147v-37h28v37M112 87h17v15h-17zm43 0h17v15h-17z" />
-            <path d="M208 147V71h103v76" fill="#eee5d2" />
-            <path d="M201 71h117v-9H201zM219 106h81v17h-81z" fill="#cda78c" />
-            <path d="M219 147v-24m27 0v24m27-24v24m27-24v24M224 82h70v15h-70z" />
-            <path d="M340 147V58l36-26 36 26v89" fill="#e6d6b8" />
-            <path d="m333 60 43-34 43 34M365 147v-32h22v32M353 72h15v24h-15zm31 0h15v24h-15z" />
-            <path d="M439 147V92h100v55" fill="#eee5d2" />
-            <path d="M432 92h114l-8-21h-98z" fill="#aeb9a4" />
-            <path d="M451 104h24v27h-24zm38 43v-43h35v43M445 80h88" />
-            <path d="M586 147V90m0 20-16-17m16 10 17-21" />
-            <path d="M568 96c-28-1-28-29-13-36-10-20 12-35 28-26 17-21 44-4 39 16 25 9 17 42-8 42-11 13-31 13-46 4Z" fill="#d3dac6" />
-            <path d="M586 147V65m0 24-15-14m15 3 14-14" />
-            <path d="M678 147v-24m-19 0h38v-9h-38zm4 0v13m30-13v13M58 147v-34m0 12-8-7m8 17 9-8" />
-            <path d="M61 110c-13-19-27 2-10 7m12-4c17-20 25 4 5 7" stroke="#7c8c72" />
-            <path d="m696 59 7-4 7 4m-56-39 7-4 7 4" stroke="#9b8d72" />
-          </g>
-        </svg>
+        <div class="neighborhood-art" aria-hidden="true">
+          <img src={`${apiUrl}/figma/landing/neighborhood.svg`} width="736" height="151.797" alt="" />
+        </div>
       </section>
+      <nav class="landing-links" aria-label="Explore Newsbee">
+        <a href={`${apiUrl}/browse`}>Browse stories and editions</a>
+        <a href={`${apiUrl}/contact`}>Contact us</a>
+        <a href={`${apiUrl}/become-editor`}>Help run a local Newsbee</a>
+      </nav>
       <p id="edition-status" role="status">Loading locations...</p>
       <button id="retry" type="button" hidden>Try again</button>
       <section id="expansion" aria-labelledby="expansion-title" hidden>
         <p class="eyebrow">Your community deserves its own front page</p>
+        <p id="expansion-state" class="readiness-pill" data-state="available">Requests open</p>
         <h2 id="expansion-title" tabindex="-1"></h2>
-        <p>Every community has stories worth telling. Help bring local events, civic updates,
-          and a little more connection to yours.</p>
+        <p id="expansion-detail"></p>
       </section>
       <section id="subscription" aria-labelledby="subscription-title" hidden>
         <h2 id="subscription-title" tabindex="-1"></h2>
@@ -98,8 +86,9 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       </section>
     </main>
     <script>
-      type Listing = { location_id: string; location_name: string; edition_id: string | null };
-      type Town = { id: string; name: string };
+      type Listing = { location_id: string; location_name: string; edition_id: string | null; publication_count?: number };
+      type PreparationState = "available" | "requested" | "preparing" | "ready" | "blocked";
+      type Town = { id: string; name: string; preparation_state?: PreparationState };
       const main = document.querySelector("main")!;
       const api = main.dataset.apiUrl;
       const input = document.querySelector<HTMLInputElement>("#location")!;
@@ -118,6 +107,8 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       const status = document.querySelector<HTMLParagraphElement>("#edition-status")!;
       const retry = document.querySelector<HTMLButtonElement>("#retry")!;
       const expansion = document.querySelector<HTMLElement>("#expansion")!;
+      const expansionState = document.querySelector<HTMLElement>("#expansion-state")!;
+      const expansionDetail = document.querySelector<HTMLElement>("#expansion-detail")!;
       const subscription = document.querySelector<HTMLElement>("#subscription")!;
       const signupForm = document.querySelector<HTMLFormElement>("#subscription-form")!;
       const signupButton = signupForm.querySelector<HTMLButtonElement>("button")!;
@@ -138,6 +129,27 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       };
       const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
       const place = (name: string) => name.replace(/,\s*[A-Z]{2}$/, "");
+      const stateLabel: Record<PreparationState, string> = {
+        available: "Requests open",
+        requested: "Requested",
+        preparing: "In preparation",
+        ready: "Coverage ready",
+        blocked: "Preparation paused",
+      };
+      const stateDetail: Record<PreparationState, string> = {
+        available: "Coverage has not started yet. Request it and we'll let you know when the first edition is ready.",
+        requested: "Readers have asked for coverage here. Add your interest to help us prioritize it and receive launch updates.",
+        preparing: "The newsroom is building a verified local source map. Get notified when the first edition is published.",
+        ready: "Local source coverage is ready for editorial work. Get notified when the first edition is published.",
+        blocked: "Preparation is paused while the team resolves a coverage issue. Add your interest and we'll share updates.",
+      };
+      const stateAction: Record<PreparationState, string> = {
+        available: "Request coverage and keep me posted",
+        requested: "Add my interest",
+        preparing: "Notify me when coverage launches",
+        ready: "Notify me when the first edition publishes",
+        blocked: "Keep me posted",
+      };
 
       async function getJson(path: string, init?: RequestInit) {
         const response = await fetch(`${api}${path}`, {
@@ -263,10 +275,21 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
           if (version !== searchVersion) return;
           candidates = data.results as Town[];
           options.replaceChildren(...candidates.map((town, index) => {
-            const option = text("li", town.name);
+            const state = town.preparation_state ?? "available";
+            const listing = listings.get(town.id);
+            const count = listing?.publication_count ?? 0;
+            const label = count > 0 ? `${count} published newsroom${count === 1 ? "" : "s"}`
+              : listing?.edition_id ? "Published community edition" : stateLabel[state];
+            const option = document.createElement("li");
+            option.append(
+              text("span", town.name, "location-option-name"),
+              text("span", label, "readiness-pill"),
+            );
+            option.querySelector<HTMLElement>(".readiness-pill")!.dataset.state = state;
             option.id = `location-option-${index}`;
             option.setAttribute("role", "option");
             option.setAttribute("aria-selected", "false");
+            option.setAttribute("aria-label", `${town.name}, ${label}`);
             option.addEventListener("mousedown", (event) => event.preventDefault());
             option.addEventListener("click", () => choose(town));
             return option;
@@ -289,8 +312,13 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         }
       }
 
-      async function choose(town: Town, updateUrl = true) {
-        if (listings.get(town.id)?.edition_id) {
+      async function choose(town: Town, updateUrl = true, preferLegacy = false) {
+        const listing = listings.get(town.id);
+        if (!preferLegacy && (listing?.publication_count ?? 0) > 0) {
+          window.location.assign(`${api}/locations/${encodeURIComponent(town.id)}`);
+          return;
+        }
+        if (listing?.edition_id) {
           // The server shows published neighborhoods at ?location=<id>. Already there means it
           // couldn't load the edition just now, so say so rather than reloading.
           if (new URLSearchParams(location.search).get("location") === town.id) {
@@ -375,8 +403,20 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         document.querySelector("#subscription-title")!.textContent = `Weekly editions for ${town.name}`;
         document.querySelector("#signup-location")!.textContent = town.name;
         masthead(town.name);
-        document.querySelector("#expansion-title")!.textContent =
-          `We're not in ${place(town.name)} yet. Let's change that.`;
+        const selectedState = town.preparation_state ?? "available";
+        expansionState.textContent = stateLabel[selectedState];
+        expansionState.dataset.state = selectedState;
+        expansionDetail.textContent = stateDetail[selectedState];
+        signupButton.textContent = stateAction[selectedState];
+        document.querySelector("#expansion-title")!.textContent = selectedState === "ready"
+          ? `Coverage is ready for ${place(town.name)}.`
+          : selectedState === "preparing"
+            ? `We're preparing coverage for ${place(town.name)}.`
+            : selectedState === "blocked"
+              ? `Coverage preparation for ${place(town.name)} is paused.`
+              : selectedState === "requested"
+                ? `${place(town.name)} has been requested.`
+                : `We're not in ${place(town.name)} yet. Let's change that.`;
         status.textContent = "";
         expansion.hidden = false;
         subscription.hidden = false;
@@ -396,7 +436,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         }
         const listing = listings.get(requested);
         if (listing) {
-          await choose({ id: listing.location_id, name: listing.location_name }, false);
+          await choose({ id: listing.location_id, name: listing.location_name }, false, true);
           return;
         }
         showLanding(false, false);
@@ -418,7 +458,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         if (!Array.isArray(data.locations)) throw new Error("Unsupported editions contract");
         for (const listing of data.locations as Listing[]) {
           listings.set(listing.location_id, listing);
-          if (!listing.edition_id) continue;
+          if (!listing.edition_id && !(listing.publication_count ?? 0)) continue;
           const button = text("button", listing.location_name) as HTMLButtonElement;
           button.type = "button";
           button.dataset.locationId = listing.location_id;
@@ -437,16 +477,25 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       }
     </script>
     <style is:global>
-      :root {
+  .landing-links { display: flex; justify-content: center; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; font-size: .875rem; line-height: 1.6; }
+  .landing-links a { color: var(--color-ink); text-underline-offset: .2em; }
+      :root:root {
         /* Mapped onto shared/design-tokens.css (see Docs/design-style-guide.html) */
         /* White page, like the neighborhood pages */
+        --font-display: "Inter", sans-serif;
+        --font-body: "Roboto", sans-serif;
+        --radius-xs: 1px;
+        --radius-sm: 2px;
+        --radius-lg: 4px;
+        --radius-xl: 6px;
+        --radius-2xl: 8px;
         --paper: var(--color-surface);
         --ink: var(--color-ink);
         --muted: var(--color-muted);
         --rule: var(--color-line);
         --accent: var(--color-bee);
-        --serif: var(--font-body);
-        --display: var(--font-display);
+        --serif: "Roboto", sans-serif;
+        --display: "Inter", sans-serif;
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
@@ -465,6 +514,9 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         margin: 2rem auto;
         padding: 1.5rem 2.5rem 2.5rem;
         background: var(--paper);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
       }
       .masthead { text-align: center; border-bottom: 1px solid var(--rule); }
       .ears {
@@ -478,45 +530,47 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         padding-bottom: 0.4rem;
       }
       .title {
-        margin: 0.6rem 0 0;
+        margin: 0;
         font: var(--weight-heading) clamp(2.75rem, 7vw, 4.5rem)/1 var(--display);
         letter-spacing: -0.02em;
       }
       .subtitle {
-        margin: 0.3rem 0 0.8rem;
-        font: 1.05rem var(--serif);
+        margin: 0.8rem 0 0;
+        font: 1.05rem/1.6 var(--serif);
         color: var(--muted);
       }
       .is-landing {
         position: relative;
-        min-height: min(48rem, 90vh);
+        min-height: 48rem;
         background: var(--paper);
       }
       .is-landing .ears { display: none; }
-      .is-landing .masthead { border: 0; padding-top: 1.5rem; }
+      .is-landing .masthead { border: 0; padding-top: 2.099375rem; }
       .is-landing .title { font-size: clamp(3rem, 8vw, 5rem); }
-      .is-landing .subtitle { margin-top: 0.8rem; color: var(--muted); font: 1.05rem/1.6 var(--serif); }
-      #landing { padding: 1.4rem 0 0; text-align: center; }
-      .landing-ornament { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.7rem; color: var(--muted); }
+      #landing { display: flex; flex-direction: column; align-items: center; gap: 1.15rem; padding-top: 1.4rem; text-align: center; }
+      .landing-ornament { display: flex; align-items: center; justify-content: center; gap: 1rem; width: 100%; color: var(--muted); }
       .landing-ornament span { width: 4rem; height: 1px; background: var(--rule); }
-      .landing-ornament svg { width: 2.2rem; height: 2rem; }
-      .landing-intro { max-width: 34rem; margin: 1.2rem auto 2rem; color: var(--muted); font-size: 0.95rem; line-height: 1.8; }
-      #landing-title { margin: 0; font: var(--weight-heading) var(--text-h1)/var(--leading-h1) var(--display); letter-spacing: var(--tracking-h1); text-wrap: balance; }
+      .landing-ornament img { display: block; }
+      .landing-intro { max-width: 34rem; margin: 0; padding-bottom: 0.03375rem; color: var(--muted); font-size: 0.95rem; line-height: 1.8; }
+      .landing-intro span { display: block; }
+      .landing-intro a { color: inherit; font-weight: 700; text-underline-offset: 0.1em; }
+      #landing-title { margin: 0; padding: 0.54875rem 0 0; font: var(--weight-heading) var(--text-h1)/var(--leading-h1) var(--display); letter-spacing: var(--tracking-h1); text-wrap: balance; }
       #landing-title em { background: linear-gradient(transparent 62%, var(--accent) 62%); }
-      .neighborhood-art { display: block; width: min(100%, 46rem); height: auto; margin: 2.5rem auto 0; color: var(--muted); }
+      .neighborhood-art { width: min(100%, 46rem); margin: 0 auto; }
+      .neighborhood-art img { display: block; max-width: 100%; height: auto; }
       .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
       #published-empty { font-size: 0.85rem; color: var(--muted); }
-      .picker { position: relative; max-width: 32rem; margin: auto; text-align: left; font-style: normal; }
+      .picker { position: relative; width: min(100%, 32rem); padding: 0.7875rem 0 1.286875rem; text-align: left; font-style: normal; }
       #edition-picker {
         position: absolute;
         z-index: 3;
-        top: calc(100% + 0.5rem);
+        top: calc(100% - 0.786875rem);
         width: 100%;
         max-height: min(28rem, 55vh);
         overflow-y: auto;
         padding: 1rem;
         border: 1px solid var(--rule);
-        border-radius: var(--radius-lg);
+        border-radius: var(--radius-sm);
         background: var(--color-surface);
         box-shadow: var(--shadow-lg);
       }
@@ -575,15 +629,18 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         align-items: center;
         background: var(--color-surface);
         border: 1px solid var(--color-line-strong);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-md);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 4px 8px rgb(31 28 20 / 0.05);
         transition: border-color var(--transition), box-shadow var(--transition);
       }
       .location-field:focus-within {
         border-color: var(--ink);
         box-shadow: 0 0 0 3px var(--accent);
       }
-      .search-icon { flex: 0 0 1.2rem; width: 1.2rem; height: 1.2rem; margin-left: 1rem; color: var(--muted); }
+      .search-icon { position: relative; flex: 0 0 1.199375rem; height: 1.199375rem; margin-left: 1rem; }
+      .search-icon img { position: absolute; display: block; }
+      .search-ring { left: 2.6px; top: 2.6px; }
+      .search-handle { left: 11.97px; top: 11.97px; }
       .picker input {
         min-width: 0;
         width: 100%;
@@ -617,12 +674,35 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         letter-spacing: normal;
       }
       #location-options li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-3);
         padding: 0.7rem 1rem;
         border-bottom: 1px solid var(--rule);
         font: 0.95rem/1.5 var(--serif);
         cursor: pointer;
       }
       #location-options li:last-child { border-bottom: 0; }
+      .location-option-name { min-width: 0; }
+      .readiness-pill {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        width: fit-content;
+        padding: 0.18rem 0.55rem;
+        border-radius: var(--radius-pill);
+        background: var(--color-pill-gray);
+        color: var(--color-ink-soft);
+        font: 600 0.6875rem/1.3 var(--font-body);
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .readiness-pill[data-state="available"],
+      .readiness-pill[data-state="requested"] { background: var(--color-bee-tint); }
+      .readiness-pill[data-state="ready"] { background: var(--color-bee); color: var(--color-ink); }
+      .readiness-pill[data-state="blocked"] { background: var(--color-cream); }
       #location { flex: 1; width: 0; }
       #location-options { border: 0; }
       #location-options li:hover, #location-options [aria-selected="true"] {
@@ -630,6 +710,7 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         color: var(--ink);
       }
       #expansion { max-width: 38rem; margin: 3rem auto; text-align: center; }
+      #expansion .readiness-pill { margin: 0.5rem auto 0; }
       #expansion h2 { font: var(--weight-heading) var(--text-h2)/var(--leading-h2) var(--display); letter-spacing: var(--tracking-h2); }
       .eyebrow { color: var(--muted); }
       #subscription { max-width: 38rem; margin: 2rem auto; padding-top: 1rem; border-top: 1px solid var(--rule); text-align: center; }
@@ -639,13 +720,13 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
       #retry { display: block; margin: 1rem auto; padding: 0.5rem 1rem; }
       #retry[hidden] { display: none; }
       @media (max-width: 760px) {
-        main { margin: 0; padding: 1rem; }
+        main { margin: 0; padding: 1.5rem 1rem 2.5rem; }
         .title { font-size: 2.75rem; }
         .is-landing .title { font-size: 3.25rem; }
         .is-landing .masthead { padding-top: 1.5rem; }
-        #landing { padding: 1.2rem 0 0.5rem; }
-        .landing-intro { padding: 0 0.6rem; }
-        .neighborhood-art { margin-top: 3rem; }
+        #landing { padding-top: 1.4rem; }
+        #landing-title { max-width: 35rem; }
+        .landing-intro { padding: 0 0.4rem; }
         .is-landing { min-height: 0; }
         .picker input { font-size: 1rem; }
         .ears > span { font-size: 0.7rem; }

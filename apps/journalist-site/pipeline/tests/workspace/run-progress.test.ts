@@ -1,8 +1,66 @@
 import { expect, it } from "vitest";
-import { editionPipelineProgress, sourcePipelineProgress, type RunProgressJob } from "../../../app/run-progress";
+import { editionGenerationActivity, editionPipelineProgress, sourcePipelineProgress, type RunProgressJob } from "../../../app/run-progress";
+import type { EditionWorkActivity } from "../../publications/generation";
 
 const job = (kind: string, status: string, result: Record<string, unknown> | null = null): RunProgressJob => ({
   kind, status, attempts: 1, error: null, result,
+});
+
+const work: EditionWorkActivity = {
+  source_checks_completed: 27, story_steps_completed: 9, active: ["Writing a story"],
+  last_started_at: 961, last_completed_at: 940,
+};
+
+it("summarizes durable edition work without equating writing steps to included stories or an overall total", () => {
+  const activity = editionGenerationActivity({ status: "running", children: [
+    { status: "authoring", work },
+    { status: "built", work: { ...work, active: [], source_checks_completed: 2, story_steps_completed: 3 } },
+  ] }, 1000);
+  expect(activity).toEqual({ state: "running", text: expect.stringContaining("29 source checks finished; 12 story-writing steps completed") });
+  expect(activity.text).toContain("not a count of approved stories");
+  expect(activity.text).toContain("Current step: Writing a story");
+  expect(activity.text).toContain("Last work confirmed less than a minute ago");
+});
+
+it("ages actual work boundaries, not poll/parent freshness, and resumes only with newer work evidence", () => {
+  const generation = { status: "running", updated_at: 2000, children: [{ status: "authoring", work: { ...work } }] };
+  expect(editionGenerationActivity(generation, 1260).state).toBe("running");
+  generation.updated_at = 3000;
+  const stale = editionGenerationActivity(generation, 1261);
+  expect(stale.state).toBe("waiting");
+  expect(stale.text).toContain("Last work confirmed 5 minutes ago");
+  expect(stale.text).toContain("Last known step: Writing a story");
+  expect(stale.text).toContain("A longer step may still be running");
+  generation.children[0].work.last_completed_at = 1250;
+  expect(editionGenerationActivity(generation, 1261).state).toBe("running");
+});
+
+it("does not claim recent progress for empty, invalid or future work timestamps", () => {
+  for (const time of [null, 0, NaN, 2000]) {
+    const activity = editionGenerationActivity({ status: "running", children: [{
+      status: "authoring", work: { ...work, last_started_at: time, last_completed_at: null },
+    }] }, 1000);
+    expect(activity.state).toBe("waiting");
+    expect(activity.text).toContain("No work activity confirmed yet");
+  }
+});
+
+it.each(["paused", "blocked", "cancelling", "cancelled", "failed", "ready"])("keeps %s precedence over recent work evidence", (status) => {
+  const activity = editionGenerationActivity({ status, children: [{ status: "authoring", work }] }, 1000);
+  expect(activity.state).toBe(status === "ready" ? "completed" : status);
+  expect(activity.text).not.toContain("Current step");
+  expect(activity.text).not.toContain("No recent progress");
+  expect(activity.text).toContain("9 story-writing steps completed");
+});
+
+it("keeps a child's recovery warning ahead of recently running work", () => {
+  const activity = editionGenerationActivity({ status: "running", children: [{
+    status: "authoring", work, execution_blocked: { reason: "Internal provider diagnostic" },
+  }] }, 1000);
+  expect(activity.state).toBe("blocked");
+  expect(activity.text).toContain("needs attention - inspect recovery");
+  expect(activity.text).not.toContain("Current step");
+  expect(activity.text).not.toContain("Internal provider diagnostic");
 });
 
 it("tracks source collection, assembly, ranking and story writing as separate run steps", () => {

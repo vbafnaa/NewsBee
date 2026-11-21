@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { adminApi as api } from "@/lib/admin-client";
 import { ACCESS_RULES, FREE_SERVICES, GUARDRAIL_GROUPS, PAID_SERVICES, PRIORITY_TOPICS, type PaidService, type RunOptions } from "@/pipeline/core/run-values";
 
-type Info = { defaults: RunOptions; deployed: boolean; credentialSource: "personal" | "environment"; configured: Record<PaidService, boolean>; local_model: boolean; vision_model?: boolean };
+type Info = { defaults: RunOptions; deployed: boolean; credentialSource: "personal" | "environment" | "platform"; configured: Record<PaidService, boolean>; local_model: boolean; vision_model?: boolean };
 
 function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string; disabled?: boolean }>; onChange: (value: T) => void }) {
   return <label className="field">{label}<select value={value} onChange={(event) => onChange(event.target.value as T)}>
@@ -68,7 +68,9 @@ export default function RunOptionsPanel({ onChange, onError, scope = "all" }: { 
           const allowance = options.paid[service.id];
           return <div className="paid-row" key={service.id}>
             <label><input type="checkbox" checked={allowance !== undefined} onChange={(event) => { const paid = { ...options.paid }; if (event.target.checked) paid[service.id] = service.budget; else delete paid[service.id]; update({ paid }); }} /> <strong>{service.label}</strong> <small>{service.use}</small></label>
-            <span className={`status-badge ${info.configured[service.id] ? "tone-ok" : "tone-warning"}`}>{info.configured[service.id] ? info.credentialSource === "environment" ? "deployment key set" : "your key set" : info.credentialSource === "environment" ? "no deployment key" : "no personal key"}</span>
+            <span className={`status-badge ${info.configured[service.id] ? "tone-ok" : "tone-warning"}`}>{info.configured[service.id]
+              ? info.credentialSource === "personal" ? "your key set" : info.credentialSource === "platform" ? "managed provider set" : "deployment key set"
+              : info.credentialSource === "personal" ? "no personal key" : info.credentialSource === "platform" ? "managed provider unavailable" : "no deployment key"}</span>
             <label className="budget">Max calls <input type="number" min={0} value={allowance ?? service.budget} disabled={allowance === undefined} onChange={(event) => update({ paid: { ...options.paid, [service.id]: Number(event.target.value) } })} /></label>
           </div>;
         })}

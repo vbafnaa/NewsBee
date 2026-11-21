@@ -51,7 +51,8 @@ it("keeps coverage notes but moves external source links and reports into the fu
   const legacy = await readFile(new URL("../../../../reader-site/src/pages/sources.astro", import.meta.url), "utf8");
   expect(frame).toContain("<SourceNotes page={page}");
   expect(sources).toContain("data-edition-notes");
-  expect(sources).not.toContain("source.source_url");
+  // The disclosure may count sources; external source links stay in the full article.
+  expect(sources).not.toMatch(/href=\{[^}]*source_url/);
   expect(sources).not.toContain("ReportStory");
   expect(sources).toContain('id="suggest-source-link"');
   expect(sources).toContain("page.edition.coverage");
@@ -64,7 +65,7 @@ it("keeps coverage notes but moves external source links and reports into the fu
   expect(article).toContain("<ReportStory");
   expect(article).toContain("data-share-story");
   expect(article).toContain("window.print()");
-  for (const name of ["TopNews", "Newsroom", "EventsWeek", "EventsList", "SectionList"]) {
+  for (const name of ["TopNews", "Newsroom", "OtherNews", "EventsWeek", "EventsList", "SectionList"]) {
     const preview = await readFile(new URL(`../../../../reader-site/src/components/edition/${name}.astro`, import.meta.url), "utf8");
     expect(preview).not.toContain("ReportStory");
   }

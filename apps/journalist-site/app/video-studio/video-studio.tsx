@@ -12,7 +12,7 @@ type Story = {
   sourceUrl: string | null;
   hasPackage: boolean;
 };
-type ResponseData = { detail?: string; stories?: Story[]; falConfigured?: boolean; model?: string };
+type ResponseData = { detail?: string; stories?: Story[]; falConfigured?: boolean; desktopConfigured?: boolean; model?: string };
 
 /**
  * A selected location's published stories with video packages to prepare. Making videos uses the
@@ -20,7 +20,7 @@ type ResponseData = { detail?: string; stories?: Story[]; falConfigured?: boolea
  */
 export default function VideoStudio({ locationId, owner }: { locationId: string; owner: boolean }) {
   const [stories, setStories] = useState<Story[] | null>(null);
-  const [falConfigured, setFalConfigured] = useState(true);
+  const [videoConfigured, setVideoConfigured] = useState(true);
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
 
@@ -32,7 +32,7 @@ export default function VideoStudio({ locationId, owner }: { locationId: string;
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       if (!live) return;
       setStories(data.stories ?? []);
-      setFalConfigured(Boolean(data.falConfigured));
+      setVideoConfigured(Boolean(data.falConfigured || data.desktopConfigured));
       setModel(data.model ?? "");
     }).catch((caught: unknown) => { if (live) setError(caught instanceof Error ? caught.message : String(caught)); });
     return () => { live = false; };
@@ -42,7 +42,7 @@ export default function VideoStudio({ locationId, owner }: { locationId: string;
     <section className="panel">
       <h2>Videos</h2>
       <p className="chart-caption">From published stories{model ? ` · ${model}` : ""}. {owner ? "Check speech and subtitles before posting." : "Video creation is available to the owner."}</p>
-      {!falConfigured && <p className="notice" role="status">Add a fal.ai key in <Link href="/account">Environment &amp; API settings</Link> to make videos. Only the configured owner may use the server&apos;s <code>FAL_KEY</code>.</p>}
+      {!videoConfigured && <p className="notice" role="status">Add a video provider key in <Link href="/account">Environment &amp; API settings</Link> to make videos.</p>}
       {error && <p className="alert" role="alert">{error}</p>}
       {!stories && !error && <p role="status">Loading…</p>}
       {stories?.length === 0 &&             <p>No published stories yet. <Link href={`/locations/${encodeURIComponent(locationId)}?tab=published`}>Publish an edition</Link>.</p>}

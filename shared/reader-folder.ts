@@ -26,6 +26,13 @@ export function readerDriveFolderId(env: Record<string, string | undefined> = pr
 
 export type ReaderChannel = { _id: string; enabled?: unknown; drive_folder_id?: unknown };
 
+export class ReaderChannelDisabledError extends Error {
+  constructor(channelId: string) {
+    super(`Reader output channel ${channelId} is disabled`);
+    this.name = "ReaderChannelDisabledError";
+  }
+}
+
 export async function resolveReaderDriveFolderId(
   findChannel: (id: string) => Promise<ReaderChannel | null>,
   env: Record<string, string | undefined> = process.env,
@@ -38,6 +45,6 @@ export async function resolveReaderDriveFolderId(
     !FOLDER_ID.test(channel.drive_folder_id) && !isMongoChannelFolderId(channel.drive_folder_id)) {
     throw new Error(`Reader output channel ${channelId} configuration is malformed`);
   }
-  if (!channel.enabled) throw new Error(`Reader output channel ${channelId} is disabled`);
+  if (!channel.enabled) throw new ReaderChannelDisabledError(channelId);
   return channel.drive_folder_id;
 }

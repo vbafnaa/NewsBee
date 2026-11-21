@@ -20,7 +20,8 @@
  * Every item's outcome is written back to `collected_items`, which the run inspector's item
  * trace and the edition map read.
  */
-import type { Db } from "mongodb";
+import type { AnyBulkWriteOperation, Db } from "mongodb";
+import { boundedBulkWrite } from "../storage/bulk";
 import type { CollectedEvent, ConnectorContext, LocationProfile } from "../connectors/types";
 import { addressEvidence, articleText, localityFor, outsideEventVenue, quickEvidence, type Locality, type LocalityEvidence } from "../connectors/locality";
 import { townName } from "../connectors/locality";
@@ -81,6 +82,11 @@ export type CollectedItem = {
   /** The step that decided it: reader, locality, merge, ledger, ranking, authoring. */
   step: string;
   facts: CollectedEvent | null;
+  /** Found by reading the links on another item's page at an editor's request: that item, and who asked. Collecting the source again keeps it. */
+  followed_from?: string;
+  followed_by?: string;
+  /** For an item left out by its reader (which has no facts): how deep it was, the page it was on or linked from, and how it was found. */
+  found?: { crawl_depth?: number; found_on?: string; found_via?: string; section_hint?: string };
   section?: SectionId | null;
   merge_group?: string | null;
   story_id?: string | null;
@@ -98,14 +104,16 @@ export type CollectedItem = {
   would_have_blocked?: string[];
   access_overrides?: string[];
   created_at: number;
+  /** BSON Date proposal only; deletion remains disabled pending retained-reference review. */
+  retention_expires_at?: Date;
 };
 
 export function collectedItems(db: Db) { return db.collection<CollectedItem>(COLLECTED_ITEMS); }
 export async function ensureItemIndexes(db: Db) {
-  await collectedItems(db).createIndexes([{ key: { run_id: 1, status: 1 } }, { key: { run_id: 1, source_id: 1 } }, { key: { created_at: 1 }, expireAfterSeconds: 90 * 86400 }]);
+  await collectedItems(db).createIndexes([{ key: { run_id: 1, status: 1 } }, { key: { run_id: 1, source_id: 1 } }, { key: { retention_expires_at: 1 }, name: "collected_item_retention_inventory" }]);
 }
 
-export type AssembleContext = { db: Db; settings: Settings; transport: HttpTransport; fetcher: Fetcher; location: LocationProfile; today: string; log: Logger; runId: string; overrides?: RunOverrides };
+export type AssembleContext = { db: Db; settings: Settings; transport: HttpTransport; fetcher: Fetcher; location: LocationProfile; today: string; log: Logger; runId: string; sourceIds?: string[]; overrides?: RunOverrides };
 export type RunOverrides = { include?: string[]; exclude?: string[]; pin?: string[] };
 
 const NOISE = /[^a-z0-9]+/g;
@@ -204,7 +212,8 @@ export type Pool = { events: SourceEvent[]; sections: PoolSection[]; funnel: Rec
 export async function assemble(context: AssembleContext): Promise<Pool> {
   const { db, runId, location, today } = context;
   const overrides = context.overrides ?? {};
-  const items = await collectedItems(db).find({ run_id: runId, status: { $in: ["collected", "pooled", "candidate", "not_selected"] } }).toArray();
+  const items = await collectedItems(db).find({ run_id: runId, status: { $in: ["collected", "pooled", "candidate", "not_selected"] },
+    ...(context.sourceIds ? { source_id: { $in: context.sourceIds } } : {}) }).toArray();
   const collectedCount = await collectedItems(db).countDocuments({ run_id: runId });
   const decide = async (id: string, values: Partial<CollectedItem>) => { await collectedItems(db).updateOne({ _id: id }, { $set: values }); };
 
@@ -416,6 +425,7 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
   }
   const pool: PoolSection[] = [];
   const pooledIds = new Set<string>();
+  const poolUpdates: AnyBulkWriteOperation<CollectedItem>[] = [];
   for (const definition of SECTIONS) {
     const list = sections.get(definition.id) ?? [];
     if (!list.length) continue;
@@ -428,13 +438,14 @@ export async function assemble(context: AssembleContext): Promise<Pool> {
     const chosen = scored.slice(0, RATED_PER_SECTION);
     for (const { story, score } of chosen) {
       pooledIds.add(story.id);
-      await collectedItems(db).updateMany({ run_id: runId, story_id: story.id }, { $set: { status: "pooled", section: definition.id, score: Math.round(score * 100) / 100, step: "ranking" } });
+      poolUpdates.push({ updateMany: { filter: { run_id: runId, story_id: story.id }, update: { $set: { status: "pooled", section: definition.id, score: Math.round(score * 100) / 100, step: "ranking" } } } });
     }
     for (const { story } of scored.slice(RATED_PER_SECTION)) {
-      await collectedItems(db).updateMany({ run_id: runId, story_id: story.id }, { $set: { status: "not_selected", reason: `below the section's top ${RATED_PER_SECTION} by rule score`, section: definition.id, step: "ranking" } });
+      poolUpdates.push({ updateMany: { filter: { run_id: runId, story_id: story.id }, update: { $set: { status: "not_selected", reason: `below the section's top ${RATED_PER_SECTION} by rule score`, section: definition.id, step: "ranking" } } } });
     }
     pool.push({ id: definition.id, label: definition.label, stories: chosen.map(({ story }) => story.id), considered: list.length });
   }
+  await boundedBulkWrite(collectedItems(db), poolUpdates);
   const poolEvents = sourceEvents.filter((event) => pooledIds.has(storyId(String(event.facts.merge_group))));
   return {
     events: poolEvents, sections: pool, tokens: Object.fromEntries(Object.entries(tokens).filter(([id]) => pooledIds.has(id))),

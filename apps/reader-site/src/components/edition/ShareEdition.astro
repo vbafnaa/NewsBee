@@ -1,0 +1,88 @@
+---
+import { editionShareUrl } from "../../lib/edition-sharing";
+interface Props {
+  locationId: string;
+  editionId: string;
+  town: string;
+  label?: string;
+  variant?: "quiet" | "primary";
+  class?: string;
+}
+const { locationId, editionId, town, label = "Share edition", variant = "quiet", class: className } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const url = editionShareUrl(Astro.url.origin, base, locationId, editionId);
+---
+<div class:list={["edition-share", className]} data-edition-share data-location-id={locationId}
+  data-edition-id={editionId} data-api-url={base} data-share-url={url} data-share-title={`${town} | Newsbee`}>
+  <button class:list={["nb-button", variant === "primary" ? "nb-button-primary" : "nb-button-quiet"]}
+    type="button" data-edition-share-button>{label}</button>
+  <p class="share-status" data-edition-share-status role="status" aria-live="polite" aria-atomic="true"></p>
+  <label class="share-fallback" data-edition-share-fallback hidden>
+    Edition link
+    <input type="url" readonly value={url} autocomplete="off" spellcheck="false" />
+  </label>
+  <noscript><p><a class="nb-link" href={url}>Edition permalink</a></p></noscript>
+</div>
+
+<script>
+  import { shareEditionLink, type EditionShareCapabilities } from "../../lib/edition-sharing";
+
+  for (const container of document.querySelectorAll<HTMLElement>("[data-edition-share]")) {
+    const button = container.querySelector<HTMLButtonElement>("[data-edition-share-button]");
+    const status = container.querySelector<HTMLElement>("[data-edition-share-status]");
+    const fallback = container.querySelector<HTMLElement>("[data-edition-share-fallback]");
+    const input = fallback?.querySelector<HTMLInputElement>("input");
+    if (!button || !status || !fallback || !input) continue;
+
+    button.addEventListener("click", async () => {
+      if (button.disabled || !container.dataset.shareUrl) return;
+      button.disabled = true;
+      status.textContent = "";
+      fallback.hidden = true;
+      const capabilities: EditionShareCapabilities = {};
+      let focusButton = true;
+      const showFallback = () => {
+        focusButton = false;
+        fallback.hidden = false;
+        status.textContent = "Copy the edition link below to share it.";
+        input.focus();
+        input.select();
+      };
+      try {
+        if (typeof navigator.share === "function") capabilities.share = navigator.share.bind(navigator);
+        try {
+          if (typeof navigator.clipboard?.writeText === "function") capabilities.copy = navigator.clipboard.writeText.bind(navigator.clipboard);
+        } catch { /* Clipboard access can itself be restricted by the browser. */ }
+        const result = await shareEditionLink({ title: container.dataset.shareTitle ?? "Newsbee", url: container.dataset.shareUrl }, capabilities);
+        if (result === "cancelled") return;
+        if (result === "fallback") {
+          showFallback();
+          return;
+        }
+        status.textContent = result === "shared" ? "Edition shared." : "Edition link copied.";
+        try {
+          void fetch(`${container.dataset.apiUrl}/api/engagement`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+            body: JSON.stringify({ location_id: container.dataset.locationId, edition_id: container.dataset.editionId, action: "edition_share" }),
+          }).catch(() => {});
+        } catch { /* Sharing succeeds independently of anonymous reading signals. */ }
+      } catch {
+        showFallback();
+      } finally {
+        button.disabled = false;
+        if (focusButton) button.focus({ preventScroll: true });
+      }
+    });
+  }
+</script>
+
+<style>
+  .edition-share { display: grid; justify-items: start; gap: var(--space-2); min-width: 0; max-width: 100%; }
+  .nb-button:disabled { opacity: .65; cursor: wait; }
+  .share-status, .share-fallback { font-size: var(--text-sm); color: var(--color-muted); }
+  .share-status:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .share-fallback { display: grid; gap: var(--space-1); width: min(100%, 32rem); max-width: 100%; }
+  .share-fallback[hidden] { display: none; }
+  input { width: 100%; min-width: 0; padding: var(--space-2); border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-ink); font: inherit; }
+  @media print { .edition-share { display: none !important; } }
+</style>

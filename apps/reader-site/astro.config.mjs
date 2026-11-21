@@ -4,7 +4,7 @@ import vercel from "@astrojs/vercel";
 
 export default defineConfig({
   base: "/reader",
-  adapter: vercel(),
+  adapter: vercel({ maxDuration: 60 }),
   output: "server",
   devToolbar: { enabled: false },
   // shared/ lives outside this app; let the dev server read it (design tokens, data helpers).

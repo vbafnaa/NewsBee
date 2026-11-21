@@ -5,7 +5,7 @@ import InternalGate from "./internal-gate";
 import { currentPrincipal } from "@/lib/admin-session";
 
 /**
- * An internal map page. A signed-in journalist sees it inside the workspace; anyone else gets the
+ * An internal map page. A signed-in operator sees it inside Newsbee Admin; anyone else gets the
  * map layout behind the internal gate. Maps are read-only either way: editing is in each location's workspace.
  */
 export default async function InternalMapPage({ page, title, description, returnTo, unlock, children }: { page: "source-map" | "edition-map" | "interest-usage"; title: string; description: string; returnTo: string; unlock?: string; children: ReactNode }) {

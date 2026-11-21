@@ -1,5 +1,7 @@
 import type { APIRoute } from "astro";
-import { directoryTown, saveInterestSignup } from "../../../../lib/reader-data";
+import { directoryTown, readerDatabase, saveInterestSignup } from "../../../../lib/reader-data";
+import { requestNewsletter, validateNewsletterSignup } from "../../../../lib/newsletter";
+import { newsletterJson } from "../../../../lib/newsletter-http";
 
 export const prerender = false;
 
@@ -9,7 +11,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   }
   let body: unknown;
   try {
-    body = await request.json();
+    body = await newsletterJson(request);
   } catch {
     return Response.json({ detail: "Request body must be valid JSON" }, { status: 400 });
   }
@@ -31,14 +33,20 @@ export const POST: APIRoute = async ({ params, request, url }) => {
   if (launchNotification !== undefined && typeof launchNotification !== "boolean") {
     return Response.json({ detail: "Launch notification preference must be a boolean" }, { status: 422 });
   }
+  let input: ReturnType<typeof validateNewsletterSignup>;
+  try { input = validateNewsletterSignup(body); }
+  catch (error) { return Response.json({ detail: error instanceof Error ? error.message : "Invalid preferences" }, { status: 422 }); }
 
   try {
     const location = await directoryTown(params.location_id ?? "");
     if (!location) return Response.json({ detail: "Unknown location" }, { status: 404 });
     await saveInterestSignup(location, email.trim().toLowerCase(), launchNotification === true);
-    return Response.json({ status: "saved" });
+    await requestNewsletter(await readerDatabase(), location, input, null);
+    return Response.json({ status: "saved", confirmation_required: false,
+      detail: "Your community preferences are saved. Email delivery has not launched; no confirmation email was sent. Browse published editions online." });
   } catch (error) {
     console.error("Reader interest signup could not be saved", error);
+    if (error instanceof Error && error.message.startsWith("Too many newsletter")) return Response.json({ detail: error.message }, { status: 429, headers: { "Retry-After": "3600" } });
     return Response.json({ detail: "Signup could not be saved. Please try again." }, { status: 503 });
   }
 };

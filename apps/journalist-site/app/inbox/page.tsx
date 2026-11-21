@@ -4,6 +4,7 @@ import AdminShell from "../admin-shell";
 import InboxView from "./inbox-view";
 import NeighbourStoryReview from "../neighbour-stories/neighbour-story-review";
 import RemembranceReview from "../remembrance/remembrance-review";
+import CommunityIntakeReview from "./community-intake-review";
 
 export default async function InboxPage() {
   const email = await currentAdmin();
@@ -13,5 +14,6 @@ export default async function InboxPage() {
     <InboxView />
     <div id="reader-stories"><NeighbourStoryReview /></div>
     <div id="family-notices"><RemembranceReview /></div>
+    <CommunityIntakeReview />
   </AdminShell>;
 }

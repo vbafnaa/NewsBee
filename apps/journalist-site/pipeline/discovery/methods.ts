@@ -44,7 +44,7 @@
  */
 import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
-import type { HttpTransport } from "../core/http";
+import { ExternalServiceDisabledError, type HttpTransport } from "../core/http";
 import type { Logger } from "../core/log";
 import type { ModelRuntime } from "../model/runtime";
 import type { ConnectorContext, LocationProfile } from "../connectors/types";
@@ -76,6 +76,7 @@ import { checkGroups, scanSite, type Site } from "./site-pages";
 import { queryOverpass, QUERY_SECONDS } from "../connectors/overpass";
 import { buildSearchKit, postcode } from "./topics";
 import { linkedPages } from "./linked-pages";
+import type { DiscoveryOutcomeFields } from "./status";
 
 export type DiscoveryContext = {
   db: Db;
@@ -91,7 +92,7 @@ export type DiscoveryContext = {
   judgeModel?: ModelRuntime | null;
 };
 
-export type MethodDefinition = { method: DiscoveryMethod; label: string; refreshDays: number; run(context: DiscoveryContext): Promise<{ candidates: SourceCandidate[]; detail: string }> };
+export type MethodDefinition = { method: DiscoveryMethod; label: string; refreshDays: number; run(context: DiscoveryContext): Promise<{ candidates: SourceCandidate[]; detail: string } & DiscoveryOutcomeFields> };
 
 const ACCEPT_HTML = "text/html, application/xhtml+xml";
 const REFRESH_DAYS = table<number>("general.stop.method_refresh_days");
@@ -282,11 +283,14 @@ const institutions: MethodDefinition = {
     const started = Date.now();
     const known = await localInstitutions(context).catch(() => [] as Institution[]);
     let map: { places: OsmPlace[]; detail: string };
+    let outcome: DiscoveryOutcomeFields = {};
     try { map = await osmPlaces(context); }
     catch (error) {
       // Nothing to read at all: fail, so this retries within the hour.
       if (!deepSites(known, []).length) throw error;
-      map = { places: [], detail: `OpenStreetMap area search failed: ${String(error)}` };
+      const disabled = error instanceof ExternalServiceDisabledError && error.service === "overpass";
+      if (disabled) outcome = { outcome: "disabled", reason: "overpass_off" };
+      map = { places: [], detail: `OpenStreetMap area search ${disabled ? "disabled" : "failed"}: ${String(error)}` };
     }
     const deep = deepSites(known, map.places);
     const seen = new Set<string>();
@@ -308,7 +312,7 @@ const institutions: MethodDefinition = {
     }));
     const homes = await evaluateLeads(context, leads, { method: "institutions", seen, deadline: started + JOB_DEADLINE_MS, fixed: true, siteKind: "organisation" });
     candidates.push(...homes.candidates);
-    return { candidates, detail: `${read} of ${deep.length} institution sites read in depth (${[...new Set(deep.map((site) => site.kind.replace(/_/g, " ")))].join(", ") || "none with a website"}); ${leads.length - homes.leftover.length} other places' home pages checked; ${candidates.length} sources; ${map.detail}` };
+    return { candidates, ...outcome, detail: `${read} of ${deep.length} institution sites read in depth (${[...new Set(deep.map((site) => site.kind.replace(/_/g, " ")))].join(", ") || "none with a website"}); ${leads.length - homes.leftover.length} other places' home pages checked; ${candidates.length} sources; ${map.detail}` };
   },
 };
 
@@ -580,7 +584,7 @@ const LLM_SCHEMA = { type: "object", properties: { sources: { type: "array", ite
 const llm: MethodDefinition = {
   method: "llm", label: "Model suggestions (checked)", refreshDays: REFRESH_DAYS.llm,
   async run(context) {
-    if (!context.settings.llmDiscovery) return { candidates: [], detail: "LLM discovery is off (NEWSBEE_LLM_DISCOVERY)" };
+    if (!context.settings.llmDiscovery) return { candidates: [], outcome: "disabled", reason: "llm_off", detail: "LLM discovery is off (NEWSBEE_LLM_DISCOVERY)" };
     if (!(await canSpend(context.db, context.settings, 2))) throw new Error("Daily model-call cap reached; LLM discovery waits until tomorrow");
     const links: string[] = [];
     const city = httpsLink(context.location.government?.website ?? null);
@@ -660,7 +664,7 @@ const national: MethodDefinition = {
 const homesales: MethodDefinition = {
   method: "homesales", label: "Home sales (ATTOM)", refreshDays: REFRESH_DAYS.homesales,
   async run(context) {
-    if (!context.settings.integrations?.attomKey) return { candidates: [], detail: "No ATTOM key set" };
+    if (!context.settings.integrations?.attomKey) return { candidates: [], outcome: "disabled", reason: "attom_unconfigured", detail: "No ATTOM key set" };
     const zip = (await postcode(context.transport, context.location))[0];
     if (!zip) return { candidates: [], detail: "No postal code found for the place" };
     return {

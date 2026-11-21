@@ -24,6 +24,8 @@ import type { JsonSchema, ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError } from "../model/runtime";
 import { pythonJson, type Category, type RankedCandidate } from "../model/newsworthiness";
 import { COLLECTIONS } from "../storage/mongo";
+import { ExecutionBlocked } from "../core/execution-errors";
+import { executionTimeout } from "../core/execution-deadline";
 
 export const RANKING_V5 = "edition_ranker_v5_source_identity";
 export const ENGAGEMENT = "reader_engagement";
@@ -39,6 +41,14 @@ export const RERANK_POINTS = 6;
 export const DIVERSITY_POINTS = 4;
 
 export type CategoryEvidence = { views: number; successes: number };
+export type EngagementSnapshot = {
+  version: 1; captured_at: number;
+  local: Array<[string, CategoryEvidence]>; network: Array<[string, CategoryEvidence]>;
+};
+export async function engagementSnapshot(db: Db, locationId: string): Promise<EngagementSnapshot> {
+  const [local, network] = await Promise.all([engagementEvidence(db, locationId), engagementEvidence(db)]);
+  return { version: 1, captured_at: Date.now() / 1000, local: [...local], network: [...network] };
+}
 export type Posterior = { alpha: number; beta: number; views: number; successes: number };
 export type Explain = {
   base: number;
@@ -114,7 +124,7 @@ export async function engagementEvidence(db: Db, locationId?: string): Promise<M
   const ids = editions.map((edition) => String(edition.id));
   if (!ids.length) return new Map();
   const entries = await db.collection(COLLECTIONS.editionEntries)
-    .find({ edition_id: { $in: ids }, disposition: "checks_passed" }, { projection: { edition_id: 1, story_id: 1, result: 1 } }).toArray();
+    .find({ edition_id: { $in: ids }, disposition: "checks_passed" }, { projection: { edition_id: 1, story_id: 1, "result.ranking.category": 1 } }).toArray();
   const category = new Map(entries.map((entry) => [`${entry.edition_id}:${entry.story_id}`, String(entry.result?.ranking?.category ?? "other")]));
   const counts = await db.collection(ENGAGEMENT).aggregate<{ _id: { edition: string; story: string; action: string }; n: number }>([
     { $match: { edition_id: { $in: ids } } },
@@ -160,7 +170,7 @@ export function parseOrder(value: unknown, ids: string[]): string[] {
 async function editorOrder(runtime: ModelRuntime, community: string, candidates: RankedCandidate[]) {
   if (candidates.length < 3) return null;
   const local = runtime.provider === "ollama";
-  const generation = await runtime.generateStructured(rerankPrompt(community, candidates), ORDER_SCHEMA, { numCtx: local ? 4096 : 8192, numPredict: 600, keepAlive: "10m" });
+  const generation = await runtime.generateStructured(rerankPrompt(community, candidates), ORDER_SCHEMA, { numCtx: local ? 4096 : 8192, numPredict: 600, keepAlive: "10m", timeoutMs: executionTimeout() });
   if (!generation.done || generation.done_reason === "length") throw new Error("Editor order did not finish within the output budget");
   return parseOrder(JSON.parse(generation.response), candidates.map((item) => item.id));
 }
@@ -168,30 +178,37 @@ async function editorOrder(runtime: ModelRuntime, community: string, candidates:
 const TOKEN = /[a-z0-9]{3,}/g;
 function tokens(title: string) { return new Set(title.toLowerCase().match(TOKEN) ?? []); }
 export function similarity(a: Refined, b: Refined) {
-  const left = tokens(a.title), right = tokens(b.title);
+  return tokenSimilarity(a, b, tokens(a.title), tokens(b.title));
+}
+function tokenSimilarity(a: Refined, b: Refined, left: Set<string>, right: Set<string>) {
   const shared = [...left].filter((token) => right.has(token)).length;
   const jaccard = left.size + right.size ? shared / (left.size + right.size - shared) : 0;
   return 0.5 * Number(a.rating.category === b.rating.category) + 0.3 * Number(!!a.source_id && a.source_id === b.source_id) + 0.2 * jaccard;
 }
 /** Greedy maximal-marginal-relevance ordering. */
-export function diversify(candidates: Refined[], points = DIVERSITY_POINTS): Refined[] {
-  const remaining = [...candidates];
+export function diversify(candidates: Refined[], points = DIVERSITY_POINTS, metrics?: { comparisons: number }): Refined[] {
+  const remaining = candidates.map(item => ({ item, tokens: tokens(item.title), maximum: 0 }));
   const chosen: Refined[] = [];
   while (remaining.length) {
     let bestIndex = 0, bestValue = -Infinity, bestPenalty = 0;
-    remaining.forEach((item, index) => {
-      const penalty = chosen.length ? points * Math.max(...chosen.map((other) => similarity(item, other))) : 0;
+    remaining.forEach(({ item, maximum }, index) => {
+      const penalty = points * maximum;
       const value = item.explain.final - penalty;
       if (value > bestValue + 1e-9) { bestValue = value; bestIndex = index; bestPenalty = penalty; }
     });
-    const [item] = remaining.splice(bestIndex, 1);
+    const [selected] = remaining.splice(bestIndex, 1);
+    const { item } = selected;
     item.explain.diversity_penalty = Math.round(bestPenalty * 1000) / 1000;
     chosen.push(item);
+    for (const other of remaining) {
+      other.maximum = Math.max(other.maximum, tokenSimilarity(other.item, item, other.tokens, selected.tokens));
+      if (metrics) metrics.comparisons += 1;
+    }
   }
   return chosen;
 }
 
-export type RefineOptions = { runId: string; locationId: string; community: string; sourceTypes: Map<string, string>; sourceIds: Map<string, string>; mode?: string };
+export type RefineOptions = { runId: string; locationId: string; community: string; sourceTypes: Map<string, string>; sourceIds: Map<string, string>; mode?: string; evidence?: EngagementSnapshot };
 
 /** Applies engagement, the editor pass and diversity to the model's rated candidates. */
 export async function refineRanking(db: Db, runtime: ModelRuntime, rated: RankedCandidate[], options: RefineOptions): Promise<[Refined[], Record<string, unknown>]> {
@@ -203,8 +220,8 @@ export async function refineRanking(db: Db, runtime: ModelRuntime, rated: Ranked
   }));
   if (mode === "classic") return [base, { policy: "classic", candidates: base.length }];
   const random = seededRandom(options.runId);
-  const [local, network] = await Promise.all([engagementEvidence(db, options.locationId), engagementEvidence(db)]);
-  const posterior = posteriors(local, network);
+  const snapshot = options.evidence ?? await engagementSnapshot(db, options.locationId);
+  const posterior = posteriors(new Map(snapshot.local), new Map(snapshot.network));
   for (const item of base) {
     item.explain.engagement = engagementMultiplier(posterior.get(item.rating.category), random);
     item.explain.final = item.score * item.explain.engagement.multiplier;
@@ -224,11 +241,12 @@ export async function refineRanking(db: Db, runtime: ModelRuntime, rated: Ranked
       rerank = { attempted: true, ok: true, size: order.length };
     }
   } catch (error) {
-    if (error instanceof ModelRateLimitError) throw error;
+    if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
     rerank = { attempted: true, ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   for (const item of base) item.explain.final = Math.round(item.explain.final * 1000) / 1000;
-  const ordered = diversify(base.sort((a, b) => b.explain.final - a.explain.final));
+  const diversity = { comparisons: 0 };
+  const ordered = diversify(base.sort((a, b) => b.explain.final - a.explain.final), DIVERSITY_POINTS, diversity);
   const learned = Object.fromEntries([...posterior].filter(([, p]) => p.views > 0).map(([category, p]) => [category, { views: p.views, successes: p.successes, posterior_mean: Math.round(1000 * p.alpha / (p.alpha + p.beta)) / 1000 }]));
-  return [ordered, { policy: RANKING_V5, candidates: ordered.length, engagement: learned, rerank, wall_seconds: (Date.now() - started) / 1000 }];
+  return [ordered, { policy: RANKING_V5, candidates: ordered.length, engagement: learned, evidence_at: snapshot.captured_at, rerank, diversity, wall_seconds: (Date.now() - started) / 1000 }];
 }

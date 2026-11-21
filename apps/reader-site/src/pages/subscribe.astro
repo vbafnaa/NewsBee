@@ -2,13 +2,47 @@
 import "../../../../shared/design-tokens.css";
 import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import SignupForm from "../components/SignupForm.astro";
-import { directoryTown, type Location } from "../lib/reader-data";
+import PublicationEmailSignup from "../components/publication/PublicationEmailSignup.astro";
+import {
+  directoryTown,
+  loadReaderPublication,
+  publicationArchive,
+  type Location,
+  type ReaderPublicationArchive,
+} from "../lib/reader-data";
+import { publicationLinks } from "../lib/publication-view";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const locationId = Astro.url.searchParams.get("location");
+const publicationId = Astro.url.searchParams.get("publication");
+const requestedReleaseId = Astro.url.searchParams.get("release");
+let selectedReleaseId: string | null = null;
 let town: Location | null = null;
+let publication: ReaderPublicationArchive | null = null;
 let error = "";
-if (!locationId) {
+if (publicationId) {
+  try {
+    publication = await publicationArchive(publicationId);
+    if (!publication) {
+      Astro.response.status = 404;
+      error = "This publication could not be found.";
+    } else if (requestedReleaseId) {
+      const release = await loadReaderPublication(publicationId, requestedReleaseId);
+      if (!release) {
+        publication = null;
+        Astro.response.status = 404;
+        error = "This publication release is unavailable.";
+      } else {
+        selectedReleaseId = release.release.release_id;
+      }
+    }
+  } catch (cause) {
+    console.error("Reader publication newsletter lookup unavailable", cause);
+    publication = null;
+    Astro.response.status = 503;
+    error = "Publication newsletter details are temporarily unavailable. Please try again later.";
+  }
+} else if (!locationId) {
   Astro.response.status = 400;
   error = "Choose a community before signing up for weekly updates.";
 } else {
@@ -24,30 +58,51 @@ if (!locationId) {
     error = "Signup is temporarily unavailable. Please try again later.";
   }
 }
-const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
+const backUrl = publication
+  ? publicationLinks(publication.summary.id, selectedReleaseId).page
+  : town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
+const title = publication
+  ? `Newsletter for ${publication.summary.display_name} | Newsbee`
+  : town ? `Weekly updates for ${town.name} | Newsbee` : "Weekly updates | Newsbee";
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
+    <link rel="stylesheet" href={`${base}/fonts/reader-fonts.css`} />
     <GoogleAnalytics />
-    <title>{town ? `Weekly updates for ${town.name} | Newsbee` : "Weekly updates | Newsbee"}</title>
+    <title>{title}</title>
   </head>
   <body>
     <main>
       <header>
-        <a class="brand" href={base}>Newsbee</a>
+        <a class="brand" href={publication ? backUrl : base}>Newsbee</a>
         <p>Your community, this week</p>
       </header>
-      {town ? (
+      {publication ? (
+        <section class="publication-newsletter" aria-labelledby="publication-newsletter-title">
+          <p class="nb-label">Publication newsletter</p>
+          <h1 id="publication-newsletter-title">{publication.summary.display_name} by email</h1>
+          <p>Publication email consent is separate from community editions and from prior Newsbee interest signups. New publication signup is unavailable; no email address or consent is collected here.</p>
+          {publication.summary.latest_release_id ? (
+            <PublicationEmailSignup
+              publicationId={publication.summary.id}
+              publicationName={publication.summary.display_name}
+              releaseId={selectedReleaseId ?? publication.summary.latest_release_id}
+              locations={publication.summary.locations}
+            />
+          ) : <p class="status">No active release is available for email signup.</p>}
+        </section>
+      ) : town ? (
         <section aria-labelledby="signup-title">
-          <h1 id="signup-title">Weekly updates for {town.name}</h1>
-          <p>Stay connected with local stories, civic updates, and nearby events.</p>
+          <h1 id="signup-title">Community preferences for {town.name}</h1>
+          <p>Save your interests for future local updates. Email delivery has not launched.</p>
           <SignupForm locationId={town.id} locationName={town.name} />
         </section>
       ) : <p role="alert">{error}</p>}
-      <p><a href={backUrl}>{town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+      <p><a href={backUrl}>{publication ? `Back to ${publication.summary.display_name}` : town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+      {publication && <p><a href={base}>Discover other publications and communities</a></p>}
     </main>
   </body>
 </html>
@@ -58,8 +113,12 @@ const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
   main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); text-align: center; }
   header { border-bottom: 1px solid var(--rule); }
   header p { color: var(--muted); }
+  section { display: grid; gap: var(--space-4); justify-items: center; padding-block: var(--space-8); }
   .brand { font: var(--weight-heading) 3rem/1 var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
   h1 { font: var(--weight-heading) var(--text-h3)/var(--leading-h3) var(--font-display); letter-spacing: var(--tracking-h3); text-wrap: balance; }
+  .nb-label { color: var(--color-muted); font-size: var(--text-xs); font-weight: 600; letter-spacing: var(--tracking-label); text-transform: uppercase; }
+  .publication-newsletter > p:not(.nb-label, .status) { max-width: 38rem; color: var(--color-ink-soft); }
+  .status { display: inline-flex; padding: var(--space-2) var(--space-4); border-radius: var(--radius-pill); background: var(--color-pill-gray); font-weight: 600; }
   a { color: var(--ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
   @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; } }

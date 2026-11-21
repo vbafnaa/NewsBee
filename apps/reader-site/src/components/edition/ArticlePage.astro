@@ -2,6 +2,7 @@
 import StoryMedia from "./StoryMedia.astro";
 import NeighborhoodPage from "./NeighborhoodPage.astro";
 import ReportStory from "./ReportStory.astro";
+import StoryConversation from "./StoryConversation.astro";
 import { neighborhoodLinks, type Article, type EditionPage } from "../../lib/edition-view";
 
 interface Props { page: EditionPage; article: Article }
@@ -9,33 +10,45 @@ const { page, article } = Astro.props;
 const links = neighborhoodLinks({ ...page, requestedEditionId: page.edition.id });
 const shareUrl = new URL(article.href, Astro.url.origin).href;
 const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).filter(Boolean);
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const conversationStoryId = article.storyId || new URL(article.href, Astro.url).searchParams.get("story");
+const publicationName = `${page.location.name.split(",")[0].trim()} Newsroom`;
 ---
 <NeighborhoodPage page={page} title={`${article.headline} | Newsbee`} subPage articleStoryId={article.storyId}>
   <article class="full-story" aria-labelledby="article-title" data-article>
-    <a class="back nb-link" href={links.page}>Back to {page.town}</a>
+    <a class="back" href={links.page}>Back to {publicationName}</a>
     <header>
-      <p class="nb-label">{article.category} · {article.date} · {page.town}</p>
+      <p class="nb-label">{article.category} · {article.date} · {page.location.name}</p>
       <h1 id="article-title">{article.headline}</h1>
-      <p class="byline">Newsbee · Your community, this week</p>
+      <p class="byline">{publicationName}</p>
     </header>
     <StoryMedia photo={article.photo} illustration={article.illustration} lead />
     <div class="article-text">{paragraphs.map((text) => <p>{text}</p>)}</div>
     {article.whenWhere && <p class="when-where">{article.whenWhere}</p>}
-    <div class="article-actions" data-print-hide>
-      <button class="nb-button nb-button-quiet" type="button" data-print-story>Print story</button>
-      <button class="nb-button nb-button-primary" type="button" data-share-story
-        data-url={shareUrl} data-title={article.headline} data-story-id={article.storyId ?? undefined}>Share story</button>
-      <ReportStory storyId={article.storyId} headline={article.headline} />
-      <p data-share-status role="status"></p>
-      <label data-share-fallback hidden>Story link <input type="url" readonly value={shareUrl} /></label>
-    </div>
     <footer class="article-source">
-      <small>Sources:
+      <p>Sources:{" "}
         {article.sources.length ? article.sources.map((source, index) => <>
           {index > 0 && "; "}<a class="nb-link" href={source.url} target="_blank" rel="noopener noreferrer">{source.name}</a>
         </>) : article.sourceName}
-      </small>
+      </p>
     </footer>
+    <div class="article-actions" data-print-hide>
+      <button class="nb-button nb-button-quiet" type="button" data-share-story
+        data-url={shareUrl} data-title={article.headline} data-story-id={article.storyId ?? undefined}>
+        <img src={`${base}/icons/article-share.svg`} alt="" width="17" height="17" />Share
+      </button>
+      {conversationStoryId && <>
+        <a class="nb-button nb-button-quiet" href="#story-comments" data-focus-comments><img src={`${base}/icons/article-comments.svg`} alt="" width="17" height="17" />Comments <span class="comment-count" data-story-comment-count>0</span></a>
+        <a class="nb-button nb-button-quiet" href="#story-feedback"><img src={`${base}/icons/article-feedback.svg`} alt="" width="17" height="17" />Give feedback</a>
+      </>}
+      <p data-share-status role="status" hidden></p>
+      <label data-share-fallback hidden>Story link <input type="url" readonly value={shareUrl} /></label>
+    </div>
+    {conversationStoryId && <StoryConversation locationId={page.location.id} editionId={page.edition.id} storyId={conversationStoryId} />}
+    <details class="story-tools" data-print-hide><summary>Story tools</summary><div>
+      <button type="button" class="print-story" data-print-story>Print story</button>
+      <ReportStory storyId={article.storyId} headline={article.headline} />
+    </div></details>
   </article>
 </NeighborhoodPage>
 
@@ -46,6 +59,7 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
   button?.addEventListener("click", async () => {
     if (!status || !button.dataset.url) return;
     button.disabled = true;
+    status.hidden = false;
     try {
       if (navigator.share) {
         await navigator.share({ title: button.dataset.title, url: button.dataset.url });
@@ -77,7 +91,8 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
 
 <style>
   .full-story { width: 100%; max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-6); overflow-wrap: anywhere; }
-  .back { align-self: flex-start; font-size: var(--text-sm); }
+  .back { align-self: flex-start; font-size: var(--text-sm); color: var(--color-ink); text-decoration: none; }
+  .back:hover { text-decoration: underline; }
   header { display: grid; gap: var(--space-4); }
   h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
   .byline, figcaption, .when-where, .article-source { color: var(--color-muted); font-size: var(--text-sm); }
@@ -85,11 +100,20 @@ const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).f
   figure img { width: 100%; height: auto; max-height: 32rem; object-fit: contain; }
   .image-placeholder { aspect-ratio: 16 / 9; background: var(--color-cream); border: 1px solid var(--color-line); border-radius: var(--radius-lg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); color: var(--color-muted); text-align: center; }
   .article-text { display: grid; gap: var(--space-5); font-size: var(--text-lg); line-height: 1.8; }
-  .article-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); border-top: 1px solid var(--color-line); padding-top: var(--space-5); }
+  .article-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); border-block: 1px solid var(--color-line); padding-block: 14px; }
+  .article-actions .nb-button { min-height: 38px; gap: var(--space-2); padding: var(--space-2) 14px; line-height: 1.6; }
+  .article-actions img { flex-shrink: 0; }
+  .comment-count { display: grid; place-items: center; min-width: 20px; height: 20px; padding-inline: var(--space-1); border-radius: var(--radius-pill); background: var(--color-surface); font-size: 0.6875rem; line-height: 1; }
   .article-actions p, .article-actions label { flex-basis: 100%; font-size: var(--text-sm); }
   [hidden] { display: none; }
   input { width: 100%; padding: var(--space-2); font: inherit; }
   .article-source { border-top: 1px solid var(--color-line); padding-top: var(--space-4); }
+  .article-source .nb-link { color: inherit; text-decoration: none; }
+  .article-source .nb-link:hover { text-decoration: underline; }
+  .story-tools { font-size: var(--text-xs); color: var(--color-muted); }
+  .story-tools summary { cursor: pointer; }
+  .story-tools > div { display: flex; gap: var(--space-4); align-items: center; padding-top: var(--space-3); }
+  .print-story { padding: 0; border: 0; color: var(--color-muted); background: none; font: inherit; text-decoration: underline; cursor: pointer; }
   @media print {
     :global(body > header), :global(body > footer), :global(.nb-skip), :global([data-edition-notes]), .back, [data-print-hide], .image-placeholder { display: none !important; }
     :global(.notices) { margin-bottom: 1em; }

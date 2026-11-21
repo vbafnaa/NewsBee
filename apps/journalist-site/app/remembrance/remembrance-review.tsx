@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { withPublication } from "@/lib/admin-client";
+import { usePublicationScope } from "../components/publication-scope";
 
 type Submission = {
   _id: string; location_id: string; location_name: string; person_name: string; notice: string; link: string | null;
@@ -9,6 +11,7 @@ type Submission = {
 };
 
 export default function RemembranceReview({ locationId }: { locationId?: string }) {
+  const scope = usePublicationScope();
   const [status, setStatus] = useState<"pending" | "all">("pending");
   const [items, setItems] = useState<Submission[] | null>(null);
   const [error, setError] = useState("");
@@ -16,19 +19,19 @@ export default function RemembranceReview({ locationId }: { locationId?: string 
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch(`/api/admin/remembrance?status=${status}${locationId ? `&location=${encodeURIComponent(locationId)}` : ""}`, { cache: "no-store" });
+      const response = await fetch(withPublication(`/api/admin/remembrance?status=${status}${locationId ? `&location=${encodeURIComponent(locationId)}` : ""}`, scope?.publicationId), { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       setItems(data.submissions as Submission[]); setError("");
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
-  }, [status, locationId]);
+  }, [status, locationId, scope?.publicationId]);
   useEffect(() => { void load(); }, [load]);
 
   async function decide(id: string, decision: "approved" | "rejected") {
     const reason = decision === "rejected" ? window.prompt("Reason (kept for the editor log, not published)") ?? "" : "";
     setBusy(id);
     try {
-      const response = await fetch("/api/admin/remembrance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, decision, reason }) });
+      const response = await fetch(withPublication("/api/admin/remembrance", scope?.publicationId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, decision, reason }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       await load();

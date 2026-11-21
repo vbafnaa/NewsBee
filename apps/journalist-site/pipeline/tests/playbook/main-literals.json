@@ -662,7 +662,7 @@
   },
   {
    "file": "sourcemap/sections.ts",
-   "source": "athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\\bdefeated\\b|\\bleague\\b.*\\b(game|match|season)\\b",
+   "source": "athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\\bdefeated\\b|\\bleague\\b.*\\b(game|match|season)\\b|\\bregular[- ]season\\b|\\bseason (finale|opener)\\b|\\b(stuns|beats|tops|edges|routs|falls to)\\b.*\\b\\d{1,3}-\\d{1,3}\\b",
    "flags": "i"
   },
   {

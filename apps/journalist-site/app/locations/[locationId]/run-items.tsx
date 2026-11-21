@@ -11,7 +11,7 @@ type Group = {
   key: string; url: string | null; title: string; event_date: string | null; item_id: string; status: string; step: string; reason: string | null;
   section: string | null; rank: number | null; score: number | null; why: string | null; copies: number; sources: number; source_names: string[]; items: Copy[];
   replication: { copies: number; sources: number; independent: number; publishers: string[] } | null; pre_rank: number | null; review: StoryReviewValue;
-  crawl_depth: number | null; found_on: string | null;
+  crawl_depth: number | null; found_on: string | null; found_via: string | null; followed_by: string | null;
 };
 type Source = { source_id: string; name: string; url: string | null; collection: string | null; detail: string | null; found: number; kept: number; dropped: number; published: number; reasons: Array<{ reason: string; count: number }> };
 type Summary = { items: number; links: number; repeated_links: number; repeated_copies: number; merged_into_stories: number; repeats_of_printed: number; title_rejected: number; by_status: Record<string, number>; reviewed: { accept: number; reject: number }; truncated: boolean };
@@ -19,9 +19,11 @@ type Page = { summary: Summary; sources: Source[]; total: number; offset: number
 
 const PAGE = 100;
 const label = (value: string) => value.replace(/_/g, " ");
+/** A page's address without the scheme and host, to name the page an item was found on. */
+const pagePath = (url: string) => { try { const { pathname, search } = new URL(url); return `${pathname}${search}` || url; } catch { return url; } };
 
 /** Everything the selected run pulled: one row per link with its copies, each traceable and reviewable, and what each source found. */
-export default function RunItems({ locationId }: { locationId: string }) {
+export default function RunItems({ locationId, selectedRunId }: { locationId: string; selectedRunId?: string | null }) {
   const [runId, setRunId] = useState<string | null>(null);
   useEffect(() => {
     setRunId(new URLSearchParams(window.location.search).get("run"));
@@ -29,8 +31,9 @@ export default function RunItems({ locationId }: { locationId: string }) {
     window.addEventListener("newsbee:inspect-run", inspect);
     return () => window.removeEventListener("newsbee:inspect-run", inspect);
   }, []);
-  if (!runId) return <section className="panel"><h2>Stories pulled</h2><p>Inspect a run to see every story it pulled.</p></section>;
-  return <RunStoryItems key={runId} locationId={locationId} runId={runId} />;
+  const selected = selectedRunId === undefined ? runId : selectedRunId;
+  if (!selected) return <section className="panel"><h2>Stories pulled</h2><p>Inspect a run to see every story it pulled.</p></section>;
+  return <RunStoryItems key={selected} locationId={locationId} runId={selected} />;
 }
 
 function RunStoryItems({ locationId, runId }: { locationId: string; runId: string }) {
@@ -45,7 +48,7 @@ function RunStoryItems({ locationId, runId }: { locationId: string; runId: strin
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const requestId = useRef(0);
-  const { policy } = useExecutionPolicy();
+  const { policy } = useExecutionPolicy(null, runId);
   const load = useCallback(async () => {
     const id = ++requestId.current;
     const params = new URLSearchParams({ q: query, status, decision, reason, source, offset: String(offset), limit: String(PAGE) });
@@ -123,7 +126,9 @@ function RunStoryItems({ locationId, runId }: { locationId: string; runId: strin
             <ul>{group.items.map((copy) => <li key={copy._id}><small>{copy.source_name} · {label(copy.status)}{copy.reason ? `: ${copy.reason}` : ""} </small><button type="button" className="run-inspect-link" onClick={() => setTrace(copy._id)}>Trace</button></li>)}</ul>
           </details>}
           {group.replication && group.replication.copies > 1 && <div><small>Story reported {group.replication.copies} times by {group.replication.independent} independent publisher{group.replication.independent === 1 ? "" : "s"}</small></div>}
-          {(group.crawl_depth ?? 1) > 1 && <div><small>Found {group.found_on ? `on a ${group.found_on.replace(/^listing link /, "listing page ")}` : "on a listing page"} · depth {group.crawl_depth}</small></div>}</td>
+          {((group.crawl_depth ?? 1) > 1 || group.found_on) && <div><small>{group.followed_by ? "Found by following the links on " : "Found on "}
+            {group.found_on ? <a href={group.found_on} target="_blank" rel="noopener noreferrer">{pagePath(group.found_on)}</a> : "a listing page"}
+            {!group.followed_by && group.found_via ? ` (${group.found_via})` : ""} · depth {group.crawl_depth ?? 1}{group.followed_by ? ` · asked by ${group.followed_by}` : ""}</small></div>}</td>
         <td><small>{group.source_names.join(", ")}</small></td>
         <td><small>{group.section ? label(group.section) : "—"}</small></td>
         <td>{group.rank ?? "—"}{group.score !== null && <small> ({group.score})</small>}{group.pre_rank !== null && <div><small>pre-rank {group.pre_rank}</small></div>}</td>

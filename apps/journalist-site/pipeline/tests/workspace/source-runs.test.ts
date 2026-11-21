@@ -41,12 +41,12 @@ beforeAll(async () => {
 }, 60_000);
 beforeEach(async () => {
   await db.dropDatabase();
-  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test", newsbeePrincipalId: "fixture-labeller" } });
   mocks.headers.mockResolvedValue(new Headers({ host }));
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.database.mockResolvedValue(db);
   mocks.deps.mockResolvedValue({ db });
-  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", enabled: true });
+  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", principalId: "fixture-labeller", enabled: true, role: "admin" });
   await db.collection<{ _id: string }>(COLLECTIONS.locations).insertOne({ _id: locationId, id: locationId, name: "Fixture Town", state: "WA", systems: [] } as never);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.resetAllMocks(); });

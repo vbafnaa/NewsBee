@@ -3,9 +3,10 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Fetcher } from "../../connectors/fetcher";
 import type { LocationProfile } from "../../connectors/types";
-import type { HttpTransport } from "../../core/http";
+import { ExternalServiceDisabledError, type HttpTransport } from "../../core/http";
 import { deepSites, FIXED_METHODS, FIXED_READERS, METHODS, methodDefinition, type DiscoveryContext } from "../../discovery/methods";
-import { countByCategory } from "../../discovery/run";
+import { countByCategory, runMethod } from "../../discovery/run";
+import { cachedDiscovery } from "../../discovery/cache";
 import { LEGACY_OPTIONS } from "../../core/run-options";
 import { runFunnel } from "../../trace/funnel";
 import { RUN_DECISIONS } from "../../trace/decisions";
@@ -35,7 +36,7 @@ describe("one list of fixed readers", () => {
 
   it("adds ATTOM only when a key is set", async () => {
     const context = (attomKey: string | null) => ({ settings: { integrations: { attomKey } }, transport: async (request: { url: string }) => ({ url: request.url, status: 200, headers: {}, body: new TextEncoder().encode(JSON.stringify({ address: { postcode: "98001-1234" } })) }), location: LOCATION }) as unknown as DiscoveryContext;
-    expect(await methodDefinition("homesales")!.run(context(null))).toEqual({ candidates: [], detail: "No ATTOM key set" });
+    expect(await methodDefinition("homesales")!.run(context(null))).toEqual({ candidates: [], outcome: "disabled", reason: "attom_unconfigured", detail: "No ATTOM key set" });
     const { candidates } = await methodDefinition("homesales")!.run(context("key"));
     expect(candidates).toMatchObject([{ source_id: "property:attom:98001", reader: "property", section: "real_estate", found_by: { method: "homesales" } }]);
     // Discovery adds the source and pays nothing: only collection calls ATTOM, in a run that ticks it.
@@ -109,6 +110,23 @@ describe("with a database", () => {
     };
   }
   const contextFor = (transport: HttpTransport) => ({ db, settings: { integrations: {} }, transport, fetcher: new Fetcher(transport, undefined, false), location: LOCATION, today: TODAY, log: { info() {}, warn() {} } }) as unknown as DiscoveryContext;
+
+  it("retains independently cached institution sites while explicitly recording disabled area discovery", async () => {
+    await cachedDiscovery(db, LOCATION.id, "institutions", 30, async () => ({
+      items: [{ name: "Lakeside Library", kind: "library", website: "https://library.example.org/", inside: true }],
+    }));
+    const seen: string[] = [];
+    const replay = web(seen);
+    const transport: HttpTransport = async (request) => {
+      if (new URL(request.url).hostname.includes("overpass")) throw new ExternalServiceDisabledError("overpass");
+      return replay(request);
+    };
+    const state = await runMethod(contextFor(transport), "institutions");
+    expect(state).toMatchObject({ ok: true, outcome: "disabled", reason: "overpass_off" });
+    expect(state.found).toBeGreaterThan(0);
+    expect(state.detail).toContain("area search disabled");
+    expect(seen).toContain("https://library.example.org/events");
+  });
 
   it("reads a library's site in depth, and an outside high school's, as checked sources in the right sections", async () => {
     const seen: string[] = [];

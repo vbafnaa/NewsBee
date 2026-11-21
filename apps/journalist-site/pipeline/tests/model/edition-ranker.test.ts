@@ -22,3 +22,31 @@ it("keeps each real candidate once despite repeated, invented or omitted model I
   expect(parseOrder({ order: ["c", "c", "invented", "a"] }, ["a", "b", "c"])).toEqual(["c", "a", "b"]);
   expect(() => parseOrder({ order: ["invented"] }, ["a", "b", "c"])).toThrow("left out most candidates");
 });
+
+function originalDiversify(candidates: Refined[], points = 4) {
+  const remaining = structuredClone(candidates), chosen: Refined[] = [];
+  while (remaining.length) {
+    let bestIndex = 0, bestValue = -Infinity, bestPenalty = 0;
+    remaining.forEach((item, index) => {
+      const penalty = chosen.length ? points * Math.max(...chosen.map(other => similarity(item, other))) : 0;
+      const value = item.explain.final - penalty;
+      if (value > bestValue + 1e-9) { bestValue = value; bestIndex = index; bestPenalty = penalty; }
+    });
+    const [item] = remaining.splice(bestIndex, 1);
+    item.explain.diversity_penalty = Math.round(bestPenalty * 1000) / 1000;
+    chosen.push(item);
+  }
+  return chosen;
+}
+
+it.each([0, 1, 2, 30, 60])("preserves exact MMR order, ties and explanation penalties at %i candidates", count => {
+  for (let seed = 0; seed < 10; seed++) {
+    const items = Array.from({ length: count }, (_, i) => ({
+      ...candidate(`${seed}:${i}`, i % 4 ? `publisher-${i % 5}` : "", 20 - ((i * 13 + seed) % 7)),
+      title: ["Town council approves budget", "Town council approves budget", "School arts night", "", "Library books and authors"][i % 5],
+    }));
+    const metrics = { comparisons: 0 };
+    expect(diversify(structuredClone(items), 4, metrics)).toEqual(originalDiversify(items));
+    expect(metrics.comparisons).toBe(Math.max(0, count * (count - 1) / 2));
+  }
+});

@@ -1,0 +1,173 @@
+---
+type Props = { locationId: string; editionId: string; storyId: string }
+  | { publicationId: string; releaseId: string; storyId: string };
+const props = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<section id="story-comments" class="story-conversation" aria-labelledby="conversation-title" data-story-conversation
+  data-endpoint={`${base}/api/story-conversation`} data-story-id={props.storyId}
+  data-location-id={"locationId" in props ? props.locationId : undefined} data-edition-id={"editionId" in props ? props.editionId : undefined}
+  data-publication-id={"publicationId" in props ? props.publicationId : undefined} data-release-id={"releaseId" in props ? props.releaseId : undefined} data-print-hide>
+  <header class="conversation-header">
+    <div><p class="nb-label">Community conversation</p><h2 id="conversation-title">Comments &amp; feedback</h2></div>
+    <p class="comment-total" data-comment-total>0 comments</p>
+  </header>
+  <form class="comment-form" data-comment-form>
+    <label class="comment-label" for="story-comment">Join the conversation</label>
+    <textarea id="story-comment" name="message" placeholder="Share a thoughtful comment…" rows="4" minlength="3" maxlength="2000" required></textarea>
+    <div class="comment-form-bottom">
+      <label class="name-label" for="comment-name">Your name<input id="comment-name" name="name" type="text" placeholder="Optional" maxlength="80" autocomplete="name" /></label>
+      <button class="nb-button nb-button-primary post-comment" type="submit">Post comment</button>
+    </div>
+    <p class="conversation-status" data-comment-status role="status" hidden></p>
+  </form>
+  <div class="comment-list" data-comment-list aria-live="polite" aria-busy="true">
+    <p class="empty-comments" data-comment-empty>Loading the conversation…</p>
+  </div>
+  <div id="story-feedback" class="story-feedback" tabindex="-1">
+    <div><h3>Was this story useful?</h3><p>Your feedback helps us improve local coverage.</p></div>
+    <div class="feedback-actions" role="group" aria-label="Was this story useful?">
+      <button type="button" data-story-useful="true" aria-pressed="false">Yes, helpful</button>
+      <button type="button" data-story-useful="false" aria-pressed="false">Needs work</button>
+    </div>
+    <p class="conversation-status feedback-status" data-feedback-status role="status" hidden></p>
+  </div>
+  <noscript><p class="empty-comments">Enable JavaScript to read comments, join the conversation, and give feedback.</p></noscript>
+</section>
+
+<script>
+  type Comment = { _id: string; name: string; message: string; created_at: string };
+  type Conversation = { comments: Comment[]; total: number; feedback: boolean | null };
+  for (const panel of document.querySelectorAll<HTMLElement>("[data-story-conversation]")) {
+    const form = panel.querySelector<HTMLFormElement>("[data-comment-form]")!;
+    const list = panel.querySelector<HTMLElement>("[data-comment-list]")!;
+    const commentStatus = panel.querySelector<HTMLElement>("[data-comment-status]")!;
+    const feedbackStatus = panel.querySelector<HTMLElement>("[data-feedback-status]")!;
+    const feedbackButtons = [...panel.querySelectorAll<HTMLButtonElement>("[data-story-useful]")];
+    const reference: Record<string, string> = panel.dataset.publicationId
+      ? { publication_id: panel.dataset.publicationId, release_id: panel.dataset.releaseId!, story_id: panel.dataset.storyId! }
+      : { location_id: panel.dataset.locationId!, edition_id: panel.dataset.editionId!, story_id: panel.dataset.storyId! };
+    const endpoint = panel.dataset.endpoint!;
+    const showStatus = (element: HTMLElement, message: string) => { element.textContent = message; element.hidden = !message; };
+    const timeLabel = (value: string) => {
+      const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000));
+      if (minutes < 1) return "Just now";
+      if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+      const days = Math.floor(hours / 24);
+      return days < 7 ? `${days} ${days === 1 ? "day" : "days"} ago` : new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    };
+    const render = (data: Conversation) => {
+      list.replaceChildren();
+      for (const comment of data.comments) {
+        const row = document.createElement("article"); row.className = "reader-comment";
+        const avatar = document.createElement("span"); avatar.className = "comment-avatar"; avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = comment.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => Array.from(part)[0]).join("").toLocaleUpperCase();
+        const content = document.createElement("div"); content.className = "comment-content";
+        const meta = document.createElement("div"); meta.className = "comment-meta";
+        const name = document.createElement("strong"); name.textContent = comment.name;
+        const time = document.createElement("time"); time.dateTime = comment.created_at; time.textContent = timeLabel(comment.created_at); time.title = new Date(comment.created_at).toLocaleString();
+        const message = document.createElement("p"); message.textContent = comment.message;
+        meta.append(name, time); content.append(meta, message); row.append(avatar, content); list.append(row);
+      }
+      if (!data.comments.length) {
+        const empty = document.createElement("p"); empty.className = "empty-comments"; empty.textContent = "Be the first to share a thoughtful comment."; list.append(empty);
+      }
+      if (data.total > data.comments.length) {
+        const note = document.createElement("p"); note.className = "empty-comments"; note.textContent = `Showing the latest ${data.comments.length} comments.`; list.append(note);
+      }
+      panel.querySelector<HTMLElement>("[data-comment-total]")!.textContent = `${data.total} ${data.total === 1 ? "comment" : "comments"}`;
+      document.querySelectorAll<HTMLElement>("[data-story-comment-count]").forEach((count) => { count.textContent = String(data.total); });
+      feedbackButtons.forEach((button) => button.setAttribute("aria-pressed", String(data.feedback !== null && (button.dataset.storyUseful === "true") === data.feedback)));
+      list.setAttribute("aria-busy", "false");
+    };
+    const load = async (body?: Record<string, unknown>) => {
+      const response = await fetch(body ? endpoint : `${endpoint}?${new URLSearchParams(reference)}`, {
+        method: body ? "POST" : "GET", headers: body ? { "Content-Type": "application/json" } : {},
+        body: body ? JSON.stringify({ ...reference, ...body }) : undefined,
+        credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(10000),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Please try again.");
+      render(data as Conversation);
+    };
+    const reload = () => {
+      list.setAttribute("aria-busy", "true");
+      void load().catch(() => {
+        list.replaceChildren();
+        const message = document.createElement("p"); message.className = "empty-comments"; message.textContent = "The conversation could not be loaded. ";
+        const retry = document.createElement("button"); retry.type = "button"; retry.className = "conversation-retry"; retry.textContent = "Try again"; retry.addEventListener("click", reload);
+        message.append(retry); list.append(message); list.setAttribute("aria-busy", "false");
+      });
+    };
+    reload();
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!;
+      if (submit.disabled) return;
+      const values = new FormData(form); submit.disabled = true; submit.textContent = "Posting…"; showStatus(commentStatus, "");
+      try {
+        await load({ action: "comment", message: values.get("message"), name: values.get("name") });
+        form.querySelector<HTMLTextAreaElement>("textarea")!.value = "";
+        showStatus(commentStatus, "Your comment has been posted. Thank you for joining the conversation.");
+      } catch (error) { showStatus(commentStatus, error instanceof Error ? error.message : "Your comment could not be saved. Please try again."); }
+      finally { submit.disabled = false; submit.textContent = "Post comment"; }
+    });
+    feedbackButtons.forEach((button) => button.addEventListener("click", async () => {
+      if (button.getAttribute("aria-pressed") === "true") return;
+      feedbackButtons.forEach((item) => { item.disabled = true; }); showStatus(feedbackStatus, "");
+      try { await load({ action: "feedback", useful: button.dataset.storyUseful === "true" }); showStatus(feedbackStatus, "Thanks for your feedback."); }
+      catch (error) { showStatus(feedbackStatus, error instanceof Error ? error.message : "Your feedback could not be saved. Please try again."); }
+      finally { feedbackButtons.forEach((item) => { item.disabled = false; }); }
+    }));
+    document.querySelector<HTMLElement>("[data-focus-comments]")?.addEventListener("click", () => panel.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true }));
+  }
+</script>
+
+<style>
+  .story-conversation { width: 100%; overflow: hidden; border: 1px solid var(--color-line); border-radius: var(--radius-2xl); scroll-margin-top: var(--space-6); }
+  .conversation-header { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-4); padding: var(--space-6); background: var(--color-paper); border-bottom: 1px solid var(--color-line); }
+  .conversation-header h2 { margin-top: var(--space-1); font-size: 1.5625rem; font-weight: 400; line-height: 1.2; letter-spacing: normal; }
+  .comment-total { flex-shrink: 0; font-size: 0.8125rem; color: var(--color-muted); }
+  .comment-form { display: grid; gap: 10px; padding: var(--space-6); border-bottom: 1px solid var(--color-line); }
+  .comment-label { font-weight: 600; font-size: var(--text-sm); }
+  textarea, input { width: 100%; border: 1px solid var(--color-line-strong); border-radius: var(--radius-lg); color: var(--color-ink); background: var(--color-surface); font: inherit; }
+  textarea { min-height: 8.2rem; resize: vertical; padding: var(--space-3) 14px; font-size: var(--text-body); line-height: 1.55; }
+  input { height: var(--space-10); padding: 0 var(--space-3); font-size: var(--text-sm); }
+  textarea::placeholder, input::placeholder { color: #858585; opacity: 1; }
+  .comment-form-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+  .name-label { display: grid; gap: var(--space-1); width: 260px; max-width: 55%; color: var(--color-muted); font-size: var(--text-xs); }
+  .post-comment { min-height: var(--space-10); justify-content: center; }
+  button:disabled { cursor: wait; opacity: 0.65; }
+  .comment-list { padding-inline: var(--space-6); }
+  .comment-list :global(.reader-comment) { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: var(--space-3); padding-block: var(--space-5); }
+  .comment-list :global(.reader-comment + .reader-comment) { border-top: 1px solid var(--color-line); }
+  .comment-list :global(.comment-avatar) { width: 38px; height: 38px; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--color-bee); font-size: var(--text-xs); font-weight: 700; }
+  .comment-list :global(.comment-meta) { display: flex; justify-content: space-between; gap: var(--space-3); align-items: baseline; font-size: var(--text-sm); }
+  .comment-list :global(time) { flex-shrink: 0; font-size: var(--text-xs); color: var(--color-muted); }
+  .comment-list :global(.comment-content p) { padding-top: var(--space-1); font-size: 0.9375rem; line-height: 1.55; color: var(--color-ink-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .story-feedback { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-4) var(--space-6); padding: var(--space-5) var(--space-6); background: var(--color-paper); border-top: 1px solid var(--color-line); }
+  .story-feedback h3 { font-size: var(--text-base); font-weight: 400; line-height: 1.3; }
+  .story-feedback p { padding-top: 2px; font-size: 0.8125rem; color: var(--color-muted); }
+  .feedback-actions { display: flex; gap: var(--space-2); }
+  .feedback-actions button { border: 1px solid var(--color-line-strong); border-radius: var(--radius-pill); padding: 7px var(--space-3); background: var(--color-surface); color: var(--color-ink); font: 600 0.8125rem/1.6 var(--font-body); cursor: pointer; white-space: nowrap; }
+  .feedback-actions button:hover, .feedback-actions button[aria-pressed="true"] { background: var(--color-bee); border-color: var(--color-bee-deep); }
+  .conversation-status { font-size: var(--text-sm); color: var(--color-muted); }
+  .feedback-status { grid-column: 1 / -1; }
+  .empty-comments, .comment-list :global(.empty-comments) { padding-block: var(--space-5); font-size: var(--text-sm); color: var(--color-muted); }
+  .comment-list :global(.conversation-retry) { padding: 0; border: 0; background: none; color: var(--color-ink); font: inherit; text-decoration: underline; cursor: pointer; }
+  [hidden] { display: none; }
+  @media (max-width: 40rem) {
+    .conversation-header, .comment-form { padding: var(--space-5) var(--space-4); }
+    .conversation-header { flex-wrap: wrap; gap: var(--space-2); }
+    .conversation-header h2 { font-size: 1.375rem; }
+    .comment-list { padding-inline: var(--space-4); }
+    .story-feedback { grid-template-columns: 1fr; padding: var(--space-5) var(--space-4); gap: var(--space-3); }
+    .comment-list :global(.comment-meta) { flex-wrap: wrap; gap: 0 var(--space-2); }
+    .comment-form-bottom { flex-wrap: wrap; }
+    .name-label { width: 100%; max-width: 100%; }
+    .post-comment { margin-left: auto; }
+  }
+</style>

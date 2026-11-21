@@ -5,12 +5,12 @@ export const prerender = false;
 
 export const GET: APIRoute = async ({ params, url }) => {
   try {
-    const { locations, editions } = await readerData();
+    const requestedEdition = url.searchParams.get("edition");
+    const { locations, editions } = await readerData(undefined, { locationId: params.location_id, editionId: requestedEdition });
     const location = locations.find((item) => item.id === params.location_id);
     if (!location) {
       return Response.json({ detail: "Unknown location" }, { status: 404 });
     }
-    const requestedEdition = url.searchParams.get("edition");
     const edition = editions
       .filter((item) => item.location_id === location.id && (!requestedEdition || item.id === requestedEdition))
       .sort((left, right) => right.published_at - left.published_at)[0];

@@ -3,45 +3,57 @@ import "../../../../shared/design-tokens.css";
 import GoogleAnalytics from "../components/GoogleAnalytics.astro";
 import { approvedReaderStory, directoryTown, type Location } from "../lib/reader-data";
 import { STORY_MAX, STORY_MIN, HEADLINE_MAX, STORY_IMAGE_MAX_BYTES } from "../../../../shared/reader-stories";
+import { loadPublicationContributionContext } from "../lib/publication-view";
+import ContributionCommunityChoice from "../components/publication/ContributionCommunityChoice.astro";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-const locationId = Astro.url.searchParams.get("location");
+let locationId = Astro.url.searchParams.get("location");
 const storyId = Astro.url.searchParams.get("story");
 let town: Location | null = null;
 let shared: Awaited<ReturnType<typeof approvedReaderStory>> = null;
 let error = "";
-if (!locationId) { Astro.response.status = 400; error = "Choose a community first."; }
-else {
-  try {
+let publication: Awaited<ReturnType<typeof loadPublicationContributionContext>> = null;
+try {
+  if (Astro.url.searchParams.has("publication")) {
+    publication = await loadPublicationContributionContext(Astro.url.searchParams);
+    locationId = publication?.locationId ?? null;
+    if (!publication || publication.invalidLocation) {
+      Astro.response.status = 404; error = "This publication, release, or covered community is unavailable.";
+    }
+  }
+  if (!error && !locationId && !publication) { Astro.response.status = 400; error = "Choose a community first."; }
+  if (!error && locationId) {
     town = await directoryTown(locationId);
     if (!town) { Astro.response.status = 404; error = "This community could not be found."; }
     else if (storyId) {
       shared = await approvedReaderStory(town.id, storyId);
       if (!shared) { Astro.response.status = 404; error = "This story is not available."; }
     }
-  } catch (cause) {
-    console.error("Share page unavailable", cause);
-    Astro.response.status = 503; error = "This page is temporarily unavailable. Please try again later.";
   }
+} catch (cause) {
+  console.error("Share page unavailable", cause);
+  Astro.response.status = 503; error = "This page is temporarily unavailable. Please try again later.";
 }
-const backUrl = town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
+const backUrl = publication ? publication.links.page : town ? `${base}?location=${encodeURIComponent(town.id)}` : base;
 const today = new Date().toISOString().slice(0, 10);
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <GoogleAnalytics />
     <title>{shared ? `${shared.headline} | Newsbee` : town ? `Share your story with ${town.name} | Newsbee` : "Share your story | Newsbee"}</title>
   </head>
   <body>
     <main>
       <header>
-        <a class="brand" href={base}>Newsbee</a>
+        <a class="brand" href={publication ? publication.links.publication : base}>Newsbee</a>
         <p>Your community, this week</p>
       </header>
       {error && <p role="alert">{error}</p>}
+      {!error && publication && !locationId && <ContributionCommunityChoice context={publication} kind="share" />}
+      {publication && town && <p>For {publication.name} · <a href={publication.links.contribute("share")}>Choose a covered community</a></p>}
       {shared && (
         <article aria-labelledby="story-title">
           <h1 id="story-title">{shared.headline}</h1>
@@ -89,7 +101,8 @@ const today = new Date().toISOString().slice(0, 10);
           <p id="share-status" role="status"></p>
         </section>
       )}
-      <p><a href={backUrl}>{town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+      <p><a href={backUrl}>{publication ? `Back to ${publication.name}'s release` : town ? `Back to ${town.name}` : "Find your neighborhood"}</a></p>
+      {publication && <p><a href={base}>Discover other publications and communities</a></p>}
     </main>
     <script>
       const form = document.querySelector<HTMLFormElement>("#share-form");
@@ -126,10 +139,11 @@ const today = new Date().toISOString().slice(0, 10);
   </body>
 </html>
 <style is:global>
-  :root { --paper: var(--color-paper); --ink: var(--color-ink); --muted: var(--color-muted); --rule: var(--color-line); --accent: var(--color-bee); }
+  /* This standalone form keeps the Georgia/Arial typography in its Figma screen. */
+  :root { --paper: var(--color-paper); --ink: var(--color-ink); --muted: var(--color-muted); --rule: var(--color-line); --accent: var(--color-bee); --font-body: Arial, "Liberation Sans", sans-serif; --font-display: Georgia, "Times New Roman", serif; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font: var(--text-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
-  main { max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); }
+  main { width: 100%; max-width: 40rem; margin: 2rem auto; padding: 2rem; background: var(--paper); overflow-wrap: anywhere; }
   header { border-bottom: 1px solid var(--rule); text-align: center; }
   header p, .note { color: var(--muted); }
   .brand { font: var(--weight-heading) 3rem/1 var(--font-display); letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
@@ -139,16 +153,20 @@ const today = new Date().toISOString().slice(0, 10);
   figure img { max-width: 100%; height: auto; }
   figcaption { color: var(--muted); font-size: 0.85rem; }
   form { display: grid; gap: 0.8rem; margin: 1.5rem 0; }
-  label { display: grid; gap: 0.25rem; font-size: 0.95rem; }
+  label { display: grid; gap: 0.25rem; min-width: 0; font-size: 0.95rem; }
   input, textarea, button { padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); min-width: 0; width: 100%; }
   .consent { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; }
   .consent input { width: auto; flex-shrink: 0; margin-top: 0.35rem; }
-  select { padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); }
-  fieldset.credit { border: 1px solid var(--color-line); border-radius: var(--radius-sm); display: grid; gap: 0.4rem; padding: 0.6rem; }
+  select { width: 100%; min-width: 0; padding: 0.6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--ink); }
+  textarea { min-height: 15rem; resize: vertical; }
+  fieldset.credit { min-inline-size: 0; border: 1px solid var(--color-line); border-radius: var(--radius-sm); display: grid; gap: 0.4rem; padding: 0.6rem; }
   button { background: var(--accent); border-color: var(--color-bee-deep); color: var(--ink); font-weight: 600; cursor: pointer; transition: background-color var(--transition); }
   button:hover:not(:disabled) { background: var(--color-bee-deep); }
   button:disabled { opacity: 0.6; cursor: wait; }
   a { color: var(--ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
-  @media (max-width: 640px) { main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; } }
+  @media (max-width: 640px) {
+    main { margin: 0; padding: 1.5rem 1rem; min-height: 100vh; }
+    input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 1rem; }
+  }
 </style>

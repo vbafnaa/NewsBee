@@ -43,6 +43,9 @@ import { paidAllowance, type PaidService } from "../core/run-values";
 import type { Settings } from "../core/config";
 import { DO_NOT_SCRAPE } from "../connectors/fetcher";
 import type { JsonSchema, ModelRuntime } from "../model/runtime";
+import { receiptRuntime } from "../model/receipts";
+import { ExecutionBlocked } from "../core/execution-errors";
+import { executionTimeout, withExecutionDeadline } from "../core/execution-deadline";
 import { addDays } from "../connectors/common";
 import { normaliseUrl, pageDecisions, sourceMap, hostOf, type SourceCandidate, type SourceRecord } from "../sourcemap/store";
 import { recordDecision } from "../trace/decisions";
@@ -167,6 +170,7 @@ export type AgentState = {
   last_step?: number;
   /** From the step-by-step loop runs before rounds used. */
   dry_steps?: number;
+  checkpoint_metrics?: { saves: number; state_json_bytes: number; max_state_json_bytes: number; serialization_ms: number; load_ms: number; write_ms: number };
 };
 
 function states(db: Db) { return db.collection<AgentState>(AGENT_STATE); }
@@ -421,7 +425,7 @@ const TRIAGE_SCHEMA = {
 };
 type TriageReply = { decisions?: Array<{ id?: string; action?: string; category?: string; why?: string }> };
 
-type StageInput = { context: DiscoveryContext; kit: SearchKit; state: AgentState; tools: Tools; topics: PriorityTopic[]; deadline: number; job: number; runId: string };
+type StageInput = { context: DiscoveryContext; kit: SearchKit; state: AgentState; tools: Tools; topics: PriorityTopic[]; deadline: number; job: number; runId: string; save: () => Promise<void> };
 /** ok: carry on; more: the job's time is up mid-step; failed: an unusable model reply; or stop, with the limit a model call hit. */
 type StageResult = "ok" | "more" | "failed" | { stop: string };
 
@@ -440,10 +444,13 @@ function logStep(input: StageInput, step: Omit<AgentStep, "job" | "at" | "ms" | 
 /** Ask the model; returns the parsed reply, or the error. */
 async function ask<T>(model: ModelRuntime, prompt: string, schema: JsonSchema, numPredict: number): Promise<{ reply: T | null; error: string | null }> {
   try {
-    const response = await model.generateStructured(prompt, schema, { numPredict });
+    const response = await model.generateStructured(prompt, schema, { numPredict, timeoutMs: executionTimeout() });
     const parsed = JSON.parse(response.response) as T;
     return { reply: parsed && typeof parsed === "object" ? parsed : null, error: parsed && typeof parsed === "object" ? null : "an empty reply" };
-  } catch (error) { return { reply: null, error: error instanceof Error ? error.message : String(error) }; }
+  } catch (error) {
+    if (error instanceof ExecutionBlocked) throw error;
+    return { reply: null, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /** Why a query doesn't fit its angle where code can tell, or null. */
@@ -510,7 +517,8 @@ async function planStage(input: StageInput): Promise<StageResult> {
   const turns = eligibleCells(grid).filter((cell) => tools[cell.tool]);
   const started = Date.now();
   const prompt = await planPrompt(context, input.kit, state, topics, tools);
-  const { reply, error } = await ask<PlanReply>(context.model!, prompt, PLAN_SCHEMA, 300 + 160 * turns.length);
+  const model = receiptRuntime(context.db, context.model!, `${input.runId}:agent:round${round.n}:plan:${round.calls.plan}`);
+  const { reply, error } = await ask<PlanReply>(model, prompt, PLAN_SCHEMA, 300 + 160 * turns.length);
   round.calls.plan += 1;
   const planStep = nextStep(state);
   if (!reply) {
@@ -617,7 +625,10 @@ async function openHub(input: StageInput, planned: PlannedSearch, fetcher: Fetch
     if (tools.dork === "fixture") return { results: await read(), skipped: null, error: null };
     const outcome = await paidCall(tools.dork as PaidService, read);
     return { results: outcome.value ?? [], skipped: outcome.refused, error: null };
-  } catch (error) { return { results: [], skipped: null, error: error instanceof Error ? error.message : String(error) }; }
+  } catch (error) {
+    if (error instanceof ExecutionBlocked) throw error;
+    return { results: [], skipped: null, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /** b. Search: the round's searches, the tools side by side and each tool's in turn, until the job's time is nearly up. */
@@ -626,7 +637,7 @@ async function searchStage(input: StageInput): Promise<StageResult> {
   const round = state.round!;
   const fetcher = new Fetcher(publicSourceTransport(input.context.transport, 15_000));
   fetcher.deadline = deadline;
-  await Promise.all(SEARCH_TOOLS.map(async (tool) => {
+  const settled = await Promise.allSettled(SEARCH_TOOLS.map(async (tool) => {
     for (const planned of round.planned.filter((item) => item.tool === tool && !item.done)) {
       if (Date.now() >= deadline - WORK_RESERVE_MS) return;
       if (state.unavailable[tool] || (planned.kind === "explore" && state.unavailable.explore)) {
@@ -635,8 +646,11 @@ async function searchStage(input: StageInput): Promise<StageResult> {
         continue;
       }
       await runPlanned(input, planned, fetcher);
+      await input.save();
     }
   }));
+  const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed) throw failed.reason;
   if (round.planned.some((item) => !item.done)) return "more";
   round.stage = "clean";
   return "ok";
@@ -713,7 +727,8 @@ async function triageStage(input: StageInput): Promise<StageResult> {
   const ids = round.chunks[round.triaged] ?? [];
   const items = round.items.filter((item) => ids.includes(item.id));
   const started = Date.now();
-  const { reply, error } = await ask<TriageReply>(context.model!, triagePrompt(kit, state, items, topics), TRIAGE_SCHEMA, 200 + 40 * items.length);
+  const model = receiptRuntime(context.db, context.model!, `${input.runId}:agent:round${round.n}:triage:${round.calls.triage}`);
+  const { reply, error } = await ask<TriageReply>(model, triagePrompt(kit, state, items, topics), TRIAGE_SCHEMA, 200 + 40 * items.length);
   round.calls.triage += 1;
   const step = nextStep(state);
   if (!reply) {
@@ -756,7 +771,6 @@ async function openStage(input: StageInput): Promise<StageResult> {
     if (Date.now() >= deadline - WORK_RESERVE_MS) return "more";
     const item = round.items.find((row) => row.id === id)!;
     const decision = round.decisions[id];
-    round.opened.push(id);
     const url = item.url, key = normaliseUrl(sourceUrl(url));
     // The editor's decision stands: don't put a source back that a person has already labelled.
     const labelled = await sourceMap(context.db).findOne({ location_id: context.location.id, url: { $in: [url, sourceUrl(url)] }, "review.decision": { $in: ["accept", "reject"] } }, { projection: { review: 1, name: 1 } });
@@ -765,6 +779,8 @@ async function openStage(input: StageInput): Promise<StageResult> {
       refused += 1;
       const why = labelled ? `the editor already ${labelled.review?.decision === "accept" ? "accepted" : "rejected"} this source (${labelled.name})` : rejected ? `the editor rejected this page in an earlier run (${rejected.name ?? url})` : "already proposed in this run";
       logStep(input, { step: nextStep(state), action: "propose", tool: item.tools[0], query: item.query, url, category: decision.category, reason: "Triage proposed it", outcome: "refused", result: `Not opened: ${why}.` });
+      round.opened.push(id);
+      await input.save();
       continue;
     }
     const seen = new Set(state.seen);
@@ -794,6 +810,8 @@ async function openStage(input: StageInput): Promise<StageResult> {
       });
     }
     noteLeads(state, evaluated.links.slice(0, 12).map((link) => ({ url: link.url, tool: "propose", query: url, step, title: link.title, snippet: "" })));
+    round.opened.push(id);
+    await input.save();
   }
   logStep(input, { step: nextStep(state), action: "propose", tool: null, query: null, url: null, category: null, reason: `Round ${round.n}'s proposals`, outcome: "ok", result: `${round.proposals.length} proposed: ${kept} kept by the code checks for the model check, ${refused} not opened.`, ms: Date.now() - started });
   round.stage = "judge";
@@ -891,12 +909,35 @@ const fits = (stage: RoundStage, deadline: number) => ["clean", "score"].include
  */
 export async function agentJob(context: DiscoveryContext, job: number, limits: { steps?: number } = {}) {
   const deadline = Date.now() + JOB_DEADLINE_MS;
+  return withExecutionDeadline(deadline, () => agentJobWithinDeadline(context, job, limits, deadline));
+}
+
+async function agentJobWithinDeadline(context: DiscoveryContext, job: number, limits: { steps?: number }, deadline: number) {
   const options = currentOptions();
   const topics = options.topics;
   const runId = runContext()?.runId ?? "none";
+  const loadStart = performance.now();
   const state: AgentState = { ...emptyState(runId), ...await states(context.db).findOne({ _id: runId }) };
-  const save = () => states(context.db).replaceOne({ _id: runId }, state, { upsert: true });
-  const summary = (next: boolean) => ({ next, job, steps: state.steps.filter((step) => step.job === job).length, total_steps: state.steps.length, rounds: state.rounds ?? 0, stage: state.round?.stage ?? null, accepted: state.sources.filter((source) => source.verdict === "accept").length, unavailable: Object.keys(state.unavailable), stopped_by: state.stopped_by?.limit ?? null, finished: state.finished?.reason ?? null });
+  const loadMs = performance.now() - loadStart;
+  let saving = Promise.resolve();
+  const save = () => {
+    const serializationStart = performance.now();
+    const serialized = JSON.stringify(state);
+    const snapshot: AgentState = JSON.parse(serialized);
+    const bytes = Buffer.byteLength(serialized);
+    state.checkpoint_metrics = snapshot.checkpoint_metrics = {
+      saves: (state.checkpoint_metrics?.saves ?? 0) + 1,
+      state_json_bytes: bytes, max_state_json_bytes: Math.max(bytes, state.checkpoint_metrics?.max_state_json_bytes ?? 0),
+      serialization_ms: performance.now() - serializationStart, load_ms: loadMs, write_ms: state.checkpoint_metrics?.write_ms ?? 0,
+    };
+    saving = saving.then(async () => {
+      const start = performance.now();
+      await states(context.db).replaceOne({ _id: runId }, snapshot, { upsert: true });
+      state.checkpoint_metrics!.write_ms = performance.now() - start;
+    });
+    return saving;
+  };
+  const summary = (next: boolean) => ({ next, job, steps: state.steps.filter((step) => step.job === job).length, total_steps: state.steps.length, rounds: state.rounds ?? 0, stage: state.round?.stage ?? null, accepted: state.sources.filter((source) => source.verdict === "accept").length, unavailable: Object.keys(state.unavailable), stopped_by: state.stopped_by?.limit ?? null, finished: state.finished?.reason ?? null, checkpoint: state.checkpoint_metrics });
   if (state.finished) return summary(false);
   state.jobs += 1;
   // Every run is exhaustive now; the misses a cell needs are kept on the run, so a past run shows the rules it used.
@@ -943,7 +984,7 @@ export async function agentJob(context: DiscoveryContext, job: number, limits: {
     if (limits.steps !== undefined && ran >= limits.steps) { await save(); return summary(true); }
     const stage = state.round.stage;
     if (!fits(stage, deadline)) { await save(); return summary(true); }
-    const result = await STAGES[stage]({ context, kit, state, tools, topics, deadline, job, runId });
+    const result = await STAGES[stage]({ context, kit, state, tools, topics, deadline, job, runId, save });
     ran += 1;
     await save();
     if (result === "more") return summary(true);

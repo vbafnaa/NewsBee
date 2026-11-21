@@ -1,0 +1,21 @@
+---
+import { EMAIL_UNAVAILABLE } from "../../../../../shared/email-availability";
+interface Props {
+  publicationId: string;
+  releaseId: string;
+  publicationName: string;
+  locations: Array<{ id: string; name: string }>;
+}
+const { publicationName } = Astro.props;
+---
+<section class="publication-email-signup" aria-labelledby="publication-email-heading">
+  <h2 id="publication-email-heading">{publicationName} by email</h2>
+  <p id="publication-email-unavailable" role="status">{EMAIL_UNAVAILABLE}</p>
+  <button type="button" disabled aria-describedby="publication-email-unavailable">Confirmation signup unavailable</button>
+  <p>No new signup or email address is saved here. Read this publication online instead.</p>
+</section>
+<style>
+  .publication-email-signup { display: grid; gap: var(--space-4); width: 100%; padding: var(--space-6); background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-md); text-align: left; }
+  h2 { font-size: var(--text-h3); }
+  button { padding: .7rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); opacity: .65; cursor: not-allowed; }
+</style>

@@ -1,24 +1,69 @@
 import { MongoClient, type Db } from "mongodb";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { COLLECTIONS } from "../../storage/mongo";
 import type { ArtifactStore } from "../../storage/artifacts";
-import { finishVideoUpload, saveVideoChunk, startVideoUpload, VIDEO_UPLOAD_CHUNK_BYTES, VIDEO_UPLOAD_MAX_BYTES } from "../../video-upload";
-import { saveVideoPackage, videoStoryManagement, type VideoStory } from "../../video-production";
+import { resolvePublicationContext } from "../../publications/access";
+import {
+  finishReleaseVideoUpload,
+  finishVideoUpload,
+  saveReleaseVideoChunk,
+  saveVideoChunk,
+  startReleaseVideoUpload,
+  startVideoUpload,
+  VIDEO_UPLOAD_CHUNK_BYTES,
+  VIDEO_UPLOAD_MAX_BYTES,
+} from "../../video-upload";
+import {
+  saveVideoPackage,
+  videoStoryManagement,
+  type ReleaseVideoScope,
+  type VideoContentPackage,
+  type VideoStory,
+} from "../../video-production";
 
 const story: VideoStory = {
   locationId: "local", locationName: "Local", storyId: "story", editionId: "edition",
   title: "Story", summary: "", whenWhere: "", eventDate: "", sourceUrl: null, story: null,
 };
 const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 12]), Buffer.from("ftypisom"), Buffer.alloc(10)]);
-let server: MongoMemoryServer, client: MongoClient, db: Db;
+const releaseScope = {
+  publicationId: "publication",
+  releaseId: "release",
+  releaseHash: "release-hash",
+  item: {
+    item_id: "release-story",
+    location_ids: ["local"],
+    location_names: ["Local"],
+    headline: "Release story",
+    blurb: "Release summary",
+    when_where: "Local",
+    event_date: "2026-11-17",
+    source_url: null,
+  },
+  release: {
+    publication: { display_name: "Fixture publication" },
+  },
+} as ReleaseVideoScope;
+const releasePackage = {
+  youtubeTitle: "Release story",
+  youtubeDescription: "Release description",
+  youtubeTags: ["local"],
+  tiktokCaption: "Release caption",
+  spokenScript: "Release script",
+  videoPrompt: "Release prompt",
+  subtitlesSrt: "",
+  generatedAt: 1,
+  updatedAt: 1,
+} satisfies VideoContentPackage;
+let server: MongoMemoryReplSet, client: MongoClient, db: Db;
 const saveBinary = vi.fn(async () => "stored-file");
 const store: ArtifactStore = {
   kind: "local", ensureFolder: async () => "folder", saveText: async () => "", saveJson: async () => "",
   saveBinary, readText: async () => "", readJson: async <T>() => ({} as T), list: async () => [],
   findFolder: async () => null, removeFile: async () => 0,
 };
-beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("video-upload-test"); });
+beforeAll(async () => { server = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); client = await MongoClient.connect(server.getUri()); db = client.db("video-upload-test"); });
 beforeEach(async () => { await db.dropDatabase(); saveBinary.mockClear(); });
 afterAll(async () => { await client?.close(); await server?.stop(); });
 
@@ -34,6 +79,12 @@ describe("manual story video uploads", () => {
     const management = await videoStoryManagement(db, story);
     expect(management.package?.youtubeTitle).toBe("Edited title");
     expect(management.packagePrompt).toBe(content.generationPrompt);
+
+    expect((await videoStoryManagement(db, story, "channel-b")).package?.videoPrompt).toBe(content.videoPrompt);
+    await saveVideoPackage(db, story, { ...content, videoPrompt: "Channel A's edited prompt" }, undefined, "channel-a");
+    expect((await videoStoryManagement(db, story, "channel-a")).package?.videoPrompt).toBe("Channel A's edited prompt");
+    expect((await videoStoryManagement(db, story, "channel-b")).package?.videoPrompt).toBe(content.videoPrompt);
+    expect((await videoStoryManagement(db, { ...story, storyId: "other" }, "channel-a")).package).toBeNull();
   });
 
   it("assembles multiple chunks and saves an MP4 in the story's video list for optional YouTube publishing", async () => {
@@ -60,5 +111,44 @@ describe("manual story video uploads", () => {
     await saveVideoChunk(db, story, "owner", uploadId, 0, Buffer.alloc(VIDEO_UPLOAD_CHUNK_BYTES));
     await expect(finishVideoUpload(db, store, story, "owner", uploadId)).rejects.toThrow("Invalid MP4");
     expect(saveBinary).not.toHaveBeenCalled();
+  });
+
+  it("scopes a manually uploaded release MP4 to its publication, release, story and submitting principal", async () => {
+    await db.collection(COLLECTIONS.outputChannels).insertOne({
+      _id: releaseScope.publicationId, owner_id: "editor", name: "Fixture", publication_scope_version: 1,
+    });
+    const context = (await resolvePublicationContext(db, "editor", releaseScope.publicationId))!;
+    const { uploadId } = await startReleaseVideoUpload(db, releaseScope, "editor", mp4.length, context);
+    await expect(saveReleaseVideoChunk(
+      db,
+      { ...releaseScope, releaseId: "other-release" },
+      "editor",
+      uploadId,
+      0,
+      mp4,
+    )).rejects.toThrow("Invalid or expired");
+    await saveReleaseVideoChunk(db, releaseScope, "editor", uploadId, 0, mp4);
+    const job = await finishReleaseVideoUpload(
+      db,
+      store,
+      releaseScope,
+      releasePackage,
+      "Fixture {{dialogue}}",
+      "editor",
+      uploadId,
+      (await resolvePublicationContext(db, "editor", releaseScope.publicationId))!,
+    );
+    expect(job).toMatchObject({
+      source: "upload",
+      status: "complete",
+      requested_by: "editor",
+      publication_id: releaseScope.publicationId,
+      release_id: releaseScope.releaseId,
+      story_id: releaseScope.item.item_id,
+      drive_file_id: "stored-file",
+    });
+    expect(saveBinary).toHaveBeenCalledWith("folder", `${job._id}.mp4`, mp4, "video/mp4");
+    expect(await db.collection(COLLECTIONS.videoUploadChunks).countDocuments()).toBe(0);
+    expect(await db.collection(COLLECTIONS.videoUploadSessions).countDocuments()).toBe(0);
   });
 });

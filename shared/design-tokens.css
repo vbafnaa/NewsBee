@@ -24,6 +24,10 @@
   --color-pill-gray: #ece9e1;      /* tags, hover backgrounds */
   --color-pill-gray-deep: #e2ded4; /* tag hover, active state */
   --color-focus: #0a0a0a;          /* focus outlines (bee fails 3:1 on paper) */
+  --color-danger: #8a1d15;
+  --color-danger-line: #9c2f24;
+  --color-danger-surface: #fff5f3;
+  --color-danger-hover: #fbe8e5;
 
   /* Fonts. GT Super is licensed and not bundled, so Georgia renders until it is added. */
   --font-display: "GT Super", Georgia, "Times New Roman", serif;
@@ -52,6 +56,12 @@
   --tracking-h3: -0.003em;
   --tracking-label: 0.14em;  /* uppercase section labels */
   --weight-heading: 600;
+
+  /* Controls: compact variants are reserved for fine-pointer desktop tools. */
+  --control-height: 2.75rem;
+  --control-height-compact: 2rem;
+  --control-choice-size: 1.25rem;
+  --leading-control: 1.4;
 
   /* Spacing: 4px grid */
   --space-1: 0.25rem;  /* 4px */

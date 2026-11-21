@@ -14,6 +14,7 @@ import { normaliseUrl, pageDecisions, sourceMap, type SourceCandidate } from "..
 import { RUN_DECISIONS } from "../../trace/decisions";
 import { ensureApiCallIndexes, HARD_LIMITS, limitWindow, type HardLimit } from "../../trace/gateway";
 import { FakeModel, type FakeCall } from "../support/fake-model";
+import { ExecutionBlocked } from "../../core/execution-errors";
 
 // The made-up sites have no DNS, and nothing here needs pacing.
 vi.mock("../../connectors/public-http", async (original) => ({ ...await original<object>(), publicSourceTransport: (transport: HttpTransport) => transport }));
@@ -164,6 +165,51 @@ const POLICE = "https://police.example.gov/news";
 const PAGES: Record<string, string> = { [EVENTS]: listing("Lakeside Library events", [["/events/kids", "Kids events"]]), [POLICE]: listing("Lakeside Police news"), "https://lib.example.org/": listing("Lakeside Library", [["/events", "Events"], ["/branches", "Branch locations"]]) };
 
 describe("rounds", () => {
+  it("persists individual searches before advancing the rest of the stage", async () => {
+    const source = web(PAGES);
+    let interrupted = false, firstSearch = "";
+    const transport: HttpTransport = async request => {
+      if (request.url.startsWith("https://serpapi.com/") && !new URL(request.url).searchParams.get("q")?.startsWith('"City of')) {
+        if (!firstSearch) firstSearch = request.url;
+        else if (!interrupted) { interrupted = true; throw new ExecutionBlocked("injected operation interruption"); }
+      }
+      return source.transport(request);
+    };
+    const { fake, calls } = rounds();
+    const { job } = setup(transport, fake, { topics: ["events", "crime"], paid: ONLY_DORK });
+    await job(0, { steps: 1 });
+    await expect(job(1, { steps: 1 })).rejects.toThrow("injected operation interruption");
+    expect((await stateOf()).round?.planned.filter(item => item.done)).toHaveLength(1);
+    await job(2, { steps: 1 });
+    expect(source.requests.filter(request => request.url === firstSearch)).toHaveLength(1);
+    expect(calls.plan).toHaveLength(1);
+    expect((await stateOf()).round?.stage).toBe("clean");
+  });
+
+  it("reuses the paid reply when interruption occurs before the plan checkpoint", async () => {
+    const source = web(PAGES), { fake, calls } = rounds();
+    const { job } = setup(source.transport, fake, { topics: ["events"], paid: ONLY_DORK });
+    const original = db.collection.bind(db);
+    let failed = false;
+    const intercepted = vi.spyOn(db, "collection").mockImplementation((...args: Parameters<typeof db.collection>) => {
+      const collection = original(...args);
+      if (args[0] === AGENT_STATE) {
+        const replace = collection.replaceOne.bind(collection);
+        collection.replaceOne = async (filter, replacement, options) => {
+          if (!failed && replacement.round?.stage === "search") { failed = true; throw new Error("injected checkpoint interruption"); }
+          return replace(filter, replacement, options);
+        };
+      }
+      return collection;
+    });
+    try {
+      await expect(job(0, { steps: 1 })).rejects.toThrow("injected checkpoint interruption");
+      await job(1, { steps: 1 });
+      expect(calls.plan).toHaveLength(1);
+      expect((await stateOf()).round?.stage).toBe("search");
+    } finally { intercepted.mockRestore(); }
+  });
+
   it("runs a round as one plan call, the searches, clean-up, triage chunks and model check batches", async () => {
     // 45 listings for events: the round opens 40 and carries 5 to the next round's triage.
     const pages = Object.fromEntries(Array.from({ length: 45 }, (_, index) => [`https://site${index + 1}.example.org/calendar`, listing(`Lakeside calendar ${index + 1}`)]));
@@ -214,6 +260,10 @@ describe("rounds", () => {
     expect([calls.plan.length, calls.triage.length, calls.check.length]).toEqual([1, 1, 1]);
     expect(sentDork(requests)).toEqual([expect.stringMatching(/^Lakeside events /)]);
     expect(requests.filter((request) => request.url === EVENTS)).toHaveLength(1);
+    expect((await stateOf()).checkpoint_metrics).toMatchObject({
+      saves: expect.any(Number), state_json_bytes: expect.any(Number), max_state_json_bytes: expect.any(Number),
+      serialization_ms: expect.any(Number), load_ms: expect.any(Number), write_ms: expect.any(Number),
+    });
   });
 
   it("doesn't start a model step with less than the playbook's reserve left in the job", async () => {

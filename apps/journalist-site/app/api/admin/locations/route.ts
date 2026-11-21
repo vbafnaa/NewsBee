@@ -5,6 +5,8 @@ import { fetchTransport } from "@/pipeline/core/http";
 import { publicOnlyTransport } from "@/pipeline/connectors/public-http";
 import { ensureDirectories } from "@/pipeline/communities/bootstrap";
 import { logger } from "@/pipeline/core/log";
+import { COLLECTIONS } from "@/pipeline/storage/mongo";
+import { transitionLocationReadiness } from "@/pipeline/communities/readiness";
 
 export const maxDuration = 300;
 
@@ -14,9 +16,11 @@ export async function GET(request: Request) {
 
 /** Onboard a town or saved geographic community with scoped sources. */
 export async function POST(request: Request) {
-  return adminRoute(request, async ({ db, settings }) => {
+  return adminRoute(request, async ({ db, settings, principal }) => {
     const body = await jsonBody<{ place_id?: unknown }>(request);
     if (typeof body.place_id !== "string" || !body.place_id) throw new Error("Invalid place_id");
+    if (!principal) throw new Error("Sign in as an approved journalist.");
+    const existed = Boolean(await db.collection<{ _id: string }>(COLLECTIONS.locations).findOne({ _id: body.place_id }, { projection: { _id: 1 } }));
     const geographic = body.place_id.startsWith("osm-");
     const discoveryGaps: string[] = [];
     try {
@@ -29,11 +33,13 @@ export async function POST(request: Request) {
     }
     // Discovery follows homepage and feed links from OSM and Wikidata, so only public hosts are reachable.
     const transport = publicOnlyTransport(fetchTransport);
-    return {
-      location: await onboardLocation(db, transport, body.place_id, {
+    const location = await onboardLocation(db, transport, body.place_id, {
         settings, discoveryGaps,
         discoverGovernment: (profile) => discoverGovernment(transport, profile, null),
-      }),
-    };
+      });
+    if (!existed) {
+      return { location: await transitionLocationReadiness(db, body.place_id, "preparing", principal, "Location onboarding started.") };
+    }
+    return { location };
   });
 }

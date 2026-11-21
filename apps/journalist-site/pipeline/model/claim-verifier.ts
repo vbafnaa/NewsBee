@@ -3,6 +3,7 @@
 import type { ModelRuntime } from './runtime';
 import { proseSentences } from './news-blurb';
 import { ModelRateLimitError } from './runtime';
+import { ExecutionBlocked } from '../core/execution-errors';
 export const VERIFICATION_POLICY = 'claims_v2_complete_evidence';
 export type VerificationSource = { id: string; text: string; url?: string | null };
 export type VerificationInput = { title: string; description?: string | null; venues?: string[]; as_of?: unknown; verification_sources?: VerificationSource[] };
@@ -76,7 +77,7 @@ export async function verifyArticle(runtime: ModelRuntime, story: VerificationIn
     if (!generation.done || generation.done_reason === 'length') throw new Error('Incomplete verification');
     return validateVerification(JSON.parse(generation.response), story, draft);
   } catch (error) {
-    if (error instanceof ModelRateLimitError) throw error;
+    if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
     return { policy: VERIFICATION_POLICY, checks_passed: false, errors: ['unsupported_verification:unavailable'], claims: [] };
   }
 }

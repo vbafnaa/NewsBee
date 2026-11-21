@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { withPublication } from "@/lib/admin-client";
+import { usePublicationScope } from "../components/publication-scope";
 
 type Submission = {
   _id: string; location_name: string; headline: string; story: string; topic: string; link: string | null; event_date: string | null;
@@ -10,6 +12,7 @@ type Submission = {
 };
 
 export default function NeighbourStoryReview({ locationId }: { locationId?: string }) {
+  const scope = usePublicationScope();
   const [status, setStatus] = useState<"pending" | "all">("pending");
   const [items, setItems] = useState<Submission[] | null>(null);
   const [error, setError] = useState("");
@@ -17,19 +20,19 @@ export default function NeighbourStoryReview({ locationId }: { locationId?: stri
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch(`/api/admin/reader-stories?status=${status}${locationId ? `&location=${encodeURIComponent(locationId)}` : ""}`, { cache: "no-store" });
+      const response = await fetch(withPublication(`/api/admin/reader-stories?status=${status}${locationId ? `&location=${encodeURIComponent(locationId)}` : ""}`, scope?.publicationId), { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       setItems(data.submissions as Submission[]); setError("");
     } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
-  }, [status, locationId]);
+  }, [status, locationId, scope?.publicationId]);
   useEffect(() => { void load(); }, [load]);
 
   async function decide(id: string, decision: "approved" | "rejected") {
     const reason = decision === "rejected" ? window.prompt("Reason (kept for the editor log, not published)") ?? "" : "";
     setBusy(id);
     try {
-      const response = await fetch("/api/admin/reader-stories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, decision, reason }) });
+      const response = await fetch(withPublication("/api/admin/reader-stories", scope?.publicationId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, decision, reason }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
       await load();
@@ -57,7 +60,7 @@ export default function NeighbourStoryReview({ locationId }: { locationId?: stri
             <p className="eyebrow">{item.location_name} · {item.topic}{item.event_date ? ` · on ${item.event_date}` : ""} · submitted {new Date(item.submitted_at).toLocaleString()} · {item.status}</p>
             <p style={{ whiteSpace: "pre-wrap" }}>{item.story}</p>
             {item.image && <figure style={{ margin: "1rem 0" }}>
-              <img src={`/api/admin/reader-stories/${encodeURIComponent(item._id)}/image`} alt={item.image.caption} loading="lazy" decoding="async"
+              <img src={withPublication(`/api/admin/reader-stories/${encodeURIComponent(item._id)}/image`, scope?.publicationId)} alt={item.image.caption} loading="lazy" decoding="async"
                 style={{ maxWidth: "100%", maxHeight: "24rem", objectFit: "contain" }} />
               <figcaption>{item.image.caption} · Photo credit: {item.image.credit}</figcaption>
               <p className="chart-caption">Publication permission confirmed {new Date(item.image.permission_confirmed_at).toLocaleString()}. Approval publishes this photo and its credit with the story. Check the image and permissions before approving.</p>

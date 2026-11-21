@@ -1,0 +1,124 @@
+---
+import EditionLayout from "../../components/edition/EditionLayout.astro";
+import SiteFooter from "../../components/edition/SiteFooter.astro";
+import SiteHeader from "../../components/edition/SiteHeader.astro";
+import {
+  directoryTown,
+  legacyReaderDiscovery,
+  publicationDirectory,
+} from "../../lib/reader-data";
+import { publicationLinks } from "../../lib/publication-view";
+const { locationId } = Astro.params;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+let unavailable = false;
+const [publications, legacy, directory] = await Promise.all([
+  publicationDirectory(locationId),
+  legacyReaderDiscovery({ locationId, indexOnly: true }),
+  directoryTown(locationId!),
+]).catch((error) => {
+  console.error("Reader publication directory unavailable", error);
+  unavailable = true;
+  return [[], { locations: [], editions: [] }, null] as const;
+});
+const legacyLocation = legacy.locations.find((location) => location.id === locationId);
+const hasLegacyEdition = legacy.editions.some((edition) => edition.location_id === locationId);
+const location = legacyLocation ?? directory ?? publications.flatMap((publication) => publication.locations)
+  .find((candidate) => candidate.id === locationId);
+if (unavailable) Astro.response.status = 503;
+else if (!location) Astro.response.status = 404;
+const today = new Date().toLocaleDateString("en-US", {
+  weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles",
+});
+const browseHref = `${base}/browse?location=${encodeURIComponent(locationId!)}`;
+---
+<EditionLayout title={location ? `${location.name} publications | Newsbee` : "Location not found | Newsbee"}>
+  {location && <SiteHeader town={location.name} today={today} visible={[]} homeHref={base || "/"}
+    locationId={location.id} subscribeHref={browseHref} subscribeLabel="Explore stories" />}
+  <main id="main" class="nb-container directory">
+    {unavailable ? <p role="alert">Publications are unavailable right now. Please try again in a moment.</p> : location ? <>
+      <a class="nb-link back" href={base || "/"}>Find another location</a>
+      <header class="directory-heading">
+        <p class="nb-label">Independent local publications</p>
+        <h1>Publications covering {location.name.split(",")[0]}</h1>
+        <p>Choose a newsroom to read its published edition. Each edition includes all the communities it covers, not just this location.</p>
+      </header>
+      {publications.length ? <ol class="publication-grid">{publications.map((publication) => {
+        const links = publicationLinks(publication.id);
+        const published = new Date(publication.latest_published_at * 1000);
+        return <li class="publication-card">
+          <div class="brand-mark">
+            {publication.logo_url
+              ? <img src={publication.logo_url} alt="" />
+              : <span aria-hidden="true">{publication.display_name.slice(0, 1).toUpperCase()}</span>}
+          </div>
+          <div class="card-copy">
+            <div class="card-heading">
+              <p class="nb-pill">{publication.archived_at !== null ? "Archived newsroom · Published edition" : "Published edition"}</p>
+              <h2><a class="nb-card-link" href={links.publication}><span class="nb-title">{publication.display_name}</span></a></h2>
+            </div>
+            <p class="description">{publication.description ?? `Independent reporting for ${publication.locations.map((covered) => covered.name.split(",")[0]).join(" and ")}.`}</p>
+            <p class="coverage"><strong>Full edition covers:</strong> {publication.locations.map((covered) => covered.name).join(" · ")}</p>
+            <div class="latest">
+              <p class="nb-label">Latest release</p>
+              <strong>{publication.latest_title ?? "Weekly publication release"}</strong>
+              <time datetime={published.toISOString()}>{published.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" })}</time>
+            </div>
+            <div class="card-actions">
+              <a class="nb-button nb-button-primary" href={links.publication}>Read full edition</a>
+              <a class="nb-button nb-button-quiet" href={links.archive}>Edition archive</a>
+            </div>
+          </div>
+        </li>;
+      })}</ol> : <section class="empty-state"><h2>No newsroom edition yet</h2><p>No independent newsroom has a current published edition for this location.</p>
+        {!hasLegacyEdition && <a class="nb-link" href={`${base}?location=${encodeURIComponent(location.id)}`}>Request coverage for {location.name}</a>}
+      </section>}
+      {hasLegacyEdition && <aside class="legacy-card">
+        <div><p class="nb-label">Newsbee neighborhood edition</p><h2>Existing community edition</h2><p>All previously published stories and the current neighborhood experience remain available.</p></div>
+        <a class="nb-button nb-button-quiet" href={`${base}?location=${encodeURIComponent(location.id)}`}>Open neighborhood edition</a>
+      </aside>}
+    </> : <p role="alert">This location could not be found.</p>}
+  </main>
+  {location && <SiteFooter place={location.name} visible={[]} homeHref={base || "/"} pageHref=""
+    neighborhoods={[{ label: location.name.split(",")[0].trim(), href: `${base}/locations/${encodeURIComponent(location.id)}` }]}
+    more={{ heading: "Explore", links: [
+      { label: "Browse published stories", href: browseHref },
+      { label: "Share a community story", href: `${base}/share?location=${encodeURIComponent(location.id)}` },
+      { label: "Suggest a source", href: `${base}/suggest?location=${encodeURIComponent(location.id)}` },
+    ] }} />}
+</EditionLayout>
+<style>
+  .directory { gap: var(--space-10); }
+  .back { align-self: flex-start; }
+  .directory-heading { display: grid; gap: var(--space-3); max-width: 48rem; }
+  .directory-heading h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  .directory-heading > p:last-child { color: var(--color-ink-soft); }
+  .publication-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); margin: 0; padding: 0; list-style: none; }
+  .publication-card { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr); gap: var(--space-4); min-width: 0; padding: var(--space-6); border: 1px solid var(--color-line); border-radius: var(--radius-xl); background: var(--color-surface); }
+  .brand-mark { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; overflow: hidden; border-radius: var(--radius-lg); background: var(--color-cream); color: var(--color-ink); font: var(--weight-heading) var(--text-2xl)/1 var(--font-display); }
+  .brand-mark img { width: 100%; height: 100%; object-fit: contain; }
+  .card-copy, .card-heading, .latest { display: grid; min-width: 0; }
+  .card-copy { gap: var(--space-4); }
+  .card-heading { justify-items: start; gap: var(--space-2); }
+  .card-heading h2 { font-size: var(--text-h3); line-height: var(--leading-h3); overflow-wrap: anywhere; }
+  .description { color: var(--color-ink-soft); }
+  .coverage { color: var(--color-muted); font-size: var(--text-sm); overflow-wrap: anywhere; }
+  .latest { gap: var(--space-1); padding-top: var(--space-4); border-top: 1px solid var(--color-line); }
+  .latest strong { overflow-wrap: anywhere; }
+  .latest time { color: var(--color-muted); font-size: var(--text-sm); }
+  .card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .empty-state, .legacy-card { display: grid; gap: var(--space-3); padding: var(--space-6); border: 1px solid var(--color-line); border-radius: var(--radius-xl); background: var(--color-surface); }
+  .legacy-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-6); }
+  .legacy-card > div { display: grid; gap: var(--space-2); }
+  .legacy-card h2, .empty-state h2 { font-size: var(--text-h3); }
+  @media (max-width: 48rem) {
+    .publication-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 32rem) {
+    .publication-card { grid-template-columns: 1fr; padding: var(--space-5); }
+    .legacy-card { grid-template-columns: 1fr; align-items: start; padding: var(--space-5); }
+  }
+  @media (max-width: 22.5rem) {
+    .card-actions { flex-direction: column; }
+    .card-actions .nb-button, .legacy-card .nb-button { width: 100%; justify-content: center; white-space: normal; text-align: center; }
+  }
+</style>

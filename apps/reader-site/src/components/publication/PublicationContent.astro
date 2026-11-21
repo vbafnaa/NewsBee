@@ -1,0 +1,19 @@
+---
+import PublicationHome from "./PublicationHome.astro";
+import PublicationArticlePage from "./PublicationArticlePage.astro";
+import PublicationAllStories from "./PublicationAllStories.astro";
+import PublicationSectionList from "./PublicationSectionList.astro";
+import PublicationEventsList from "./PublicationEventsList.astro";
+import type { PublicationPage } from "../../lib/publication-view";
+interface Props { page: PublicationPage }
+const { page } = Astro.props;
+const sectionId = Astro.url.searchParams.get("section");
+const storyId = Astro.url.searchParams.get("story");
+const section = page.allSections.find((candidate) => candidate.id === sectionId);
+const article = page.articles.find((candidate) => candidate.key === storyId);
+---
+{article ? <PublicationArticlePage page={page} article={article} />
+  : sectionId === "all" ? <PublicationAllStories page={page} />
+  : sectionId === "events" ? <PublicationEventsList page={page} requested={Astro.url.searchParams.get("day")} />
+  : section ? <PublicationSectionList page={page} section={section} />
+  : <PublicationHome page={page} />}

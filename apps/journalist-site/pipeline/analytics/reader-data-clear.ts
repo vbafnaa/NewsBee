@@ -3,14 +3,18 @@
  * unselected registrations; a row is deleted only when no other signup intent remains.
  */
 import type { Db, Document } from "mongodb";
+import { randomUUID } from "node:crypto";
 import { COLLECTIONS } from "../storage/mongo";
 import { clearedTotal, LEGACY_CLEAR_DATA_TYPES, parseClearDataTypes, type ClearCounts, type ClearLocation, type ClearPreview, type ClearRecord, type ClearScope } from "./clear-scope";
 import { placeMetadata } from "./usage";
 
 const ENGAGEMENT = "reader_engagement";
 const SIGNUPS = "reader_interest_signups";
-/** "view" carries the story impressions; the ranker's click-through counts both "open" and "share". */
-const ACTIONS = { impressions: "view", clicks: "open", shares: "share" } as const;
+const NEWSLETTER_SUBSCRIPTIONS = "reader_newsletter_subscriptions";
+const NEWSLETTER_MAIL = "reader_newsletter_mail";
+const NEWSLETTER_PREVIEWS = "reader_newsletter_preview_mail";
+/** Shares include story and whole-edition sharing, while ranking still uses story signals. */
+const ACTIONS = { impressions: ["view"], clicks: ["open"], shares: ["share", "edition_share"] } as const;
 const NOTHING: ClearCounts = { impressions: 0, clicks: 0, shares: 0, interest_records: 0, interest_marks: 0, subscriptions: 0, legacy_signups: 0 };
 
 type LocationScope = Pick<ClearScope, "location_id">;
@@ -27,6 +31,47 @@ const legacy = (scope: LocationScope): Document => ({
   ...scoped(scope), $or: [{ legacy_signup: true }, { subscription_signup_at: { $exists: false }, interest_signup_at: { $exists: false } }],
 });
 
+/** A mixed or implicit older signup keeps its associated delivery preferences alive. */
+const remainingSignupIntent: Document = { $or: [
+  { subscription_signup_at: { $type: "date" } }, { interest_signup_at: { $type: "date" } }, { legacy_signup: true },
+  { subscription_signup_at: { $exists: false }, interest_signup_at: { $exists: false } },
+] };
+
+/**
+ * Newsletter state mirrors the signup intent, rather than creating another registration.
+ * Revoke before purging mail so a partial failure remains safe and can be retried.
+ */
+async function clearUnusedNewsletterDelivery(db: Db, scope: LocationScope) {
+  type Subscriber = { _id: string; email: string; locationId: string };
+  const subscriptions = db.collection<Subscriber>(NEWSLETTER_SUBSCRIPTIONS);
+  const mail = db.collection<{ _id: string; subscriptionId: string }>(NEWSLETTER_MAIL);
+  const previews = db.collection<{ _id: string; key?: string; subscriptionId?: string }>(NEWSLETTER_PREVIEWS);
+  const orphaned = subscriptions.aggregate<Subscriber>([
+    { $match: scope.location_id ? { locationId: scope.location_id } : {} },
+    { $lookup: { from: SIGNUPS, let: { email: "$email", location: "$locationId" }, pipeline: [
+      { $match: { ...remainingSignupIntent, $expr: { $and: [{ $eq: ["$email", "$$email"] }, { $eq: ["$location_id", "$$location"] }] } } },
+      { $limit: 1 },
+    ], as: "remainingIntents" } },
+    { $match: { "remainingIntents.0": { $exists: false } } },
+    { $project: { _id: 1, email: 1, locationId: 1 } },
+  ]);
+  for await (const subscriber of orphaned) {
+    // Recheck after the scan in case a reader registered another intent meanwhile.
+    if (await db.collection(SIGNUPS).findOne({ ...remainingSignupIntent, email: subscriber.email, location_id: subscriber.locationId })) continue;
+    await subscriptions.updateOne({ _id: subscriber._id }, {
+      $set: { status: "unsubscribed", manageNonce: randomUUID(), dataClearPending: true }, $unset: { pending: "" },
+    });
+    await mail.updateMany({ subscriptionId: subscriber._id }, {
+      $set: { status: "cancelled" }, $unset: { envelope: "", leaseUntil: "" },
+    });
+    const keys = (await mail.find({ subscriptionId: subscriber._id }, { projection: { _id: 1 } }).toArray()).map(job => job._id);
+    // Recipient alone is insufficient: one email can subscribe to several communities.
+    await previews.deleteMany({ $or: [{ subscriptionId: subscriber._id }, { key: { $in: keys } }, { _id: { $in: keys } }] });
+    await mail.deleteMany({ subscriptionId: subscriber._id });
+    await subscriptions.deleteOne({ _id: subscriber._id, dataClearPending: true });
+  }
+}
+
 export async function clearPreview(db: Db): Promise<ClearPreview> {
   type Row = { _id: unknown; count: number; name?: string };
   const count = (collection: string, filter: Document) => db.collection(collection).aggregate<Row>([
@@ -34,7 +79,7 @@ export async function clearPreview(db: Db): Promise<ClearPreview> {
   ]).toArray();
   const all: LocationScope = { location_id: null };
   const [impressions, clicks, shares, interest_records, interest_marks, subscriptions, legacy_signups] = await Promise.all([
-    count(ENGAGEMENT, { action: ACTIONS.impressions }), count(ENGAGEMENT, { action: ACTIONS.clicks }), count(ENGAGEMENT, { action: ACTIONS.shares }),
+    count(ENGAGEMENT, { action: { $in: ACTIONS.impressions } }), count(ENGAGEMENT, { action: { $in: ACTIONS.clicks } }), count(ENGAGEMENT, { action: { $in: ACTIONS.shares } }),
     count(SIGNUPS, interestOnly(all)), count(SIGNUPS, interestMark(all)),
     count(SIGNUPS, { subscription_signup_at: { $type: "date" } }), count(SIGNUPS, legacy(all)),
   ]);
@@ -85,7 +130,7 @@ export async function clearReaderData(db: Db, scope: ClearScope, by: string): Pr
   try {
     const events = db.collection(ENGAGEMENT), signups = db.collection(SIGNUPS);
     for (const metric of ["impressions", "clicks", "shares"] as const) {
-      if (data_types.includes(metric)) deleted[metric] = (await events.deleteMany({ ...scoped(scope), action: ACTIONS[metric] })).deletedCount;
+      if (data_types.includes(metric)) deleted[metric] = (await events.deleteMany({ ...scoped(scope), action: { $in: ACTIONS[metric] } })).deletedCount;
     }
     if (data_types.includes("interest")) {
       deleted.interest_records = (await signups.deleteMany(interestOnly(scope))).deletedCount;
@@ -105,6 +150,9 @@ export async function clearReaderData(db: Db, scope: ClearScope, by: string): Pr
       deleted.legacy_signups += (await signups.updateMany({
         ...scoped(scope), legacy_signup: true, $or: [{ interest_signup_at: { $exists: true } }, { subscription_signup_at: { $exists: true } }],
       }, [{ $set: { legacy_signup: false, launch_notification: { $eq: [{ $type: "$interest_signup_at" }, "date"] } } }])).modifiedCount;
+    }
+    if (data_types.some(type => type === "interest" || type === "subscriptions" || type === "legacy_signups")) {
+      await clearUnusedNewsletterDelivery(db, scope);
     }
   } catch (error) {
     await finish("failed", error instanceof Error ? error.message : String(error));

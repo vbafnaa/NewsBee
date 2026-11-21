@@ -1,4 +1,5 @@
-import { adminRoute, jsonBody } from "@/lib/admin-api";
+import { jsonBody, newsroomScopedRoute } from "@/lib/admin-api";
+import { assertLocationInScope } from "@/pipeline/publications/newsroom-scope";
 import { getLocation } from "@/pipeline/communities/locations";
 import { MAX_BULK_REVIEW, reviewChange, saveSourceReviews } from "@/pipeline/sourcemap/store";
 
@@ -11,7 +12,8 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request, context: Context) {
   const { locationId } = await context.params;
-  return adminRoute(request, async ({ db, principal }) => {
+  return newsroomScopedRoute(request, async ({ db, principal }, scope) => {
+    assertLocationInScope(scope, locationId, "Community");
     await getLocation(db, locationId);
     const body = await jsonBody<{ source_ids?: unknown; decision?: unknown; reason_code?: unknown; reason?: unknown }>(request);
     const ids = Array.isArray(body.source_ids) ? body.source_ids.filter((id): id is string => typeof id === "string" && id.length > 0) : [];

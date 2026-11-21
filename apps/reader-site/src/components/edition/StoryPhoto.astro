@@ -1,6 +1,6 @@
 ---
 import type { ArticlePhoto } from "../../lib/edition-view";
-import { photoCredit } from "../../../../../shared/photo-presentation";
+import { imageCredit } from "../../lib/story-media";
 interface Props { photo: ArticlePhoto; lead?: boolean }
 const { photo, lead = false } = Astro.props;
 const hasDetails = Boolean(photo.image_role || photo.image_license);
@@ -15,14 +15,14 @@ const srcset = (mobile = false) => variants.filter(width => !mobile || width <= 
     loading={lead ? "eager" : "lazy"} decoding="async" referrerpolicy="no-referrer" />
   </picture>
   <figcaption>
-    <span class="photo-credit">{photo.image_role === "stock" ? "Stock Photo" : <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">{photoCredit(photo)}</a>}</span>
+    <span class="photo-credit">{photo.image_role === "stock" ? "Stock image" : <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">{imageCredit(photo)}</a>}</span>
     {hasDetails && <details>
-      <summary aria-label="Photo details and license" title="Photo details and license">ⓘ</summary>
+      <summary aria-label="Image details and license" title="Image details and license">ⓘ</summary>
       <div class="photo-details-body">
-        <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">Photo: {photo.image_credit}</a>
+        <a href={photo.image_source_url} target="_blank" rel="noopener noreferrer">Image: {photo.image_credit}</a>
         {photo.image_license_url && <> · <a href={photo.image_license_url} target="_blank" rel="noopener noreferrer">{photo.image_license}</a></>}
         {!photo.image_license_url && photo.image_license && <> · {photo.image_license}</>}
-        {photo.image_date && <> · Taken {photo.image_date}.</>}
+        {photo.image_date && <> · Date: {photo.image_date}.</>}
         <> Cropped for layout. {photo.image_role === "stock" ? "Stock image; not the event, venue or participants." : photo.image_role === "area" ? "Area context; not the permitted work or its progress." : photo.image_role === "venue" ? "Location context; not the event." : ""}</>
       </div>
     </details>}

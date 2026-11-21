@@ -1,0 +1,130 @@
+---
+import EditionLayout from "../../components/edition/EditionLayout.astro";
+import {
+  maskedEmail,
+  publicationEmailSubscriptionForConfirmationToken,
+  publicationEmailSubscriptionForToken,
+} from "../../lib/publication-email-storage";
+import { loadReaderPublication, readerDatabase } from "../../lib/reader-data";
+import { EMAIL_UNAVAILABLE } from "../../../../../shared/email-availability";
+
+export const prerender = false;
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+const token = Astro.url.searchParams.get("token") ?? "";
+const confirming = Astro.url.searchParams.get("confirm") === "1";
+let error = "";
+let subscription: Awaited<ReturnType<typeof publicationEmailSubscriptionForToken>> | null = null;
+let locations: Array<{ id: string; name: string }> = [];
+try {
+  const db = await readerDatabase();
+  subscription = confirming
+    ? await publicationEmailSubscriptionForConfirmationToken(db, token)
+    : await publicationEmailSubscriptionForToken(db, token);
+  const releaseId = confirming ? subscription.pending_confirmation?.source_release_id ?? null : null;
+  const loaded = await loadReaderPublication(subscription.publication_id, releaseId, db);
+  if (!loaded || loaded.entry.withdrawn) {
+    Astro.response.status = 409;
+    error = "This publication is not currently available.";
+  }
+  else locations = loaded.release.locations;
+} catch {
+  Astro.response.status = 400;
+  error = "This email preference link is invalid or no longer available.";
+}
+const apiRoot = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<EditionLayout title="Email preferences | Newsbee" noindex analytics={false} skipLabel="Skip to email settings">
+  <main id="main" class="nb-container">
+    <header class="manage-header">
+      <a class="brand" href={subscription ? `${apiRoot}/publications/${encodeURIComponent(subscription.publication_id)}` : apiRoot || "/"}>Newsbee</a>
+      <span class="nb-pill">Publication email</span>
+    </header>
+    <article class="manage-email">
+      <h1>{confirming ? "Confirm publication email" : "Email preferences"}</h1>
+      {error || !subscription ? <p role="alert">{error}</p> : <>
+        <p>{confirming
+          ? `Confirm publication releases from ${subscription.publication_name} for ${maskedEmail(subscription.email)}.`
+          : `Choose the locations sent to ${maskedEmail(subscription.email)} from ${subscription.publication_name}.`}</p>
+        <p id="email-unavailable" class="status-note" role="status">{EMAIL_UNAVAILABLE}</p>
+        <p>Subscription status: {subscription.status}. Updating locations does not activate delivery.</p>
+        <form data-preferences-form data-api-root={apiRoot} data-token={token} data-confirming={String(confirming)}>
+          <fieldset>
+            <legend>Covered locations</legend>
+            {locations.map((location) => <label>
+              <input
+                type="checkbox"
+                name="location_ids"
+                value={location.id}
+                checked={(confirming ? subscription.pending_confirmation?.location_ids : subscription.location_ids)?.includes(location.id)}
+                disabled={confirming}
+              />
+              <span>{location.name}</span>
+            </label>)}
+          </fieldset>
+          <button type="submit" disabled={confirming} aria-describedby={confirming ? "email-unavailable" : undefined}>{confirming ? "Confirmation unavailable" : "Save preferences"}</button>
+          <p data-status role="status"></p>
+        </form>
+      </>}
+    </article>
+  </main>
+</EditionLayout>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-preferences-form]");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = form.querySelector<HTMLElement>("[data-status]");
+    const button = form.querySelector<HTMLButtonElement>("button");
+    const locationIds = [...form.querySelectorAll<HTMLInputElement>("input[name=location_ids]:checked")]
+      .map((input) => input.value);
+    if (!status || !button) return;
+    if (!locationIds.length && form.dataset.confirming !== "true") {
+      status.textContent = "Choose at least one covered location.";
+      return;
+    }
+    button.disabled = true;
+    status.textContent = "Saving...";
+    try {
+      const response = await fetch(`${form.dataset.apiRoot}/api/email/preferences`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: form.dataset.token,
+          action: form.dataset.confirming === "true" ? "confirm" : "preferences",
+          location_ids: locationIds,
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as { detail?: string; manage_url?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Preferences could not be saved.");
+      status.textContent = result.detail ?? "Your email preferences were saved.";
+      if (result.manage_url) {
+        const link = document.createElement("a");
+        link.href = result.manage_url;
+        link.textContent = "Manage this publication subscription";
+        status.append(" ", link);
+        form.querySelector("fieldset")?.setAttribute("hidden", "");
+        button.remove();
+      }
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "Preferences could not be saved.";
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  main.nb-container { max-width: 46rem; gap: var(--space-6); }
+  .manage-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-line); }
+  .brand { color: var(--color-ink); font: var(--weight-heading) var(--text-2xl)/1 var(--font-display); text-decoration: none; }
+  .manage-email { display: grid; gap: var(--space-5); width: 100%; padding: var(--space-8); background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
+  h1 { font-size: var(--text-h2); }
+  .status-note { width: fit-content; padding: var(--space-2) var(--space-4); background: var(--color-pill-gray); border-radius: var(--radius-pill); color: var(--color-ink-soft); font-size: var(--text-sm); }
+  form, fieldset { display: grid; gap: var(--space-4); }
+  fieldset { border: 0; padding: 0; }
+  fieldset label { display: grid; grid-template-columns: auto 1fr; gap: var(--space-3); align-items: start; }
+  button { width: fit-content; padding: .7rem 1rem; font: inherit; font-weight: 600; background: var(--color-bee); border: 1px solid var(--color-bee-deep); border-radius: var(--radius-sm); }
+  [data-status]:not(:empty) { padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
+  @media (max-width: 40rem) { .manage-email { padding: var(--space-5); } }
+</style>

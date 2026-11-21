@@ -29,6 +29,7 @@ import { httpsLink } from "../connectors/common";
 import { PLAYBOOK_SERVICES, table } from "../playbook";
 import { adaptedRequest } from "./adapter";
 import { fixtureResults } from "./fixture";
+import { ExecutionBlocked } from "../core/execution-errors";
 
 export const SEARCH_QUERIES = "search_queries";
 export const SEARCH_CACHE_DAYS = 7;
@@ -38,16 +39,31 @@ export type QueryRecord = {
   results: SearchResult[]; result_count: number; cached: boolean; skipped: string | null; error: string | null; sources_added: number; created_at: number; key: string;
   /** What was sent when code added to the query: an agent search's exclusions and date range. */
   sent?: string | null;
+  /** Original successful provider fetch, never the time a cached result was reused. */
+  provider_fetched_at?: number | null;
 };
 export function searchQueries(db: Db) { return db.collection<QueryRecord>(SEARCH_QUERIES); }
 export async function ensureSearchIndexes(db: Db) {
-  await searchQueries(db).createIndexes([{ key: { run_id: 1, topic: 1 } }, { key: { key: 1, created_at: -1 } }]);
+  await searchQueries(db).createIndexes([{ key: { run_id: 1, topic: 1 } }, { key: { key: 1, created_at: -1 } }, { key: { key: 1, provider_fetched_at: -1 } }]);
 }
 
 /** Which logged results a search may reuse: any recent one, or in a test-mode run only its own. */
 function reuseScope() {
   const runId = isolatedRunId();
   return runId ? { run_id: runId } : {};
+}
+
+function reusableQuery(key: string) {
+  const at = Date.now() / 1000;
+  const age = { $gt: at - SEARCH_CACHE_DAYS * 86400, $lte: at };
+  return {
+    key, skipped: null, error: null, ...reuseScope(),
+    $or: [
+      { provider_fetched_at: age },
+      // Only a direct legacy fetch establishes origin. Legacy cache uses are unknown.
+      { provider_fetched_at: { $exists: false }, cached: false, created_at: age },
+    ],
+  };
 }
 
 function decode(body: Uint8Array) { return new TextDecoder().decode(body); }
@@ -162,10 +178,10 @@ export async function search(input: SearchInput): Promise<{ id: unknown; results
   const sent = provider === "exa" ? input.query : limitedQuery(input.query, input.limits);
   const limits = input.limits ?? {};
   const key = createHash("sha256").update(`${provider}:${sent}${provider === "exa" && (limits.exclude?.length || limits.since) ? `:${JSON.stringify(limits)}` : ""}`).digest("hex");
-  let results: SearchResult[] = [], skipped: string | null = missingKey(provider, input.settings), error: string | null = null, cached = false;
+  let results: SearchResult[] = [], skipped: string | null = missingKey(provider, input.settings), error: string | null = null, cached = false, fetchedAt: number | null = null;
   if (!skipped) {
-    const fresh = await searchQueries(input.db).findOne({ key, skipped: null, error: null, created_at: { $gte: Date.now() / 1000 - SEARCH_CACHE_DAYS * 86400 }, ...reuseScope() }, { sort: { created_at: -1 } });
-    if (fresh) { results = fresh.results; cached = true; }
+    const fresh = await searchQueries(input.db).findOne(reusableQuery(key), { sort: { created_at: -1 } });
+    if (fresh) { results = fresh.results; cached = true; fetchedAt = fresh.provider_fetched_at ?? fresh.created_at; }
     else if (provider === "fixture") results = await fixtureResults(input.db, input.query, input.topic);
     else {
       try {
@@ -175,12 +191,15 @@ export async function search(input: SearchInput): Promise<{ id: unknown; results
         const outcome = await paidCall(provider, call, (found: SearchResult[] & { cost?: number | null }) => found.cost ?? null, { units });
         skipped = outcome.refused;
         results = outcome.value ?? [];
-      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
+      } catch (cause) {
+        if (cause instanceof ExecutionBlocked) throw cause;
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
     }
   }
   const record: QueryRecord = {
     run_id: context?.runId ?? null, location_id: context?.locationId ?? null, provider, query: input.query, topic: input.topic, family: input.family, stage: input.stage, origin: input.origin ?? "template",
-    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, key, ...(sent !== input.query ? { sent } : {}),
+    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, provider_fetched_at: skipped !== null || error !== null ? null : fetchedAt ?? Date.now() / 1000, key, ...(sent !== input.query ? { sent } : {}),
   };
   const inserted = await searchQueries(input.db).insertOne(record);
   return { id: inserted.insertedId, results, skipped, error, provider };
@@ -206,10 +225,10 @@ export async function findSimilar(input: { db: Db; settings: Settings; transport
   const query = `similar to ${input.url}`;
   const limits = input.limits ?? {};
   const key = createHash("sha256").update(`${provider}:similar:${input.url}:${JSON.stringify(limits)}`).digest("hex");
-  let results: SearchResult[] = [], skipped: string | null = missingKey(provider, input.settings), error: string | null = null, cached = false;
+  let results: SearchResult[] = [], skipped: string | null = missingKey(provider, input.settings), error: string | null = null, cached = false, fetchedAt: number | null = null;
   if (!skipped) {
-    const fresh = await searchQueries(input.db).findOne({ key, skipped: null, error: null, created_at: { $gte: Date.now() / 1000 - SEARCH_CACHE_DAYS * 86400 }, ...reuseScope() }, { sort: { created_at: -1 } });
-    if (fresh) { results = fresh.results; cached = true; }
+    const fresh = await searchQueries(input.db).findOne(reusableQuery(key), { sort: { created_at: -1 } });
+    if (fresh) { results = fresh.results; cached = true; fetchedAt = fresh.provider_fetched_at ?? fresh.created_at; }
     else if (provider === "fixture") results = await fixtureResults(input.db, query, input.topic);
     else {
       try {
@@ -226,12 +245,15 @@ export async function findSimilar(input: { db: Db; settings: Settings; transport
         }, (found: SearchResult[] & { cost?: number | null }) => found.cost ?? null);
         skipped = outcome.refused;
         results = outcome.value ?? [];
-      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
+      } catch (cause) {
+        if (cause instanceof ExecutionBlocked) throw cause;
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
     }
   }
   const record: QueryRecord = {
     run_id: context?.runId ?? null, location_id: context?.locationId ?? null, provider, query, topic: input.topic, family: input.family, stage: "stage1", origin: "agent",
-    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, key,
+    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, provider_fetched_at: skipped !== null || error !== null ? null : fetchedAt ?? Date.now() / 1000, key,
   };
   const inserted = await searchQueries(input.db).insertOne(record);
   return { id: inserted.insertedId, results, skipped, error, provider };
@@ -253,11 +275,11 @@ export async function exploreSite(input: { db: Db; settings: Settings; transport
   const context = runContext();
   const provider = "tavily_explore";
   const query = `${input.url} :: ${input.instruction}`;
-  const key = createHash("sha256").update(`${provider}:${query}`).digest("hex");
-  let results: SearchResult[] = [], skipped: string | null = missingKey("tavily", input.settings), error: string | null = null, cached = false;
+  const key = createHash("sha256").update(`${provider}:${query}:${JSON.stringify(input.exclude ?? [])}`).digest("hex");
+  let results: SearchResult[] = [], skipped: string | null = missingKey("tavily", input.settings), error: string | null = null, cached = false, fetchedAt: number | null = null;
   if (!skipped) {
-    const fresh = await searchQueries(input.db).findOne({ key, skipped: null, error: null, created_at: { $gte: Date.now() / 1000 - SEARCH_CACHE_DAYS * 86400 }, ...reuseScope() }, { sort: { created_at: -1 } });
-    if (fresh) { results = fresh.results; cached = true; }
+    const fresh = await searchQueries(input.db).findOne(reusableQuery(key), { sort: { created_at: -1 } });
+    if (fresh) { results = fresh.results; cached = true; fetchedAt = fresh.provider_fetched_at ?? fresh.created_at; }
     else {
       try {
         const outcome = await paidCall("tavily", async () => {
@@ -272,12 +294,15 @@ export async function exploreSite(input: { db: Db; settings: Settings; transport
         }, undefined, { limits: "tavily_explore" });
         skipped = outcome.refused;
         results = outcome.value ?? [];
-      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
+      } catch (cause) {
+        if (cause instanceof ExecutionBlocked) throw cause;
+        error = cause instanceof Error ? cause.message : String(cause);
+      }
     }
   }
   const record: QueryRecord = {
     run_id: context?.runId ?? null, location_id: context?.locationId ?? null, provider, query, topic: input.topic, family: input.family, stage: "stage1", origin: "agent",
-    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, key,
+    results, result_count: results.length, cached, skipped, error, sources_added: 0, created_at: Date.now() / 1000, provider_fetched_at: skipped !== null || error !== null ? null : fetchedAt ?? Date.now() / 1000, key,
   };
   const inserted = await searchQueries(input.db).insertOne(record);
   return { id: inserted.insertedId, results, skipped, error, provider };

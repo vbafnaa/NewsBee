@@ -1,0 +1,81 @@
+---
+interface Props {
+  href: string;
+  title: string;
+  label?: string;
+  variant?: "quiet" | "primary";
+  class?: string;
+}
+const { href, title, label = "Share", variant = "quiet", class: className } = Astro.props;
+const url = new URL(href, Astro.url.origin).href;
+---
+<div class:list={["share-link", className]} data-share-link data-share-url={url} data-share-title={title}>
+  <button class:list={["nb-button", variant === "primary" ? "nb-button-primary" : "nb-button-quiet"]}
+    type="button" data-share-button>{label}</button>
+  <p class="share-status" data-share-status role="status" aria-live="polite" aria-atomic="true"></p>
+  <label class="share-fallback" data-share-fallback hidden>
+    Share link
+    <input type="url" readonly value={url} autocomplete="off" spellcheck="false" />
+  </label>
+  <noscript><p><a class="nb-link" href={url}>Permalink</a></p></noscript>
+</div>
+
+<script>
+  import { shareEditionLink, type EditionShareCapabilities } from "../../lib/edition-sharing";
+
+  for (const container of document.querySelectorAll<HTMLElement>("[data-share-link]")) {
+    const button = container.querySelector<HTMLButtonElement>("[data-share-button]");
+    const status = container.querySelector<HTMLElement>("[data-share-status]");
+    const fallback = container.querySelector<HTMLElement>("[data-share-fallback]");
+    const input = fallback?.querySelector<HTMLInputElement>("input");
+    if (!button || !status || !fallback || !input) continue;
+
+    button.addEventListener("click", async () => {
+      if (button.disabled || !container.dataset.shareUrl) return;
+      button.disabled = true;
+      status.textContent = "";
+      fallback.hidden = true;
+      const capabilities: EditionShareCapabilities = {};
+      let focusButton = true;
+      const showFallback = () => {
+        focusButton = false;
+        fallback.hidden = false;
+        status.textContent = "Copy the link below to share it.";
+        input.focus();
+        input.select();
+      };
+      try {
+        if (typeof navigator.share === "function") capabilities.share = navigator.share.bind(navigator);
+        try {
+          if (typeof navigator.clipboard?.writeText === "function") capabilities.copy = navigator.clipboard.writeText.bind(navigator.clipboard);
+        } catch { /* Clipboard access can itself be restricted by the browser. */ }
+        const result = await shareEditionLink({
+          title: container.dataset.shareTitle ?? "Newsbee",
+          url: container.dataset.shareUrl,
+        }, capabilities);
+        if (result === "cancelled") return;
+        if (result === "fallback") {
+          showFallback();
+          return;
+        }
+        status.textContent = result === "shared" ? "Shared." : "Link copied.";
+      } catch {
+        showFallback();
+      } finally {
+        button.disabled = false;
+        if (focusButton) button.focus({ preventScroll: true });
+      }
+    });
+  }
+</script>
+
+<style>
+  .share-link { display: grid; justify-items: start; gap: var(--space-2); min-width: 0; max-width: 100%; }
+  .nb-button:disabled { opacity: .65; cursor: wait; }
+  .share-status, .share-fallback { font-size: var(--text-sm); color: var(--color-muted); }
+  .share-status:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .share-fallback { display: grid; gap: var(--space-1); width: min(100%, 32rem); max-width: 100%; }
+  .share-fallback[hidden] { display: none; }
+  input { width: 100%; min-width: 0; padding: var(--space-2); border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-ink); font: inherit; }
+  @media print { .share-link { display: none !important; } }
+</style>

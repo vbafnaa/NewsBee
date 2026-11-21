@@ -141,6 +141,27 @@ describe("server-rendered reader editions", () => {
     });
   });
 
+  it("puts stories under the section they were filed in, with matching card labels", async () => {
+    const filed = (id: string, rank: number, headline: string, section_id: string | null) => ({ ...item(id, rank, "local_news", headline), section_id });
+    data.readerData.mockResolvedValue({ locations: [{ id: "ballard-wa", name: "Ballard, WA" }], editions: [edition("filed", 1, [
+      ...Array.from({ length: 5 }, (_, index) => filed(`front-${index}`, index, "Front page update", "news")),
+      filed("dahl", 10, "Dahl Field Restroom Renovation Schedule Update", "community"),
+      { ...filed("cuts", 11, "Proposed Fire Department Cuts Expose Stretched Emergency Response", "safety"), blurb: "The mayor's budget proposal goes to the council." },
+      filed("museum", 14, "Cascadia Art Museum celebrates Zoe Dusanne", "obituaries"),
+      filed("game", 12, "Lincoln Stuns Franklin 24-20 In Regular Season Finale", "sports"),
+      filed("bus", 13, "Light rail service changes", null),
+    ])] });
+    const page = (await loadEditionPage("ballard-wa"))!;
+    const where = (id: string) => page.sections.filter((section) => section.stories.some((story) => story.storyId === id)).map((section) => section.id);
+    expect(where("dahl")).toEqual(["community"]);
+    expect(where("cuts")).toEqual(["policy"]);
+    expect(where("museum")).toEqual(["culture"]);
+    expect(where("game")).toEqual(["sports"]);
+    expect(where("bus")).toEqual(["transit"]);
+    const label = (id: string) => page.articles.find((article) => article.key === id)?.category;
+    expect([label("dahl"), label("cuts"), label("game"), label("bus")]).toEqual(["Community", "Policy", "Sports", "Transit"]);
+  });
+
   it("keeps all expanded edition items accessible, including news with no topic and old items with no ID", async () => {
     const items = Array.from({ length: 60 }, (_, index) => ({
       ...item(`story-${index}`, index, "safety_incident", "Local update"),

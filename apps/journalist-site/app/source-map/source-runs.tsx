@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { adminApi, mapApi } from "@/lib/admin-client";
+import { adminApi, mapApi, withPublication } from "@/lib/admin-client";
+import { usePublicationScope } from "@/app/components/publication-scope";
 import type { PaidService, RunOptions } from "@/pipeline/core/run-values";
 import { isOtherReason, REASONS } from "@/pipeline/sourcemap/reasons";
 import { SECTIONS } from "@/pipeline/sourcemap/sections";
@@ -18,7 +19,7 @@ import LiveSourceRun from "./live-source-run";
 type RunItem = { run_id: string; number: number; status: string; created_at: number; completed_at: number | null; summary: string; recorded: boolean; isolated: boolean };
 type Meter = { id: string; label: string; used: number; ceiling: number | null; unit: string; note: string | null };
 type Detail = {
-  run: { id: string; number: number | null; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; error: string | null; by: string | null; recorded: boolean; isolated: boolean };
+  run: { id: string; number: number | null; location_id: string; location_name: string; status: string; created_at: number; completed_at: number | null; error: string | null; by: string | null; recorded: boolean; isolated: boolean; can_add_accepted_sources: boolean };
   settings: RunSettings; ending: { tone: string; text: string }; limits: Meter[];
   stages: Array<{ id: string; label: string; detail: string; count: number; by_tool: Array<{ tool: ToolId; count: number }> }>;
   categories: Array<{ category: string; label: string; pages: number; accepted_by_gemini: number; accepted_by_you: number; status: string; note: string | null }>;
@@ -72,7 +73,7 @@ function SettingsPanel({ settings, onChange, info, rebuild, onRebuild, isolated 
       <h2>{editable ? "Next run settings" : "Settings this run used"}</h2>
       <p>{editable ? "Free readers and the model check always run." : "Read only, from what the run recorded. Choose + New run to change them."}</p>
     </div></div>
-    {isolated ? <p className="notice">Test mode: {editable ? "this run starts" : "this run started"} from scratch. It reads every fixed reader again, reuses no searches from earlier runs and keeps its results to itself; All sources and editions are untouched. Your decisions are kept by page, so they show in every run.</p>
+    {isolated ? <p className="notice">Test mode: {editable ? "this run starts" : "this run started"} from scratch. It reads every fixed reader again, reuses no searches from earlier runs and stores discoveries separately. Your decisions are kept by page, so they show in every run.</p>
       : editable ? <p className="notice">This run writes into All sources{info?.proposed_until_approved ? ": what it finds is saved as proposed, and no edition reads it until someone accepts it" : ": a source that passes the code check and the model check goes on active, one the model check rejects is saved rejected, and one not judged waits as proposed for your review"}. Sites already on the map are left out of its searches. Decisions made in test-mode runs still stand.</p>
       : <p className="notice">Rows show the source map as it is now.</p>}
     <div className="settings-grid">
@@ -247,9 +248,10 @@ function EveryPage({ detail, canEdit, filters, setFilters, onSaved, onBulk }: { 
 
 /** A row's Decision and Reasoning, saved exactly as in All sources; for a test-mode run (`runId`), kept by page. */
 function ReviewCellsFor({ row, locationId, runId, canEdit, onSaved }: { row: PageRow; locationId: string; runId: string | null; canEdit: boolean; onSaved: (key: string, change: { status: string; review: Review }) => void }) {
+  const scope = usePublicationScope();
   const source = { _id: row.key, location_id: locationId, source_id: row.source_id!, name: short(row.url), review: row.decision ? { ...row.decision, initial_status: row.status ?? "proposed" } as Review : undefined };
   const send = runId ? async (change: Record<string, string | null>) => {
-    const result = await adminApi<{ saved: Array<{ status: string; review: Review }>; failed: Array<{ detail: string }> }>(`locations/${encodeURIComponent(locationId)}/source-runs/${encodeURIComponent(runId)}/decisions`, { method: "POST", body: JSON.stringify({ source_ids: [row.source_id], ...change }) });
+    const result = await adminApi<{ saved: Array<{ status: string; review: Review }>; failed: Array<{ detail: string }> }>(withPublication(`locations/${encodeURIComponent(locationId)}/source-runs/${encodeURIComponent(runId)}/decisions`, scope?.publicationId), { method: "POST", body: JSON.stringify({ source_ids: [row.source_id], ...change }) });
     if (!result.saved[0]) throw new Error(result.failed[0]?.detail ?? "Not saved");
     return result.saved[0];
   } : undefined;
@@ -401,6 +403,7 @@ function SearchGrid({ grid, ending }: { grid: GridDetail; ending: Detail["ending
 
 /** Two source runs side by side, by category and by page: what each found, what was accepted, and what only one of them found. */
 function CompareRuns({ base, detail, runs }: { base: string; detail: Detail; runs: RunItem[] }) {
+  const scope = usePublicationScope();
   const others = runs.filter((run) => run.run_id !== detail.run.id);
   const [otherId, setOtherId] = useState(others[0]?.run_id ?? "");
   const [other, setOther] = useState<Detail | null>(null);
@@ -408,7 +411,7 @@ function CompareRuns({ base, detail, runs }: { base: string; detail: Detail; run
   useEffect(() => {
     setOther(null);
     if (!otherId) return;
-    mapApi<Detail>(`${base}/source-runs/${encodeURIComponent(otherId)}`).then(setOther).catch((cause: unknown) => setError(message(cause)));
+    mapApi<Detail>(withPublication(`${base}/source-runs/${encodeURIComponent(otherId)}`, scope?.publicationId)).then(setOther).catch((cause: unknown) => setError(message(cause)));
   }, [base, otherId]);
   if (!others.length) return <p>No other source run to compare with yet.</p>;
   // A person's decision wins; otherwise the model check's verdict.
@@ -444,14 +447,30 @@ function CompareRuns({ base, detail, runs }: { base: string; detail: Detail; run
  * Editing (starting runs and recording decisions) happens only in a location's workspace, which passes
  * `canEdit`; the Source map page shows the same runs read-only, with a link to that workspace.
  */
-export default function SourceRuns({ locationId, runId, canEdit, locations, routeFor, editHref }: {
+type SourceRunsProps = {
   locationId: string; runId: string | null; canEdit: boolean; locations: Array<{ id: string; name: string }>;
+  /** Show the operator live job log for a running run. */
+  liveLog?: boolean;
   /** Where a location and run live; the workspace keeps its own location. */
   routeFor?: (location: string, run?: string | null) => string;
   /** Read-only: where to go to start runs and record decisions. */
   editHref?: string | null;
-}) {
+};
+export default function SourceRuns(props: SourceRunsProps) {
+  return <SelectedSourceRun key={JSON.stringify([props.locationId, props.runId])} {...props} />;
+}
+
+function SelectedSourceRun({ locationId, runId, canEdit, locations, routeFor, editHref, liveLog = true }: SourceRunsProps) {
+  // Inside a newsroom every call is scoped to it; the live job log stays with operators.
+  const scope = usePublicationScope();
+  const scoped = useCallback((value: string) => withPublication(value, scope?.publicationId), [scope?.publicationId]);
   const router = useRouter();
+  const lifetime = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
   const [list, setList] = useState<{ runs: RunItem[]; completed: number } | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [info, setInfo] = useState<Info | null>(null);
@@ -465,15 +484,25 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
   const base = `locations/${encodeURIComponent(locationId)}`;
   useEffect(() => {
     if (!locationId) return;
-    mapApi<{ runs: RunItem[]; completed: number }>(`${base}/source-runs`).then(setList).catch((cause: unknown) => setError(message(cause)));
+    const signal = lifetime.current!.signal;
+    mapApi<{ runs: RunItem[]; completed: number }>(scoped(`${base}/source-runs`), { signal })
+      .then((result) => { if (!signal.aborted) setList(result); })
+      .catch((cause: unknown) => { if (!signal.aborted) setError(message(cause)); });
   }, [base, locationId, runId]);
   useEffect(() => {
     if (!canEdit) return;
-    adminApi<Info>("run-options").then(setInfo).catch((cause: unknown) => setError(message(cause)));
+    const signal = lifetime.current!.signal;
+    adminApi<Info>(scoped("run-options"), { signal }).then((result) => { if (!signal.aborted) setInfo(result); })
+      .catch((cause: unknown) => { if (!signal.aborted) setError(message(cause)); });
   }, [canEdit]);
   const load = useCallback(async () => {
     if (!locationId || !runId) return;
-    try { setDetail(await mapApi<Detail>(`${base}/source-runs/${encodeURIComponent(runId)}`)); setError(""); } catch (cause) { setError(message(cause)); }
+    const signal = lifetime.current!.signal;
+    if (signal.aborted) return;
+    try {
+      const result = await mapApi<Detail>(scoped(`${base}/source-runs/${encodeURIComponent(runId)}`), { signal });
+      if (!signal.aborted) { setDetail(result); setError(""); }
+    } catch (cause) { if (!signal.aborted) setError(message(cause)); }
   }, [base, locationId, runId]);
   useEffect(() => {
     setDetail(null); setFilters({});
@@ -490,10 +519,13 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
     if (!info) return;
     setStarting(true); setError("");
     try {
-      const result = await adminApi<{ run_id: string; started: boolean }>(`${base}/map-run`, { method: "POST", body: JSON.stringify({ options: choicesFor(settings, info.defaults), rebuild }) });
+      const result = await adminApi<{ run_id: string; started: boolean }>(scoped(`${base}/map-run`), { method: "POST", body: JSON.stringify({ options: choicesFor(settings, info.defaults), rebuild }) });
+      if (lifetime.current?.signal.aborted) return;
       if (!result.started) setError("A run is already going. It’s open below.");
       router.push(path(locationId, result.run_id));
-    } catch (cause) { setError(message(cause)); } finally { setStarting(false); }
+    } catch (cause) {
+      if (!lifetime.current?.signal.aborted) setError(message(cause));
+    } finally { if (!lifetime.current?.signal.aborted) setStarting(false); }
   }
   const saved = useCallback((key: string, change: { status: string; review: Review }) => {
     setDetail((current) => current && { ...current, pages: current.pages.map((row) => row.key !== key ? row : { ...row, status: change.status, decision: { decision: change.review.decision, reason_code: change.review.reason_code ?? null, reason: change.review.reason },
@@ -503,7 +535,7 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
     try {
       // A test-mode run's decisions are kept by page; any other run's go on the source map.
       const path = detail?.run.isolated ? `${base}/source-runs/${encodeURIComponent(detail.run.id)}/decisions` : `${base}/source-map/reviews`;
-      const result = await adminApi<{ saved: unknown[]; failed: Array<{ source_id: string; detail: string }> }>(path, { method: "POST", body: JSON.stringify({ source_ids: ids, decision, reason_code: code, ...(isOtherReason(code) && reason.trim() ? { reason } : {}) }) });
+      const result = await adminApi<{ saved: unknown[]; failed: Array<{ source_id: string; detail: string }> }>(scoped(path), { method: "POST", body: JSON.stringify({ source_ids: ids, decision, reason_code: code, ...(isOtherReason(code) && reason.trim() ? { reason } : {}) }) });
       await load();
       return result.failed.length ? `Saved ${result.saved.length}; ${result.failed.length} not saved: ${result.failed.map((item) => item.detail).slice(0, 3).join("; ")}` : null;
     } catch (cause) { return `Not saved: ${message(cause)}`; }
@@ -516,7 +548,8 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
         <option value="">Choose a location</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}
       </select></label>}
       <label className="field">Run<select value={runId ?? "new"} disabled={!locationId} onChange={(event) => router.push(path(locationId, event.target.value === "new" ? null : event.target.value))}>
-        <option value="new">+ New run</option>
+        <option value="new">{canEdit ? "+ New run" : "Collection settings (read-only)"}</option>
+        {runId && !list?.runs.some((run) => run.run_id === runId) && <option value={runId}>Selected run · {runId}</option>}
         {(list?.runs ?? []).map((run) => <option key={run.run_id} value={run.run_id}>{runLabel(run)}</option>)}
       </select></label>
       <div className="toolbar-end">
@@ -527,8 +560,8 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
       </div>
     </section>
     {error && <p className="alert" role="alert">{error}</p>}
-    {runId && canEdit && <LiveSourceRun key={runId} runId={runId} />}
-    {!locationId ? <section className="panel"><h2>Choose a location above to start or review its collection runs</h2></section> : isNew ? <>
+    {runId && canEdit && liveLog && <LiveSourceRun key={runId} runId={runId} />}
+    {!locationId ? <section className="panel"><h2>{canEdit ? "Choose a location above to start or review its collection runs" : "Choose a location above to inspect its collection runs"}</h2></section> : isNew ? <>
       {!canEdit && <p className="notice">Read-only. Edit in the location&rsquo;s workspace.</p>}
       <SettingsPanel settings={settings} onChange={canEdit ? setSettings : undefined} info={info} rebuild={rebuild} onRebuild={setRebuild} isolated={info?.isolated ?? false} />
     </> : !detail ? <p role="status">Loading the run…</p> : <>
@@ -547,7 +580,8 @@ export default function SourceRuns({ locationId, runId, canEdit, locations, rout
       </section>
       <section className="panel" aria-label="Sources inventory">
         <h2>Sources inventory</h2>
-        <p className="chart-caption">Pages found in this source run, including rejected and unsaved pages. Review saved addresses in <a href={`/locations/${encodeURIComponent(locationId)}?tab=sources`}>All sources</a>.</p>
+        {detail.run.can_add_accepted_sources && <p className="notice">Saved pages from this partial run appear in All sources. Accept a page to activate it.</p>}
+        <p className="chart-caption">Pages found in this source run, including rejected and unsaved pages. Review saved addresses in <a href={scope ? `${scope.base}/source-map?${new URLSearchParams({ location: locationId })}` : `/locations/${encodeURIComponent(locationId)}?tab=sources`}>All sources</a>.</p>
         <EveryPage key={detail.run.id} detail={detail} canEdit={canEdit} filters={filters} setFilters={setFilters} onSaved={saved} onBulk={bulk} />
       </section>
     </>}

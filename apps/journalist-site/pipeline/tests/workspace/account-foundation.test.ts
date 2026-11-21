@@ -5,19 +5,19 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { disableAccount, principalById, principalForEmail, type Principal } from "../../accounts/identity";
 import { credentialProfile, effectiveCredentialProfile, emptyPersonalConfig, revokeCredentialProfile, safeProfile, saveCredentialProfile } from "../../accounts/credentials";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), headers: vi.fn(), database: vi.fn(), list: vi.fn(), enable: vi.fn(), disable: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), cookies: vi.fn(), headers: vi.fn(), database: vi.fn(), list: vi.fn(), enable: vi.fn(), disable: vi.fn() }));
 vi.mock("@/auth", () => ({ auth: mocks.auth, getMongoDatabase: mocks.database, listAdminAccounts: mocks.list, enableAdminAccount: mocks.enable, disableAdminAccount: mocks.disable }));
-vi.mock("next/headers", () => ({ headers: mocks.headers }));
+vi.mock("next/headers", () => ({ cookies: mocks.cookies, headers: mocks.headers }));
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); } }));
-import { adminGuard, currentPrincipal, localAdminAllowed, ownerGuard } from "../../../lib/admin-session";
+import { adminGuard, currentPrincipal, localAdminAllowed, ownerGuard, signedInGuard } from "../../../lib/admin-session";
 import { GET, PUT, DELETE } from "../../../app/api/account/settings/route";
 import { GET as users, POST as updateUser } from "../../../app/api/journalist-admins/route";
 import { GET as clearPreview, POST as clearData } from "../../../app/api/admin/usage-map/clear/route";
-import type { NextRequest } from "next/server";
 import ApprovalsPage from "../../../app/approvals/page";
 
 let server: MongoMemoryServer, client: MongoClient, db: Db;
 const owner: Principal = { id: "owner-fixture", email: "owner@example.test", role: "owner" };
+const admin: Principal = { id: "admin-fixture", email: "admin@example.test", role: "admin" };
 const editor: Principal = { id: "editor-fixture", email: "editor@example.test", role: "editor" };
 const testKey = "fixture-value-not-a-live-secret";
 const provider = { name: "fixture", kind: "openai" as const, model: "fixture-model", apiKey: testKey, baseUrl: "https://provider.example.test/v1" };
@@ -39,7 +39,7 @@ beforeAll(async () => {
   client = await MongoClient.connect(server.getUri()); db = client.db("account-foundation");
 });
 afterAll(async () => { await client?.close(); await server?.stop(); });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 beforeEach(async () => {
   await db.dropDatabase(); vi.clearAllMocks();
   vi.stubEnv("NEWSBEE_OWNER_EMAIL", owner.email);
@@ -47,17 +47,57 @@ beforeEach(async () => {
   vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", JSON.stringify({ fixture: randomBytes(32).toString("base64") }));
   vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "fixture");
   mocks.auth.mockResolvedValue(null); mocks.database.mockResolvedValue(db);
+  mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.headers.mockResolvedValue(new Headers({ host: "workspace.example.test" }));
 });
 async function signedIn(principal = editor) {
-  await db.collection("journalist_admins").insertOne({ email: principal.email, principalId: principal.id, enabled: true });
-  mocks.auth.mockResolvedValue({ user: { email: principal.email } });
+  await db.collection("journalist_admins").insertOne({ email: principal.email, principalId: principal.id, enabled: true, role: principal.role });
+  mocks.auth.mockResolvedValue({ user: { email: principal.email, newsbeePrincipalId: principal.id } });
 }
 const request = (method: string, input?: unknown, origin = "https://workspace.example.test") => new Request("https://workspace.example.test/api/account/settings", {
   method, headers: { origin, "content-type": "application/json" }, ...(input === undefined ? {} : { body: JSON.stringify(input) }),
 });
 
 describe("approved stable identities", () => {
+  it("denies email-only legacy sessions and never reattaches a deleted session to a replacement email", async () => {
+    await signedIn();
+    mocks.auth.mockResolvedValueOnce({ user: { email: editor.email } });
+    expect(await currentPrincipal()).toBeNull();
+    expect(await currentPrincipal()).toMatchObject({ id: editor.id });
+    await db.collection("journalist_admins").deleteOne({ principalId: editor.id });
+    await db.collection("journalist_admins").insertOne({
+      email: editor.email, principalId: "replacement-editor", enabled: true, role: "admin",
+    });
+    expect(await currentPrincipal()).toBeNull();
+    expect((await signedInGuard(request("GET")))?.status).toBe(401);
+  });
+  it("reloads roles and capabilities by stable ID rather than trusting session email or roles", async () => {
+    await signedIn();
+    mocks.auth.mockResolvedValue({ user: {
+      email: owner.email, newsbeePrincipalId: editor.id, role: "owner",
+    } });
+    expect(await currentPrincipal()).toMatchObject(editor);
+    await db.collection("journalist_admins").updateOne({ principalId: editor.id }, {
+      $set: { role: "admin", capabilities: ["publication:inspect"] },
+    });
+    expect(await currentPrincipal()).toMatchObject({ id: editor.id, role: "admin", capabilities: ["publication:inspect"] });
+    await db.collection("journalist_admins").updateOne({ principalId: editor.id }, { $set: { role: "editor" } });
+    expect(await currentPrincipal()).toEqual(editor);
+    expect((await adminGuard(request("GET")))?.status).toBe(403);
+  });
+  it("rejects replacement principals when deletion happens between stable-ID and email resolution", async () => {
+    await signedIn();
+    const accounts = db.collection("journalist_admins");
+    const findOne = accounts.findOne.bind(accounts);
+    vi.spyOn(db, "collection").mockReturnValue(accounts);
+    vi.spyOn(accounts, "findOne").mockImplementationOnce(async (...args) => {
+      const account = await findOne(...args);
+      await accounts.deleteOne({ principalId: editor.id });
+      await accounts.insertOne({ email: editor.email, principalId: "replacement-editor", enabled: true });
+      return account;
+    });
+    expect(await principalById(db, editor.id)).toBeNull();
+  });
   it("never promotes the first or oldest user and bootstraps only the configured owner", async () => {
     await db.collection("journalist_admins").insertOne({ email: editor.email, enabled: true, createdAt: new Date(0) });
     expect(await principalForEmail(db, editor.email)).toMatchObject({ role: "editor" });
@@ -65,6 +105,14 @@ describe("approved stable identities", () => {
     expect(await principalForEmail(db, "unknown@example.test")).toBeNull();
     vi.stubEnv("NEWSBEE_OWNER_EMAIL", "");
     expect(await principalForEmail(db, owner.email)).toMatchObject({ role: "editor" });
+  });
+  it("respects stored admins and resolves legacy missing roles to editor", async () => {
+    await db.collection("journalist_admins").insertMany([
+      { email: admin.email, principalId: admin.id, enabled: true, role: "admin" },
+      { email: editor.email, principalId: editor.id, enabled: true },
+    ]);
+    expect(await principalForEmail(db, admin.email)).toMatchObject({ id: admin.id, role: "admin" });
+    expect(await principalForEmail(db, editor.email)).toMatchObject({ id: editor.id, role: "editor" });
   });
   it("persists one stable string id across concurrent access and rechecks disablement", async () => {
     await db.collection("journalist_admins").insertOne({ email: editor.email, enabled: true });
@@ -74,6 +122,20 @@ describe("approved stable identities", () => {
     await db.collection("journalist_admins").updateOne({ email: editor.email }, { $set: { enabled: false } });
     expect(await principalById(db, id)).toBeNull();
     expect(await principalForEmail(db, editor.email)).toBeNull();
+  });
+  it("does not let legacy editor capability rows bypass global admin policy", async () => {
+    await db.collection("journalist_admins").insertOne({
+      email: editor.email,
+      principalId: editor.id,
+      enabled: true,
+      role: "editor",
+      capabilities: ["publication:inspect"],
+    });
+    expect(await principalForEmail(db, editor.email)).toEqual({
+      id: editor.id,
+      email: editor.email,
+      role: "editor",
+    });
   });
   it("allows local identity only with explicit local mode, localhost, and nondeployed nonproduction runtime", async () => {
     mocks.headers.mockResolvedValue(new Headers({ host: "127.0.0.1:3000" }));
@@ -93,12 +155,20 @@ describe("approved stable identities", () => {
   });
   it("rechecks membership and owner role for guards, with same-origin writes", async () => {
     await signedIn();
+    expect(await signedInGuard(request("GET"))).toBeNull();
+    expect(await signedInGuard(request("PATCH"))).toBeNull();
+    expect((await signedInGuard(request("PATCH", undefined, "https://evil.example.test")))?.status).toBe(403);
+    expect((await adminGuard(request("GET")))?.status).toBe(403);
+    expect((await ownerGuard(request("DELETE")))?.status).toBe(403);
+    await db.collection("journalist_admins").insertOne({ email: admin.email, principalId: admin.id, enabled: true, role: "admin" });
+    mocks.auth.mockResolvedValue({ user: { email: admin.email, newsbeePrincipalId: admin.id } });
     expect(await adminGuard(request("GET"))).toBeNull();
     expect((await ownerGuard(request("DELETE")))?.status).toBe(403);
-    mocks.auth.mockResolvedValue({ user: { email: owner.email } });
+    const ownerPrincipal = await principalForEmail(db, owner.email);
+    mocks.auth.mockResolvedValue({ user: { email: owner.email, newsbeePrincipalId: ownerPrincipal!.id } });
     expect(await ownerGuard(request("DELETE"))).toBeNull();
     expect((await ownerGuard(request("DELETE", undefined, "https://evil.example.test")))?.status).toBe(403);
-    mocks.auth.mockResolvedValue({ user: { email: editor.email } });
+    mocks.auth.mockResolvedValue({ user: { email: editor.email, newsbeePrincipalId: editor.id } });
     await db.collection("journalist_admins").updateOne({ email: editor.email }, { $set: { enabled: false } });
     expect(await currentPrincipal()).toBeNull();
   });
@@ -196,7 +266,7 @@ describe("encrypted versioned personal profiles", () => {
   });
   it("restricts environment profile reads and writes to the exact configured owner", async () => {
     expect(await credentialProfile(db, editor)).toBeNull();
-    await expect(saveCredentialProfile(db, editor, { source: "environment" })).rejects.toThrow("Editors must save personal API keys");
+    await expect(saveCredentialProfile(db, editor, { source: "environment" })).rejects.toThrow("Other operators must save personal API keys");
     await expect(saveCredentialProfile(db, { ...editor, role: "owner" }, { source: "environment" })).rejects.toThrow("Only the owner configured");
     expect(await db.collection("journalist_credentials").countDocuments()).toBe(0);
     await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
@@ -231,6 +301,20 @@ describe("encrypted versioned personal profiles", () => {
     expect(await runs.findOne({ _id: "mapping" })).toMatchObject({ status: "mapping", execution_blocked: { reason: expect.stringContaining("changed") } });
     expect((await credentialProfile(db, editor))?.version).toBe(3);
   });
+  it("does not pause platform-funded runs for profile changes but still pauses them when the account is disabled", async () => {
+    await db.collection("journalist_admins").insertOne({ email: editor.email, principalId: editor.id, enabled: true, role: "editor" });
+    await db.collection<FixtureRun>("pipeline_runs").insertOne({
+      _id: "platform", status: "collecting", execution: { sponsorId: editor.id, source: "platform" } as never,
+    });
+    await saveCredentialProfile(db, editor, personal);
+    expect(await db.collection<FixtureRun>("pipeline_runs").findOne({ _id: "platform" })).not.toHaveProperty("execution_blocked");
+    await revokeCredentialProfile(db, editor);
+    expect(await db.collection<FixtureRun>("pipeline_runs").findOne({ _id: "platform" })).not.toHaveProperty("execution_blocked");
+    await disableAccount(db, editor.email);
+    expect(await db.collection<FixtureRun>("pipeline_runs").findOne({ _id: "platform" })).toMatchObject({
+      execution_blocked: { reason: expect.stringContaining("disabled") },
+    });
+  });
   it("does not block runs when configuration validation fails", async () => {
     const runs = await seedSponsoredRuns();
     await expect(saveCredentialProfile(db, editor, { source: "personal", config: { modelDailyCalls: -1 } })).rejects.toThrow();
@@ -239,25 +323,72 @@ describe("encrypted versioned personal profiles", () => {
 });
 
 describe("settings API", () => {
-  it("does not expose deployment defaults or report inherited capabilities to editors", async () => {
+  it("keeps editors outside environment and API settings", async () => {
     await signedIn();
     vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
     vi.stubEnv("NEWSBEE_SERPAPI_API_KEY", testKey);
-    expect(await (await GET(request("GET"))).json()).toMatchObject({ profile: null });
-    await saveCredentialProfile(db, editor, { source: "personal", config: {} });
-    const data = await (await GET(request("GET"))).json();
-    expect(data).not.toHaveProperty("environmentDefaults");
-    expect(data.profile.capabilities).toMatchObject({ model: false, paidSearch: false, readyProviders: [], integrations: [] });
-    expect(JSON.stringify(data)).not.toContain(testKey);
-    vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "openai");
-    vi.stubEnv("NEWSBEE_LLM_OPENAI_MODEL", "");
-    expect((await GET(request("GET"))).status).toBe(200);
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      expect((await ({ GET, PUT, DELETE }[method as "GET" | "PUT" | "DELETE"])(request(method, method === "PUT" ? personal : undefined))).status).toBe(403);
+    }
+    expect(await db.collection("journalist_credentials").countDocuments()).toBe(0);
   });
-  it("sends old approval-inbox links to the workspace while editors keep their settings access", async () => {
+  it("lets an admin manage only their own personal write-only profile", async () => {
+    await signedIn(admin);
+    vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "fixture");
+    vi.stubEnv("NEWSBEE_LLM_FIXTURE_MODEL", "owner-deployment-model");
+    vi.stubEnv("NEWSBEE_LLM_FIXTURE_API_KEY", testKey);
+    await saveCredentialProfile(db, owner, personal);
+    const saved = await PUT(request("PUT", {
+      source: "personal",
+      config: {
+        modelProviders: [provider],
+        integrations: { desktopVideoKey: testKey, falKey: testKey },
+      },
+    }));
+    expect(saved.status).toBe(200);
+    const metadata = await saved.json();
+    expect(metadata).toMatchObject({
+      principal: admin,
+      profile: {
+        userId: admin.id,
+        source: "personal",
+        revoked: false,
+        config: {
+          modelProviders: [{ apiKey: "configured" }],
+          integrations: { desktopVideoKey: "configured", falKey: "configured" },
+        },
+      },
+    });
+    expect(metadata).not.toHaveProperty("environmentDefaults");
+    expect(metadata).not.toHaveProperty("ownerConfigured");
+    expect(JSON.stringify(metadata)).not.toContain(owner.email);
+    expect(JSON.stringify(metadata)).not.toContain(testKey);
+    expect(await credentialProfile(db, owner)).toMatchObject({ version: 1, source: "personal" });
+    expect(await credentialProfile(db, admin)).toMatchObject({ version: 1, source: "personal" });
+
+    const read = await GET(request("GET"));
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual(metadata);
+    expect((await PUT(request("PUT", { source: "environment" }))).status).toBe(400);
+    expect((await DELETE(request("DELETE"))).status).toBe(200);
+    expect(await credentialProfile(db, admin)).toMatchObject({ version: 2, revoked: true, source: "personal" });
+    expect(await credentialProfile(db, owner)).toMatchObject({ version: 1, revoked: false });
+  });
+  it("does not serialize a legacy environment profile stored under an admin principal", async () => {
+    await saveCredentialProfile(db, { ...owner, id: admin.id }, { source: "environment" });
+    await signedIn(admin);
+    const response = await GET(request("GET"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      principal: admin,
+      profile: null,
+    });
+  });
+  it("sends old approval-inbox links to the workspace while editors remain outside legacy settings", async () => {
     expect(() => ApprovalsPage()).toThrow("redirect:/locations");
     await signedIn();
-    expect((await GET(request("GET"))).status).toBe(200);
-    mocks.auth.mockResolvedValue({ user: { email: owner.email } });
+    expect((await GET(request("GET"))).status).toBe(403);
+    mocks.auth.mockResolvedValue({ user: { email: owner.email, newsbeePrincipalId: owner.id } });
     expect(() => ApprovalsPage()).toThrow("redirect:/locations");
   });
   it("persists an explicit owner deployment selection across PUT/GET without an encryption keyring and returns only real masked readiness", async () => {
@@ -315,71 +446,35 @@ describe("settings API", () => {
     });
     expect((await DELETE(request("DELETE"))).status).toBe(200);
   });
-  it.each([owner.email, ""])("rejects direct editor environment submissions with owner designation %j", async (designation) => {
+  it.each([owner.email, ""])("rejects every editor credential request with owner designation %j", async (designation) => {
     await signedIn();
     vi.stubEnv("NEWSBEE_OWNER_EMAIL", designation);
-    vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", "{}"); vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "");
-    vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini"); vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
-    const read = await GET(request("GET"));
-    expect(await read.json()).toMatchObject({ principal: { role: "editor" }, ownerConfigured: Boolean(designation), profile: null });
+    expect((await GET(request("GET"))).status).toBe(403);
     const saved = await PUT(request("PUT", { source: "environment" }));
-    expect(saved.status).toBe(400);
-    const data = await saved.json();
-    expect(data.detail).toContain("Editors must save personal API keys");
+    expect(saved.status).toBe(403);
     expect(await db.collection("journalist_credentials").countDocuments()).toBe(0);
-    expect(data).not.toHaveProperty("environmentDefaults");
-    expect(JSON.stringify(data)).not.toContain(testKey);
   });
-  it("reports persisted editor environment profiles as revoked without exposing server readiness and allows personal replacement", async () => {
-    await signedIn();
-    vi.stubEnv("NEWSBEE_GEMINI_API_KEY", testKey);
-    vi.stubEnv("NEWSBEE_BRIGHTDATA_ZONE", "fixture-private-zone");
-    await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
-    const data = await (await GET(request("GET"))).json();
-    expect(data.profile).toMatchObject({ source: "environment", version: 4, revoked: true, capabilities: { model: false, paidSearch: false, readyProviders: [], integrations: [] } });
-    expect(data).not.toHaveProperty("environmentDefaults");
-    expect(JSON.stringify(data)).not.toContain(testKey);
-    expect(JSON.stringify(data)).not.toContain("fixture-private-zone");
-    const denied = await PUT(request("PUT", { source: "environment" }));
-    expect(denied.status).toBe(400);
-    expect(await credentialProfile(db, editor)).toMatchObject({ version: 4, revoked: true });
-    const replaced = await PUT(request("PUT", personal));
-    expect(replaced.status).toBe(200);
-    expect((await replaced.json()).profile).toMatchObject({ source: "personal", version: 5, revoked: false, capabilities: { model: true } });
-  });
-  it("allows revoking a historical editor environment selection without decryption", async () => {
+  it("does not expose or mutate persisted legacy editor profiles through the owner settings API", async () => {
     await signedIn();
     await db.collection("journalist_credentials").insertOne({ _id: editor.id, source: "environment", version: 4, revoked: false } as never);
-    vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", "{}"); vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "");
-    expect((await DELETE(request("DELETE"))).status).toBe(200);
-    expect(await effectiveCredentialProfile(db, editor)).toMatchObject({ revoked: true, version: 5 });
+    expect((await GET(request("GET"))).status).toBe(403);
+    expect((await PUT(request("PUT", personal))).status).toBe(403);
+    expect((await DELETE(request("DELETE"))).status).toBe(403);
+    expect(await db.collection("journalist_credentials").findOne({ _id: editor.id })).toMatchObject({ version: 4, revoked: false });
   });
-  it("permits unconfigured browsing and prevents cross-account/cross-origin access", async () => {
+  it("requires the configured owner and same-origin writes", async () => {
     expect((await GET(request("GET"))).status).toBe(401);
-    await signedIn();
-    expect((await (await GET(request("GET"))).json()).profile).toBeNull();
-    expect((await PUT(request("PUT", { source: "environment" }, "https://evil.example.test"))).status).toBe(403);
+    await signedIn(owner);
+    expect((await GET(request("GET"))).status).toBe(200);
     expect((await PUT(request("PUT", personal, "https://evil.example.test"))).status).toBe(403);
-    const response = await PUT(request("PUT", { ...personal, userId: owner.id }));
-    expect(response.status).toBe(200);
-    expect(JSON.stringify(await response.json())).not.toContain(testKey);
-    expect(await credentialProfile(db, owner)).toBeNull();
-    expect((await DELETE(request("DELETE"))).status).toBe(200);
-    expect(await credentialProfile(db, editor)).toMatchObject({ revoked: true, version: 2 });
   });
-  it("keeps Users owner-only, normalizes editors and protects the configured owner", async () => {
-    await signedIn();
-    expect((await users(request("GET"))).status).toBe(403);
-    expect((await updateUser(request("POST", { email: "new@example.test" }) as NextRequest)).status).toBe(403);
-    mocks.auth.mockResolvedValue({ user: { email: owner.email } });
-    mocks.enable.mockResolvedValue({ email: "new@example.test", enabled: true });
-    expect((await updateUser(request("POST", { email: " NEW@EXAMPLE.TEST " }) as NextRequest)).status).toBe(201);
-    expect(mocks.enable).toHaveBeenCalledWith("new@example.test");
-    expect((await updateUser(request("POST", { email: owner.email, enabled: false }) as NextRequest)).status).toBe(403);
-    expect(mocks.disable).not.toHaveBeenCalled();
-    mocks.disable.mockResolvedValue({ email: editor.email, enabled: false });
-    expect((await updateUser(request("POST", { email: editor.email, enabled: false }) as NextRequest)).status).toBe(201);
-    expect(mocks.disable).toHaveBeenCalledWith(editor.email);
+  it("redirects legacy account reads and refuses unaudited legacy writes", async () => {
+    const read = await users(request("GET"));
+    expect(read.status).toBe(308);
+    expect(read.headers.get("location")).toBe("https://workspace.example.test/api/admin/access");
+    const write = await updateUser(request("POST", { email: "new@example.test" }));
+    expect(write.status).toBe(410);
+    expect(await write.json()).toMatchObject({ detail: expect.stringContaining("revision checks") });
   });
   it("denies reader-data preview and deletion to editors before pipeline access", async () => {
     await signedIn();

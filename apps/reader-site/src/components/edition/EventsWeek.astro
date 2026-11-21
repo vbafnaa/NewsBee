@@ -31,6 +31,7 @@ const ALSO_SHOWN = 2;
             <div class="featured">
               <StoryMedia photo={featured.photo} illustration={featured.illustration} />
               <span class="time">{featured.time}</span>
+              {featured.locationLabel && <span class="nb-label">{featured.locationLabel}</span>}
               {featured.href
                 ? <a class="featured-title nb-card-link" href={featured.href} data-story-id={featured.storyId ?? undefined}><span class="nb-title">{featured.title}</span></a>
                 : <span class="featured-title">{featured.title}</span>}
@@ -45,6 +46,7 @@ const ALSO_SHOWN = 2;
                 <li class="event">
                   <StoryMedia photo={event.photo} illustration={event.illustration} />
                   <span class="time">{event.time}</span>
+                  {event.locationLabel && <span class="nb-label">{event.locationLabel}</span>}
                   {event.href
                     ? <a class="title nb-card-link" href={event.href} data-story-id={event.storyId ?? undefined}><span class="nb-title">{event.title}</span></a>
                     : <span class="title">{event.title}</span>}

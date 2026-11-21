@@ -3,6 +3,81 @@
 Next.js admin console plus the TypeScript port of the Stage 1 pipeline (`pipeline/`). It
 runs locally with stand-ins, or on Vercel with MongoDB Atlas, Google Drive and Gemini.
 
+## Guide the Bee Home: review before publishing
+
+Every newly published edition requires a **Guide the Bee Home** review in the location's
+**Publish** tab. Open the compact **Guide the Bee Home** dropdown to preview/edit the word and
+clue, use **New word** or **Update**, then **Approve**. Optional winner selection stays
+inside a nested disclosure. Approval covers the word, clue and selected shout-outs.
+Saving or regenerating invalidates approval; concurrent editor changes require a reload.
+The publisher also enforces this gate server-side and freezes the puzzle before making
+the edition live. Previously published editions without a game remain readable; they
+are not silently assigned a live puzzle.
+
+The previous edition must be finalized before its opted-in winners can be selected.
+Use **Review previous results** for an early handover, or wait for its seven-day
+window. Closing is irreversible. Choose up to three eligible winners and approve them
+with the next edition; no nickname is automatically published as a shout-out.
+Withdrawal is rechecked when shout-outs are displayed, even after publication.
+
+Both apps must share a **MongoDB replica set** (Atlas is supported). Transactions fence
+guesses/consent against editorial closing, and deterministic attempt IDs enforce one
+ranked attempt per browser/location/edition/version. `bee_games` holds private puzzle
+definitions and editorial approval; `bee_attempts` holds server-scored attempts;
+`bee_request_limits` provides per-save-identity write limits without IP tracking.
+Attempts expire after 90 days and limiter buckets after one day through TTL indexes.
+The normal local stack now starts a single-node replica set.
+
+For a completely isolated demo, install each app's existing dependencies and run
+`npm run bee:local` in `apps/journalist-site` (Node 24). This starts only:
+
+- Reader: `http://127.0.0.1:4328/reader?location=ballard-wa&edition=bee-ballard`
+- Editor: `http://127.0.0.1:3008/locations/ballard-wa?tab=published`
+- Local replica set: `127.0.0.1:27038`, database `newsbee_bee_fixture`.
+
+The demo ignores inherited database/Drive configuration, persists only under
+`.local/save-the-bee`, seeds reviewed previous/current editions plus an editable next
+edition, and runs no pipeline ticks, model calls, scraping, or remote database access.
+Restarting preserves games and historical Garden Demo fixtures; it does not reset
+attempts. The Ballard fixtures demonstrate generated location-related words, a reviewed
+previous winner and an editable next edition. Publishing that next edition archives
+the current game. Reader edition-file caches may take
+up to 60 seconds to reflect a publication.
+
+Suggestions are deterministic and grounded in the saved neighborhood name, its state,
+or lighter local topics actually present in edition stories; no external generation
+or invented landmarks. Published puzzles remain frozen.
+
+The reader is a small typing bubble titled **Guide the Bee Home**, with the subtitle
+"Guess the word, one letter at a time." and the local clue behind a compact **Hint**
+disclosure (collapsed by default, no score penalty), without an alphabet
+keyboard, practice mode or instruction panels. A brief reviewed winner shout-out sits immediately below it.
+Only after finishing can readers enter a free-text nickname (2-24 characters), opt into
+name/score sharing, and separately allow a reviewed shout-out. Server validation rejects
+markup, controls, links/contact addresses and basic abusive terms; all names render as
+text. Clearing cookies or changing browsers/devices bypasses the browser rule; there is
+no claim of verified one-human entry. Operational rules and closing windows remain
+server-enforced without cluttering the game UI.
+
+Focused checks: `npm test -- pipeline/tests/editions/save-the-bee.test.ts pipeline/tests/orchestration/publish-edition.test.ts --maxWorkers=1 --fileParallelism=false`.
+
+## Secondary newsroom work
+
+Newsroom Settings opens with the profile. Writing preferences and the two fixed,
+labeled sponsor slots have separate disclosures and saves; closing them retains
+pending edits. Failed saves remain visible above the forms. Email intro is not
+offered while email is unavailable; existing stored preferences are preserved.
+
+Delivery and Settings first mount when visited, then remain hidden and inert on
+other tasks without discarding changes. Source feedback loads on first opening
+its own disclosure. Acknowledged feedback means a source change is still pending,
+not that the source was approved or changed; recorded review notes are displayed.
+Operators can attach an optional review note when acknowledging feedback.
+Inspection and expired support keep forms read-only without clearing pending input.
+
+After publication, video is optional. Historical email results remain available
+read-only behind a disclosure and load only when opened; no email action is enabled.
+
 ## Run locally
 
 Photo sourcing now offers **Agentic**, **Compare** (shadow), and **Current** modes in the
@@ -13,26 +88,32 @@ model** service to be ticked; local Ollama requires an installed vision model an
 `NEWSBEE_LLM_<PROVIDER>_VISION=true` only when the selected model supports image inputs.
 Without capable/permitted vision, agentic photos remain absent and the story continues.
 Setup, quality rules and limits: [Agentic photo editor](../../Docs/image-pipeline-agentic.md).
-### Accounts and encrypted API settings
+### Accounts, managed providers and encrypted legacy API settings
 
 Set server-only `NEWSBEE_OWNER_EMAIL` to the verified Google account that owns this
 workspace. The owner is bootstrapped by that exact normalized email, never by
-account age or insertion order. **Users** (`/administrators`) lets only the owner
-add, reenable or disable editors; the owner cannot be disabled. Enabled membership
-is rechecked on every authenticated request and execution check. Location removal
-and reader-data clearing are owner-only. Internal maps retain their separate
-password gate and read-only access.
+account age or insertion order. **Access policies** (`/admin/access`; legacy
+`/administrators` redirects there) groups the immutable owner, team admins and paid
+editors. Only the owner can promote or demote admins. Owners and admins can add,
+enable, disable and assign editors to publications by stable principal ID. Disabling
+an editor immediately revokes sign-in and effective publication access while preserving
+membership for restoration on re-enable. Every mutation uses an account revision,
+returns HTTP 409 when stale, and appends a hashed audit event in the same Mongo
+transaction. Location removal, import/restore, credential controls and data clearing
+remain owner-only.
 
-**Environment & API settings** (`/account`, in Operations) has a field for every service a run can use, by what
-it does: model providers, in the order runs try them, each with an optional light model that the
-model check and the agent use (any provider, not only Gemini);
-Dorking (SerpApi, SearchApi, and Bright Data's API key, SERP zone and Web Unlocker zone); Search
-(Exa, Tavily); Opening pages (ScrapingBee, Jina; Bright Data uses the fields above); and Home
-sales (ATTOM); Video production (fal.ai). TypeSafe and OpenRouter stay parked under Jev.
-Editors must supply their own keys for each service they use. Their profiles never inherit
-server keys or fallback providers, and editors cannot select server environment credentials.
-Only the exact configured owner uses server defaults automatically and may save
-personal overrides that fall back to server defaults.
+New manual source-map and edition runs use model/search providers configured in the
+deployment environment. The initiating journalist remains the run actor and sponsor for
+authorization, audit and usage attribution, but no personal credential profile is read or
+required. Selected run budgets and the existing provider hard-limit policy still gate every
+call. Missing deployment configuration blocks the relevant run action with an operator-facing
+reason; provider secrets remain server-only.
+
+**Environment & API settings** (`/account`, in Operations) remains for historical runs
+already bound to personal/environment sponsorship and compatible one-off actions, including
+fal.ai and Desktop Video generation. It is not the readiness path for a new manual Newsroom
+run. `USE_ENV_VAR_FOR_KEYS` likewise applies only to legacy environment-sponsored compatibility;
+new platform-funded runs do not depend on it.
 Personal API keys are write-only and stored in `journalist_credentials`,
 encrypted with AES-256-GCM. Provision server-only
 `NEWSBEE_CREDENTIAL_KEYS` as a JSON object mapping key IDs to base64-encoded random
@@ -57,22 +138,21 @@ DELETE explicitly revokes the whole profile. Replacements and revocations
 atomically increment the profile version, invalidating unfinished runs bound to
 the previous version. Validation is structural only and never calls providers.
 
-Browsing and configuration work without API keys. For personal profiles, omitted or blank fields
-preserve saved keys; explicit null clears the key and disables that service for editors.
-Only their personal model providers run, in saved order. For the owner, personal keys
+Browsing and new manual runs work without journalist API keys. Editors and admins cannot open
+the legacy credential surface. For the owner, omitted or blank fields preserve saved keys and
+explicit null clears a key. Personal keys
 override matching deployment values, with remaining deployment providers available as fallback.
 No database, OAuth, or other infrastructure variables are editable here. Only the exact configured
-owner may explicitly save `source:"environment"` to use the configured server API keys;
-editor submissions are rejected with HTTP 400. GET exposes masked server readiness only
-to the configured owner. Existing editor environment profiles are treated as revoked without
-changing their stored version; save personal keys and explicitly reconnect unfinished runs.
-The exact configured `NEWSBEE_OWNER_EMAIL` account also automatically uses environment credentials with no stored profile:
+owner may explicitly save `source:"environment"` to use the configured server API keys.
+GET exposes masked server readiness only to the configured owner. Existing historical editor
+profiles remain stored for compatibility but cannot be read or changed through the portal.
+The exact configured `NEWSBEE_OWNER_EMAIL` account automatically uses environment credentials with no stored profile:
 effective `source:"environment"`, `version:0`, `automatic:true`, without writing a credential row.
 A revoked profile blocks execution until replaced. The local sign-in bypass requires explicit `NEWSBEE_MODE=local`,
 localhost, no `VERCEL`, and a nonproduction runtime.
 
-Changing the effective credential source is an unsaved form change: click **Save
-personal profile** or **Save server environment selection** and wait for confirmation.
+Click **Save personal profile** only when maintaining a legacy binding or compatible one-off
+action. The owner can also click **Save server environment selection**.
 Saving an explicit deployment selection is optional for an automatic owner;
 it creates version 1 and pauses any unfinished version-0 work until explicit
 reconnection. Revoking automatic defaults also creates a version-1 tombstone:
@@ -80,26 +160,29 @@ the lack of personal keys never resurrects deployment access. Later replacements
 increment the stored version normally. Reloading resolves the effective source.
 Selecting deployment defaults does not provision models, keys or budgets.
 The effective capability summary reflects the selected source without returning secrets or
-probing providers. Editors are not shown server credential placeholders or
-server readiness. Missing required model, search or enabled integration keys block the relevant
-action with settings guidance. Actions do not require keys for providers they do not use.
+probing providers. Editors are not shown server credential placeholders. Missing managed model, search or enabled
+integration keys block the relevant new-run action with deployment guidance. Actions do not
+require keys for providers they do not use.
 The credential source selector is available only to the exact `NEWSBEE_OWNER_EMAIL` account;
-other journalists must save personal keys. No keys are required for login, browsing or settings reads.
+other journalists may retain personal profiles for legacy compatibility. No keys are required
+for login, browsing, settings reads or new manual Newsroom runs.
 
 New edition/map buttons check their respective selected options. **Restart run**
-checks that historical run's saved options and kind, creates a new own-sponsored
-run, and does not reuse an old Admin approval. Historical unbound runs never gain
+checks that historical run's saved options and kind, creates a new platform-funded
+run attributed to the person restarting it, and does not reuse an old Admin approval.
+Historical unbound runs never gain
 paid retry/resume rights from a new profile; unfinished legacy work still requires
 explicit owner claim or cancellation. Paused and editor-waiting work still holds
-the global slot. The execution notice reports profile, sponsor, approval and slot
+the global slot. The execution notice reports funding source, initiating principal and slot
 blockers rather than silently enabling spend. Disabled pipeline actions expose
 their own model/search/budget, plan, sponsor or slot reason on hover and keyboard
 focus, including readiness loading/errors. Edition, map and historical-restart
 requirements are not conflated.
 
 For isolated UI checks, `node scripts/account-ui-fixture.mjs --deployment-defaults`
-seeds fake deployment model/search configuration, signed owner/editor sessions and
-an in-memory database. Omit the flag to check missing deployment configuration.
+seeds fake deployment model/search configuration, an immutable owner, a team admin,
+two editors with different publication assignments and an in-memory replica set.
+Omit the flag to check missing deployment configuration.
 External fetches are blocked and pipeline start/reconnect/spend endpoints are mocked;
 never use real deployment secrets or this fixture as evidence of real paid execution.
 Use `FIXTURE_APP_PORT` and `FIXTURE_PREVIEW_PORT` to choose unused ports (defaults:
@@ -112,23 +195,39 @@ model (an API key in `apps/journalist-site/.env.local`, or a running Ollama with
 `qwen3:4b` pulled), then `npm run local` from this directory after `npm ci` here and in
 `../reader-site`.
 
+`npm run newsroom:local` starts the contained publication/release mock and prints separate
+owner Newsroom, assigned-editor Newsroom, Newsbee Admin, Admin Usage, release-video and Reader
+URLs. The release fixture includes a completed Desktop Drive handoff and an unavailable legacy
+job without making provider calls. Its defaults are owner `3012`, assigned editor `3014`, Reader
+`4332` and MongoDB `27042`; override collisions with `NEWSBEE_NEWSROOM_EDITOR_PORT`,
+`NEWSBEE_NEWSROOM_ASSIGNED_EDITOR_PORT`, `NEWSBEE_NEWSROOM_READER_PORT` and
+`NEWSBEE_NEWSROOM_MONGO_PORT`.
+
 `npm run local` (`scripts/local-stack.mjs`) starts a local MongoDB on port 27027 (data in
 `.local/stage2/mongo`), this site on http://127.0.0.1:3000, the reader site on
 http://127.0.0.1:4321/reader, and a pipeline tick every 5 s as a recovery aid. Drive is a
 local folder (`.local/stage2/drive`), Google sign-in is skipped on localhost, and
 `.env.local` here is read by both the console and the pipeline. Set `MONGODB_URI` to use
 your own database instead, or `NEWSBEE_LOCAL_TICK_SECONDS` to change the tick.
+The committed fixture seeds the immutable owner, one team admin, two editors with separate
+publication assignments, both Reader publications, and enough campaign leads to review
+filters, pagination, seven-day counts, and all-matching CSV export.
 
-On **Overview** (`/locations`), search for a town, select a suggestion and click **Add
-location**. Its workspace has a tab for each production step. **Publishing channels** configure
-Reader and/or video destinations and do not contain duplicate workflow controls. In **Collect sources**,
+In **Newsbee Admin** (`/admin`), work the prioritized location-readiness queue first: privacy-safe reader
+request totals for locations not yet onboarded, preparation/source-coverage gaps, held
+quality items, and existing source/provider alerts. Search for a town, select a suggestion
+and click **Add location**. Onboarding starts the additive `preparing` state. An editor can
+mark an onboarded location `ready` when at least one current usable source-map link is
+active or pinned. Geography, library associations, category gaps and completed-map timestamps
+are diagnostics, not readiness locks; blocked/ready transitions retain
+the editor, time and reason on the location. A request never makes a location ready, and
+the readiness state does not publish an edition. Its operator workspace has a tab for each production step. **Newsbee Newsroom** (`/newsroom`) is a separate paid journalist product for assigned publications; it does not expose internal maps, system/storage controls, data clearing, users, or provider keys. In **Collect sources**,
 click **Start source run**, then accept or reject the pages it found; **Sources** is the separate
 inventory of saved sources and their review decisions. In **Collect stories**, choose the mode,
 then **Collect stories** (**Start collection** in manual mode). Each step shows only the options for
 its own kind of run, laid out rather than folded away, with paid-service budgets open. There is
-one kind of run: no test, training or final purpose. Each run card says who started it and
-whether it uses their own keys or the deployment defaults; call details live in the run
-inspector.
+one kind of run: no test, training or final purpose. Each run card says who started it and whether it uses Newsbee-managed providers or a
+legacy credential binding; call details live in the run inspector.
 The run collects and writes the edition with no further clicks, then stops as **Ready to
 publish**: it frees the newsroom slot but puts nothing on the reader. In **Publish**, anyone signed
 in reviews it and clicks **Publish**. With
@@ -147,8 +246,9 @@ items; source summary counters alone do not enable authoring.
 
 ### Console pages
 
-- **Overview** (`/locations`, home): a searchable directory of location workspaces.
-  `/dashboard` redirects here.
+- **Newsbee Admin** (`/admin`, home): the prioritized readiness/quality queue, current
+  runs, and a searchable directory of location workspaces.
+  `/locations` routes owners/admins here and editors to `/newsroom`; `/dashboard` follows that compatibility route.
 - **Locations** (from `/locations`, then a location), with the production steps
   edited in one place:
   - **Overview**: where each step stands (sources, when the map was last refreshed and how many
@@ -183,8 +283,23 @@ items; source summary counters alone do not enable authoring.
   image and permission confirmation with the text before approval. Pending/rejected images
   remain private; the authenticated photo endpoint serves the editor preview. Approval
   publishes the story and photo together.
-- **Publishing channels** (`/publishing`): configure Reader-site/edition-feed and/or video
-  destinations, select the communities covered by each, and manage each optional URL. The
+- **Newsbee Newsroom** (`/newsroom`, with publication workspaces at `/newsroom/<publication-id>`):
+  lists the signed-in journalist's publications and presents the selected Option A weekly flow:
+  **Review**, **Add reporting**, **Preview**, and **Publish**. Each workspace shows this week's status
+  and coverage, generates the combined draft, keeps story evidence beside editable presentation,
+  previews web and email, approves and publishes the exact immutable revision, and opens release video creation.
+  Publication coverage, Reader/video destinations, source feedback, audience stories, and versioned settings
+  stay scoped to the publication. Old `/publishing` and `/publishing/<id>` URLs redirect here.
+  An operator manages publication creation from Newsbee Admin. A publication
+  owner can also start one guided seven-day draft across up to eight selected Ready communities.
+  The guided flow uses managed providers, shows plain-language progress, and produces one unpublished
+  publication snapshot. Its editorial workspace edits the combined headline, introduction, sections,
+  story order/body/byline and location tags while keeping generated sources, evidence and review flags
+  immutable beside the editable presentation. Editors can add original stories with required source
+  metadata, attach publication-owned rights-cleared images, and keep interview notes in separate private
+  storage. Autosave patches one subdocument at a time with revision checks and visible saved, saving,
+  conflict and retry states. **Ready for approval** changes only draft state; it never writes reader
+  files, distributes an edition or sends email. The
   Sources, Collect sources, Collect stories, and Publish steps stay in each location workspace. A channel with a
   video destination also includes video creation for its selected locations.
 - **Source map** (`/locations/<location>/source-map`): the read-only source network for that
@@ -198,8 +313,8 @@ items; source summary counters alone do not enable authoring.
   what strict rules would have stopped, and a live run updates as it goes. **Compare editions**
   (formerly Compare runs) puts two edition runs side by side: what each collected, kept and printed. Two source collection runs are compared in **Collect sources → Compare runs**: pages found and accepted by category, and the accepted pages only one run found. Old `/source-map?mode=edition` and
   `?view=compare` links redirect here.
-- **Source map** (`/source-map`), with two tabs, read-only for everyone. A signed-in journalist
-  sees it inside the workspace, with links to edit in **Sources** or **Collect sources**; anyone with only
+- **Source map** (`/source-map`), with two tabs, read-only for everyone. A signed-in Newsbee operator
+  sees it inside Newsbee Admin, with links to edit in **Sources** or **Collect sources**; anyone with only
   the internal password gets the map layout.
   - **Collect sources** (`?tab=runs`, and in the location's **Collect sources** tab, where it can be edited) is for
     testing Pipeline 1. Pick a location, then **+ New run** or a past source map run. A new run shows **Next run settings** by stage: Access (Respect site
@@ -354,12 +469,12 @@ items; source summary counters alone do not enable authoring.
   no shared provider to check, and that isn't counted as a failure. `/model-usage`, `/alerts` and
   `/discovery` redirect to where their content now is.
 
-Both internal maps open for a signed-in journalist with no password. Without an account, they
+Both internal maps open for a signed-in Newsbee operator with no password. Without an account, they
 need the shared `NEWSBEE_INTERNAL_PASSWORD`; the password cookie is checked first, so a password
 read never looks up a sign-in. Their `/api/maps/*` endpoints accept only reads;
 `/api/admin/*` retains separate administrator authentication for
 workspace data and all source edits, item overrides and pipeline actions.
-The password is never sent to client bundles. With no password set, only signed-in journalists
+The password is never sent to client bundles. With no password set, only signed-in operators
 (including the localhost admin) can open the maps. Unlock lasts eight hours; changing the password revokes existing tokens.
 Cookies are HttpOnly and SameSite=Strict, and Secure in production. Unlock/lock require
 same-origin requests; persistent throttling allows ten unlock attempts per 15-minute
@@ -367,29 +482,28 @@ window. See [deployment](../../Docs/deployment.md) for bucket scope, database
 permissions and the usage-history limits. Public editions retain source links only, with
 no map or editorial ranking details.
 
-### Sponsored execution and the newsroom slot
+### Managed execution and the newsroom slot
 
-Approved users may browse without keys. **Environment & API settings** shows structural
-capability status; it does not send provider probes. Run controls explain missing
-model, paid-search and enabled optional-integration credentials. Database, Google
-sign-in, artifact storage, Drive and publishing remain centrally managed.
-Editors must use personal credentials, including for one-off source discovery and worker model calls.
-Editor environment profiles and existing environment-bound runs are blocked; the owner
-continues to use deployment API credentials automatically unless another profile is saved.
-Optional paid services still require a configured key and an enabled run budget when selected.
+Approved users may start new manual map/edition runs without keys. Their readiness and worker
+runtimes resolve the same deployment-managed model/search configuration, while database,
+Google sign-in, artifact storage, Drive and publishing remain centrally managed. Optional paid
+services still require a configured deployment key and an enabled run budget when selected.
+Personal profiles continue to govern legacy runs and one-off personal actions only.
 
-Each map/edition run persists stable sponsor and initiating principal IDs, credential
-source/version and immutable plan hash. Queue credentials authorize transport,
-not spending. Workers claim a job before resolving its sponsor's providers; writing,
-ranking, extraction, discovery and agent runtimes share that identity. Every outgoing
-transport call rechecks enabled membership, current credentials and the active run.
+Each map/edition run persists stable sponsor and initiating principal IDs, execution
+source/version and immutable plan hash. New bindings use `source:"platform"` and version `0`;
+older `personal` and `environment` bindings retain their existing semantics. Queue credentials
+authorize transport, not spending. Workers claim a job before resolving the binding's provider
+policy; writing, ranking, extraction, discovery and agent runtimes share that identity. Every outgoing
+transport call rechecks enabled membership, current provider policy and the active run.
 Already-sent requests cannot be recalled. Replacing/revoking credentials or disabling
-an account pauses unfinished sponsored work; reenabling access alone never reconnects it.
-The person who started the run must explicitly **Reconnect this run**. Other editors can view
+an account pauses unfinished legacy sponsored work; credential changes do not pause platform
+runs, while account disablement still does. Reenabling access alone never reconnects a paused run.
+The person who started a legacy run must explicitly **Reconnect this run**. Other editors can view
 shared results and do ordinary editorial work, but cannot retry, resume, rewrite, recollect or
-reassemble using its keys. A restart is a fresh run on the keys of whoever restarts it.
+reassemble it. A restart is a fresh platform-funded run attributed to whoever restarts it.
 
-Mongo enforces **one unfinished map OR edition run across the whole newsroom**.
+Mongo enforces **one unrelated unfinished map OR edition run across the whole newsroom**.
 The `one_unfinished_newsroom_run` unique partial index on `pipeline_runs.admission`
 reserves `"newsroom"` while mapping, collecting, authoring, finishing, publishing or
 waiting for an editor. Pending jobs and credential pauses retain the slot. Mapped,
@@ -398,25 +512,67 @@ New-run/batch/restart conflicts fail visibly, not as a second queued location. B
 starts are disabled. Reassembly of a failed run reacquires the same indexed slot
 before modifying its draft. The UI links to the blocking location and its controls.
 
-### One kind of run, on your own keys
+A guided publication generation first acquires the shared admission lease, then creates one
+`publication_generations` parent and ordinary edition-run children marked
+`admission:"publication"`. Only active children with that same parent may coexist; a standalone run
+or another parent is still blocked. Existing worker slots bound child concurrency. Parent and
+idempotency indexes prevent duplicate starts, and a parent lease serializes completion. When every
+child is built, `publication_drafts` stores an additive snapshot and references back to child
+entries and collected evidence rather than copying evidence packets. Source-map, publication,
+preference and playbook versions are pinned. A repeated request returns the same parent/draft, and
+new generations create new drafts instead of replacing prior snapshots. Scheduler
+maintenance and publication-workspace reads repair a persisted `starting` parent by idempotently
+ensuring each child and its initial job before advancing it. Publication children stay hidden from
+legacy run/edition/inbox lists, cannot be edited or published separately, and must remain built and
+unpublished for the parent to combine them. A sibling failure waits for any child already crossing
+the finishing commit boundary rather than cancelling it mid-commit. The generated `stories`
+subdocument is provenance and is never edited by the workspace. Revisioned `presentation` fields
+hold editorial changes. `publication_images` stores publication-owned image metadata and grants;
+`publication_interview_notes` is loaded only through its private route and is not accepted by
+preview, release or default generation projections. Note writes bind to the current draft revision
+inside a transaction, and removing original reporting deletes its private notes while soft-removing
+its active images in the same commit. Photo and source URLs reject cloud-signing and credential query
+parameters rather than persisting expiring private links.
+
+**New edition** also offers **Start writing**. The guarded publication drafts POST creates a
+private seven-day `editing` draft in the same collection, with `origin:"manual"` and no
+`generation_id`, parent, run, funding record or provider dispatch. Legacy generated drafts retain
+their generation IDs; the string-only unique generation index permits multiple manual drafts
+without weakening generated-draft uniqueness. A deterministic actor/publication/request identity
+and payload fingerprint make retries durable; changed payloads conflict. Draft creation and its
+audit commit atomically after current write, enabled-publication and coverage checks. Preference,
+profile and source-map versions are captured without requiring managed allowance.
+
+`POST /api/admin/publications/{publicationId}/drafts` accepts
+`{locationIds:string[],window:[startDate,endDate],idempotencyKey:string}` with a same-origin
+JSON request. The retry key is in the body, not an idempotency header. It returns
+`{draft,created}` with 201 on creation or 200 on an identical retry; changed same-key details
+return 409.
+
+Editions and the legacy Reporting fragment reveal the same complete, selected-draft editor.
+Pending reporting/image/note forms stay mounted if support expires, while mutation controls lock.
+Manual reporting uses the existing sources, rights, saved-revision preview, explicit approval and
+explicit publication contracts; an empty or unsafe edition cannot become ready or approved.
+Managed allowance preflight is a separate read: its failure or exhaustion blocks generation, not
+manual writing. Journalists are not offered unsupported personal-key recovery setup.
+View live and release/archive links use the same validated Reader base as private previews.
+
+### One kind of run, funded by the managed workspace
 
 Every map and edition run is the same kind of run. There is no test, training or final purpose,
-no owner-funded backup and no approval inbox. Whoever starts a run pays for it:
+no owner-funded backup and no approval inbox. New manual runs use deployment-managed providers;
+this is an operational funding policy, not customer billing or a commercial quota contract.
+The run still records who initiated it, and only that principal may trigger more provider-backed
+work on it.
 
-- **The owner** (the exact `NEWSBEE_OWNER_EMAIL` account) uses the deployment's default keys
-  automatically, or can choose a personal profile that overrides them.
-- **An editor** must save their own model, search or service keys in Environment & API settings
-  for the actions they use. Missing personal keys block those actions, regardless of deployment
-  keys. Journalists cannot use another journalist's saved keys.
-
-If a run's provider fails, the run stops with the reason; it never falls back to anyone else's
-keys. Provider safety refusals do not trigger another model. Per-attempt
+If a run's provider fails, the configured managed fallback chain behaves as before; it never
+falls back to a journalist credential. Provider safety refusals do not trigger another model. Per-attempt
 `journalist_funding_audit` records the provider, model, sponsor and credential version, run and
-outcome; run details display this audit. No prompts, keys, raw provider errors or
+outcome, with `funding:"platform"` for new managed runs. No prompts, keys, raw provider errors or
 credential-bearing URLs belong in logs.
 
 Runs started before this change may still carry a purpose and an approval id. They keep running
-on the keys of the person who started them; the approval no longer adds anyone else's keys. The
+under their saved personal/environment binding; the approval no longer adds anyone else's keys. The
 `NEWSBEE_ADMIN_LLM_*` settings are no longer read and can be removed from each environment.
 
 ### Rollout and recovery (preprod before production)
@@ -434,16 +590,24 @@ Existing approved emails retain access as editors unless they exactly match
 `NEWSBEE_OWNER_EMAIL`; stable principal IDs are assigned idempotently. There is no
 first-user/oldest-account owner inference. Bootstrap that exact owner, whose absent
 profile automatically resolves deployment defaults; personal overrides are optional.
-Then use **Users** to add editors. Effective credentials recheck enabled membership
-and exact owner designation for readiness, bindings, claimed jobs, every provider
-call, approvals and one-off discovery. Losing the designation removes access to
-server credentials, including explicit environment selections. Editors never inherit deployment
-API values, including profiles saved before new personal-key fields were added.
+Then use **Access policies** to promote team admins and invite or assign editors. Editor
+username/password registration is invitation-link only: links are random, stored as hashes,
+expire after 72 hours and are consumed once. Google OAuth remains available to every enabled
+approved account. Credential sessions still resolve the account from MongoDB on every request,
+so disabling, role changes, deletion and publication membership changes take effect immediately.
+Owners may permanently delete admins or editors; admins may delete editors only. The configured
+owner cannot be deleted. Deletion rejects publication owners instead of silently transferring
+ownership, removes active memberships and identity-owned credentials/upload state, blocks
+sponsored runs and active video jobs, and retains immutable audit history.
+Managed bindings recheck enabled membership, deployment
+provider policy, claimed jobs and every provider call. Legacy credentials still recheck exact
+owner designation and profile version. Losing the designation removes access to legacy server
+credential selections. Editors never inherit deployment values through a legacy personal profile.
 Existing editor environment-bound runs are blocked before further provider calls, even if a
 personal profile has since been saved. Save personal keys, then explicitly reconnect those runs.
 Keep old encryption key IDs available until all profiles have been reencrypted through
 replacement; removing an unreadable key intentionally blocks spending, not funding
-from deployment credentials.
+from new platform bindings.
 
 Unbound legacy unfinished runs are paused, never assigned funding from trigger text.
 The owner may explicitly claim the remaining run with their configured profile or
@@ -460,7 +624,8 @@ understand these funding/admission guarantees and must not resume new-format job
 
 After `npm ci` in journalist-site and reader-site, run
 `node scripts/account-ui-fixture.mjs` from journalist-site and open
-`http://127.0.0.1:3010/fixture/session?as=owner` (also `editor` or `other`).
+`http://127.0.0.1:3010/fixture/session?as=owner&next=/admin/access` (also `admin`,
+`editor-a` or `editor-b`; use `next=/admin` or `next=/newsroom` as appropriate).
 This starts the real Next UI with a fresh isolated Mongo and signed fixture sessions.
 It does not add a login bypass to deployed routes. Users and encrypted settings are real; the localhost proxy mocks pipeline starts,
 paid run actions and reconnects, writing UI state but **never jobs**. External fetch
@@ -531,14 +696,32 @@ branches, websites, supported government platforms and community feeds are visib
 not a reason to reject a valid place. Location cards and the **Settings** tab report `ready`,
 `partial` or `no_local_sources`. These statuses describe configuration availability, not
 a guarantee of fresh content; run inspection still reports actual connector outcomes.
-Validated manual links are included when evaluating readiness.
+Current usable source-map links, including validated manual links, are sufficient evidence
+for an explicit Ready transition. Approximate geography, missing library branches/sources and
+incomplete category coverage do not block it. Paused, rejected, link-only or access-ineligible
+sources do not count, and explicit operator blocks remain in effect.
 
 Use a provider polygon when present. Standard Photon results often contain only a center
 or extent; an extent is explicitly an **approximate bounding box**, and a point-only
 result uses an **approximate 2 km radius**, never a claimed neighborhood boundary.
-IMLS library outlet coordinates select candidate branches within that area. Approximate
-selection can include nearby branches; review the selected branch names before publication.
+IMLS library outlet coordinates select onboarding candidates within that area. Approximate
+selection can include nearby branches and is not actual boundary evidence; neither is a
+location-readiness prerequisite.
 Outlets without coordinates are not silently selected from the whole parent city.
+
+Operators optionally repair evidence in the location's **Settings → Location evidence and diagnostics** panel:
+provide actual Polygon/MultiPolygon geometry, its HTTPS provenance and a reason, then select
+real directory outlets inside that boundary (including systems absent from the old profile).
+Saving uses the current evidence revision and records actor, provenance and before/after
+evidence fingerprints atomically. Stale writes conflict; source settings and re-onboarding
+preserve repaired evidence and history. Directory selection does not invent a website or
+approve a source. These diagnostics do not gate readiness; missing usable source-map links
+and explicit preparation blocks still do. There is no force-Ready.
+
+The publication-scoped `coverage-requests` endpoint accepts an allowed `location_id`, or
+`null` only for an empty allowed boundary. Retries reuse one durable publication/location
+request. Requests join the existing operations readiness queue, expose current preparation
+status and never change coverage permissions, source policy or reader marketing consent.
 
 | Connector | Community behavior |
 | --- | --- |
@@ -678,6 +861,18 @@ Binary artifact contents are Base64-encoded in the archive. Local-drive extras a
 preserved when exporting from a local stack. The archive is limited to 250 MB and
 imports validate its format and content before replacing any data.
 
+The browser shows database/artifact progress while the server works. Exports use a
+streamed response; imports upload the unchanged file in 1 MB chunks rather than one
+large request, so Vercel's 4.5 MB buffered payload limit does not truncate backups.
+Temporary uploads are scoped to the uploading journalist, expire after one hour, and
+are removed after a successful import. The internal `_newsbee_backup_uploads` and
+`_newsbee_backup_chunks` collections are excluded from exports and preserved during
+replacement. Drive transfers use at most six concurrent requests and individual
+Drive/OAuth requests time out after 30 seconds. A transfer reports an error before
+the route's five-minute execution limit rather than leaving the page busy indefinitely.
+Keep the page open until completion. A failed/interrupted import is not transactional:
+if replacement has started, restore a known-good backup before using the destination.
+
 Import replaces the destination's non-system collections and files in its configured
 Newsbee artifact roots. Back up the destination first; replacement is destructive and
 cannot be rolled back. Any signed-in, approved journalist can use the page and API;
@@ -692,9 +887,9 @@ they can contain unpublished editorial content and personal data.
 
 ### Reader publishing
 
-Every journalist can create and manage multiple **Publishing channels** (`/publishing`), with a
-dedicated workspace at `/publishing/<channel-id>`. New channels support both Reader-site/edition
-feed and video publishing without choosing destinations during creation. In the channel workspace,
+Newsbee operators create publications in **Newsbee Admin → Publications**. Assigned journalists
+open them in **Newsbee Newsroom** at `/newsroom/<publication-id>`. Publications support Reader-site/edition
+feed and video publishing. In the publication workspace,
 journalists can set an optional URL for each available destination without selecting destination checkboxes.
 Communities are selected through a searchable list. The channel workspace lists stories from each
 selected location's latest published edition. Journalists publish each story individually to the
@@ -705,7 +900,7 @@ video generation, visibility, playlist selection, and upload. YouTube upload set
 per location in video story management. Earlier automatically delivered editions remain in existing
 channel feeds as history.
 
-Channels are scoped to the signed-in journalist and stored in the `output_channels` collection;
+Publications are scoped to their owner and members and stored in the `output_channels` collection;
 per-story channel publications are recorded in `output_channel_editions`. A Reader-site channel's
 feed-folder ID is shown in its settings for configuring the destination reader.
 
@@ -815,10 +1010,9 @@ Every generation attempt is recorded (35-day retention), including failures and 
 **System → Model usage** shows calls, reported input/output tokens, estimated cost and coverage by
 actual provider/model, location, pipeline role and UTC day. Plain and structured generations
 retain provider token metadata; output includes separately reported reasoning tokens (such as Gemini's thoughts).
-Each run uses the models of the person who started it, so **Model usage** also shows usage
-**by person** (whose keys paid, with the models each used) and **by run** (the latest 50 runs,
-each with the models that served it, who started it and whether it ran on their own keys or the
-deployment defaults). **System → Pipeline** shows a Models by run panel for the last 7 days' runs.
+**Model usage** also shows usage **by initiating person** and **by run** (the latest 50 runs,
+each with the models that served it, who started it and whether it used managed, personal or
+legacy deployment execution). **System → Pipeline** shows a Models by run panel for the last 7 days' runs.
 Pipeline jobs attach location/run context safely across concurrent workers. Manual discovery
 attaches location context. Older calls without context remain **Unassigned / historical**.
 No prompts or generated text are stored in usage accounting.
@@ -872,9 +1066,42 @@ One open run per location, of two kinds that share the job queue and never start
 - A **map run** (**Refresh source map**) only writes the source map: `discover` jobs, `agent_round` jobs when the source map method is agentic, then `finish_map`, which saves each meeting and library source's working address. It stops at `mapped`.
 - An **edition run** (**Collect stories**) only reads the map. A saved address that fails is marked `needs_remap` for the next map run, with no searching and no link-picking model calls. A location with no sources is refused with "Build the source map first".
 
-Each bounded step is a durable job in MongoDB `pipeline_jobs`, sized for one Vercel function call. The run inspector tracks five edition phases separately: collect source items, filter/merge/assemble, enrich/rank candidates, extract details/write stories, and build the edition front page/email. The individual planning, source, section-ranking, story-writing and finish jobs retain their status, attempts, timestamps, errors and logs; the edition funnel links each stage to item-level decisions and reasons. The worker still has three control phases (`collecting`, `authoring`, `finishing`), recorded in `stage_transitions`; under **autopilot** they follow on automatically, while **manual** mode pauses at the authoring and finish checkpoints for an editor click. Cloud admin triggers publish wake-ups to Vercel Queues when its consumer has run recently; the private `/api/pipeline/queue` consumer executes one job per delivery, then starts a worker for each free slot with work ready (`pipeline/orchestration/dispatch.ts`). If no queue consumer has run recently, a new stage or Resume instead starts the signed `/api/pipeline/advance` HTTP recovery chain. This lets queued work progress even when messages are published but the queue trigger is not delivering; check Vercel's queue consumer configuration and the run's kick/follow-up errors if recovery is blocked by Deployment Protection. Delayed retries still need the queue (or another Resume). No cron or `CRON_SECRET` is needed for portal-started stages. Locally, admin triggers use `/api/pipeline/advance` with short-lived tokens signed with `AUTH_SECRET`, and `npm run local` supplies that secret automatically. Configure it yourself when using `npm run dev` directly.
+Each bounded step is a durable job in MongoDB `pipeline_jobs`, sized for one Vercel function call. The run inspector tracks five edition phases separately: collect source items, filter/merge/assemble, enrich/rank candidates, extract details/write stories, and build the edition front page/email. The individual planning, source, section-ranking, story-writing and finish jobs retain their status, attempts, timestamps, errors and logs; the edition funnel links each stage to item-level decisions and reasons. The worker still has three control phases (`collecting`, `authoring`, `finishing`), recorded in `stage_transitions`; under **autopilot** they follow on automatically, while **manual** mode pauses at the authoring and finish checkpoints for an editor click.
+
+Cloud admin triggers, including deliberate **Resume**, always publish wake-ups to Vercel Queues, even on a cold or idle deployment. The private `/api/pipeline/queue` consumer executes one job per independent delivery, then queues workers for free slots with work ready (`pipeline/orchestration/dispatch.ts`); delayed deliveries cover retries and interrupted workers. Cloud workers never continue through recursive same-origin HTTP calls, which trip Vercel loop protection. The signed `/api/pipeline/advance` endpoint remains a bounded, explicit one-job recovery entrypoint, but its cloud continuation also requires the queue. It returns 503 with `executed` and a recorded follow-up error if that handoff fails; any completed job stays completed. Queue consumer retries can retry the handoff without resetting job claims, checkpoints or paid-operation receipts. A rejected delayed send releases its wake reservation so redelivery can retry it.
+
+Publishing a wake-up confirms acceptance, not consumer execution. If jobs stay queued, inspect the scheduler's last consumer delivery and kick/follow-up errors, and verify that the existing `journalist-pipeline-jobs` trigger in root `vercel.json` is available and delivering in the intended deployment. Resume requests another delivery; it cannot bypass an unavailable consumer. Do not repeatedly resume accounting-uncertain paid work or reset receipts. No new provider, cron or `CRON_SECRET` is needed for portal-started stages. Locally, admin triggers retain signed `/api/pipeline/advance` HTTP handoffs, and the local poller handles delayed work. `npm run local` supplies `AUTH_SECRET` automatically; configure it yourself when using `npm run dev` directly.
 
 Jobs run in **worker slots**, `NEWSBEE_COLLECT_CONCURRENCY` at once (default 3 in the cloud, 6 locally). Sources and discovery methods overlap; agent jobs, planning and authoring go one at a time within a run. Editions come before map runs, then the oldest run first, and spare slots go to the next run. A run waiting for an editor holds no slot.
+
+**Execution deadlines and recovery receipts.** Job inference inherits an absolute 285-second
+deadline (inside the queue's 300-second limit); agent work also inherits its shorter 200-second
+deadline. Model transports, compatibility retries, fallback, and quota waits recompute remaining
+time with 15 seconds reserved for settlement. A pre-dispatch deadline yields the same durable job,
+without consuming a normal failed attempt; a quota wait that cannot fit defers to its next slot
+without reserving ever-later pacing slots. Transport failure after dispatch is accounting-uncertain,
+not permission to issue another paid call.
+
+Section rating requests, editor reranking, agent planning/triage, and mapping checks keep private
+`model_operation_receipts`. Their keys include run/operation scope, content, policy/schema and
+configured provider/model, never credentials. Completed results are reused only within that
+scope; raw prompts are not stored. Completed partial rating replies are recorded before validation
+and any missing-rating retry. Section completion is saved only after its bounded item updates
+succeed. Agent searches and opened proposals checkpoint individually, with serialized,
+ordered writes and no change to within-run worker admission.
+
+A `started` receipt without a completed result is deliberately **not retried automatically**.
+Provider-completed/result-unrecorded work cannot guarantee exactly-once billing: preserve its
+receipt, usage, provider and job evidence for operator reconciliation. Do not clear the receipt
+or reset accounting to bypass the block. The receipt collection participates in ordinary
+backup and location cleanup, not automatic TTL deletion. These receipts cover the listed
+operations, not every story-writing/image/search-side-effect crash window.
+
+Agent job results expose a fixed-size `checkpoint` measurement (JSON state bytes, maximum bytes,
+save count, serialization/load latency and the last completed write latency). Job logs count
+`model_operation_replayed` events using operation hashes, never prompts or source bodies.
+These are diagnostic measurements, not evidence of a current memory bottleneck or a BSON-size
+SLA. Full diagnostic normalization and a worst-configured-budget baseline remain measurement-gated.
 
 Each source stops starting new requests after 60 s and keeps what it has (`partial`). Collection moves on to writing after `NEWSBEE_COLLECT_BUDGET_MINUTES` (default 8, from when its first source starts), marking sources it didn't reach as `not_reached`. Job logs stay in MongoDB for 14 days, with one file per stage saved to the artifact store.
 
@@ -994,6 +1221,19 @@ holds, consume their validation retry or use rule-ranking fallback for quota fai
 Exhaustion fails the run before publication and leaves the last published edition intact.
 Job errors, retry counts and availability timestamps expose the wait in run inspection.
 A daily quota cannot be solved by backoff; capacity must recover or be increased.
+
+`NEWSBEE_MODEL_DAILY_CALLS` is one shared managed-platform allowance per UTC day,
+across initiating journalists, roles, concurrent work and parent/child runs.
+Each provider dispatch reserves atomically using the existing paid-call counters:
+compatibility retries, fallback attempts, vision and grounded search each consume
+one call. Configuration/readiness/Health reads consume none. Per-run and provider
+safeguards still apply. Usage records the initiating person separately from the
+actual platform, personal or environment funding identity; legacy personal and
+environment work retains its own scoped accounting. Unclassified current-day
+history is conservatively included without being relabeled as managed spending.
+Accounting failures stop automatic provider fallback, and admitted attempts are
+not refunded when their completion is uncertain. Explicit recovery must wait for
+capacity or an operator configuration change; it never silently resets the pool.
 
 **Location management** shows pipeline progress and published/held counts for every
 location; open a location for its run history and **Inspect run** for each source, story
@@ -1144,6 +1384,22 @@ Within each section, after rules order it and the model rates its top 30 (`model
 Each story's breakdown appears in run inspection's **Why ranked** column.
 `NEWSBEE_RANKING=classic` uses the model ratings alone.
 
+The first section captures version-1 local/network engagement evidence and source acceptance
+rates in the draft's `ranking_evidence`; later sections and retries reuse it. Reader engagement
+and editor decisions made afterward apply to a new run, not an implicit mid-run refresh.
+Acceptance-history failure remains a logged, explicitly degraded snapshot
+(`source_rates_error`), rather than silently claiming evidence. Live withdrawals, source rights,
+readiness and governance are not part of this snapshot. Pooling, evidence and ranking item
+updates use ordered batches of at most 100 operations, preserving MongoDB failure details.
+Story authoring reads projected entry summaries once, rather than accumulated full results twice.
+Incremental MMR tokenizes each title once and compares each candidate pair once (435 comparisons
+at 30 stories, 1,770 at 60), retaining tie order and explanation penalties.
+
+Legacy query-index rollout is intentionally separate: inventory deployed indexes, check legacy
+duplicates and compare representative `explain("executionStats")` plans at scaled history before
+installing any new index. This change does not establish that live indexes are missing, install
+new uniqueness constraints, or parallelize ranking/story/image stages.
+
 **Rule order and replication.** Before the model, each section is ordered by the rule score in
 `editions/assemble.ts`. Independent confirmation counts, not copies: when copies of one story are
 merged, each item keeps its `replication` (copies that passed the checks, their sources, and the
@@ -1172,13 +1428,23 @@ feed from the site's home page.
 runs, 1 for runs from before it). At depth 1 the web reader reads a site's feed, calendars, sitemap and the
 story links on its home page. At depth 2 it also reads the listing pages the home page links to (events and
 calendars first, then sports, obituaries, meetings, safety and news; `listingLinks` in `connectors/web/page.ts`):
-each listing's own schema.org events and calendar file, then the single stories and events it links to
-(`deepLinks`). A site with a news feed still has its event listings read, because events are rarely in the
-feed. Each item records its `crawl_depth`, the page it was found on and the listing's section as a hint.
+each listing's own schema.org events, calendar file and RSS feed, then the single stories and events it links
+to (`deepLinks`, from the page's own content: `contentHtml` leaves out the menus, header, footer and
+sidebars that repeat on every page, so the pages read don't multiply; feed files are read as feeds, never
+as pages). An event page whose schema.org event has no
+link of its own (Wix event pages) is that event's page, so the page's address is its link. "Programs",
+"activities" and "team" don't make a link a listing: on real sites those are degree, service and staff pages.
+A site with a news feed still has its event listings read, because events are rarely in the
+feed. Each item, kept or left out, records its `crawl_depth`, the page it was found on (`found_on`), how
+it was read (`found_via`) and the listing's section as a hint; **Stories pulled** links to that page.
 Each listing page shows in **Stories pulled** with what was followed. A listing with nothing to follow is read
 as a page, so in agentic runs the agent picks out its items, each with a verbatim quote. With caps on, depth
 2 reads at most 4 listing pages and 8 pages from them per site, with 12 extra requests; the site's
-two-minute budget always applies.
+two-minute budget always applies. To compare the depths on a location's real websites, start the local
+stack and run `npm run web:depth -- --location <id>` (`--sources <part of a URL,...>` for some of them): it
+reads each active website source at both depths and prints what only depth 2 found, the requests each
+used and why depth-2 pages were left out. The plain run makes no model or paid calls; `--agentic` lets
+the configured light model read the pages the rules can't, at most two per source.
 
 **Story review and export.** On **Stories pulled** or the item trace, an editor accepts or rejects a
 story with a reason code (`editions/story-reasons.ts`, prefixed S so they never mix with source codes),
@@ -1190,7 +1456,13 @@ locality evidence, every copy and source (reader, tier, how it was found), where
 how deep, replication, outcome and reason, whether the editor overruled the pipeline (`disagrees`), the
 model's and pre-ranker's ratings, evidence, extracted details, the written draft, a text excerpt and the
 run's settings. Items expire after 90 days and page text after 30, so the snapshot keeps an annotation
-usable. Every save is appended to `story_reviews`. The list uses 100-link pages with **Previous** and
+usable. Every save is appended to `story_reviews`. An accepted story has **Read this page's links**
+(`follow_links` action, `followPageLinks` in `orchestration/inspect.ts`): before writing starts, a
+`follow_links` job reads that page as a listing, one level deeper than it was found, with the source's
+access review, publisher controls and budgets (at most 8 pages, from the page's content only). What it
+finds is added to the run marked `followed_from` (the story) and `followed_by` (the editor), and is kept
+when the source is collected again; nothing the run had is replaced. A manual run then waits for
+authoring again; an autopilot run goes on to write with what was found. The list uses 100-link pages with **Previous** and
 **Next**, including runs with more than 500 links. Removing a location also removes its story decisions
 and review history. **Export** gives the run's or the location's reviews as CSV, one column per fact
 (`CSV_COLUMNS` in `editions/story-reviews.ts`), or as JSONL (`?format=jsonl`), the whole snapshot one
@@ -1215,8 +1487,9 @@ numbers or superlatives not in the source, all-caps shouting or too many exclama
 | `NEWSBEE_PIPELINE_DRIVE_FOLDER_ID` | Existing Shared Drive folder for run artifacts |
 | `NEWSBEE_OUTPUT_CHANNEL_ID` | Shared Reader `output_channels` document ID; defaults to `reader-site`; existing documents must be enabled and valid |
 | `NEWSBEE_READER_DRIVE_FOLDER_ID` | Reader-folder fallback only when the selected channel is absent; defaults to `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw` |
-| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google sign-in (redirect URI `https://<host>/api/auth/callback/google`) |
-| `NEWSBEE_INTERNAL_PASSWORD` | Required to enable both read-only maps and `/api/maps/*`; independent of administrator authentication, fail-closed when unset |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET` | Google OAuth plus credential-login hashing/rate-limit identifiers (Google redirect URI `https://<host>/api/auth/callback/google`) |
+| `NEWSBEE_INTERNAL_PASSWORD` | Enables password-only read access to maps and `/api/maps/*`; signed-in owner/admin operators also have access, while editors remain denied |
+| `DESKTOP_VIDEO_API_KEY` (optional) | Managed Desktop Video key for release-scoped editor generation and non-editor fallback |
 | `FAL_KEY` (optional) | Shared default for video generation; the owner may override it in Environment & API settings |
 | `NEWSBEE_MODEL_PRICING` (optional) | Exact provider/model input/output USD-per-million-token overrides; see Model providers and the deployment pricing guide |
 | `NEWSBEE_MODEL_<NAME>_INPUT_COST_PER_MTOK`, `NEWSBEE_MODEL_<NAME>_OUTPUT_COST_PER_MTOK` (optional) | Both rates price the currently configured model; use separate `GEMINI_LIGHT` rates for the light model |
@@ -1226,33 +1499,84 @@ numbers or superlatives not in the source, all-caps shouting or too many exclama
 | `NEWSBEE_COLLECT_BUDGET_MINUTES` (optional) | Move on to writing after this long collecting (default 8, `0` disables) |
 | `NEWSBEE_JINA_API_KEY` (optional) | A higher Jina Reader limit; it works without a key at a lower one |
 | `NEWSBEE_AI_LINK_DISCOVERY` (optional) | Also let the model look for event links (off by default) |
-| `NEWSBEE_READER_SITE_URL` | Full reader URL, `https://<host>/reader`; used for links in email previews |
+| `NEWSBEE_READER_SITE_URL` | Canonical Reader HTTPS root or `/reader` URL; used for Reader links and private draft preview (email remains unavailable) |
+| `NEWSBEE_EMAIL_MANAGEMENT_SECRET` | Server-only signing secret shared with Reader for publication email preference and unsubscribe links |
 
 Deploy one Vercel project from the repository root using root `vercel.json`.
 The journalist service owns `/` and its existing APIs; the reader owns `/reader`.
 There are no HTTP dependencies between services, so no bindings are required.
 See the [deployment guide](../../Docs/deployment.md) for shared environment settings.
 
+Missing, empty or whitespace-only Reader URL configuration retains the same-host `/reader`
+default. A rejected nonempty value returns explicit unavailable Reader-link metadata from
+both edition workspace GETs, rather than hiding drafts, readiness or permitted manual writing
+and saving. Live/archive/release links are unavailable with a persistent safe warning and a
+deliberate link retry that preserves unfinished reporting and failed edits. Private preview
+still fails explicitly with private/no-store headers and exact-revision/access/media checks;
+it never substitutes a host-derived URL. Valid HTTPS roots and `/reader/` normalize to one
+Reader base. Credentials, query strings, fragments and cloud HTTP are rejected; only explicit
+local mode allows HTTP `localhost` or `127.0.0.1`. No configuration value is returned in warnings.
+
+### Publication distribution
+
+Open **Distribution** from an immutable publication release to preview its HTML/text email,
+send a local fake-provider test, snapshot explicitly consented publication/location recipients,
+and process idempotent delivery batches. These records are separate from
+`reader_interest_signups`; existing interest never becomes publication email consent.
+Unknown provider outcomes require an explicit retry and retain their original idempotency key.
+Late suppressions cancel unsent deliveries and are rechecked before sending; complaint,
+hard-bounce, and manual suppressions cannot be downgraded or cleared by later consent.
+Every processing pass revalidates the immutable release and cancels unsent work after a
+release or source withdrawal. Attempt evidence is recoverable before delivery state changes.
+Production email remains disabled until an ESP, sending domain, DKIM/SPF, authenticated event
+webhooks, shared management-link secret, and compliance review are configured.
+
+The same release panel opens one story at a time for a release-scoped template video package.
+The package cache is keyed by immutable release, story, and template hashes. Package generation
+uses the managed model runtime with the initiating principal rechecked and attributed. Generated
+outputs retain the package hash and show a stale warning after release/template/script changes.
+This contained flow uses revision-checked saves, preserves dirty editor input during polling,
+and recovers expired generation leases.
+
+Release-scoped Desktop Video uses the deployment-managed key for editors. The owner, and future
+non-editor administrator roles, use an encrypted personal Desktop override when configured and
+otherwise fall back to the managed key. Jobs retain provider, managed/personal funding, submitting
+principal, and credential owner/version metadata without retaining keys. A historical personal-key
+job whose exact credential is unavailable is shown as **legacy/unavailable** and is never polled
+with managed credentials; an explicit replacement action creates and links a new job under current
+credential precedence. Desktop completion stores only a validated Google Drive URL. The user
+downloads that file and manually uploads the MP4 into the same publication/release/story scope;
+Newsbee does not fetch or publish the Drive file automatically.
+
+The release flow supports script/caption editing, Drive handoff, scoped preview, and MP4 download
+only; it does not add social posting, transcription, or a timeline editor.
+`npm run distribution:local` runs the network-blocked fake-mail and repeated video-cache journey.
+
 ### Video creation
 
-**Video creation** appears inside publishing channels with a video destination, listing published
-stories for the channel's selected locations. Only owners can generate videos because YouTube
-publishing uses the signed-in owner's Google account. Each video is linked to its edition, so the
-edition funnel shows **Videos made** and lists them. The old `/video-studio` page sends you to
-Publishing channels, optionally focused on the specified location. Videos use the signed-in owner's configured model profile to
-prepare YouTube and TikTok copy, a spoken script, a fal.ai prompt, and an estimated SRT
-draft. Video generation uses the deployment's `FAL_KEY` by default; the owner can override it
-with a personal fal.ai key in Environment & API settings. The studio uses `minimax/h3-max/text-to-video` for 9:16 portrait
-video with native audio generation and a 15-second duration. The hosted fal.ai endpoint
-does not expose local ComfyUI controls such as LoRA selection or turbo steps. Review the facts and prompt
-before submitting a paid generation, then check the rendered audio and edit the SRT timings
-before publishing. The Story video page also shows the full AI prompt used to prepare the
-current title, description and script, alongside the editable fal.ai prompt and the prompt
-saved for each generated video. Owners can generate with fal.ai or upload their own MP4
-(up to 100 MB, transferred in 2 MB chunks) to the same story. Completed and uploaded
-MP4s are stored under the pipeline's Google Drive `.newsbee-pipeline/video-production`
-folder in cloud mode. Uploaded videos can be published to YouTube after a video package
-with a title and description is saved.
+After publishing an immutable release, open **Preview email & create video** from its release history.
+Each release story can create a cached release-scoped script, prompt, captions and video without
+changing the approved release. The old `/video-studio` entry point now returns to Newsbee Newsroom.
+The Story video page shows the full AI prompt used to prepare the current title, description
+and script, alongside the editable video prompt and the prompt saved for each generated
+video. Choose fal.ai or
+[Desktop Video](https://g2minhledesktopasaaervice.vercel.app/api-docs); both request a
+15-second portrait video. Desktop Video sends the render to the configured desktop worker
+and shows its Google Drive link when the job finishes. Access follows the file's Drive
+permissions. Download the MP4 from Drive and upload it to the release story before using
+Newsbee's stored preview or publishing workflow.
+
+Journalists can upload an MP4 up to 100 MB in 2 MB chunks. In cloud mode, Newsbee stores
+fal.ai renders and uploaded MP4s under the pipeline's Google Drive
+`.newsbee-pipeline/video-production` folder. Uploaded videos can be published to YouTube
+after a video package with a title and description is saved.
+
+Use **Channel video prompt template** above the channel's story list to edit the template
+for future prompts. Include `{{dialogue}}` for the exact script. The optional placeholders
+`{{location}}`, `{{duration}}`, and `{{editorialDirection}}` insert the location, render duration,
+and a story-specific reporting caution. In Story Video, **Save story prompt and edits**
+saves the edited prompt for that story in the current channel. Existing story prompts are
+available when a channel has no saved version yet.
 
 To upload a completed video directly to YouTube, use **Connect YouTube** in its story
 management page. This requests the YouTube account-management permission from the Google
@@ -1324,8 +1648,9 @@ minute-by-minute recovery, add a top-level `crons` entry targeting that path and
 `CRON_SECRET`; scheduled functions require an appropriate Vercel plan.
 Optional recovery only processes an editor-started stage; it cannot cross an editor gate.
 
-Admins are documents `{ "email": "editor@example.com", "enabled": true }` in
-`journalist_admins` (lowercase); the **Administrators** page adds more. Each location's sources live in
+Accounts are lowercase `journalist_admins` documents with a stable `principalId`,
+`role` (`owner`, `admin` or `editor`), `enabled` state and mutation `revision`.
+Missing legacy roles resolve to `editor`; a stored `admin` remains an admin. Each location's sources live in
 `source_map`; editor additions are validated and pinned there.
 
 ## Scraping rules

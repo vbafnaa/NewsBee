@@ -69,6 +69,29 @@ export function topicOf(story: { kind?: string | null; title: string; descriptio
   return best;
 }
 
+/** Pipeline sections (journalist-site sourcemap/sections.ts) that map onto one reader topic. */
+const SECTION_TOPICS: Record<string, TopicId> = {
+  real_estate: "housing",
+  civic: "policy",
+  business: "business",
+  community: "community",
+  schools: "schools",
+  sports: "sports",
+};
+/**
+ * A published story's topic. A section that maps onto a reader topic wins, so the reader's
+ * heading matches the journalist workspace. Sections with no reader topic (events, safety,
+ * obituaries, weather, other news) and older editions with no section fall back to topicOf's
+ * kind and keyword rules, so a general news story is never dropped from the topic sections
+ * because of its filing.
+ */
+export function topicOfFiled(story: { kind?: string | null; title: string; description?: string | null; section_id?: string | null }): TopicId | null {
+  if (NO_TOPIC.has(story.kind ?? "event")) return null;
+  const section = story.section_id ?? "";
+  if (SECTION_TOPICS[section]) return SECTION_TOPICS[section];
+  return topicOf(story);
+}
+
 /** One-word label for a story card ("Housing"), or null for stories without a topic. */
 export function topicShort(id: string | null | undefined) {
   return TOPICS.find((topic) => topic.id === id)?.short ?? null;

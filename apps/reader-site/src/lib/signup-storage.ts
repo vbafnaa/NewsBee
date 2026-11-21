@@ -3,7 +3,10 @@ import type { Db } from "mongodb";
 /** One record per email/location, with the first observed timestamp for each explicit intent. */
 export async function recordReaderSignup(db: Db, location: { id: string; name: string }, email: string, launchNotification: boolean) {
   const collection = db.collection("reader_interest_signups");
-  await collection.createIndex({ location_id: 1, email: 1 }, { unique: true, name: "location_email_unique" });
+  await Promise.all([
+    collection.createIndex({ location_id: 1, email: 1 }, { unique: true, name: "location_email_unique" }),
+    collection.createIndex({ interest_signup_at: 1, location_id: 1 }, { name: "location_interest_demand" }),
+  ]);
   const metric = launchNotification ? "interest_signup_at" : "subscription_signup_at";
   await collection.updateOne({ location_id: location.id, email }, [{
     $set: {

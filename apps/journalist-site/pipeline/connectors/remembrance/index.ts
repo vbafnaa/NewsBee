@@ -33,8 +33,8 @@ export async function submitRemembrance(db: Db, location: { id: string; name: st
   await remembranceSubmissions(db).insertOne(submission);
   return submission;
 }
-export async function listRemembrance(db: Db, status: RemembranceSubmission["status"] | "all" = "pending", locationId?: string) {
-  return remembranceSubmissions(db).find({ ...(status === "all" ? {} : { status }), ...(locationId ? { location_id: locationId } : {}) }).sort({ submitted_at: -1 }).limit(200).toArray();
+export async function listRemembrance(db: Db, status: RemembranceSubmission["status"] | "all" = "pending", locationId?: string | string[]) {
+  return remembranceSubmissions(db).find({ ...(status === "all" ? {} : { status }), ...(locationId ? { location_id: Array.isArray(locationId) ? { $in: locationId } : locationId } : {}) }).sort({ submitted_at: -1 }).limit(200).toArray();
 }
 export async function decideRemembrance(db: Db, id: string, decision: "approved" | "rejected", editor: string, reason?: string) {
   const result = await remembranceSubmissions(db).findOneAndUpdate(

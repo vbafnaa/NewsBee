@@ -5,6 +5,7 @@ import { logger } from "@/pipeline/core/log";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
 import { publishToReader } from "@/pipeline/orchestration/publish";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
+import { flagPublicationReleasesForSourceChange } from "@/pipeline/publications/releases";
 
 /** Rewrite the location's latest edition in the reader folder so the correction shows right away. */
 async function republish(deps: OrchestratorDeps, locationId: string) {
@@ -29,7 +30,16 @@ export async function POST(request: Request) {
     }
     await withdraw(deps.db, body.edition_id, body.story_id, body.reason);
     const edition = await deps.db.collection(COLLECTIONS.editions).findOne({ id: body.edition_id }, { projection: { location_id: 1 } });
-    return { republished: await republish(deps, String(edition?.location_id)) };
+    const locationId = String(edition?.location_id);
+    const correctionRequired = await flagPublicationReleasesForSourceChange(
+      deps.db,
+      locationId,
+      body.story_id,
+      "source_withdrawal",
+      body.reason,
+      deps.principal!,
+    );
+    return { republished: await republish(deps, locationId), correctionRequired };
   });
 }
 
@@ -39,6 +49,14 @@ export async function DELETE(request: Request) {
     const body = await jsonBody<{ location_id?: unknown; story_id?: unknown }>(request);
     if (typeof body.location_id !== "string" || typeof body.story_id !== "string") throw new Error("Invalid restore: location_id and story_id are required");
     await restore(deps.db, body.location_id, body.story_id);
-    return { republished: await republish(deps, body.location_id) };
+    const correctionRequired = await flagPublicationReleasesForSourceChange(
+      deps.db,
+      body.location_id,
+      body.story_id,
+      "source_restore",
+      `Source story ${body.story_id} was restored in ${body.location_id}.`,
+      deps.principal!,
+    );
+    return { republished: await republish(deps, body.location_id), correctionRequired };
   });
 }

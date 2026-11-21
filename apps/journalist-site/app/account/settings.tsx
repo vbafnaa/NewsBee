@@ -18,7 +18,7 @@ const groups: Array<{ title: string; note?: string; keys: string[] }> = [
   { title: "Search", keys: ["exaKey", "tavilySearchApiKey"] },
   { title: "Opening pages", note: "Bright Data opens pages with its API key and Web Unlocker zone above.", keys: ["scrapingbeeKey", "jinaKey"] },
   { title: "Home sales", keys: ["attomKey"] },
-  { title: "Video production", keys: ["falKey"] },
+  { title: "Video production", keys: ["falKey", "desktopVideoKey"] },
   { title: "Parked: Jev classification", keys: ["typesafeKey", "openrouterKey"] },
 ];
 const integrationLabels: Record<string, string> = {
@@ -35,6 +35,7 @@ const integrationLabels: Record<string, string> = {
   attomKey: "ATTOM API key",
   jinaKey: "Jina API key",
   falKey: "fal.ai API key",
+  desktopVideoKey: "Desktop Video API key",
 };
 export default function AccountSettings({ owner }: { owner: boolean }) {
   const router = useRouter();
@@ -51,7 +52,6 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [ownerConfigured, setOwnerConfigured] = useState(true);
   function apply(value: Profile | null, defaults?: EnvironmentDefaults | null) {
     setEnvironmentDefaults(defaults ?? null);
     setSource(owner ? value?.source ?? "environment" : "personal");
@@ -66,7 +66,7 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
     const controller = new AbortController();
     fetch("/api/account/settings", { cache: "no-store", signal: controller.signal }).then(async (r) => {
       const data = await r.json(); if (!r.ok) throw new Error(data.detail);
-      if (!controller.signal.aborted) { apply(data.profile, data.environmentDefaults); setOwnerConfigured(data.ownerConfigured); }
+      if (!controller.signal.aborted) apply(data.profile, data.environmentDefaults);
     }).catch((e: Error) => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, []);
@@ -88,15 +88,13 @@ export default function AccountSettings({ owner }: { owner: boolean }) {
   return <>
     {error && <p className="alert" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <section className="panel"><h2>Your execution profile</h2>
-      <p>{!loaded ? "Loading execution profile..." : !profile ? owner ? "No active profile. Choose deployment defaults or add personal keys." : "No profile. Add your own API keys." : profile.revoked ? `Revoked · version ${profile.version}` : profile.source === "environment" ? `Server environment keys · version ${profile.version}` : `Personal encrypted profile${owner ? " with owner deployment fallback" : ""} · version ${profile.version}`}</p>
+      <p>{!loaded ? "Loading execution profile..." : !profile ? owner ? "No active profile. Choose deployment defaults or add personal keys." : "No profile. Add your own API keys." : profile.revoked ? `Revoked · version ${profile.version}` : owner && profile.source === "environment" ? `Server environment keys · version ${profile.version}` : `Personal encrypted profile${owner ? " with owner deployment fallback" : ""} · version ${profile.version}`}</p>
       <p className="chart-caption">{loaded && profile && !profile.revoked && <>Model {profile.capabilities.model ? "configured" : "not configured"} · Paid search {profile.capabilities.paidSearch ? "configured" : "off"}. </>}Configuration checks only; no provider calls.</p>
       {profile?.configurationError && <p className="alert" role="alert">{profile.configurationError}</p>}
-      {!owner && !ownerConfigured && <p className="alert">Workspace owner not configured. Ask your administrator to complete owner setup; your account remains an editor.</p>}
-      <p>{owner ? "Personal keys override matching server environment values; clearing an override returns to the server default." : "Your runs use only your personal keys, with no server environment fallback."} Keys are write-only: blank fields keep saved personal values. Revoke disables the entire profile.</p>
-      {!owner && profile?.source === "environment" && <p className="alert">Server environment keys are owner-only. Save personal API keys, then explicitly reconnect any unfinished runs before continuing.</p>}
+      <p>{owner ? "Personal keys override matching server environment values; clearing an override returns to the server default." : "A personal profile uses only the keys you save here."} Keys are write-only: blank fields keep saved personal values. Revoke disables the entire profile.</p>
       <form onSubmit={(event) => { event.preventDefault(); void save("PUT"); }}>
         {owner && <label className="field">Credential source<select disabled={!loaded || busy} value={source} onChange={(e) => setSource(e.target.value as typeof source)}><option value="personal">My personal keys (owner overrides)</option><option value="environment">Use API keys from server environment</option></select></label>}
-        {source !== (profile?.source ?? (owner ? "environment" : "personal")) && <p role="status">Unsaved credential source. Save this choice before leaving this page.</p>}
+        {owner && source !== (profile?.source ?? "environment") && <p role="status">Unsaved credential source. Save this choice before leaving this page.</p>}
         {source === "environment" && <p>The configured owner uses server environment keys automatically without a saved profile. Save to explicitly select them after a personal or revoked profile.</p>}
         {source === "environment" && environmentDefaults?.configurationError && <p className="alert" role="alert">{environmentDefaults.configurationError}</p>}
         {source === "personal" && <>

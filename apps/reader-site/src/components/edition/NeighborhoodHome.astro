@@ -7,30 +7,51 @@ import SubscribeBox from "./SubscribeBox.astro";
 import Newsroom from "./Newsroom.astro";
 import ShareStory from "./ShareStory.astro";
 import NeighborhoodWelcome from "./NeighborhoodWelcome.astro";
+import SaveTheBee from "./SaveTheBee.astro";
+import OtherNews from "./OtherNews.astro";
+import ShareEdition from "./ShareEdition.astro";
+import SponsorPlacement from "./SponsorPlacement.astro";
 import { neighborhoodLinks, type EditionPage } from "../../lib/edition-view";
 
 interface Props { page: EditionPage }
 const { page } = Astro.props;
 const { location, town } = page;
 const links = neighborhoodLinks(page);
+const primarySections = page.sections.filter((section) => section.id === "housing" || section.id === "policy")
+  .sort((a, b) => (a.id === "housing" ? 0 : 1) - (b.id === "housing" ? 0 : 1));
+const otherSections = page.sections.filter((section) => section.id !== "housing" && section.id !== "policy");
+const sponsor = (slot: "home_after_top_news" | "home_before_newsroom") => page.sponsorPlacements.find((placement) => placement.slot === slot);
 ---
 <NeighborhoodPage page={page} title={`${town} | Newsbee`}>
-  <NeighborhoodWelcome slot="welcome" locationId={location.id} mediaMode={page.edition.mediaMode} />
   <div class="edition-intro">
+  <NeighborhoodWelcome locationId={location.id} mediaMode={page.edition.mediaMode} />
   {page.articles.length === 0 && (
     <p class="empty">Nothing in {town}'s edition this week yet. Sign up below and we'll send the next one.</p>
   )}
-  {page.articles.length > 0 && <p><a class="nb-link" href={links.section("all")}>Read all {page.articles.length} stories in this edition</a></p>}
+  {page.articles.length > 0 && <p class="newsletter-link"><a class="nb-link" href={links.section("all")}>
+    {page.requestedEditionId ? "Read this edition’s newsletter" : "Read current newsletter"}
+  </a><span class="edition-count">{page.articles.length} {page.articles.length === 1 ? "story" : "stories"}</span></p>}
+  <div class="edition-actions">
+    <a class="nb-link" href={links.browse}>Browse stories and past editions</a>
+    <ShareEdition locationId={location.id} editionId={page.edition.id} town={town} />
+  </div>
   </div>
   {page.topStories.length > 0 && <TopNews stories={page.topStories} source="pipeline" />}
+  <SponsorPlacement placement={sponsor("home_after_top_news")} />
   {page.visible.includes("events") && <EventsWeek town={town} days={page.eventDays} source="pipeline" dayHref={links.events} />}
+  <SponsorPlacement placement={sponsor("home_before_newsroom")} />
+  {primarySections.length > 0 && <Newsroom tabs={primarySections} source="pipeline" moreHref={links.section} />}
+  {otherSections.length > 0 && <OtherNews tabs={otherSections} moreHref={links.section} />}
+  <SaveTheBee locationId={location.id} editionId={page.edition.id} />
   <SubscribeBox town={town} location={{ id: location.id, name: location.name }} />
-  {page.sections.length > 0 && <Newsroom tabs={page.sections} source="pipeline" moreHref={links.section} />}
   <ShareStory href={links.share} />
 </NeighborhoodPage>
 
 <style>
-  .edition-intro { display: grid; gap: var(--space-6); }
+  .edition-intro { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); min-width: 0; }
+  .newsletter-link { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+  .edition-count { font-size: var(--text-sm); color: var(--color-muted); }
+  .edition-actions { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); }
   :global(main.nb-container:has(.edition-intro)) { gap: var(--space-16); }
   @media (max-width: 40rem) { :global(main.nb-container:has(.edition-intro)) { gap: var(--space-12); } }
   .empty { font: var(--weight-heading) var(--text-h2)/var(--leading-h2) var(--font-display); letter-spacing: var(--tracking-h2); max-width: 36rem; text-wrap: balance; }

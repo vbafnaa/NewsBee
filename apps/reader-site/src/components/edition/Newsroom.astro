@@ -21,7 +21,7 @@ const SIDE_STORIES = 3;
         {lead && (
           <article class="lead" data-match-title>
             <StoryMedia photo={lead.photo} illustration={lead.illustration} />
-            <span class="nb-label">{lead.date}</span>
+            <span class="nb-label">{lead.date}{lead.locationLabel ? ` · ${lead.locationLabel}` : ""}</span>
             <h3>
               <a class="nb-card-link" href={lead.href} data-story-id={lead.storyId ?? undefined}><span class="nb-title">{lead.title}</span></a>
             </h3>
@@ -35,7 +35,7 @@ const SIDE_STORIES = 3;
             <li>
               <StoryMedia photo={story.photo} illustration={story.illustration} />
               <a class="item nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}>
-                <span class="nb-label">{story.date}</span>
+                <span class="nb-label">{story.date}{story.locationLabel ? ` · ${story.locationLabel}` : ""}</span>
                 <span class="nb-title item-title">{story.title}</span>
                 <span class="item-source">{story.sourceName}</span>
               </a>

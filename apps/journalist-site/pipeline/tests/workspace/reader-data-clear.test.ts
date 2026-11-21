@@ -2,7 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { MongoClient, type Db } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
-vi.mock("@/lib/admin-session", () => ({ adminGuard: vi.fn(), ownerGuard: vi.fn(), currentAdmin: vi.fn(), currentPrincipal: async () => ({ id: "fixture-owner", email: "editor@example.test", role: "owner" }) }));
+vi.mock("@/lib/admin-session", () => {
+  const operatorGuard = vi.fn();
+  return {
+    adminGuard: operatorGuard,
+    operatorGuard,
+    ownerGuard: vi.fn(),
+    currentAdmin: vi.fn(),
+    currentPrincipal: async () => ({ id: "fixture-owner", email: "editor@example.test", role: "owner" }),
+  };
+});
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: vi.fn() }));
 
 import { adminGuard, ownerGuard, currentAdmin } from "@/lib/admin-session";
@@ -20,6 +29,9 @@ const ALL = { location_id: null, data_types: [...LEGACY_CLEAR_DATA_TYPES] };
 const TOWN = { location_id: "town-wa", data_types: [...LEGACY_CLEAR_DATA_TYPES] };
 const SIGNUPS = "reader_interest_signups";
 const ENGAGEMENT = "reader_engagement";
+const NEWSLETTER_SUBSCRIPTIONS = "reader_newsletter_subscriptions";
+const NEWSLETTER_MAIL = "reader_newsletter_mail";
+const NEWSLETTER_PREVIEWS = "reader_newsletter_preview_mail";
 const url = "https://portal.example/api/admin/usage-map/clear";
 const post = (body: unknown) => new Request(url, { method: "POST", body: JSON.stringify(body) });
 
@@ -55,6 +67,23 @@ async function seed(location_id: string) {
     { ...signup, email: "legacy-interest@example.test", legacy_signup: true, interest_signup_at: at, launch_notification: true },
     { ...signup, email: "unmarked@example.test", launch_notification: true },
   ]);
+}
+const deliveryId = (location: string, email: string) => `${location}:${email}`;
+const deliveryKeys = (id: string) => ["queued", "sending", "sent"].map(status => `${id}:${status}`);
+async function seedNewsletterDelivery() {
+  for (const signup of await db.collection(SIGNUPS).find({}).toArray()) {
+    const id = deliveryId(signup.location_id, signup.email);
+    await db.collection<{ _id: string }>(NEWSLETTER_SUBSCRIPTIONS).insertOne({
+      _id: id, email: signup.email, locationId: signup.location_id, status: "active", topics: ["events"], manageNonce: `manage-${id}`,
+      pending: { nonce: `confirm-${id}`, topics: ["business"], expiresAt: new Date("2027-01-01T00:00:00Z") },
+    } as never);
+    for (const status of ["queued", "sending", "sent"]) {
+      const key = `${id}:${status}`;
+      await db.collection<{ _id: string }>(NEWSLETTER_MAIL).insertOne({ _id: key, subscriptionId: id, status,
+        envelope: { to: signup.email, text: "Private newsletter content" }, leaseUntil: at } as never);
+      await db.collection<{ _id: string }>(NEWSLETTER_PREVIEWS).insertOne({ _id: key, key, to: signup.email, text: "Private preview" } as never);
+    }
+  }
 }
 const emails = async (location_id: string) => (await db.collection(SIGNUPS).find({ location_id }).toArray()).map((row) => row.email).sort();
 const snapshot = async (except: string[]) => {
@@ -255,6 +284,96 @@ describe("clearing reader data", () => {
     expect(await db.collection(COLLECTIONS.readerDataClears).findOne({})).toMatchObject({
       status: "failed", data_types: [type], deleted: { [type]: type === "subscriptions" ? 1 : 2 },
     });
+  });
+
+  it("counts and clears whole-edition shares together with story shares", async () => {
+    await db.collection(ENGAGEMENT).insertMany([
+      { location_id: "town-wa", edition_id: "town-edition", action: "edition_share", story_ids: [], at },
+      { location_id: "other-wa", edition_id: "other-edition", action: "edition_share", story_ids: [], at },
+    ]);
+    expect((await clearPreview(db)).totals.shares).toBe(4);
+    await clearReaderData(db, { location_id: "town-wa", data_types: ["clicks"] }, "owner@example.test");
+    expect(await db.collection(ENGAGEMENT).countDocuments({ location_id: "town-wa", action: "edition_share" })).toBe(1);
+    const record = await clearReaderData(db, { location_id: "town-wa", data_types: ["shares"] }, "owner@example.test");
+    expect(record.deleted.shares).toBe(2);
+    expect(await db.collection(ENGAGEMENT).countDocuments({ location_id: "town-wa", action: { $in: ["share", "edition_share"] } })).toBe(0);
+    expect(await db.collection(ENGAGEMENT).countDocuments({ location_id: "other-wa", action: { $in: ["share", "edition_share"] } })).toBe(2);
+  });
+
+  const signupSelections: ClearDataType[][] = [["interest"], ["subscriptions"], ["legacy_signups"],
+    ["interest", "subscriptions"], ["interest", "legacy_signups"], ["subscriptions", "legacy_signups"],
+    ["interest", "subscriptions", "legacy_signups"]];
+  it.each(signupSelections.map(data_types => ({ name: data_types.join(", "), data_types })))("removes delivery only when the final signup intent is cleared: $name", async ({ data_types }) => {
+    await seedNewsletterDelivery();
+    const before = await db.collection(NEWSLETTER_SUBSCRIPTIONS).find({}).toArray();
+    const otherIds = before.filter(subscriber => subscriber.locationId === "other-wa").map(subscriber => subscriber._id);
+    const otherKeys = otherIds.flatMap(id => deliveryKeys(String(id)));
+    const otherBefore = [
+      await db.collection(NEWSLETTER_SUBSCRIPTIONS).find({ locationId: "other-wa" }).toArray(),
+      await db.collection(NEWSLETTER_MAIL).find({ subscriptionId: { $in: otherIds } }).toArray(),
+      await db.collection(NEWSLETTER_PREVIEWS).find({ key: { $in: otherKeys } }).toArray(),
+    ];
+    await clearReaderData(db, { location_id: "town-wa", data_types }, "owner@example.test");
+    const remaining = await emails("town-wa");
+    for (const subscriber of before.filter(row => row.locationId === "town-wa")) {
+      const surviving = await db.collection(NEWSLETTER_SUBSCRIPTIONS).findOne({ _id: subscriber._id });
+      if (remaining.includes(subscriber.email)) {
+        expect(surviving).toEqual(subscriber);
+        expect(await db.collection(NEWSLETTER_MAIL).countDocuments({ subscriptionId: subscriber._id })).toBe(3);
+        expect(await db.collection(NEWSLETTER_PREVIEWS).countDocuments({ key: { $in: deliveryKeys(String(subscriber._id)) } })).toBe(3);
+      } else {
+        expect(surviving).toBeNull();
+        expect(await db.collection(NEWSLETTER_MAIL).countDocuments({ subscriptionId: subscriber._id })).toBe(0);
+        expect(await db.collection(NEWSLETTER_PREVIEWS).countDocuments({ key: { $in: deliveryKeys(String(subscriber._id)) } })).toBe(0);
+      }
+    }
+    expect([
+      await db.collection(NEWSLETTER_SUBSCRIPTIONS).find({ locationId: "other-wa" }).toArray(),
+      await db.collection(NEWSLETTER_MAIL).find({ subscriptionId: { $in: otherIds } }).toArray(),
+      await db.collection(NEWSLETTER_PREVIEWS).find({ key: { $in: otherKeys } }).toArray(),
+    ]).toEqual(otherBefore);
+  });
+
+  it("preserves every delivery record during engagement-only clears", async () => {
+    await seedNewsletterDelivery();
+    const deliveryCollections = [NEWSLETTER_SUBSCRIPTIONS, NEWSLETTER_MAIL, NEWSLETTER_PREVIEWS];
+    const before = await Promise.all(deliveryCollections.map(name => db.collection(name).find({}).sort({ _id: 1 }).toArray()));
+    await clearReaderData(db, { location_id: null, data_types: [...DEFAULT_CLEAR_DATA_TYPES] }, "owner@example.test");
+    expect(await Promise.all(deliveryCollections.map(name => db.collection(name).find({}).sort({ _id: 1 }).toArray()))).toEqual(before);
+  });
+
+  it("purges subscriptions and all mail records across communities only for an explicit all-location signup clear", async () => {
+    await seedNewsletterDelivery();
+    await clearReaderData(db, { location_id: null, data_types: ["interest", "subscriptions", "legacy_signups"] }, "owner@example.test");
+    expect(await db.collection(SIGNUPS).countDocuments()).toBe(0);
+    for (const name of [NEWSLETTER_SUBSCRIPTIONS, NEWSLETTER_MAIL, NEWSLETTER_PREVIEWS]) expect(await db.collection(name).countDocuments()).toBe(0);
+    expect(await db.collection(ENGAGEMENT).countDocuments()).toBe(8);
+  });
+
+  it("revokes delivery before a partial cleanup failure and allows retry without leaking preview PII", async () => {
+    await seedNewsletterDelivery();
+    const id = deliveryId("town-wa", "subscriber@example.test");
+    const failing = new Proxy(db, {
+      get(target, property) {
+        if (property !== "collection") return Reflect.get(target, property);
+        return (name: string) => {
+          const collection = target.collection(name);
+          return name === NEWSLETTER_PREVIEWS ? Object.assign(Object.create(collection), { deleteMany: () => Promise.reject(new Error("preview deletion denied")) }) : collection;
+        };
+      },
+    });
+    await expect(clearReaderData(failing, { location_id: "town-wa", data_types: ["subscriptions"] }, "owner@example.test")).rejects.toThrow("preview deletion denied");
+    const revoked = await db.collection(NEWSLETTER_SUBSCRIPTIONS).findOne({ _id: id as never });
+    expect(revoked).toMatchObject({ status: "unsubscribed", dataClearPending: true });
+    expect(revoked).not.toHaveProperty("pending");
+    expect(revoked?.manageNonce).not.toBe(`manage-${id}`);
+    const stopped = await db.collection(NEWSLETTER_MAIL).find({ subscriptionId: id }).toArray();
+    expect(stopped.every(job => job.status === "cancelled" && !job.envelope && !job.leaseUntil)).toBe(true);
+    await clearReaderData(db, { location_id: "town-wa", data_types: ["subscriptions"] }, "owner@example.test");
+    expect(await db.collection(NEWSLETTER_SUBSCRIPTIONS).countDocuments({ _id: id as never })).toBe(0);
+    expect(await db.collection(NEWSLETTER_MAIL).countDocuments({ subscriptionId: id })).toBe(0);
+    expect(await db.collection(NEWSLETTER_PREVIEWS).countDocuments({ key: { $in: deliveryKeys(id) } })).toBe(0);
+    expect(await db.collection(NEWSLETTER_SUBSCRIPTIONS).countDocuments({ _id: deliveryId("other-wa", "subscriber@example.test") as never })).toBe(1);
   });
 });
 

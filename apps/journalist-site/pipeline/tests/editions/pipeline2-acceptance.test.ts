@@ -53,7 +53,10 @@ it("filters sources, merges copies, ranks, writes grounded articles and builds a
     expect(built.edition?.items).toHaveLength(1);
     expect(built.edition?.items[0]).toMatchObject({ source_url: rows[0].source_url, blurb: expect.stringContaining("$50,000") });
     expect(built.summary?.front).toMatchObject({ fallback: false });
-    expect(built.summary?.email).toMatchObject({ fallback: false });
+    expect(built.summary?.email).toBeNull();
+    expect(built.emailOutput).toMatchObject({ status: "unavailable" });
+    expect(built.emailPreview).toBeNull();
+    expect(model.calls.some((call) => call.prompt.startsWith("You write the email"))).toBe(false);
     expect(await db.collection(COLLECTIONS.editions).findOne({ id: "run" })).toMatchObject({ status: "built" });
     expect(await db.collection(COLLECTIONS.publishedStories).countDocuments()).toBe(0);
   });

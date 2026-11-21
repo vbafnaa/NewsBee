@@ -13,13 +13,15 @@ import { JOB_DEADLINE_MS } from "./evaluate";
 import { CATEGORIES } from "../sourcemap/sections";
 import { isolatedRunId } from "../core/run-options";
 import { logDiscoveredSources } from "../orchestration/source-log";
+import { ExternalServiceDisabledError } from "../core/http";
+import { discoveryOutcome, type DiscoveryOutcomeFields } from "./status";
 
 export const DISCOVERY_STATE = "discovery_state";
 export const RETRY_AFTER_FAILURE_MS = 3600_000;
 /** Time the model check may take after a method, before it leaves the rest for the final review. */
 const CHECK_MS = 80_000;
 
-export type DiscoveryState = {
+export type DiscoveryState = DiscoveryOutcomeFields & {
   _id: string;
   location_id: string;
   method: string;
@@ -68,17 +70,19 @@ export async function runMethod(context: DiscoveryContext, method: string) {
   const started = Date.now();
   let state: DiscoveryState;
   try {
-    const { candidates, detail } = await definition.run(context);
+    const { candidates, detail, outcome = "succeeded", reason } = await definition.run(context);
     const { added, counts } = await checkAndSave(context, candidates, { route: method, deadline: Math.max(Date.now(), started + JOB_DEADLINE_MS) + CHECK_MS });
     logDiscoveredSources(context.location.name, definition.label, candidates, added);
     const judged = counts.judged ? `; Model check: ${counts.accepted} accepted, ${counts.rejected} rejected` : "";
     const left = counts.unjudged ? `; ${counts.unjudged} not judged` : "";
-    state = { _id: `${context.location.id}:${method}`, location_id: context.location.id, method, label: definition.label, last_run_at: started / 1000, ok: true, found: candidates.length, added, by_category: countByCategory(candidates), gemini: counts, detail: `${detail}${judged}${left}`, next_due_at: (started + definition.refreshDays * 86400_000) / 1000 };
+    state = { _id: `${context.location.id}:${method}`, location_id: context.location.id, method, label: definition.label, last_run_at: started / 1000, ok: true, outcome, ...(reason ? { reason } : {}), found: candidates.length, added, by_category: countByCategory(candidates), gemini: counts, detail: `${detail}${judged}${left}`, next_due_at: (started + definition.refreshDays * 86400_000) / 1000 };
   } catch (error) {
     const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    context.log.warn("discovery_method_failed", { location_id: context.location.id, method, error: detail });
-    state = { _id: `${context.location.id}:${method}`, location_id: context.location.id, method, label: definition.label, last_run_at: started / 1000, ok: false, found: 0, added: 0, detail, next_due_at: (started + RETRY_AFTER_FAILURE_MS) / 1000 };
+    const disabled = error instanceof ExternalServiceDisabledError && error.service === "overpass";
+    if (!disabled) context.log.warn("discovery_method_failed", { location_id: context.location.id, method, error: detail });
+    state = { _id: `${context.location.id}:${method}`, location_id: context.location.id, method, label: definition.label, last_run_at: started / 1000, ok: false, ...(disabled ? { outcome: "disabled", reason: "overpass_off" } as const : { outcome: "failed" } as const), found: 0, added: 0, detail, next_due_at: (started + RETRY_AFTER_FAILURE_MS) / 1000 };
   }
+  if (discoveryOutcome(state) === "disabled") context.log.info("discovery_method_skipped", { location_id: context.location.id, method, reason: state.reason, detail: state.detail });
   // A test-mode run leaves the location's discovery record alone: what it found is in its own decision log.
   if (!isolatedRunId()) await discoveryState(context.db).replaceOne({ _id: state._id }, state, { upsert: true });
   return state;

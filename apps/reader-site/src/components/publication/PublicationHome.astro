@@ -1,0 +1,67 @@
+---
+import PublicationShell from "./PublicationShell.astro";
+import TopNews from "../edition/TopNews.astro";
+import EventsWeek from "../edition/EventsWeek.astro";
+import Newsroom from "../edition/Newsroom.astro";
+import SponsorPlacement from "../edition/SponsorPlacement.astro";
+import ShareLink from "../edition/ShareLink.astro";
+import SaveTheBee from "../edition/SaveTheBee.astro";
+import { publicationPageLinks, type PublicationPage } from "../../lib/publication-view";
+import { emailAvailable } from "../../../../../shared/email-availability";
+
+interface Props { page: PublicationPage }
+const { page } = Astro.props;
+const links = publicationPageLinks(page);
+const sponsor = (slot: "home_after_top_news" | "home_before_newsroom") =>
+  page.sponsorPlacements.find((placement) => placement.slot === slot);
+---
+<PublicationShell page={page} title={`${page.publication.displayName} | Newsbee`}>
+  <header class="release-heading">
+    {page.publication.logoUrl && <img src={page.publication.logoUrl} alt="" />}
+    <p class="nb-label">{page.edition.windowStart} to {page.edition.windowEnd}</p>
+    <h1>{page.publication.displayName}</h1>
+    <h2>{page.preview ? "Draft edition" : page.coveredLocations.length > 1
+      ? page.release?.correction ? "Corrected full combined edition" : "Full combined edition"
+      : page.release?.correction ? "Corrected edition" : "Weekly edition"}: {page.articles.length} stories</h2>
+    {page.publication.description && <p>{page.publication.description}</p>}
+    <p><strong>All covered communities:</strong> {page.coveredLocations.map((location) => location.name).join(" · ")}</p>
+    <nav class="release-links" aria-label="Edition links">
+      <a class="nb-link" href={links.section("all")}>Read all full stories</a>
+      {!page.preview && <><a class="nb-link" href={links.archive}>Browse the archive</a>
+      <ShareLink href={links.page} title={`${page.publication.displayName} publication release`} label="Share this release" /></>}
+    </nav>
+  </header>
+  {page.topStories.length > 0 && <TopNews stories={page.topStories} source="pipeline" />}
+  <SponsorPlacement placement={sponsor("home_after_top_news")} />
+  {page.eventDays.some((day) => day.events.length > 0) && <EventsWeek town={page.publication.displayName} days={page.eventDays} source="pipeline" dayHref={links.events} />}
+  {page.beeGame && <SaveTheBee locationId={page.publication.id} editionId={page.release?.id ?? page.preview!.draftId}
+    api={page.beeGame.api} preview={page.beeGame.preview} />}
+  {emailAvailable() && <section id="newsletter" class="newsletter-card" aria-labelledby="publication-newsletter-title">
+    <div>
+      <p class="nb-label">Publication newsletter</p>
+      <h2 id="publication-newsletter-title">{page.publication.displayName} email updates</h2>
+      <p>{page.preview ? "Draft preview only. Signup, email delivery, and public sharing are unavailable here. Nothing is published or sent." : "Email delivery has not launched and publication signup is unavailable. Read online; existing subscriptions and consent stay unchanged."}</p>
+    </div>
+    {page.preview ? <button class="nb-button nb-button-primary" disabled>Newsletter unavailable in preview</button>
+      : <a class="nb-button nb-button-primary" href={links.newsletter}>Publication newsletter</a>}
+  </section>}
+  <SponsorPlacement placement={sponsor("home_before_newsroom")} />
+  {page.sections.length > 0 && <Newsroom tabs={page.sections} source="pipeline" moreHref={links.section} />}
+</PublicationShell>
+
+<style>
+  .release-heading { display: grid; gap: var(--space-4); max-width: 52rem; }
+  .release-heading img { max-width: 12rem; max-height: 5rem; object-fit: contain; object-position: left center; }
+  .release-heading h1 { font-size: var(--text-h1); line-height: var(--leading-h1); }
+  .release-heading h2 { font-size: var(--text-h2); line-height: var(--leading-h2); }
+  .release-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+  .newsletter-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); padding: var(--space-6); border: 1px solid var(--color-line); border-radius: var(--radius-xl); background: var(--color-paper); }
+  .newsletter-card > div { display: grid; gap: var(--space-2); max-width: 44rem; }
+  .newsletter-card h2 { font-size: var(--text-h2); }
+  .newsletter-card p:not(.nb-label) { color: var(--color-ink-soft); }
+  :global(main.nb-container:has(.release-heading)) { gap: var(--space-16); }
+  @media (max-width: 40rem) {
+    .newsletter-card { align-items: flex-start; flex-direction: column; padding: var(--space-5); }
+    .newsletter-card .nb-button { width: 100%; justify-content: center; }
+  }
+</style>

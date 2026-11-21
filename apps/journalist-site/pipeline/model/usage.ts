@@ -38,9 +38,12 @@ export type UsageWindow = {
   rate_limited: number;
   input_tokens: number;
   output_tokens: number;
-  /** Successful calls whose provider reported no token counts (excluded from cost). */
+  /** Calls without complete, non-negative token counts (excluded from known cost). */
   calls_without_tokens: number;
   estimated_cost_usd: number | null;
+  /** Known subtotal only, never a complete estimate when pricing or tokens are missing. */
+  known_cost_usd?: number | null;
+  cost_complete?: boolean;
   average_duration_ms: number | null;
 };
 
@@ -55,13 +58,14 @@ export type ProviderUsage = {
   pricing: { input_per_mtok: number; output_per_mtok: number } | null;
   last_error: { at: number; message: string; status_code: number | null } | null;
   warnings: string[];
+  observed: { last_call_at: number | null; last_success_at: number | null; last_failure_at: number | null };
 };
 
 /** One model a person or a run used, and how much. */
 export type ModelUse = { provider: string; model: string | null; calls: number; failures: number };
-/** Model calls by the person whose keys paid for them: each run runs on its starter's own models. */
+/** Model calls by initiating principal, whether funded by Newsbee or a legacy credential binding. */
 export type PersonUsage = UsageMetrics & { sponsor_id: string; email: string | null; runs: number; models: ModelUse[] };
-/** Which models served a run, whose keys they were on, and what it cost. */
+/** Which models served a run, its execution source, and what it cost. */
 export type RunUsage = UsageMetrics & {
   run_id: string; location_id: string | null; location_name: string | null; kind: string | null; status: string | null;
   started_by: string | null; started_at: number | null; credential_source: string | null; models: ModelUse[];
@@ -102,13 +106,15 @@ function windowOf(bucket: Bucket, pricing: ProviderUsage["pricing"]): UsageWindo
   };
 }
 
-function pricingOf(config: ProviderConfig | undefined): ProviderUsage["pricing"] {
+function pricingOf(config: UsageProviderConfig | undefined): ProviderUsage["pricing"] {
   const input = config?.usage.inputCostPerMTok ?? null;
   const output = config?.usage.outputCostPerMTok ?? null;
   return input === null || output === null ? null : { input_per_mtok: input, output_per_mtok: output };
 }
 
-function configFor(providers: ProviderConfig[], provider: string, model: string | null) {
+export type UsageProviderConfig = Pick<ProviderConfig, "name" | "kind" | "model" | "usage">;
+
+function configFor(providers: UsageProviderConfig[], provider: string, model: string | null) {
   // A Gemini call records "gemini" as its provider, and a light model records its provider's name, so
   // match the light config (`<name>_light`) and the provider kind too.
   return providers.find((item) => item.name === provider && (item.model ?? null) === model)
@@ -187,8 +193,7 @@ type RunGroup = DetailedBucket & { _id: { provider: string; model: string | null
 type PriceOf = (provider: string, model: string | null) => ProviderUsage["pricing"];
 
 /**
- * Model calls by person and by run, between `start` and `end` (seconds). Every run uses the models its
- * starter configured, so different runs (and different people) can show different providers and models.
+ * Model calls by initiating person and by run, between `start` and `end` (seconds).
  */
 async function usageByPersonAndRun(db: Db, start: number, end: number, priceOf: PriceOf, options: { location?: string; runLimit: number }) {
   const measured = { $and: [
@@ -343,37 +348,52 @@ export async function detailedModelUsage(
 }
 
 /** Usage over the last 24 hours and 7 days, per provider and model, with limit warnings. */
-export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now = Date.now()): Promise<ModelUsageSummary> {
+export async function modelUsageSummary(db: Db, providers: UsageProviderConfig[], now = Date.now()): Promise<ModelUsageSummary> {
   const current = now / 1000;
   const dayStart = current - DAY;
   const weekStart = current - 7 * DAY;
-  const grouped = await usage(db).aggregate<{ _id: { provider: string; model: string | null; role: string; recent: boolean } } & Bucket>([
-    { $match: { created_at: { $gte: weekStart } } },
+  const measured = { $and: [
+    { $isNumber: "$input_tokens" }, { $isNumber: "$output_tokens" },
+    { $gte: ["$input_tokens", 0] }, { $gte: ["$output_tokens", 0] },
+  ] };
+  type Observation = ProviderUsage["observed"];
+  const grouped = await usage(db).aggregate<{ _id: { provider: string; model: string | null; role: string; recent: boolean } } & DetailedBucket & Observation>([
+    { $match: { created_at: { $gte: weekStart, $lte: current } } },
     {
       $group: {
-        _id: { provider: "$provider", model: "$model", role: "$role", recent: { $gte: ["$created_at", dayStart] } },
+        _id: { provider: "$provider", model: { $ifNull: ["$model", null] }, role: "$role", recent: { $gte: ["$created_at", dayStart] } },
         calls: { $sum: 1 },
         failures: { $sum: { $cond: ["$ok", 0, 1] } },
         rate_limited: { $sum: { $cond: ["$rate_limited", 1, 0] } },
         input_tokens: { $sum: { $ifNull: ["$input_tokens", 0] } },
         output_tokens: { $sum: { $ifNull: ["$output_tokens", 0] } },
-        calls_without_tokens: { $sum: { $cond: [{ $and: ["$ok", { $eq: [{ $ifNull: ["$input_tokens", null] }, null] }] }, 1, 0] } },
+        calls_without_tokens: { $sum: { $cond: [measured, 0, 1] } },
+        measured_calls: { $sum: { $cond: [measured, 1, 0] } },
+        measured_input: { $sum: { $cond: [measured, "$input_tokens", 0] } },
+        measured_output: { $sum: { $cond: [measured, "$output_tokens", 0] } },
         duration_ms: { $sum: "$duration_ms" },
+        last_call_at: { $max: "$created_at" },
+        last_success_at: { $max: { $cond: ["$ok", "$created_at", null] } },
+        last_failure_at: { $max: { $cond: ["$ok", null, "$created_at"] } },
       },
     },
   ]).toArray();
   const peaks = await usage(db).aggregate<{ _id: { provider: string; model: string | null }; peak: number }>([
-    { $match: { created_at: { $gte: dayStart } } },
-    { $group: { _id: { provider: "$provider", model: "$model", minute: { $floor: { $divide: ["$created_at", 60] } } }, calls: { $sum: 1 } } },
+    { $match: { created_at: { $gte: dayStart, $lte: current } } },
+    { $group: { _id: { provider: "$provider", model: { $ifNull: ["$model", null] }, minute: { $floor: { $divide: ["$created_at", 60] } } }, calls: { $sum: 1 } } },
     { $group: { _id: { provider: "$_id.provider", model: "$_id.model" }, peak: { $max: "$calls" } } },
   ]).toArray();
 
   const key = (provider: string, model: string | null) => `${provider}\u0000${model ?? ""}`;
-  const rows = new Map<string, { provider: string; model: string | null; day: Bucket; week: Bucket; roles: Map<string, Bucket> }>();
+  const detailedBucket = (): DetailedBucket => ({ ...emptyBucket(), measured_calls: 0, measured_input: 0, measured_output: 0 });
+  const rows = new Map<string, { provider: string; model: string | null; day: DetailedBucket; week: DetailedBucket; roles: Map<string, Bucket>; observed: Observation }>();
   for (const group of grouped) {
     const id = key(group._id.provider, group._id.model);
-    const row = rows.get(id) ?? { provider: group._id.provider, model: group._id.model, day: emptyBucket(), week: emptyBucket(), roles: new Map<string, Bucket>() };
+    const row = rows.get(id) ?? { provider: group._id.provider, model: group._id.model, day: detailedBucket(), week: detailedBucket(), roles: new Map<string, Bucket>(), observed: { last_call_at: null, last_success_at: null, last_failure_at: null } };
     rows.set(id, row);
+    for (const field of ["last_call_at", "last_success_at", "last_failure_at"] as const) {
+      if (group[field] !== null) row.observed[field] = Math.max(row.observed[field] ?? 0, group[field]);
+    }
     add(row.week, group);
     if (group._id.recent) {
       add(row.day, group);
@@ -383,17 +403,21 @@ export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now
     }
   }
 
-  const totalsDay = emptyBucket();
-  const totalsWeek = emptyBucket();
-  let totalDayCost: number | null = null;
-  let totalWeekCost: number | null = null;
+  const totalsDay = accumulator();
+  const totalsWeek = accumulator();
+  const summaryWindow = (value: Accumulator): UsageWindow => ({
+    ...metrics(value),
+    estimated_cost_usd: value.priced_calls === value.bucket.calls ? value.estimated_cost_usd : null,
+    known_cost_usd: value.estimated_cost_usd,
+    cost_complete: value.priced_calls === value.bucket.calls,
+  });
   const result: ProviderUsage[] = [];
   for (const row of rows.values()) {
     const config = configFor(providers, row.provider, row.model);
     const pricing = pricingOf(config);
     const limits = { requests_per_minute: config?.usage.requestsPerMinute ?? null, requests_per_day: config?.usage.requestsPerDay ?? null };
     const peak = peaks.find((item) => key(item._id.provider, item._id.model) === key(row.provider, row.model))?.peak ?? 0;
-    const lastError = await usage(db).find({ provider: row.provider, model: row.model, ok: false, created_at: { $gte: weekStart } })
+    const lastError = await usage(db).find({ provider: row.provider, model: row.model, ok: false, created_at: { $gte: weekStart, $lte: current } })
       .sort({ created_at: -1 }).limit(1).next();
     const warnings: string[] = [];
     if (row.day.rate_limited) {
@@ -408,12 +432,13 @@ export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now
     if (row.day.calls && row.day.failures / row.day.calls >= 0.2) {
       warnings.push(`${Math.round((row.day.failures / row.day.calls) * 100)}% of calls failed in 24 hours.`);
     }
-    add(totalsDay, row.day);
-    add(totalsWeek, row.week);
-    const day = windowOf(row.day, pricing);
-    const week = windowOf(row.week, pricing);
-    if (day.estimated_cost_usd !== null) totalDayCost = (totalDayCost ?? 0) + day.estimated_cost_usd;
-    if (week.estimated_cost_usd !== null) totalWeekCost = (totalWeekCost ?? 0) + week.estimated_cost_usd;
+    accumulate(totalsDay, row.day, pricing);
+    accumulate(totalsWeek, row.week, pricing);
+    const dayValue = accumulator(), weekValue = accumulator();
+    accumulate(dayValue, row.day, pricing);
+    accumulate(weekValue, row.week, pricing);
+    const day = summaryWindow(dayValue);
+    const week = summaryWindow(weekValue);
     result.push({
       provider: row.provider,
       model: row.model,
@@ -426,6 +451,7 @@ export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now
       pricing,
       last_error: lastError ? { at: lastError.created_at, message: lastError.error ?? "Failed", status_code: lastError.status_code } : null,
       warnings,
+      observed: row.observed,
     });
   }
   result.sort((a, b) => b.last_7d.calls - a.last_7d.calls || a.provider.localeCompare(b.provider));
@@ -435,8 +461,8 @@ export async function modelUsageSummary(db: Db, providers: ProviderConfig[], now
     providers: result,
     runs: recent.runs,
     totals: {
-      last_24h: { ...windowOf(totalsDay, null), estimated_cost_usd: totalDayCost },
-      last_7d: { ...windowOf(totalsWeek, null), estimated_cost_usd: totalWeekCost },
+      last_24h: summaryWindow(totalsDay),
+      last_7d: summaryWindow(totalsWeek),
     },
     pricing_configured: providers.some((item) => pricingOf(item) !== null),
   };

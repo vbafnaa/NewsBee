@@ -1,39 +1,29 @@
 import { after } from "next/server";
 import { logger } from "@/pipeline/core/log";
-import { RunOptionsError } from "@/pipeline/core/run-options";
 import { queueNextJob } from "./pipeline-queue";
 import { callNextJob } from "./job-chain";
-import { LocationBusy } from "@/pipeline/communities/locations";
-import { InvalidSourceLink } from "@/pipeline/connectors/manual-links";
 import type { OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
-import { RunConflict } from "@/pipeline/orchestration/runs";
 import { dispatchPlan } from "@/pipeline/orchestration/dispatch";
-import { queueConsumerActive, recordSchedulerSafely, schedulerState } from "@/pipeline/orchestration/scheduler";
-import { adminGuard, currentPrincipal } from "./admin-session";
-import { ExecutionBlocked } from "@/pipeline/core/execution-errors";
+import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
+import { currentPrincipal, operatorGuard, signedInGuard } from "./admin-session";
 import { redact, safeError } from "@/pipeline/core/redaction";
 import { authorizePaidAction } from "@/pipeline/accounts/execution";
 import { pipelineDeps } from "./pipeline";
-import { internalGuard } from "./internal-session";
+import { internalGuard, internalUnlocked } from "./internal-session";
 import { getDatabase } from "@/pipeline/storage/mongo";
+import { statusFor } from "./admin-error-status";
+import { withSiteWriter } from "../../../shared/restore-maintenance";
+import { assertLocationInScope, resolveLocationScope, type LocationScope } from "@/pipeline/publications/newsroom-scope";
 
 const log = logger("admin-api");
 
-function statusFor(error: unknown) {
-  if (error instanceof ExecutionBlocked) return 403;
-  if ((error as { code?: number })?.code === 11000) return 409;
-  if (error instanceof LocationBusy || error instanceof RunConflict) return 409;
-  if (error instanceof InvalidSourceLink) return 422;
-  if (error instanceof RunOptionsError) return 400;
-  const message = error instanceof Error ? error.message : "";
-  if (/^(Location is not onboarded|Census place is not available|No published|No active withdrawal|Unknown run|Unknown source|Unknown video request)/.test(message)) return 404;
-  if (/^(A public correction reason|Withdrawal already exists|Invalid )/.test(message)) return 400;
-  return 500;
-}
-
-/** Admin-only route: checks the session, builds pipeline deps, and returns JSON or a clear error. */
-export async function adminRoute(request: Request, handler: (deps: OrchestratorDeps) => Promise<unknown>) {
-  const denied = await adminGuard(request);
+async function authenticatedRoute(
+  request: Request,
+  handler: (deps: OrchestratorDeps) => Promise<unknown>,
+  guard: (request: Request) => Promise<Response | null>,
+  errorContext?: () => { stage: string; locationId?: string; storyId?: string },
+) {
+  const denied = await guard(request);
   if (denied) return denied;
   try {
     const deps = await pipelineDeps();
@@ -44,16 +34,62 @@ export async function adminRoute(request: Request, handler: (deps: OrchestratorD
       const body = paidAction[2] === "actions" ? await request.clone().json().catch(() => ({})) as { action?: string } : {};
       if (!["include", "exclude", "pin"].includes(body.action ?? "")) await authorizePaidAction(deps.db, decodeURIComponent(paidAction[1]), principal);
     }
-    const result = await handler({ ...deps, principal });
+    const result = await withSiteWriter(deps.db, () => handler({ ...deps, principal }));
     const response = result instanceof Response ? result : Response.json(redact(result));
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
     const status = statusFor(error);
     const detail = safeError(error);
-    if (status === 500) log.error("admin_request_failed", { path: new URL(request.url).pathname, error: detail });
-    return Response.json({ detail }, { status });
+    const context = errorContext?.();
+    if (status === 500) log.error("admin_request_failed", { path: new URL(request.url).pathname, ...context, error: detail });
+    return Response.json({ detail, ...context }, { status, headers: { "Cache-Control": "private, no-store" } });
   }
+}
+
+/** Operator-only route: checks the session, builds pipeline deps, and returns JSON or a clear error. */
+export async function adminRoute(
+  request: Request,
+  handler: (deps: OrchestratorDeps) => Promise<unknown>,
+  errorContext?: () => { stage: string; locationId?: string; storyId?: string },
+) {
+  return authenticatedRoute(request, handler, operatorGuard, errorContext);
+}
+
+/** Publication-scoped route: admits signed-in users, then requires the handler to enforce publication access. */
+export async function publicationRoute(
+  request: Request,
+  handler: (deps: OrchestratorDeps) => Promise<unknown>,
+  errorContext?: () => { stage: string; locationId?: string; storyId?: string },
+) {
+  return authenticatedRoute(request, handler, signedInGuard, errorContext);
+}
+
+/**
+ * Community-scoped route for the journalist workspace: operators as before, or a journalist
+ * acting from a newsroom they belong to (`?publication=<id>`). The handler receives the scope
+ * and must check every item's community against it.
+ */
+export async function newsroomScopedRoute(
+  request: Request,
+  handler: (deps: OrchestratorDeps, scope: LocationScope) => Promise<unknown>,
+  errorContext?: () => { stage: string; locationId?: string; storyId?: string },
+) {
+  return authenticatedRoute(request, async (deps) => handler(deps,
+    await resolveLocationScope(deps.db, deps.principal!, new URL(request.url).searchParams.get("publication"))), signedInGuard, errorContext);
+}
+
+/**
+ * Read-only source-run data: as internal map data (operators or the shared internal password), or for a journalist
+ * reviewing a community their newsroom covers (`?publication=`).
+ */
+export async function sourceRunReadRoute(request: Request, locationId: string, handler: (deps: Pick<OrchestratorDeps, "db">) => Promise<unknown>) {
+  if (await internalUnlocked()) return internalRoute(request, handler);
+  if (!new URL(request.url).searchParams.get("publication")) return internalRoute(request, handler);
+  return authenticatedRoute(request, async (deps) => {
+    assertLocationInScope(await resolveLocationScope(deps.db, deps.principal!, new URL(request.url).searchParams.get("publication")), locationId, "Community");
+    return handler({ db: deps.db });
+  }, signedInGuard);
 }
 
 /** Password-only, read-only map data. Never builds model runtimes or grants admin access. */
@@ -85,14 +121,9 @@ export function kickPipeline(deps: OrchestratorDeps, requestUrl: string) {
   after(async () => {
     try {
       if (deps.settings.mode === "cloud") {
-        const scheduler = await schedulerState(deps.db);
-        if (!queueConsumerActive(scheduler)) {
-          // A published queue message cannot revive a deployment whose consumer never runs.
-          await callNextJob(requestUrl);
-        } else {
-          const { send } = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
-          for (let index = 0; index < Math.max(1, send); index += 1) await queueNextJob();
-        }
+        // An idle consumer needs a fresh delivery, not a recursive HTTP recovery chain.
+        const { send } = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
+        for (let index = 0; index < Math.max(1, send); index += 1) await queueNextJob();
       } else {
         await callNextJob(requestUrl);
       }

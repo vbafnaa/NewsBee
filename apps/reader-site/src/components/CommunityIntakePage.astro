@@ -1,0 +1,185 @@
+---
+import "../../../../shared/design-tokens.css";
+import GoogleAnalytics from "./GoogleAnalytics.astro";
+import { directoryTown, type Location } from "../lib/reader-data";
+import type { IntakeKind } from "../../../../shared/community-intake";
+
+interface Props { kind: IntakeKind }
+const { kind } = Astro.props;
+const application = kind === "editor_interest";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const locationId = Astro.url.searchParams.get("location");
+let town: Location | null = null;
+let lookupError = "";
+if (locationId) {
+  try {
+    town = await directoryTown(locationId);
+    if (!town) lookupError = "We could not find that community. You can enter its name below.";
+  } catch (error) {
+    console.error("Community inquiry location lookup unavailable", error instanceof Error ? error.name : "Unknown error");
+    lookupError = "Community lookup is unavailable right now. You can enter the community name below.";
+  }
+}
+const title = application ? "Help bring Newsbee to your community" : "Contact Newsbee";
+const backHref = town ? `${base}?location=${encodeURIComponent(town.id)}` : base || "/";
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <GoogleAnalytics />
+    <meta name="robots" content="noindex, follow" />
+    <title>{title} | Newsbee</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to the form</a>
+    <main id="main">
+      <header>
+        <a class="brand" href={base || "/"}>Newsbee</a>
+        <p>Your community, this week</p>
+      </header>
+      <h1>{title}</h1>
+      {application ? <>
+        <p>Contribute local stories, help edit an edition, or tell us where you would like to start a Newsbee branch.</p>
+        <aside class="next-steps" aria-labelledby="next-steps-heading">
+          <h2 id="next-steps-heading">What happens next</h2>
+          <ol>
+            <li>Tell us about your community and how you would like to help.</li>
+            <li>A Newsbee editor reviews your application and contacts you by email.</li>
+            <li>We discuss the community, editorial responsibilities, and next steps together before setting up access or a branch.</li>
+          </ol>
+        </aside>
+      </> : <p>Have a question about your community's coverage, a partnership idea, or something you would like us to know? Send a note to the Newsbee team.</p>}
+      {lookupError && <p class="notice" role="status">{lookupError}</p>}
+      <form data-community-intake data-api={`${base}/api/${application ? "editor-interest" : "contact"}`}
+        data-location-id={town?.id} data-application={String(application)}>
+        <label>Your name<input name="submitter_name" autocomplete="name" minlength="2" maxlength="120" required /></label>
+        <label>Your email<input name="submitter_email" type="email" autocomplete="email" maxlength="254" required aria-describedby="email-note" /></label>
+        <p id="email-note" class="note">Your contact details stay private and are used to reply about this inquiry.</p>
+        <label>{application ? "Community you would like to cover" : "Community (optional)"}
+          <input name="community_name" value={town?.name ?? ""} readonly={Boolean(town)}
+            minlength="2" maxlength="160" required={application} placeholder="Neighborhood, city or town, and state" />
+        </label>
+        {town && <p class="note"><a data-change-community href={`${base}/${application ? "become-editor" : "contact"}`}>Enter a different community</a></p>}
+        {application ? <>
+          <label>How would you like to get involved?
+            <select name="intent" required>
+              <option value="">Choose one</option>
+              <option value="contribute">Contribute stories and community knowledge</option>
+              <option value="lead">Help edit or lead a local edition</option>
+              <option value="start_branch">Start a Newsbee branch in my community</option>
+            </select>
+          </label>
+          <label>Your experience<textarea name="experience" rows="5" minlength="20" maxlength="3000" required aria-describedby="experience-note"></textarea></label>
+          <p id="experience-note" class="note">Tell us about writing, editing, local business, organizing, or other community experience. You do not need to have worked in a newsroom.</p>
+          <label>Why this community, and what would you like to build?
+            <textarea name="motivation" rows="6" minlength="40" maxlength="3000" required></textarea>
+          </label>
+        </> : <>
+          <label>What is your message about?
+            <select name="topic" required>
+              <option value="question">A question about Newsbee</option>
+              <option value="coverage">Community coverage</option>
+              <option value="partnership">A partnership idea</option>
+              <option value="other">Something else</option>
+            </select>
+          </label>
+          <label>Your message<textarea name="message" rows="8" minlength="20" maxlength="4000" required></textarea></label>
+        </>}
+        <label class="trap" aria-hidden="true">Leave this field empty<input name="website" tabindex="-1" autocomplete="off" /></label>
+        <label class="consent"><input name="consent" type="checkbox" required /><span>I agree that Newsbee may save this inquiry and contact me about it. My name, email, and message will not be published.</span></label>
+        <button type="submit">{application ? "Send application for review" : "Send message"}</button>
+        <noscript><p>Enable JavaScript in your browser to send this form.</p></noscript>
+      </form>
+      <p data-intake-status role="status" aria-live="polite" tabindex="-1"></p>
+      <nav class="links" aria-label="Other ways to get involved">
+        {application ? <a href={`${base}/contact${town ? `?location=${encodeURIComponent(town.id)}` : ""}`}>Contact Newsbee with a question</a>
+          : <a href={`${base}/become-editor${town ? `?location=${encodeURIComponent(town.id)}` : ""}`}>Help edit or start a local Newsbee</a>}
+        {town && <a href={`${base}/share?location=${encodeURIComponent(town.id)}`}>Share a story with the editor</a>}
+        <a href={backHref}>{town ? `Back to ${town.name}` : "Find your neighborhood"}</a>
+      </nav>
+    </main>
+  </body>
+</html>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-community-intake]");
+  const status = document.querySelector<HTMLElement>("[data-intake-status]");
+  const changeCommunity = form?.querySelector<HTMLAnchorElement>("[data-change-community]");
+  changeCommunity?.addEventListener("click", (event) => {
+    if (!form || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const community = form.querySelector<HTMLInputElement>("[name=community_name]");
+    if (!community) return;
+    event.preventDefault();
+    delete form.dataset.locationId;
+    community.readOnly = false; community.value = ""; community.focus();
+    changeCommunity.hidden = true;
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!status || !form.reportValidity()) return;
+    const button = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
+    if (button.disabled) return;
+    const body: Record<string, unknown> = Object.fromEntries(new FormData(form));
+    body.consent = body.consent === "on";
+    body.location_id = form.dataset.locationId || null;
+    button.disabled = true;
+    status.textContent = "Saving your inquiry...";
+    try {
+      const response = await fetch(form.dataset.api!, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(10_000),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail ?? "Please try again.");
+      if (typeof result.receipt !== "string") throw new Error("Your confirmation could not be read. Please try again.");
+      form.hidden = true;
+      status.textContent = `${form.dataset.application === "true"
+        ? "Your application is saved for review. A Newsbee editor will contact you about your community and the next steps."
+        : "Your message is saved. The Newsbee team will review it and can reply to the email you provided."} Reference: ${result.receipt}.`;
+      status.focus();
+    } catch (error) {
+      status.textContent = `Could not send: ${error instanceof Error ? error.message : "Please try again."} Your text has been kept.`;
+    } finally { button.disabled = false; }
+  });
+</script>
+
+<style is:global>
+  :root { --font-body: Arial, "Liberation Sans", sans-serif; --font-display: Georgia, "Times New Roman", serif; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-paper); color: var(--color-ink); font: var(--text-body)/var(--leading-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+  main { width: 100%; max-width: 40rem; margin: 2rem auto; padding: 2rem; overflow-wrap: anywhere; }
+  header { text-align: center; border-bottom: 1px solid var(--color-line); padding-bottom: var(--space-4); }
+  header p, .note { color: var(--color-muted); }
+  .brand { font: 600 3rem/1 var(--font-display); letter-spacing: -.02em; color: var(--color-ink); text-decoration: none; }
+  h1 { font: 600 var(--text-h3)/1.3 var(--font-display); margin-block: var(--space-4); text-wrap: balance; }
+  h2 { font: 600 var(--text-base)/1.3 var(--font-body); margin: 0; }
+  .next-steps { padding: var(--space-4); background: var(--color-cream); border-radius: var(--radius-sm); font-size: var(--text-sm); }
+  ol { margin-bottom: 0; padding-left: var(--space-5); }
+  ol li + li { margin-top: var(--space-2); }
+  form, label { display: grid; gap: var(--space-2); min-width: 0; }
+  form { gap: var(--space-4); margin-block: var(--space-6); }
+  form[hidden] { display: none; }
+  label { font-size: .95rem; }
+  input, textarea, select, button { width: 100%; min-width: 0; padding: .6rem; font: inherit; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-ink); }
+  textarea { resize: vertical; }
+  input[readonly] { background: var(--color-paper); }
+  button { background: var(--color-bee); border-color: var(--color-bee-deep); font-weight: 600; cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--color-bee-deep); }
+  button:disabled { opacity: .65; cursor: wait; }
+  .consent { display: flex; align-items: flex-start; gap: .6rem; font-size: .85rem; }
+  .consent input { width: auto; flex-shrink: 0; margin-top: .35rem; }
+  .note { margin: 0; font-size: .85rem; }
+  .notice { padding: var(--space-3); background: var(--color-cream); }
+  .links { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+  a { color: var(--color-ink); text-decoration-color: var(--color-bee-deep); text-decoration-thickness: 2px; text-underline-offset: .2em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  .trap { display: none; }
+  .skip { position: absolute; left: -10000px; }
+  .skip:focus { left: var(--space-4); top: var(--space-4); background: var(--color-surface); padding: var(--space-2); }
+  @media (max-width: 40rem) {
+    main { margin: 0; padding: 1.5rem 1rem; }
+    input:not([type=checkbox]), textarea, select { font-size: 1rem; }
+  }
+</style>

@@ -62,8 +62,15 @@ export type Settings = {
   llmDiscovery: boolean;
   /** NEWSBEE_PROPOSED_UNTIL_APPROVED: when on, every source a map run finds is saved as proposed, so editions read only what a person accepted. Off by default: a source the model check accepted goes on active. */
   proposedUntilApproved: boolean;
-  /** NEWSBEE_MODEL_DAILY_CALLS: model calls per day for detail extraction and discovery. */
+  /** NEWSBEE_MODEL_DAILY_CALLS: shared managed model attempts per UTC day, across all roles. */
   modelDailyCalls: number;
+  /** Resolved server-side execution identity, never inferred from the initiating person. */
+  modelFunding?: {
+    source: "platform" | "personal" | "environment";
+    initiatorId: string;
+    credentialVersion: number;
+    providers?: Record<string, "platform" | "personal" | "environment">;
+  };
   /** NEWSBEE_GEMINI_LIGHT_MODEL: the light model for Gemini providers that don't set their own (Flash-Lite). */
   lightModel: string;
   /** Keys for the paid integrations; a service with no key stays off whatever the run allows. */
@@ -86,6 +93,7 @@ export type Integrations = {
   attomKey: string | null;
   jinaKey: string | null;
   falKey: string | null;
+  desktopVideoKey: string | null;
 };
 
 export const DEFAULT_MODEL_DAILY_CALLS = 800;
@@ -182,6 +190,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
       attomKey: blank(env.NEWSBEE_ATTOM_API_KEY),
       jinaKey: blank(env.NEWSBEE_JINA_API_KEY),
       falKey: blank(env.FAL_KEY),
+      desktopVideoKey: blank(env.DESKTOP_VIDEO_API_KEY),
     },
   };
 }

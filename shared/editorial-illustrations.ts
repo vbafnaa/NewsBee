@@ -50,6 +50,28 @@ export type IllustrationAssetId = IllustrationId | "wedgwood-books" | "moses-lak
 export type EditorialIllustration = { id: IllustrationId; asset_id?: IllustrationAssetId; policy: typeof ILLUSTRATION_POLICY; alt: string };
 export type IllustrationStory = { headline?: string; title?: string; blurb?: string; summary?: string; description?: string; kind?: string; rank?: number | null };
 
+/** Decode a frozen canonical allocation; publication callers must separately verify its reviewed provenance. */
+export function savedEditorialIllustration(value: {
+  illustration_id?: unknown;
+  illustration_asset_id?: unknown;
+  illustration_policy?: unknown;
+  image_alt?: unknown;
+}): EditorialIllustration | null {
+  const art = ILLUSTRATIONS.find((candidate) => candidate.id === value.illustration_id);
+  if (!art || value.illustration_policy !== ILLUSTRATION_POLICY) return null;
+  const asset = value.illustration_asset_id ?? art.id;
+  if (asset !== art.id && !(art.id === "books" && asset === "wedgwood-books")
+    && !(art.id === "sports" && asset === "moses-lake-football")) return null;
+  if (value.image_alt !== undefined && (typeof value.image_alt !== "string"
+    || !value.image_alt.trim() || value.image_alt.length > 500 || /[\u0000-\u001f\u007f]/.test(value.image_alt))) return null;
+  return {
+    id: art.id,
+    asset_id: asset as IllustrationAssetId,
+    policy: ILLUSTRATION_POLICY,
+    alt: typeof value.image_alt === "string" ? value.image_alt : art.alt,
+  };
+}
+
 const excludedKinds = new Set(["public_record", "safety_incident", "safety_notice", "court_case", "obituary", "housing_market", "home_sale", "earthquake", "weather_alert", "reader_story"]);
 const sensitive = /\b(police|arrest(?:ed|s)?|homicide|murder|assault|abuse|shooting|stabb(?:ed|ing)|rape|violence|victims?|suicide|fatal|fatalit(?:y|ies)|deaths?|died|injur(?:ed|ies|y)|missing person|census|obituar(?:y|ies)|funerals?|memorial service|celebration of life|vigils?)\b/i;
 

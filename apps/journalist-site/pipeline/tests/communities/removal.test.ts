@@ -16,6 +16,7 @@ import { startRun, resumeRun, triggerStage } from "../../orchestration/orchestra
 import { loadSettings } from "../../core/config";
 import { FakeModel } from "../support/fake-model";
 import { usageSummary } from "../../analytics/usage";
+import { PublicationAccessDenied } from "../../publications/permissions";
 
 let server: MongoMemoryServer, client: MongoClient, db: Db, root: string, store: LocalArtifacts;
 const reader = "fixture-reader-root";
@@ -118,6 +119,17 @@ it.each(ACTIVE_RUN_STATUSES)("refuses active %s runs without changing files or r
   await expect(removeLocation(db, store, locationId)).rejects.toBeInstanceOf(LocationBusy);
   expect((await collection(COLLECTIONS.locations).findOne({ _id: locationId }))?.removal).toBeUndefined();
   expect(await store.readJson(`${reader}/${locationId}-edition.json`)).toMatchObject({ location_id: locationId });
+});
+
+it.each(["approved", "publishing"])("refuses removal while a publication draft is %s for the location", async (status) => {
+  await collection(COLLECTIONS.publicationDrafts).insertOne({
+    _id: `publication-${status}`,
+    publication_id: "publication",
+    editorial_status: status,
+    approval: { snapshot: { locations: [{ id: locationId, name: "Fixture town" }] } },
+  });
+  await expect(removeLocation(db, store, locationId)).rejects.toThrow(`the ${status} publication draft`);
+  expect((await collection(COLLECTIONS.locations).findOne({ _id: locationId }))?.removal).toBeUndefined();
 });
 
 it("refuses a still-executing job after cancellation, and a live worker lease", async () => {
@@ -224,6 +236,19 @@ it("cleans up the resolved Reader channel instead of the environment fallback", 
   });
   expect(await store.readJson(`${channelRoot}/locations.json`)).toMatchObject({ locations: [{ id: otherId }] });
   expect(await store.readJson(`${reader}/${locationId}-edition.json`)).toMatchObject({ location_id: locationId });
+});
+
+it("requires a real actor before marking removal or cleaning files when publication scope is affected", async () => {
+  await collection(COLLECTIONS.outputChannels).insertOne({
+    _id: "publication", owner_id: "journalist", name: "Publication", enabled: true, drive_folder_id: "publication-folder",
+    selected_location_ids: [locationId], allowed_location_ids: [locationId], published_location_ids: [],
+  });
+  const save = vi.spyOn(store, "saveJson");
+  const remove = vi.spyOn(store, "removeFile");
+  await expect(removeLocation(db, store, locationId)).rejects.toBeInstanceOf(PublicationAccessDenied);
+  expect((await collection(COLLECTIONS.locations).findOne({ _id: locationId }))?.removal).toBeUndefined();
+  expect(save).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
 });
 
 it("local cleanup refuses directories, path traversal and junctions outside the artifact tree", async () => {

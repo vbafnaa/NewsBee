@@ -29,6 +29,18 @@ const GUIDES: Record<Voice | "serious", string> = {
   bold: `Use concise, energetic reported prose. Lead with the strongest source-supported fact and use direct active verbs. Keep the headline specific. Do not manufacture drama, stakes, motives, community benefits or a closing call to action. ${NEVER}`,
   serious: "This subject is serious. Keep the tone calm, respectful and plain: no jokes, puns, wordplay, exclamation marks, rhetorical questions or dramatic framing.",
 };
+/**
+ * What makes a local story worth reading, shown with invented examples so the model copies the
+ * approach, not the facts. Serious subjects (courts, deaths, safety, hazards) never get this.
+ */
+export const ENGAGING_GUIDE = `Make it worth reading. Open with the most vivid, concrete detail a neighbour would notice or care about: a person, a place they know, something they can see, do or bring. Do not open with an agency name, "recorded" or "is hosting". Use active verbs and the specific nouns in the source. When the source says what readers can do or what changes for them, say it plainly. A warm, light turn of phrase is welcome when it adds no new fact. Never add facts, feelings, numbers, reasons or quotes the source does not give.
+Invented example 1. Source: "Seed Swap at Lake Forest Branch. Bring seeds you saved to trade with other gardeners. Free." Plain: "The Lake Forest Branch is hosting a seed swap. Residents can bring seeds to trade." Better: "Gardeners with a drawer of saved seeds can trade them for something new at the Lake Forest Branch's free seed swap."
+Invented example 2. Source: "City records show 14 building permits in Elm Park this month, up from 6 last month. Most are for backyard cottages." Plain: "The city recorded 14 building permits in Elm Park this month. Most are for backyard cottages." Better: "Backyard cottages account for most of the 14 building permits the city recorded in Elm Park this month, up from 6 last month."
+Use the approach, never the example facts.`;
+export function engagingGuide(kind: string | undefined, voice: Voice = configuredVoice()) {
+  const used = voiceFor(kind, voice);
+  return used === "serious" || used === "plain" ? "" : ENGAGING_GUIDE;
+}
 export function voiceGuide(kind: string | undefined, voice: Voice = configuredVoice()) {
   return GUIDES[voiceFor(kind, voice)];
 }

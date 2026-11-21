@@ -6,6 +6,7 @@ import { adminApi } from "@/lib/admin-client";
 import LocationRemoval from "./location-removal";
 import { RunExecutionSummary } from "../../components/execution-policy";
 import type { ExecutionBinding } from "@/pipeline/accounts/execution";
+import LocationEvidence from "./location-evidence";
 
 type Location = { id: string; name: string; state: string; removal_pending?: boolean; directory_edition?: string; systems?: { name: string; website?: string | null }[] };
 type Run = { _id: string; execution?: ExecutionBinding; status: string; created_at: number; completed_at: number | null;
@@ -68,6 +69,7 @@ export default function LocationDetail({ locationId, view = "history", owner = f
           <li key={index}>{system.website ? <a href={system.website} target="_blank" rel="noopener noreferrer">{system.name}</a> : system.name}</li>)}</ul> : "None"}</dd>
       </dl>}
     </section>}
+    {view === "profile" && location && <LocationEvidence locationId={locationId} />}
     {owner && view === "profile" && location && <LocationRemoval locationId={locationId} name={location.name} pending={location.removal_pending} />}
     {view === "history" && <section className="panel">
       <h2>{kind === "map" ? "Source map run history" : kind === "edition" ? "Edition run history" : "Run history"}</h2>

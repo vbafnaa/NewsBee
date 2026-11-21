@@ -6,7 +6,7 @@ import DriveDiagnostics from "./drive-diagnostics";
 export default async function DriveDiagnosticsPage() {
   const email = await currentAdmin();
   if (!email) redirect("/login");
-  return <AdminShell email={email} page="drive-diagnostics" title="Drive diagnostics"
+  return <AdminShell email={email} page="drive-diagnostics" title="Storage"
     description="Check the account and folder used for pipeline artifacts and job logs.">
     <DriveDiagnostics />
   </AdminShell>;

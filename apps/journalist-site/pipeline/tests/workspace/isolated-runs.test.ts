@@ -22,16 +22,18 @@ import { cachedDiscovery } from "../../discovery/cache";
 import { pastDecisions } from "../../discovery/gemini-check";
 import type { DiscoveryContext } from "../../discovery/methods";
 import { METHODS } from "../../discovery/methods";
-import { discoveryState } from "../../discovery/run";
+import { discoveryState, dueMethods, refreshDiscovery, RETRY_AFTER_FAILURE_MS, runMethod } from "../../discovery/run";
+import { discoveryOutcome } from "../../discovery/status";
 import { UsageRecordingRuntime, type ModelRuntime } from "../../model/runtime";
-import { enqueue, ensureJobIndexes } from "../../orchestration/jobs";
+import { enqueue, ensureJobIndexes, type Job } from "../../orchestration/jobs";
 import { executeJob, startMapRun, type OrchestratorDeps } from "../../orchestration/orchestrator";
 import { ensureRunIndexes, getRun, runs, type PipelineRun } from "../../orchestration/runs";
 import { search } from "../../search/provider";
-import { pageDecisions, runSources, savePageDecision, sourceMap, SOURCE_REVIEWS, upsertCandidates } from "../../sourcemap/store";
+import { locationSources, pageDecisions, runSources, savePageDecision, sourceMap, SOURCE_REVIEWS, upsertCandidates } from "../../sourcemap/store";
+import { sourceInventory } from "../../sourcemap/inventory";
 import { COLLECTIONS } from "../../storage/mongo";
 import { RUN_DECISIONS } from "../../trace/decisions";
-import { ensureApiCallIndexes, HARD_LIMITS, type HardLimit } from "../../trace/gateway";
+import { ensureApiCallIndexes, externalTransport, HARD_LIMITS, type HardLimit } from "../../trace/gateway";
 import { sourceRunDetail, sourceRunList } from "../../trace/source-runs";
 import { FakeModel, type FakeCall } from "../support/fake-model";
 
@@ -88,12 +90,12 @@ beforeEach(async () => {
   await db.dropDatabase();
   await ensureApiCallIndexes(db); await ensureRunIndexes(db); await ensureJobIndexes(db);
   setLimits({});
-  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test", newsbeePrincipalId: "fixture-labeller" } });
   mocks.headers.mockResolvedValue(new Headers({ host: "workspace.example.test" }));
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.database.mockResolvedValue(db);
   mocks.deps.mockResolvedValue({ db });
-  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", enabled: true });
+  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", principalId: "fixture-labeller", enabled: true, role: "admin" });
   await db.collection<{ _id: string }>(COLLECTIONS.locations).insertOne({ ...LOCATION, _id: LOCATION.id } as never);
 });
 afterEach(() => { setLimits(saved); vi.unstubAllEnvs(); vi.resetAllMocks(); });
@@ -122,6 +124,62 @@ async function seedMap() {
 }
 
 describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
+  it("persists structured disabled discovery, preserves skipped calls and can deliberately refresh after reenabling", async () => {
+    const network = vi.fn<HttpTransport>(async (request) => ({ url: request.url, status: 200, headers: {}, body: new TextEncoder().encode('{"elements":[]}') }));
+    const transport = externalTransport(network);
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const context: DiscoveryContext = {
+      db, settings: { ...loadSettings({ NEWSBEE_MODE: "local", NEWSBEE_MODEL_PROVIDERS: "ollama" }), llmDiscovery: false, integrations: {} },
+      transport, fetcher: new Fetcher(transport, undefined, false), location: LOCATION, today: TODAY, log,
+    };
+    const off = { ...OPTIONS, external_off: ["overpass" as const] };
+    const state = await inRun("off-run", false, () => runMethod(context, "institutions"), off);
+    expect(state).toMatchObject({ ok: false, outcome: "disabled", reason: "overpass_off", found: 0, added: 0 });
+    expect(state.next_due_at - state.last_run_at).toBeCloseTo(RETRY_AFTER_FAILURE_MS / 1000);
+    expect(await discoveryState(db).findOne({ _id: state._id })).toEqual(state);
+    expect(discoveryOutcome(state)).toBe("disabled");
+    expect(network).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith("discovery_method_skipped", expect.objectContaining({ reason: "overpass_off" }));
+    const calls = await db.collection("api_calls").find({ run_id: "off-run" }).toArray();
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every((call) => call.service === "overpass" && call.outcome === "skipped")).toBe(true);
+
+    const attom = await inRun("off-run", false, () => runMethod(context, "homesales"), off);
+    expect(attom).toMatchObject({ ok: true, outcome: "disabled", reason: "attom_unconfigured", found: 0, added: 0 });
+    expect(await discoveryState(db).findOne({ _id: attom._id })).toEqual(attom);
+    expect(network).not.toHaveBeenCalled();
+    expect(await dueMethods(db, LOCATION.id)).not.toContain("institutions");
+    await refreshDiscovery(db, LOCATION.id, "institutions");
+    expect(await dueMethods(db, LOCATION.id)).toContain("institutions");
+    const enabled = await inRun("enabled-run", false, () => runMethod(context, "institutions"));
+    expect(enabled).toMatchObject({ ok: true, outcome: "succeeded", found: 0, added: 0 });
+    expect(enabled.reason).toBeUndefined();
+    expect(network).toHaveBeenCalledTimes(1);
+    expect(await discoveryState(db).findOne({ _id: state._id })).toEqual(enabled);
+    const isolated = await inRun("isolated-off", true, () => runMethod(context, "institutions"), off);
+    expect(isolated).toMatchObject({ outcome: "disabled", reason: "overpass_off" });
+    expect(await discoveryState(db).findOne({ _id: state._id })).toEqual(enabled);
+
+    network.mockRejectedValue(new Error("network outage"));
+    const failed = await inRun("failed-run", false, () => runMethod(context, "institutions"));
+    expect(failed).toMatchObject({ ok: false, outcome: "failed" });
+    expect(failed.detail).toContain("network outage");
+    expect(log.warn).toHaveBeenCalledWith("discovery_method_failed", expect.objectContaining({ method: "institutions" }));
+    expect(await sourceMap(db).countDocuments()).toBe(0);
+
+    await runs(db).insertOne({ _id: "job-off", kind: "map", location_id: LOCATION.id, location_name: LOCATION.name,
+      status: "mapping", created_at: T, today: TODAY, options: off, sources: [],
+    } as PipelineRun);
+    const jobId = await enqueue(db, { kind: "discover", run_id: "job-off", location_id: LOCATION.id, payload: { method: "institutions" }, dedupe_key: "job-off:institutions" });
+    const job = (await db.collection<Job>(COLLECTIONS.jobs).findOne({ _id: jobId }))!;
+    const result = await executeJob({ db, settings: context.settings, transport: network }, job);
+    expect(result).toMatchObject({ ok: false, outcome: "disabled", reason: "overpass_off" });
+    expect(await db.collection(RUN_DECISIONS).findOne({ run_id: "job-off", subject: "method:institutions" })).toMatchObject({
+      decision: "skipped", evidence: { outcome: "disabled", reason: "overpass_off", found: 0 },
+    });
+  });
+
   it("is off by default, so runs write the source map, and on turns test mode back on", () => {
     expect(sourceRunsIsolated({})).toBe(false);
     expect(sourceRunsIsolated({ NEWSBEE_SOURCE_RUNS_ISOLATED: "" })).toBe(false);
@@ -224,6 +282,39 @@ describe("test mode (NEWSBEE_SOURCE_RUNS_ISOLATED)", () => {
     const examples = (await pastDecisions(db, LOCATION.id, ["events", "safety"])).join("\n");
     expect(examples).toMatch(/Rejected \(R2[^\n]*lib\.example\.org\/events/);
     expect(examples).toMatch(/Rejected \(R4[^\n]*police\.example\.gov\/news/);
+  });
+
+  it("adds explicitly accepted pages from a failed run to All sources", async () => {
+    await agentRun("partial-run", [EVENTS, POLICE]);
+    const events = (await runSources(db, "partial-run").findOne({ url: EVENTS }))!;
+    const police = (await runSources(db, "partial-run").findOne({ url: POLICE }))!;
+    await post("partial-run", { source_ids: [events.source_id], decision: "accept", reason_code: "A1" });
+    expect(await sourceInventory(db, LOCATION.id)).toEqual([]);
+
+    await runs(db).updateOne({ _id: "partial-run" }, { $set: { status: "failed" } });
+    expect(await sourceInventory(db, LOCATION.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_id: events.source_id, partial_run_id: "partial-run", status: "proposed", review: expect.objectContaining({ decision: "accept" }) }),
+      expect.objectContaining({ source_id: police.source_id, partial_run_id: "partial-run", status: "proposed" }),
+    ]));
+    expect(await locationSources(db, LOCATION.id)).toEqual([]);
+    const accepted = await post("partial-run", { source_ids: [events.source_id], decision: "accept", reason_code: "A1" });
+    expect(await accepted.json()).toMatchObject({ saved: [{ source_id: events.source_id, status: "active" }], failed: [] });
+    await post("partial-run", { source_ids: [police.source_id], decision: "reject", reason_code: "R2" });
+    expect(await locationSources(db, LOCATION.id)).toEqual([expect.objectContaining({
+      source_id: events.source_id, url: EVENTS, status: "active", review: expect.objectContaining({ decision: "accept", reason_code: "A1" }),
+    })]);
+    expect(await runSources(db, "partial-run").findOne({ _id: events._id })).toEqual(events);
+    await runs(db).updateOne({ _id: "partial-run" }, { $set: { status: "mapped", stage_transitions: [
+      { status: "mapping", by: "editor", at: T },
+      { status: "mapping", by: "editor", at: T + 1 },
+      { status: "mapped", by: "worker", at: T + 2 },
+    ] } });
+    expect((await sourceRunDetail(db, LOCATION.id, "partial-run"))?.run.can_add_accepted_sources).toBe(true);
+    await post("partial-run", { source_ids: [events.source_id], reason_code: "A2" });
+    expect(await sourceInventory(db, LOCATION.id)).toEqual([
+      expect.objectContaining({ source_id: events.source_id, partial_run_id: undefined, status: "active", review: expect.objectContaining({ reason_code: "A2" }) }),
+      expect.objectContaining({ source_id: police.source_id, partial_run_id: "partial-run", status: "rejected" }),
+    ]);
   });
 
   it("with the setting off, a run writes the source map as today, its rows read the map, and decisions go through All sources", async () => {

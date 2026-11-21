@@ -1,0 +1,69 @@
+---
+import EditionLayout from "../edition/EditionLayout.astro";
+import SiteHeader from "../edition/SiteHeader.astro";
+import SiteFooter from "../edition/SiteFooter.astro";
+import SourceNotes from "../edition/SourceNotes.astro";
+import { pacificDate } from "../../lib/edition-view";
+import { publicationPageLinks, type PublicationPage } from "../../lib/publication-view";
+import { emailAvailable } from "../../../../../shared/email-availability";
+
+interface Props { page: PublicationPage; title: string; subPage?: boolean; hideSources?: boolean }
+const { page, title, hideSources = false } = Astro.props;
+const links = publicationPageLinks(page);
+const pageHref = links.page;
+const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
+const contributionLocation = page.coveredLocations.length === 1 ? page.coveredLocations[0].id : undefined;
+const newsletterAvailable = emailAvailable() && !page.preview;
+const categoryLinks = page.allSections.map((section) => ({ label: section.label, href: links.section(section.id) }));
+---
+<EditionLayout title={title} noindex={Boolean(page.preview)} analytics={!page.preview}>
+  {page.preview && <aside id="draft-preview" class="notices" role="status">
+    <strong>Private draft preview — not published</strong>
+    <p>Draft {page.preview.draftId}, revision {page.preview.revision}. This is the Reader layout, not a public release. Nothing is published or sent.</p>
+    {page.preview.correction && <p>Draft correction of {page.preview.correction.supersedes_release_id}: {page.preview.correction.reason}</p>}
+  </aside>}
+  <SiteHeader town={page.publication.displayName} today={page.today} visible={page.visible}
+    homeHref={links.publication} homeLabel={`${page.publication.displayName}, publication home`} pageHref={pageHref}
+    browseHref={links.section("all")} browseLabel={page.preview ? "All draft stories" : "All release stories"}
+    categoryLinks={categoryLinks} eventsHref={links.events()} archiveHref={page.preview ? undefined : links.archive}
+    subscribeHref={newsletterAvailable ? links.newsletter : links.section("all")}
+    subscribeLabel={newsletterAvailable ? "Publication newsletter" : page.preview ? "All draft stories" : "All stories"} />
+  <main id="main" class="nb-container">
+    {!page.preview && page.release && (past || page.release.withdrawn || page.release.correction) && <div class="notices" role="status">
+      {past && <p>Past release: these listings may no longer be current.</p>}
+      {page.release.withdrawn && <p>Withdrawn release: {page.release.withdrawalReason}</p>}
+      {page.release.correction && <p>Correction of {page.release.correction.supersedesReleaseId}: {page.release.correction.reason}</p>}
+    </div>}
+    <slot />
+    {!hideSources && <SourceNotes page={page} preview={Boolean(page.preview)}
+      suggestHref={links.contribute("suggest", contributionLocation)} />}
+  </main>
+  <SiteFooter place={page.coveredLocations.map((location) => location.name.replace(/,\s*[A-Z]{2}$/, "")).join(", ")}
+    visible={page.visible} homeHref={links.publication} pageHref={pageHref}
+    neighborhoods={page.coveredLocations.map((location) => ({
+      label: location.name.split(",")[0].trim(),
+      href: links.location(location.id),
+    }))}
+    more={{
+      heading: "Publication",
+      links: page.preview ? [
+        { label: "Draft preview home", href: links.page },
+        { label: "All draft stories", href: links.section("all") },
+      ] : [
+        { label: "Release archive", href: links.archive },
+        { label: "All stories in this release", href: links.section("all") },
+        ...(newsletterAvailable ? [{ label: "Publication newsletter", href: links.newsletter }] : []),
+        ...(page.coveredLocations.length ? [
+          { label: "Share a community story", href: links.contribute("share", contributionLocation) },
+          { label: "Suggest a source", href: links.contribute("suggest", contributionLocation) },
+        ] : []),
+        { label: "Discover other publications and communities", href: links.home },
+        { label: "Browse stories across Newsbee", href: links.browse() },
+        ...(page.publication.homepageUrl ? [{ label: "Publisher website", href: page.publication.homepageUrl }] : []),
+      ],
+    }} />
+</EditionLayout>
+
+<style>
+  .notices { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); background: var(--color-cream); border-radius: var(--radius-lg); font-size: var(--text-sm); }
+</style>

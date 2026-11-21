@@ -8,15 +8,79 @@ export const PHOTO_SUPPLY_GRANT_TEXT = "I own these photographs or am authorized
 export type PhotoSupplyInput = { request_id: string; name: string; email: string; photos: StoryImage[];
   permission: { editorial: true; archive: true; crop: true }; grant_version: string; grant_text: string };
 export type PublicPhotoInvite = { name: string; location_name: string; scope: PhotoScope; expires_on: string; grant_text: string; requested_photos: Partial<StoryImage>[] };
+export type GrantedPhoto = {
+  image: StoryImage;
+  permission: { editorial: true; archive: true; crop: true };
+};
 function invalid(message: string): never { throw Error(`Invalid photo supply: ${message}`); }
 const clean = (value: unknown, max: number) => typeof value === "string" && value.length <= max
   && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : "";
 
+function credentialBearingUrl(value: string) {
+  const keys = [...new URL(value).searchParams.keys()].map((key) => key.toLowerCase());
+  const direct = /^(?:token|access_token|auth|authorization|password|signature|sig|api[_-]?key|key|awsaccesskeyid|googleaccessid|key-pair-id|policy|sharedaccesssignature)$/;
+  if (keys.some((key) => direct.test(key) || /^x-(?:amz|goog)-/.test(key))) return true;
+  const azure = new Set(["sv", "ss", "srt", "sp", "se", "st", "spr", "sip", "si", "sr", "skoid", "sktid", "skt", "ske", "sks", "skv"]);
+  return keys.includes("sv") && keys.some((key) => key !== "sv" && azure.has(key));
+}
+
 export function publicPhotoUrl(value: unknown) {
   const result = safeImageUrl(value);
-  if (!result || [...new URL(result).searchParams.keys()].some(key => /^(token|access_token|auth|authorization|password|signature|x-amz-signature|api_key|key)$/i.test(key)))
+  if (!result || credentialBearingUrl(result))
     invalid("use a public HTTPS photo or source URL without access credentials");
   return result;
+}
+
+export function validateGrantedPhoto(
+  value: unknown,
+  options: { today?: Date; maxAgeDays?: number; scope?: PhotoScope; requireAlt?: boolean } = {},
+): GrantedPhoto {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid("invalid photo details");
+  const fields = value as Record<string, unknown>;
+  const permission = fields.permission && typeof fields.permission === "object" && !Array.isArray(fields.permission)
+    ? fields.permission as Record<string, unknown>
+    : fields;
+  if (permission.editorial !== true || permission.archive !== true || permission.crop !== true) {
+    invalid("confirm editorial, archive and crop permissions");
+  }
+  const date = clean(fields.image_date, 10);
+  const today = options.today ?? new Date();
+  if (!isCalendarDate(date) || Date.parse(date) > today.getTime()
+    || options.maxAgeDays !== undefined && today.getTime() - Date.parse(date) > options.maxAgeDays * 86400000) {
+    invalid(options.maxAgeDays === undefined
+      ? "each photo needs a valid capture date"
+      : `each photo needs a capture date within the last ${options.maxAgeDays} days`);
+  }
+  const credit = clean(fields.image_credit, 240);
+  const caption = clean(fields.image_caption, 500);
+  const suppliedAlt = clean(fields.image_alt, 500);
+  const alt = suppliedAlt || caption;
+  if (options.requireAlt && !suppliedAlt) invalid("each photo needs alt text");
+  if (!credit || !caption || !alt) invalid("each photo needs its photographer credit, factual caption and alt text");
+  const license = clean(fields.image_license, 100) || "Used with permission";
+  const licenseUrl = fields.image_license_url ? publicPhotoUrl(fields.image_license_url) : undefined;
+  if (license !== "Used with permission" && !licenseUrl) invalid("licensed photos need a public license URL");
+  const image = normalizeStoryImage({
+    image: publicPhotoUrl(fields.image),
+    image_source_url: publicPhotoUrl(fields.image_source_url),
+    image_credit: credit,
+    image_caption: caption,
+    image_alt: alt,
+    image_date: date,
+    image_license: license,
+    ...(licenseUrl ? { image_license_url: licenseUrl } : {}),
+  });
+  if (!image) invalid("unsupported photo metadata");
+  const scope = options.scope;
+  return {
+    image: {
+      ...image,
+      ...(scope?.kind === "venue" ? { image_role: "venue" as const, image_place: scope.name }
+        : scope?.kind === "street" ? { image_role: "area" as const, image_place: scope.name }
+        : scope?.kind === "person" || scope?.kind === "organization" ? { image_subject: scope.name } : {}),
+    },
+    permission: { editorial: true, archive: true, crop: true },
+  };
 }
 
 /** Supplier consent proposes a bounded set of files; only an administrator can approve it. */
@@ -32,17 +96,11 @@ export function validatePhotoSupply(value: unknown, scope: PhotoScope, today = n
   const photos = raw.photos.map((value: unknown) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) invalid("invalid photo details");
     const fields = value as Record<string, unknown>;
-    const date = clean(fields.image_date, 10);
-    if (!isCalendarDate(date) || Date.parse(date) > today.getTime() || today.getTime() - Date.parse(date) > 365 * 86400000) invalid("each photo needs a capture date within the last 365 days");
-    const credit = clean(fields.image_credit, 240), caption = clean(fields.image_caption, 500), alt = clean(fields.image_alt, 500) || caption;
-    if (!credit || !caption || !alt) invalid("each photo needs its photographer credit and a factual caption");
-    const image = normalizeStoryImage({ image: publicPhotoUrl(fields.image), image_source_url: publicPhotoUrl(fields.image_source_url),
-      image_credit: credit, image_caption: caption, image_alt: alt, image_date: date, image_license: "Used with permission" });
-    if (!image) invalid("unsupported photo metadata");
-    // A catalog reference is attached after approval. Suppliers cannot choose their own role or scope.
-    return { ...image, ...(scope.kind === "venue" ? { image_role: "venue" as const, image_place: scope.name }
-      : scope.kind === "street" ? { image_role: "area" as const, image_place: scope.name }
-      : scope.kind === "person" || scope.kind === "organization" ? { image_subject: scope.name } : {}) };
+    return validateGrantedPhoto({
+      ...fields,
+      permission: { editorial: true, archive: true, crop: true },
+      image_license: "Used with permission",
+    }, { scope, today, maxAgeDays: 365 }).image;
   });
   if (new Set(photos.map(photo => photo.image)).size !== photos.length) invalid("submit each original photograph only once");
   return { request_id, name, email, photos, permission: { editorial: true, archive: true, crop: true },

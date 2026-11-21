@@ -57,6 +57,17 @@ export function keywordSection(text: string): SectionId | null {
   return null;
 }
 
+/** The summary's opening sentences, up to about LEDE_CHARS characters (at least one sentence). */
+export const LEDE_CHARS = 350;
+export function summaryLede(description: string | null | undefined) {
+  let lede = "";
+  for (const sentence of (description ?? "").split(/(?<=[.!?])\s+/)) {
+    if (lede && lede.length + sentence.length > LEDE_CHARS) break;
+    lede += `${sentence} `;
+  }
+  return lede.slice(0, LEDE_CHARS * 2).trim();
+}
+
 /**
  * The item's section. Kinds with a fixed meaning (meetings, alerts, obituaries, incidents)
  * keep their kind's section; general news and posts follow the keywords, then the source.
@@ -66,7 +77,9 @@ export function sectionFor(item: { kind?: string; title: string; description?: s
   if (isSection(item.section_id)) return item.section_id;
   const kind = item.kind ?? "event";
   if (FIXED_KINDS.has(kind)) return KIND_SECTIONS[kind] ?? "news";
-  const keyword = keywordSection(`${item.title} ${item.description ?? ""}`);
+  // The headline is the strongest evidence; then only the summary's opening. A single word deep
+  // in a long article ("died", "arrest", "snow") must not file an arts story under obituaries.
+  const keyword = keywordSection(item.title) ?? keywordSection(`${item.title} ${summaryLede(item.description)}`);
   if (keyword) return keyword;
   if (isSection(sourceHint)) return sourceHint;
   return KIND_SECTIONS[kind] ?? "news";

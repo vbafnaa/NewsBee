@@ -1,15 +1,16 @@
-import { adminRoute } from "@/lib/admin-api";
+import { newsroomScopedRoute } from "@/lib/admin-api";
 import { isDeployed, sourceRunsIsolated } from "@/pipeline/core/run-options";
-import { effectiveCredentialProfile, emptyPersonalConfig } from "@/pipeline/accounts/credentials";
-import { personalSettings, userDefaultOptions } from "@/pipeline/accounts/execution";
+import { resolveExecutionProviderPolicy, userDefaultOptions } from "@/pipeline/accounts/execution";
 
 export const dynamic = "force-dynamic";
 
 /** What the kick-off panel needs: the defaults, which paid services have keys (never the keys), and whether source runs are in test mode. */
 export async function GET(request: Request) {
-  return adminRoute(request, async (deps) => {
-    const profile = await effectiveCredentialProfile(deps.db, deps.principal!);
-    deps = { ...deps, settings: profile?.revoked ? { ...deps.settings, ...emptyPersonalConfig() } : personalSettings(deps.settings, deps.principal!, profile) };
+  return newsroomScopedRoute(request, async (deps, scope) => {
+    // Journalists see the managed services of the newsroom they work from; operators as before.
+    const policy = await resolveExecutionProviderPolicy(deps.db, deps.settings, deps.principal!,
+      { kind: "platform", ...(scope.operator ? {} : { publicationId: scope.publicationId ?? undefined }) });
+    deps = { ...deps, settings: policy.settings };
     const keys = deps.settings.integrations;
     const providers = deps.settings.modelProviders;
     return {
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
       isolated: sourceRunsIsolated(),
       // While on, no edition reads a proposed source: only what a person accepted (NEWSBEE_PROPOSED_UNTIL_APPROVED).
       proposed_until_approved: deps.settings.proposedUntilApproved,
-      credentialSource: profile?.source ?? "personal",
+      credentialSource: policy.source,
       configured: {
         model: providers.some((provider) => provider.kind !== "ollama" && provider.apiKey && provider.model),
         tavily: Boolean(deps.settings.tavilySearchApiKey),

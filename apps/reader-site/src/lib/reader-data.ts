@@ -1,18 +1,37 @@
 import type { StorySource } from "../../../../shared/source-attribution";
-import { readFile, readdir } from "node:fs/promises";
+import { open, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { MongoClient, type Db } from "mongodb";
+import { MongoClient, type Db, type Filter } from "mongodb";
+import { fencedDatabase } from "../../../../shared/restore-maintenance";
 import { communityName, matchingCommunities, onboardedCommunities, type Community } from "../../../../shared/community-directory";
 import { GEOGRAPHIC_PLACES, stateCode, type GeographicPlace } from "../../../../shared/geography";
-import { isMongoChannelFolderId, resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
+import { isMongoChannelFolderId, ReaderChannelDisabledError, resolveReaderDriveFolderId, type ReaderChannel } from "../../../../shared/reader-folder";
 import { uniquePhotoItems } from "../../../../shared/photo-identity";
 import { photoStoryMismatch } from "../../../../shared/photo-story-match";
 import { ARTIFACTS_COLLECTION, usesMongoArtifacts } from "../../../../shared/artifact-store";
 import { searchGeography } from "../../../journalist-site/pipeline/communities/geocoder";
 import { recordReaderSignup } from "./signup-storage";
-import { normalizeStoryImage, type StoryImage } from "../../../../shared/story-image";
+import { normalizeStoryImage, safeImageUrl, safePublicHttpsUrl, type StoryImage } from "../../../../shared/story-image";
+import type { SponsorSlot } from "../../../../shared/publication-settings";
+import type { LocationPreparationState } from "../../../../shared/location-readiness";
+import { locationReadinessForIds } from "../../../journalist-site/pipeline/communities/readiness";
+import {
+  parsePublicationManifest,
+  parsePublicationRelease,
+  publicationContentHash,
+  type PublicationManifestV1,
+  type PublicationReleaseItem,
+  type PublicationReleaseManifestEntry,
+  type PublicationReleasePayloadV1,
+} from "../../../../shared/publication-release";
+import {
+  defaultPublicationSettings,
+  type VersionedPublicationSetting,
+  type PublicationProfileValues,
+} from "../../../../shared/publication-settings";
 
 export type EditionItem = Omit<Partial<StoryImage>, "image" | "image_caption" | "image_credit"> & {
+  item_id?: string;
   story_id?: string | null;
   headline: string;
   blurb: string;
@@ -29,12 +48,21 @@ export type EditionItem = Omit<Partial<StoryImage>, "image" | "image_caption" | 
   section?: string | null;
   section_id?: string | null;
   local?: boolean;
+  origin?: "generated" | "original";
+  source_references?: Array<{ location_id: string; edition_id: string; story_id: string }>;
+  byline?: string;
+  location_ids?: string[];
+  location_names?: string[];
+  reader_href?: string;
   image?: string | null;
   image_caption?: string | null;
   image_credit?: string | null;
 };
 
 export type Edition = {
+  /** Internal browse/index metadata; never returned by the exact-edition API. */
+  items_loaded?: false;
+  publication_release?: boolean;
   media_mode?: "illustrated" | "photos" | "none";
   id: string;
   location_id: string;
@@ -47,6 +75,31 @@ export type Edition = {
   items: EditionItem[];
   coverage?: string[];
   corrections?: { story_id?: string; reason: string; created_at: number }[];
+  sections?: Array<{ id: string; title: string }>;
+  publication?: {
+    id: string;
+    schema_version: 1;
+    revision: number;
+    display_name: string;
+    description: string | null;
+    homepage_url: string | null;
+    logo_url: string | null;
+  };
+  sponsor_placements?: {
+    schema_version: 1;
+    revision: number;
+    placements: ReaderSponsorPlacement[];
+  };
+};
+
+export type ReaderSponsorPlacement = {
+  id: string;
+  slot: SponsorSlot;
+  sponsor_name: string;
+  headline: string;
+  body: string;
+  landing_url: string;
+  image_url: string | null;
 };
 
 export type Location = {
@@ -54,6 +107,59 @@ export type Location = {
   name: string;
   branch_count?: number;
   system_count?: number;
+  preparation_state?: LocationPreparationState;
+};
+
+export type ReaderPublicationSummary = {
+  id: string;
+  archived_at: number | null;
+  display_name: string;
+  description: string | null;
+  logo_url: string | null;
+  latest_release_id: string | null;
+  latest_published_at: number | null;
+  latest_title: string | null;
+  latest_window_start: string | null;
+  latest_window_end: string | null;
+  locations: Array<{ id: string; name: string }>;
+};
+
+export type ReaderPublicationDirectorySummary = ReaderPublicationSummary & {
+  latest_release_id: string;
+  latest_published_at: number;
+};
+
+export type ReaderPublicationArchive = {
+  summary: ReaderPublicationSummary;
+  manifest: PublicationManifestV1;
+};
+
+export type ReaderPublicationBrowseRelease = {
+  key: string;
+  publication_id: string;
+  publication_name: string;
+  release_id: string;
+  title: string;
+  window_start: string;
+  window_end: string;
+  published_at: number;
+  locations: Array<{ id: string; name: string }>;
+  withdrawn: boolean;
+  withdrawal_reason: string | null;
+  latest: boolean;
+  items: PublicationReleaseItem[] | null;
+};
+
+export type ReaderPublicationBrowseCatalog = {
+  locations: Location[];
+  releases: ReaderPublicationBrowseRelease[];
+};
+
+export type ReaderPublication = {
+  summary: ReaderPublicationSummary;
+  manifest: PublicationManifestV1;
+  entry: PublicationReleaseManifestEntry;
+  release: PublicationReleasePayloadV1;
 };
 
 type DriveFile = { id: string; name: string; modifiedTime?: string };
@@ -66,6 +172,11 @@ type Cache = typeof globalThis & {
       folderId: string;
       promise: Promise<{ locations: Location[]; editions: Edition[] }>;
     };
+    publicationManifests?: Map<string, PublicationManifestV1>;
+    publicationReleases?: Map<string, PublicationReleasePayloadV1>;
+    publicationManifestLoads?: Map<string, Promise<PublicationManifestV1>>;
+    publicationReleaseLoads?: Map<string, Promise<PublicationReleasePayloadV1>>;
+    artifactReads?: { active: number; waiting: Array<() => void> };
   };
   newsbeeReaderMongo?: {
     uri: string;
@@ -78,10 +189,50 @@ type Cache = typeof globalThis & {
 function cache() {
   const global = globalThis as Cache;
   global.newsbeeReaderData ??= {};
+  global.newsbeeReaderData.publicationManifests ??= new Map();
+  global.newsbeeReaderData.publicationReleases ??= new Map();
+  global.newsbeeReaderData.publicationManifestLoads ??= new Map();
+  global.newsbeeReaderData.publicationReleaseLoads ??= new Map();
+  global.newsbeeReaderData.artifactReads ??= { active: 0, waiting: [] };
   return global.newsbeeReaderData;
 }
 
-async function readerMongoClient() {
+const ARTIFACT_CONCURRENCY = 6;
+
+async function boundedArtifactRead<T>(read: () => Promise<T>): Promise<T> {
+  const reads = cache().artifactReads!;
+  if (reads.active >= ARTIFACT_CONCURRENCY) await new Promise<void>((ready) => reads.waiting.push(ready));
+  else reads.active += 1;
+  try {
+    return await read();
+  } finally {
+    const next = reads.waiting.shift();
+    if (next) next();
+    else reads.active -= 1;
+  }
+}
+
+async function immutableArtifact<K, V>(
+  values: Map<K, V>,
+  pending: Map<K, Promise<V>>,
+  key: K,
+  read: () => Promise<V>,
+): Promise<V> {
+  const cached = values.get(key);
+  if (cached) return cached;
+  let promise = pending.get(key);
+  if (!promise) {
+    promise = boundedArtifactRead(read).then((value) => {
+      values.set(key, value);
+      boundMap(values);
+      return value;
+    }).finally(() => pending.delete(key));
+    pending.set(key, promise);
+  }
+  return promise;
+}
+
+export async function readerMongoClient() {
   const uri = process.env.MONGODB_URI;
   const databaseName = process.env.MONGODB_DATABASE;
   if (!uri) throw new Error("MONGODB_URI is not configured");
@@ -208,6 +359,75 @@ function parseLocation(value: unknown): Location | null {
   };
 }
 
+function boundedText(value: unknown, maximum: number) {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maximum
+    && !/[\u0000-\u001f\u007f]/.test(value)
+    ? value
+    : null;
+}
+
+function parsePublication(value: unknown): Edition["publication"] | undefined {
+  if (!isRecord(value)) return;
+  const id = boundedText(value.id, 128);
+  const displayName = boundedText(value.display_name, 120);
+  const description = value.description === null ? null : boundedText(value.description, 500);
+  if (!id
+    || value.schema_version !== 1
+    || !Number.isInteger(value.revision) || Number(value.revision) < 0
+    || !displayName
+    || value.description !== null && !description
+  ) return;
+  const homepage = value.homepage_url === null ? null : safePublicHttpsUrl(value.homepage_url);
+  const logo = value.logo_url === null ? null : safeImageUrl(value.logo_url);
+  if (value.homepage_url !== null && !homepage || value.logo_url !== null && !logo) return;
+  return {
+    id,
+    schema_version: 1,
+    revision: value.revision as number,
+    display_name: displayName,
+    description,
+    homepage_url: homepage,
+    logo_url: logo,
+  };
+}
+
+function parseSponsorPlacements(value: unknown): Edition["sponsor_placements"] | undefined {
+  if (!isRecord(value) || value.schema_version !== 1 || !Number.isInteger(value.revision) || Number(value.revision) < 0 || !Array.isArray(value.placements)) return;
+  const slots = new Set<string>();
+  const ids = new Set<string>();
+  const placements = value.placements.flatMap((placement): ReaderSponsorPlacement[] => {
+    if (!isRecord(placement)) return [];
+    const sponsorName = boundedText(placement.sponsor_name, 120);
+    const headline = boundedText(placement.headline, 160);
+    const body = boundedText(placement.body, 500);
+    if (typeof placement.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(placement.id) || ids.has(placement.id)
+      || !["home_after_top_news", "home_before_newsroom"].includes(String(placement.slot))
+      || slots.has(String(placement.slot))
+      || !sponsorName
+      || !headline
+      || !body
+      || placement.enabled !== true
+    ) return [];
+    const landing = safePublicHttpsUrl(placement.landing_url);
+    const image = placement.image_url === null || placement.image_url === undefined ? null : safeImageUrl(placement.image_url);
+    if (!landing || placement.image_url && !image) return [];
+    ids.add(placement.id);
+    slots.add(String(placement.slot));
+    return [{
+      id: placement.id,
+      slot: placement.slot as SponsorSlot,
+      sponsor_name: sponsorName,
+      headline,
+      body,
+      landing_url: landing,
+      image_url: image,
+    }];
+  });
+  return { schema_version: 1, revision: value.revision as number, placements };
+}
+
 export function parseEdition(value: unknown): Edition | null {
   if (!isRecord(value) || !Array.isArray(value.items)) return null;
   if (
@@ -241,10 +461,51 @@ export function parseEdition(value: unknown): Edition | null {
       const media = normalizeStoryImage({ ...item, image: credited ? image : null }, item);
       return { ...story, ...(media && !photoStoryMismatch(story, media) ? media : null) };
     })),
+    publication: parsePublication(value.publication),
+    sponsor_placements: parseSponsorPlacements(value.sponsor_placements),
   } as Edition;
 }
 
-type FolderReader = { list(): Promise<DriveFile[]>; read(file: DriveFile): Promise<unknown> };
+const LEGACY_HEADER_LIMIT = 65_536;
+type FolderReader = {
+  list(): Promise<DriveFile[]>;
+  read(file: DriveFile): Promise<unknown>;
+  prefix(file: DriveFile): Promise<string>;
+};
+
+function legacyHeader(text: string): Edition | null {
+  // Published legacy payloads put their scalar identity/window before items.
+  // Only accept a real root-level key: JSON parsing rejects matches inside text.
+  for (const match of text.matchAll(/"items"\s*:\s*\[/g)) {
+    try {
+      const edition = parseEdition(JSON.parse(`${text.slice(0, match.index)}"items":[]}`));
+      if (edition) return { ...edition, items_loaded: false };
+    } catch { /* An escaped string or nested key is not the edition items key. */ }
+  }
+  return null;
+}
+
+async function responsePrefix(response: Response) {
+  if (!response.ok) throw new Error(`Google Drive request failed (${response.status})`);
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Google Drive returned an empty edition");
+  const decoder = new TextDecoder();
+  let text = "";
+  let bytes = 0;
+  try {
+    while (bytes < LEGACY_HEADER_LIMIT) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      const remaining = LEGACY_HEADER_LIMIT - bytes;
+      text += decoder.decode(chunk.value.subarray(0, remaining), { stream: true });
+      bytes += chunk.value.byteLength;
+      if (legacyHeader(text)) break;
+    }
+    return text;
+  } finally {
+    await reader.cancel();
+  }
+}
 
 function driveFolder(folderId: string): FolderReader {
   return {
@@ -269,6 +530,15 @@ function driveFolder(folderId: string): FolderReader {
       url.searchParams.set("alt", "media");
       return driveGet<unknown>(url);
     },
+    async prefix(file) {
+      const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}`);
+      url.searchParams.set("alt", "media");
+      url.searchParams.set("supportsAllDrives", "true");
+      return responsePrefix(await fetch(url, {
+        headers: { Authorization: `Bearer ${await serviceAccountToken()}`, Range: `bytes=0-${LEGACY_HEADER_LIMIT - 1}` },
+        signal: AbortSignal.timeout(15_000),
+      }));
+    },
   };
 }
 
@@ -292,6 +562,23 @@ function localFolder(folderId: string): FolderReader {
     async read(file) {
       return JSON.parse(await readFile(join(folder, file.id), "utf8"));
     },
+    async prefix(file) {
+      const handle = await open(join(folder, file.id), "r");
+      const decoder = new TextDecoder();
+      let text = "";
+      try {
+        const buffer = Buffer.alloc(1024);
+        for (let offset = 0; offset < LEGACY_HEADER_LIMIT; offset += buffer.length) {
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
+          if (!bytesRead) break;
+          text += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+          if (legacyHeader(text)) break;
+        }
+        return text;
+      } finally {
+        await handle.close();
+      }
+    },
   };
 }
 
@@ -313,6 +600,12 @@ function mongoArtifactFolder(folderId: string): FolderReader {
       const doc = await (await collection()).findOne({ _id: file.id, folder: false });
       if (typeof doc?.content !== "string") throw new Error(`Artifact ${file.name} was not found`);
       return JSON.parse(doc.content);
+    },
+    async prefix(file) {
+      // Only the start of the file, cut in the database, as for channel folders.
+      const doc = await (await collection()).findOne<{ head?: string }>({ _id: file.id, folder: false }, { projection: { head: { $substrCP: ["$content", 0, LEGACY_HEADER_LIMIT] } } });
+      if (typeof doc?.head !== "string") throw new Error(`Artifact ${file.name} was not found`);
+      return doc.head;
     },
   };
 }
@@ -336,10 +629,32 @@ function mongoFolder(folderId: string): FolderReader {
       if (!document) throw new Error(`MongoDB channel file ${file.name} was not found`);
       return JSON.parse(document.value) as unknown;
     },
+    async prefix(file) {
+      const db = await readerDatabase();
+      const document = await db.collection<{ _id: string; value: string }>("output_channel_files").findOne(
+        { _id: file.id, folder_id: folderId },
+        { projection: { value: { $let: {
+          vars: { header: { $regexFind: {
+            input: { $substrCP: ["$value", 0, LEGACY_HEADER_LIMIT] },
+            regex: '^[\\s\\S]*?"items"\\s*:\\s*\\[',
+          } } },
+          in: { $ifNull: ["$$header.match", ""] },
+        } } } },
+      );
+      if (!document) throw new Error(`MongoDB channel file ${file.name} was not found`);
+      return String(document.value);
+    },
   };
 }
 
-async function loadDriveData(folderId: string) {
+export type ReaderDataSelection = {
+  locationId?: string;
+  editionId?: string | null;
+  indexOnly?: boolean;
+  catalog?: boolean;
+};
+
+async function loadDriveData(folderId: string, selection: ReaderDataSelection = {}) {
   // A MongoDB publishing channel's folder first, then this repository's artifact store when it is on, then local or Drive.
   const folder = isMongoChannelFolderId(folderId) ? mongoFolder(folderId) : usesMongoArtifacts() ? mongoArtifactFolder(folderId) : isLocalMode() ? localFolder(folderId) : driveFolder(folderId);
   const files = await folder.list();
@@ -348,7 +663,7 @@ async function loadDriveData(folderId: string) {
   const directoryFile = jsonFiles.find((file) => file.name === "locations.json");
   if (!directoryFile) throw new Error("Reader folder must contain locations.json");
 
-  const loadFile = (file: DriveFile) => folder.read(file);
+  const loadFile = (file: DriveFile) => boundedArtifactRead(() => folder.read(file));
   const directoryData = await loadFile(directoryFile);
   if (!isRecord(directoryData) || !Array.isArray(directoryData.locations)) {
     throw new Error("locations.json must contain a locations array");
@@ -358,21 +673,58 @@ async function loadDriveData(folderId: string) {
     throw new Error("locations.json contains an invalid location");
   }
 
-  const editionFiles = jsonFiles.filter((file) => file !== directoryFile);
-  const editions = await Promise.all(editionFiles.map(async (file) => {
+  const ids = new Set((locations as Location[]).map((location) => location.id));
+  if (selection.locationId && !ids.has(selection.locationId)) return { locations: locations as Location[], editions: [] };
+  let editionFiles = jsonFiles.filter((file) => file !== directoryFile);
+  const readEdition = async (file: DriveFile) => {
     const edition = parseEdition(await loadFile(file));
     if (!edition) throw new Error(`Drive edition file ${file.name} does not match the edition contract`);
     return edition;
-  }));
+  };
+  if (selection.editionId && !selection.catalog) {
+    const exact = editionFiles.filter((file) => file.name === `${selection.editionId}.json`);
+    if (exact.length) editionFiles = exact;
+  }
+  const targeted = selection.locationId || selection.editionId || selection.indexOnly;
+  let editions: Edition[];
+  if (targeted && !(selection.editionId && !selection.catalog && editionFiles.every((file) => file.name === `${selection.editionId}.json`))) {
+    const indexed = await Promise.all(editionFiles.map(async (file) => {
+      const header = legacyHeader(await boundedArtifactRead(() => folder.prefix(file)));
+      // Older/reordered external JSON remains readable without a format migration.
+      return { file, edition: header ?? await readEdition(file) };
+    }));
+    let selected = indexed.filter(({ edition }) => ids.has(edition.location_id)
+      && (!selection.locationId || edition.location_id === selection.locationId)
+      && (!selection.editionId || edition.id === selection.editionId));
+    if (!selection.catalog && !selection.indexOnly) {
+      selected = selected.sort((left, right) => right.edition.published_at - left.edition.published_at).slice(0, 1);
+    }
+    const loaded = new Map<string, Edition>();
+    if (!selection.indexOnly) await Promise.all(selected.map(async ({ file, edition }) => {
+      const full = edition.items_loaded === false ? await readEdition(file) : edition;
+      // Recheck identity after the mutable legacy artifact is read.
+      if (full.id !== edition.id || full.location_id !== edition.location_id) {
+        throw new Error("Reader edition changed while its index was being read");
+      }
+      loaded.set(file.id, full);
+    }));
+    editions = selection.catalog || selection.indexOnly
+      ? indexed.map(({ file, edition }) => loaded.get(file.id) ?? edition)
+      : [...loaded.values()];
+  } else {
+    editions = await Promise.all(editionFiles.map(readEdition));
+  }
 
-  const ids = new Set((locations as Location[]).map((location) => location.id));
   // Editions of removed locations stay archived in the folder but are not served.
-  return { locations: locations as Location[], editions: editions.filter((edition) => ids.has(edition.location_id)) };
+  return { locations: locations as Location[], editions: editions.filter((edition) => ids.has(edition.location_id)
+    && (selection.catalog || selection.indexOnly || !selection.locationId || edition.location_id === selection.locationId)
+    && (selection.catalog || selection.indexOnly || !selection.editionId || edition.id === selection.editionId)) };
 }
 
-export async function readerData(folderId?: string) {
+export async function readerData(folderId?: string, selection: ReaderDataSelection = {}) {
   const state = cache();
   const selectedFolderId = folderId ?? await readerFolderId();
+  if (selection.locationId || selection.editionId || selection.indexOnly) return loadDriveData(selectedFolderId, selection);
   if (state.data?.folderId === selectedFolderId && state.data.expiresAt > Date.now()) {
     return state.data;
   }
@@ -389,6 +741,16 @@ export async function readerData(folderId?: string) {
   const pending = state.dataPromise;
   if (!pending) throw new Error("Reader data loading did not start");
   return pending.promise;
+}
+
+/** Discovery combines independent publications with legacy content only when that channel is enabled. */
+export async function legacyReaderDiscovery(selection: ReaderDataSelection = {}): Promise<{ locations: Location[]; editions: Edition[] }> {
+  try {
+    return await readerData(undefined, selection);
+  } catch (error) {
+    if (!(error instanceof ReaderChannelDisabledError)) throw error;
+    return { locations: [], editions: [] };
+  }
 }
 
 export function searchLocations(locations: Location[], query: string) {
@@ -414,12 +776,266 @@ export function searchLocations(locations: Location[], query: string) {
 
 export async function readerDatabase() {
   const { client, databaseName } = await readerMongoClient();
-  return client.db(databaseName);
+  return fencedDatabase(client.db(databaseName));
+}
+
+type ReaderPublicationDocument = {
+  _id: string;
+  name: string;
+  enabled: boolean;
+  archived_at?: number;
+  archived_was_enabled?: boolean;
+  destination?: "reader" | "video";
+  destinations?: Array<{ type: "reader" | "video"; url: string }>;
+  drive_folder_id: string;
+  profile?: VersionedPublicationSetting<PublicationProfileValues>;
+  reader_publication?: {
+    manifest_file_id: string;
+    manifest_revision: number;
+    latest_release_id: string | null;
+    latest_published_at: number | null;
+    latest_title?: string | null;
+    latest_window_start?: string | null;
+    latest_window_end?: string | null;
+    location_ids: string[];
+    locations: Array<{ id: string; name: string }>;
+    publication?: PublicationReleasePayloadV1["publication"] | null;
+  };
+};
+type LoadedReaderPublicationArchive = ReaderPublicationArchive & {
+  database: Db;
+  document: ReaderPublicationDocument;
+};
+
+function readerDestination(document: ReaderPublicationDocument) {
+  return document.destinations?.length
+    ? document.destinations.some((destination) => destination.type === "reader")
+    : (document.destination ?? "reader") === "reader";
+}
+
+const publicPublicationFilter: Filter<ReaderPublicationDocument> = {
+  $or: [
+    { enabled: true },
+    { $expr: { $isNumber: "$archived_at" }, archived_was_enabled: true },
+  ],
+};
+
+function publicPublication(document: ReaderPublicationDocument) {
+  return document.enabled === true || (
+    typeof document.archived_at === "number" && Number.isFinite(document.archived_at)
+    && document.archived_was_enabled === true
+  );
+}
+
+function publicationSummary(document: ReaderPublicationDocument): ReaderPublicationSummary | null {
+  const pointer = document.reader_publication;
+  if (!publicPublication(document) || !readerDestination(document) || !pointer) return null;
+  const fallback = document.profile?.schema_version === 1
+    ? document.profile.values
+    : defaultPublicationSettings(document.name).profile.values;
+  const profile = pointer.publication ?? {
+    id: document._id,
+    profile_revision: 0,
+    ...fallback,
+  };
+  return {
+    id: document._id,
+    archived_at: typeof document.archived_at === "number" && Number.isFinite(document.archived_at)
+      ? document.archived_at : null,
+    display_name: profile.display_name,
+    description: profile.description,
+    logo_url: profile.logo_url,
+    latest_release_id: pointer.latest_release_id,
+    latest_published_at: pointer.latest_published_at,
+    latest_title: pointer.latest_title ?? null,
+    latest_window_start: pointer.latest_window_start ?? null,
+    latest_window_end: pointer.latest_window_end ?? null,
+    locations: pointer.locations,
+  };
+}
+
+export async function publicationDirectory(
+  locationId?: string,
+  db?: Db,
+): Promise<ReaderPublicationDirectorySummary[]> {
+  const database = db ?? await readerDatabase();
+  const rows = await database.collection<ReaderPublicationDocument>("output_channels").find({
+    ...publicPublicationFilter,
+    "reader_publication.latest_release_id": { $type: "string" },
+    ...(locationId ? { "reader_publication.location_ids": locationId } : {}),
+  }).sort({ "reader_publication.latest_published_at": -1, _id: 1 }).toArray();
+  const value = rows.flatMap((row): ReaderPublicationDirectorySummary[] => {
+    const summary = publicationSummary(row);
+    return summary?.latest_release_id && summary.latest_published_at
+      ? [{ ...summary, latest_release_id: summary.latest_release_id, latest_published_at: summary.latest_published_at }]
+      : [];
+  });
+  return value;
+}
+
+function safeArtifactId(fileId: string) {
+  const parts = fileId.split("/");
+  if (!parts.length || parts.some((part) => !/^[A-Za-z0-9._:-]{1,240}$/.test(part) || part === "." || part === "..")) {
+    throw new Error("Publication artifact id is invalid");
+  }
+  return parts;
+}
+
+async function readPublicationArtifact(folderId: string, fileId: string, db?: Db) {
+  if (isMongoChannelFolderId(folderId)) {
+    const database = db ?? await readerDatabase();
+    const document = await database.collection<{ _id: string; folder_id: string; value: string }>("output_channel_files")
+      .findOne({ _id: fileId, folder_id: folderId });
+    if (!document) throw new Error("Publication artifact was not found");
+    return JSON.parse(document.value) as unknown;
+  }
+  if (isLocalMode()) {
+    return JSON.parse(await readFile(join(localDriveRoot(), ...safeArtifactId(fileId)), "utf8")) as unknown;
+  }
+  const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`);
+  url.searchParams.set("alt", "media");
+  return driveGet<unknown>(url);
+}
+
+function boundMap<K, V>(map: Map<K, V>, maximum = 100) {
+  while (map.size > maximum) map.delete(map.keys().next().value!);
+}
+
+async function loadReaderPublicationArchive(
+  publicationId: string,
+  db?: Db,
+): Promise<LoadedReaderPublicationArchive | null> {
+  const database = db ?? await readerDatabase();
+  const document = await database.collection<ReaderPublicationDocument>("output_channels").findOne({
+    _id: publicationId,
+    ...publicPublicationFilter,
+    "reader_publication.manifest_file_id": { $type: "string" },
+  });
+  return document ? loadReaderPublicationArchiveRow(document, database) : null;
+}
+
+async function loadReaderPublicationArchiveRow(
+  document: ReaderPublicationDocument,
+  database: Db,
+): Promise<LoadedReaderPublicationArchive | null> {
+  const publicationId = document._id;
+  const summary = document && publicationSummary(document);
+  const pointer = document?.reader_publication;
+  if (!document || !summary || !pointer || !readerDestination(document)) return null;
+  const state = cache();
+  const manifestKey = JSON.stringify([process.env.MONGODB_URI, database.databaseName, isLocalMode() ? localDriveRoot() : null, document.drive_folder_id,
+    publicationId, pointer.manifest_file_id, pointer.manifest_revision]);
+  const manifest = await immutableArtifact(state.publicationManifests!, state.publicationManifestLoads!, manifestKey, async () => {
+    const parsed = parsePublicationManifest(await readPublicationArtifact(document.drive_folder_id, pointer.manifest_file_id, database));
+    if (!parsed || parsed.publication.id !== publicationId || parsed.revision !== pointer.manifest_revision) {
+      throw new Error("Publication manifest failed integrity validation");
+    }
+    return parsed;
+  });
+  const effectiveSummary = pointer.publication ? summary : {
+    ...summary,
+    display_name: manifest.publication.display_name,
+    description: manifest.publication.description,
+    logo_url: manifest.publication.logo_url,
+  };
+  return { summary: effectiveSummary, manifest, database, document };
+}
+
+export async function publicationArchive(publicationId: string, db?: Db): Promise<ReaderPublicationArchive | null> {
+  const loaded = await loadReaderPublicationArchive(publicationId, db);
+  return loaded ? { summary: loaded.summary, manifest: loaded.manifest } : null;
+}
+
+async function loadPublicationRelease(
+  archive: LoadedReaderPublicationArchive,
+  entry: PublicationReleaseManifestEntry,
+) {
+  const state = cache();
+  const releaseKey = JSON.stringify([process.env.MONGODB_URI, archive.database.databaseName, isLocalMode() ? localDriveRoot() : null,
+    archive.document.drive_folder_id, archive.summary.id, entry.release_id, entry.artifact_file_id, entry.content_hash]);
+  return immutableArtifact(state.publicationReleases!, state.publicationReleaseLoads!, releaseKey, async () => {
+    const parsed = parsePublicationRelease(await readPublicationArtifact(
+      archive.document.drive_folder_id,
+      entry.artifact_file_id,
+      archive.database,
+    ));
+    if (!parsed || parsed.publication.id !== archive.summary.id || parsed.release_id !== entry.release_id
+      || publicationContentHash(parsed) !== entry.content_hash) {
+      throw new Error("Publication release failed integrity validation");
+    }
+    return parsed;
+  });
+}
+
+export async function loadReaderPublication(publicationId: string, releaseId?: string | null, db?: Db): Promise<ReaderPublication | null> {
+  const loaded = await loadReaderPublicationArchive(publicationId, db);
+  if (!loaded) return null;
+  const { summary, manifest } = loaded;
+  const entry = releaseId
+    ? manifest.archive.find((candidate) => candidate.release_id === releaseId)
+    : manifest.latest;
+  if (!entry) return null;
+  const release = await loadPublicationRelease(loaded, entry);
+  return { summary, manifest, entry, release };
+}
+
+export async function publicationBrowseCatalog(
+  db?: Db,
+  selection: { locationId?: string; editionId?: string } = {},
+): Promise<ReaderPublicationBrowseCatalog> {
+  const database = db ?? await readerDatabase();
+  const rows = await database.collection<ReaderPublicationDocument>("output_channels").find({
+    ...publicPublicationFilter,
+    "reader_publication.manifest_file_id": { $type: "string" },
+  }).sort({ "reader_publication.latest_published_at": -1, _id: 1 }).toArray();
+  const locations = new Map<string, Location>();
+  const releases = (await Promise.all(rows.flatMap(async (row) => {
+    if (!readerDestination(row)) return [];
+    const archive = await loadReaderPublicationArchiveRow(row, database);
+    if (!archive) return [];
+    const latestEntry = archive.manifest.latest;
+    const latest = latestEntry && !latestEntry.withdrawn
+      && (!selection.locationId || latestEntry.locations.some((location) => location.id === selection.locationId))
+      && (!selection.editionId || selection.editionId === `publication:${row._id}:${latestEntry.release_id}`)
+      ? await loadPublicationRelease(archive, latestEntry)
+      : null;
+    for (const entry of archive.manifest.archive) {
+      if (!Number.isFinite(entry.published_at) || entry.published_at <= 0 || entry.published_at > Date.now() / 1000) continue;
+      for (const location of entry.locations) locations.set(location.id, location);
+    }
+    return archive.manifest.archive
+      .filter((entry) => !selection.locationId || entry.locations.some((location) => location.id === selection.locationId))
+      .map((entry): ReaderPublicationBrowseRelease => ({
+      key: `publication:${row._id}:${entry.release_id}`,
+      publication_id: row._id,
+      publication_name: archive.summary.display_name,
+      release_id: entry.release_id,
+      title: entry.title,
+      window_start: entry.window_start,
+      window_end: entry.window_end,
+      published_at: entry.published_at,
+      locations: entry.locations,
+      withdrawn: entry.withdrawn,
+      withdrawal_reason: entry.withdrawal_reason,
+      latest: archive.manifest.latest?.release_id === entry.release_id,
+      items: archive.manifest.latest?.release_id === entry.release_id ? latest?.items ?? null : null,
+    }));
+  }))).flat();
+  return {
+    locations: [...locations.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    releases,
+  };
+}
+
+async function withReadiness(db: Db, locations: Location[]): Promise<Location[]> {
+  const byId = new Map((await locationReadinessForIds(db, locations)).map((row) => [row.location_id, row.state]));
+  return locations.map((location) => ({ ...location, preparation_state: byId.get(location.id) ?? "available" }));
 }
 
 export async function discoverReaderCommunities(query: string, db?: Db): Promise<Location[]> {
-  return (await searchGeography(db ?? await readerDatabase(), query))
-    .map((place) => ({ id: place.id, name: place.label }));
+  const database = db ?? await readerDatabase();
+  return withReadiness(database, (await searchGeography(database, query))
+    .map((place) => ({ id: place.id, name: place.label })));
 }
 
 type DirectoryPlace = { _id: string; name: string; name_lower: string; state: string };
@@ -444,26 +1060,32 @@ export async function searchTownDirectory(query: string, db?: Db): Promise<Locat
     { $project: { _id: 1, name: 1, state: 1 } },
   ]).toArray();
   const communities = matchingCommunities(await readerCommunities(database), query).map(([id, community]) => ({ id, name: communityName(community) }));
+  const publishedLocations = new Map((await publicationDirectory(undefined, database))
+    .flatMap((publication) => publication.locations).map((location) => [location.id, location]));
+  for (const location of searchLocations([...publishedLocations.values()], query)) {
+    if (!communities.some((community) => community.id === location.id)) communities.push(location);
+  }
   const geographic = await database.collection<GeographicPlace & { _id: string; name_lower: string }>(GEOGRAPHIC_PLACES).find({
     name_lower: { $regex: `^${city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` }, ...(state ? { state } : {}),
     ...(query.split(",").length > 2 ? { parent_name: { $regex: `^${query.split(",").slice(1, -1).join(",").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } } : {}),
   }).limit(10).toArray();
   communities.push(...geographic.filter((place) => !communities.some((community) => community.id === place.id)).map((place) => ({ id: place.id, name: place.label })));
   const communityIds = new Set(communities.map((community) => community.id));
-  return [...communities, ...places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }))]
+  const results = [...communities, ...places.map((place) => ({ id: place._id, name: `${place.name}, ${place.state}` }))]
     .sort((a, b) => Number(a.name.split(",")[0].toLowerCase() !== city) - Number(b.name.split(",")[0].toLowerCase() !== city)
       || Number(communityIds.has(b.id)) - Number(communityIds.has(a.id))
       || a.name.split(",")[0].localeCompare(b.name.split(",")[0]) || a.name.localeCompare(b.name)).slice(0, 10);
+  return withReadiness(database, results);
 }
 
 export async function directoryTown(id: string, db?: Db): Promise<Location | null> {
   const database = db ?? await readerDatabase();
   const geographic = await database.collection<GeographicPlace & { _id: string }>(GEOGRAPHIC_PLACES).findOne({ _id: id });
-  if (geographic) return { id, name: geographic.label };
+  if (geographic) return (await withReadiness(database, [{ id, name: geographic.label }]))[0];
   const community = (await readerCommunities(database))[id];
-  if (community) return { id, name: communityName(community) };
+  if (community) return (await withReadiness(database, [{ id, name: communityName(community) }]))[0];
   const place = await database.collection<DirectoryPlace>("census_places").findOne({ _id: id });
-  return place ? { id: place._id, name: `${place.name}, ${place.state}` } : null;
+  return place ? (await withReadiness(database, [{ id: place._id, name: `${place.name}, ${place.state}` }]))[0] : null;
 }
 
 export async function saveInterestSignup(location: Location, email: string, launchNotification = false) {
@@ -475,7 +1097,7 @@ export async function saveRemembrance(location: Location, input: import("../../.
   const { client, databaseName } = await readerMongoClient();
   const { randomUUID } = await import("node:crypto");
   const submission = { _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, status: "pending" as const, submitted_at: new Date().toISOString() };
-  await client.db(databaseName).collection(REMEMBRANCE_COLLECTION).insertOne(submission as never);
+  await (await fencedDatabase(client.db(databaseName))).collection(REMEMBRANCE_COLLECTION).insertOne(submission as never);
   return submission._id;
 }
 
@@ -492,7 +1114,7 @@ export async function saveReaderStory(location: Location, input: import("../../.
   const { client, databaseName } = await readerMongoClient();
   const { randomUUID } = await import("node:crypto");
   const story = { _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, image, status: "pending" as const, submitted_at: new Date().toISOString() };
-  await client.db(databaseName).collection(READER_STORIES_COLLECTION).insertOne(story as never);
+  await (await fencedDatabase(client.db(databaseName))).collection(READER_STORIES_COLLECTION).insertOne(story as never);
   return story._id;
 }
 
@@ -518,10 +1140,10 @@ export async function approvedStoryImage(locationId: string, id: string) {
 }
 
 /** One anonymous engagement event (see api/engagement.ts); read by the pipeline's ranking. */
-export async function saveEngagement(event: { location_id: string; edition_id: string; action: "view" | "open" | "share"; story_ids: string[] }) {
+export async function saveEngagement(event: { location_id: string; edition_id: string; action: "view" | "open" | "share" | "edition_share"; story_ids: string[] }) {
   const { client, databaseName } = await readerMongoClient();
   const at = new Date();
-  await client.db(databaseName).collection("reader_engagement").insertOne({ ...event, at, day: at.toISOString().slice(0, 10) });
+  await (await fencedDatabase(client.db(databaseName))).collection("reader_engagement").insertOne({ ...event, at, day: at.toISOString().slice(0, 10) });
 }
 
 export const SUGGESTION_SECTIONS = ["events", "civic", "schools", "sports", "safety", "real_estate", "business", "obituaries", "community", "weather", "news"] as const;
@@ -544,11 +1166,11 @@ export async function pendingSuggestions(locationId: string) {
 export async function saveSourceSuggestion(location: Location, input: { name: string; url: string; section: string; why: string | null }) {
   const { client, databaseName } = await readerMongoClient();
   const { randomUUID } = await import("node:crypto");
-  await client.db(databaseName).collection("source_suggestions").insertOne({ _id: randomUUID(), location_id: location.id, location_name: location.name, ...input, status: "pending", submitted_at: new Date().toISOString() } as never);
+  await (await fencedDatabase(client.db(databaseName))).collection("source_suggestions").insertOne({ _id: randomUUID(), kind: "reader_source_suggestion", location_id: location.id, location_name: location.name, ...input, status: "pending", submitted_at: new Date().toISOString() } as never);
 }
 
 export async function saveStoryReport(location: Location, input: { edition_id: string | null; story_id: string | null; headline: string | null; message: string }) {
   const { client, databaseName } = await readerMongoClient();
   const { randomUUID } = await import("node:crypto");
-  await client.db(databaseName).collection("story_reports").insertOne({ _id: randomUUID(), location_id: location.id, ...input, status: "open", submitted_at: new Date().toISOString() } as never);
+  await (await fencedDatabase(client.db(databaseName))).collection("story_reports").insertOne({ _id: randomUUID(), location_id: location.id, ...input, status: "open", submitted_at: new Date().toISOString() } as never);
 }

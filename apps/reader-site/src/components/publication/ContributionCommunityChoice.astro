@@ -1,0 +1,15 @@
+---
+import type { loadPublicationContributionContext } from "../../lib/publication-view";
+interface Props {
+  context: NonNullable<Awaited<ReturnType<typeof loadPublicationContributionContext>>>;
+  kind: "share" | "suggest";
+}
+const { context, kind } = Astro.props;
+---
+<nav aria-label="Choose a community">
+  <h2>Which community is this for?</h2>
+  <p>{context.name} covers several communities. Choose where your {kind === "share" ? "story" : "source suggestion"} belongs.</p>
+  <ul>{context.locations.map((location) => <li>
+    <a href={context.links.contribute(kind, location.id)}>{location.name}</a>
+  </li>)}</ul>
+</nav>

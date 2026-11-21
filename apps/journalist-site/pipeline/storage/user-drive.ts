@@ -12,7 +12,9 @@ function googleOAuthConfig() {
 }
 
 async function signedInDriveToken(request: Request, email: string) {
-  const token = await getToken({ req: request });
+  const secret = process.env.AUTH_SECRET?.trim();
+  if (!secret) throw new Error("AUTH_SECRET is required to read Google Drive authorization");
+  const token = await getToken({ req: request, secret });
   const expectedEmail = email.trim().toLowerCase();
   if (!token ||
       token.email?.trim().toLowerCase() !== expectedEmail ||
@@ -31,6 +33,10 @@ async function driveAccessToken(request: Request, email: string) {
   if (!token?.googleDriveRefreshToken) {
     throw new Error("Connect Google Drive with the currently signed-in account before creating a publishing channel");
   }
+  return refreshGoogleDriveAccess(token.googleDriveRefreshToken);
+}
+
+export async function refreshGoogleDriveAccess(refreshToken: string) {
   const { clientId, clientSecret } = googleOAuthConfig();
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -38,7 +44,7 @@ async function driveAccessToken(request: Request, email: string) {
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
-      refresh_token: token.googleDriveRefreshToken,
+      refresh_token: refreshToken,
       grant_type: "refresh_token",
     }),
     cache: "no-store",
@@ -105,4 +111,36 @@ export async function createUserDriveChannelFolder(request: Request, email: stri
   const accessToken = await driveAccessToken(request, email);
   const channelsFolder = await ensureFolder(accessToken, pipelineRoot, "output-channels");
   return ensureFolder(accessToken, channelsFolder, channelId);
+}
+
+export async function reserveUserDriveFolderId(request: Request, email: string) {
+  const token = await driveAccessToken(request, email);
+  const result = await driveRequest<{ ids?: string[] }>(token, new URL("https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files"));
+  const id = result.ids?.[0];
+  if (!id || !DRIVE_ID.test(id)) throw new Error("Google Drive did not reserve a valid folder identity.");
+  return id;
+}
+
+export async function provisionUserDriveChannelFolder(
+  request: Request, email: string, pipelineRoot: string | null, channelId: string, folderId: string,
+) {
+  if (!pipelineRoot || !DRIVE_ID.test(pipelineRoot) || !DRIVE_ID.test(folderId) || !/^[a-f0-9]{32}$/.test(channelId)) {
+    throw new Error("Invalid Google Drive newsroom folder configuration.");
+  }
+  const token = await driveAccessToken(request, email);
+  const existingUrl = new URL(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,mimeType,trashed&supportsAllDrives=true`);
+  const existing = await fetch(existingUrl, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (existing.ok) {
+    const file = await existing.json() as { mimeType?: string; trashed?: boolean };
+    if (file.mimeType !== FOLDER_MIME || file.trashed) throw new Error("The reserved newsroom folder is no longer usable.");
+    return;
+  }
+  if (existing.status !== 404) throw new Error(`Google Drive folder inspection failed (${existing.status}). Retry the same creation request.`);
+  // A preallocated ID makes even overlapping or lost-response create attempts idempotent.
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true", {
+    method: "POST", cache: "no-store",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ id: folderId, name: `channel-${channelId}`, mimeType: FOLDER_MIME, parents: [pipelineRoot] }),
+  });
+  if (!response.ok && response.status !== 409) throw new Error(`Google Drive folder creation failed (${response.status}). Retry the same creation request.`);
 }

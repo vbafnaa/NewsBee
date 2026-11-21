@@ -14,7 +14,7 @@ export default async function LocationPage({ params, searchParams }: { params: P
   const { locationId } = await params;
   const query = await searchParams;
   if (query.tab === "videos" || query.tab === "video") {
-    redirect(`/publishing?location=${encodeURIComponent(locationId)}`);
+    redirect("/newsroom");
   }
   const deps = await pipelineDeps();
   if (query.tab === "runs" && typeof query.run === "string") {

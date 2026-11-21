@@ -35,7 +35,7 @@ vi.mock("next/server", () => ({ after: (callback: () => Promise<void>) => runtim
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ host: "portal.example.org" }) }));
 vi.mock("@/auth", () => ({
   getMongoDatabase: async () => runtime.deps!.db,
-  auth: async () => runtime.email ? { user: { email: runtime.email } } : null,
+  auth: async () => runtime.email ? { user: { email: runtime.email, newsbeePrincipalId: "fixture-editor" } } : null,
   isAdminEmail: async () => true,
 }));
 vi.mock("@/lib/pipeline", () => ({ pipelineDeps: async () => runtime.deps }));
@@ -63,6 +63,8 @@ beforeEach(async () => {
   await db.dropDatabase();
   root = await mkdtemp(path.join(os.tmpdir(), "newsbee-empty-collection-"));
   vi.stubEnv("NEWSBEE_MODE", "cloud");
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini");
+  vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-managed-model-key");
   vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", JSON.stringify({ fixture: Buffer.alloc(32, 7).toString("base64") }));
   vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "fixture");
   runtime.email = "editor@example.org";
@@ -70,7 +72,7 @@ beforeEach(async () => {
   model = new FakeModel(() => { throw new Error("Empty collection must not call a model"); });
   deps = { db, store: new LocalArtifacts(root), settings: loadSettings({ NEWSBEE_ROOT: root }), model };
   runtime.deps = deps;
-  const principal = { id: "fixture-editor", email: "editor@example.org", role: "editor" as const };
+  const principal = { id: "fixture-editor", email: "editor@example.org", role: "admin" as const };
   await db.collection("journalist_admins").insertOne({ email: principal.email, principalId: principal.id, enabled: true, role: principal.role });
   await saveCredentialProfile(db, principal, { source: "personal", config: { modelProviders: [{ name: "gemini", kind: "gemini", model: "fixture", apiKey: "fixture-not-live" }] } });
   await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).insertOne({ ...location, _id: location.id });
@@ -171,6 +173,35 @@ it("uses the current collection store to allow nonempty authoring and repeated c
   expect((await locationHealth(db, current, location)).candidate_count).toBe(1);
 });
 
+it("continues failed collection on the same run using only completed sources", async () => {
+  const interrupted = { ...task, source_id: "library:interrupted" };
+  const run = await seed("collecting", [task, interrupted]);
+  await runs(db).updateOne({ _id: run._id, "sources.source_id": task.source_id }, {
+    $set: { "sources.$.status": "completed", "sources.$.result_status": "ingested" },
+  });
+  await enqueue(db, { kind: "collect_source", run_id: run._id, location_id: location.id, payload: { task: interrupted } });
+  await failRun(db, run._id, "Collection timed out");
+  const stale = { ...item(run._id, "interrupted"), source_id: interrupted.source_id };
+  await collectedItems(db).insertOne(stale);
+  expect((await author(request(run._id, "authoring"), context(run._id))).status).toBe(409);
+
+  await collectedItems(db).insertOne(item(run._id));
+  expect(await locationHealth(db, await getRun(db, run._id), location)).toMatchObject({
+    candidate_count: 1, can_author_partial_collection: true,
+  });
+  const responses = await Promise.all([1, 2].map(() => author(request(run._id, "authoring"), context(run._id))));
+  expect(responses.map((response) => response.status)).toEqual([200, 200]);
+  expect(await getRun(db, run._id)).toMatchObject({
+    status: "authoring", error: null, completed_at: null, partial_collection_source_ids: [task.source_id],
+    sources: [expect.objectContaining({ status: "completed" }), expect.objectContaining({ status: "failed", error: "Collection timed out" })],
+  });
+  expect((await runJobs(db, run._id)).filter((job) => job.kind === "author_start")).toHaveLength(1);
+  expect((await runJobs(db, run._id)).find((job) => job.kind === "collect_source")?.status).toBe("cancelled");
+  expect(await runOne(deps, { kinds: ["author_start"] })).toBe(true);
+  expect((await getRun(db, run._id))?.draft_id).toBeTruthy();
+  expect(await collectedItems(db).findOne({ _id: stale._id })).toMatchObject({ status: "collected", step: "reader" });
+});
+
 it("scopes retained input counts to this run and ignores dropped or factless traces", async () => {
   const run = await seed();
   await collectedItems(db).insertMany([
@@ -265,7 +296,10 @@ it("cancels the empty attempt and starts a distinct edition run without losing i
   expect(await getRun(db, run._id)).toEqual(cancelled);
   expect(await runJobs(db, run._id)).toEqual(oldJobs);
   expect(await collectedItems(db).find({ run_id: run._id }).toArray()).toEqual(oldItems);
-  expect(await getRun(db, result.run_id)).toMatchObject({ status: "collecting", planned: false });
+  expect(await getRun(db, result.run_id)).toMatchObject({
+    status: "collecting", planned: false,
+    execution: { sponsorId: "fixture-editor", initiatedBy: "fixture-editor", source: "platform", credentialVersion: 0 },
+  });
   expect((await runJobs(db, result.run_id)).every((job) => job.kind === "plan_sources")).toBe(true);
 });
 

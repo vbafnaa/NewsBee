@@ -1,6 +1,6 @@
 /** Bounded, read-only Overpass requests shared by source discovery. */
 import { COMMUNITY_USER_AGENT } from "../../../../shared/geography";
-import type { HttpTransport } from "../core/http";
+import { ExternalServiceDisabledError, type HttpTransport } from "../core/http";
 
 export const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -35,7 +35,10 @@ export async function queryOverpass(transport: HttpTransport, query: string, end
       if (!Array.isArray(data.elements)) throw new Error("Invalid Overpass response: missing elements array");
       attempts.push(`${endpoint}: success (${data.elements.length} elements)`);
       return { data, endpoint, attempts };
-    } catch (error) { attempts.push(`${endpoint}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`); }
+    } catch (error) {
+      if (error instanceof ExternalServiceDisabledError) throw error;
+      attempts.push(`${endpoint}: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
+    }
   }
   throw new Error(`Overpass unavailable; ${attempts.join("; ")}`);
 }

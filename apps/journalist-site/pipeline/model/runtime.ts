@@ -1,17 +1,23 @@
 /** Port of shared/model_inference (ollama.py, gemini.py, runtime.py): one swappable model interface. */
 import type { ProviderConfig, Settings } from "../core/config";
 import { logger, type Logger } from "../core/log";
-import { type HttpTransport, fetchTransport, text } from "../core/http";
+import { type HttpTransport, type HttpResponse, fetchTransport, text } from "../core/http";
 import { logApiCall, modelLimit, modelService, paidRefusal } from "../trace/gateway";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { ExecutionBlocked } from "../core/execution-errors";
 import { safeError } from "../core/redaction";
+import { executionDeadline, executionTimeout } from "../core/execution-deadline";
 
 export type ComponentStatus = "ok" | "degraded" | "unavailable" | "not_configured";
 export type ProviderHealth = { name: string; model: string | null; status: ComponentStatus | "failed"; detail: string };
 export type ComponentHealth = { status: ComponentStatus; detail: string; providers?: ProviderHealth[] };
 
 export class ModelUnavailableError extends Error {}
+/** Accounting errors must stop fallback, not send a completed paid request again. */
+export class UsageAccountingError extends ExecutionBlocked {
+  readonly code = "model_usage_accounting_failed";
+}
+export class ModelOutcomeUncertain extends UsageAccountingError {}
 export class ModelSafetyError extends Error {}
 export class ModelRateLimitError extends ModelUnavailableError {
   constructor(message: string, readonly retryAfterSeconds = 0) {
@@ -82,13 +88,20 @@ function listedModelIds(body: Uint8Array): string[] | null {
 }
 
 async function post(transport: HttpTransport, url: string, headers: Record<string, string>, body: unknown, timeoutMs = 300_000) {
-  const response = await transport({
+  const request = {
     url,
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
-    timeoutMs,
-  });
+    timeoutMs: executionTimeout(timeoutMs),
+  } as const;
+  let response: HttpResponse;
+  try { response = await transport(request); }
+  catch (error) {
+    if (error instanceof ExecutionBlocked) throw error;
+    if (executionDeadline() !== undefined) throw new ModelOutcomeUncertain("Provider transport failed after dispatch; the paid outcome is uncertain and requires reconciliation.");
+    throw error;
+  }
   if (response.status >= 400) {
     if (response.status === 429) {
       throw new ModelRateLimitError("Model request rate limited (429)", retryAfterSeconds(response.headers, text(response)));
@@ -286,7 +299,7 @@ export class GeminiRuntime implements ModelRuntime {
   async generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options: StructuredOptions = {}) {
     if (!this.supportsVision) throw new ModelUnavailableError("Gemini vision is disabled");
     checkVisionInputs(images);
-    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images));
+    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images, options.timeoutMs));
   }
 }
 
@@ -392,7 +405,7 @@ export class OpenAICompatibleRuntime implements ModelRuntime {
   async generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options: StructuredOptions = {}) {
     if (!this.supportsVision) throw new ModelUnavailableError("Image-input capability is not configured for this provider");
     checkVisionInputs(images);
-    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images));
+    return this.generation(await this.call(prompt, schema, options.numPredict ?? 2400, images, options.timeoutMs));
   }
 }
 
@@ -440,6 +453,7 @@ export class FallbackRuntime implements ModelRuntime {
     const limits: ModelRateLimitError[] = [];
     // Cooling providers are a last resort rather than skipped outright.
     for (const { runtime, index } of [...available, ...cooling]) {
+      executionTimeout();
       try {
         const result = await call(runtime);
         this.servedModel = runtime.model;
@@ -465,11 +479,13 @@ export class FallbackRuntime implements ModelRuntime {
   }
 
   generateStructured(prompt: string, schema: JsonSchema, options?: StructuredOptions) {
-    return this.attempt("generate_structured", (runtime) => runtime.generateStructured(prompt, schema, options));
+    return this.attempt("generate_structured", (runtime) => runtime.generateStructured(prompt, schema,
+      executionDeadline() === undefined ? options : { ...options, timeoutMs: executionTimeout(options?.timeoutMs) }));
   }
 
   generateVisionStructured(prompt: string, images: readonly VisionInput[], schema: JsonSchema, options?: StructuredOptions) {
-    return this.attempt("generate_vision_structured", runtime => runtime.generateVisionStructured!(prompt, images, schema, options),
+    return this.attempt("generate_vision_structured", runtime => runtime.generateVisionStructured!(prompt, images, schema,
+      executionDeadline() === undefined ? options : { ...options, timeoutMs: executionTimeout(options?.timeoutMs) }),
       runtime => Boolean(runtime.supportsVision && runtime.generateVisionStructured));
   }
 }
@@ -480,8 +496,13 @@ export function providerRuntime(config: ProviderConfig, transport: HttpTransport
   return new OpenAICompatibleRuntime(config, transport);
 }
 
-export type ModelUsageContext = { location_id: string; run_id?: string; sponsor_id?: string; credential_version?: number };
+export type ModelUsageContext = {
+  location_id: string; run_id?: string; sponsor_id?: string; credential_version?: number;
+  initiator_id?: string; funding?: "platform" | "personal" | "environment" | "unknown";
+  funding_identity?: "managed" | "personal" | "environment" | "unknown";
+};
 const usageContext = new AsyncLocalStorage<ModelUsageContext>();
+const operationContext = new AsyncLocalStorage<ModelCall["operation"]>();
 
 export function withModelUsageContext<T>(context: ModelUsageContext, operation: () => T): T {
   return usageContext.run(context, operation);
@@ -502,7 +523,55 @@ export type ModelCall = Partial<ModelUsageContext> & {
   error: string | null;
 };
 export type ModelCallSink = (call: ModelCall) => Promise<void> | void;
-export type UsageRecording = { role: string; sink: ModelCallSink };
+export type UsageRecording = { role: string; sink: ModelCallSink; beforeDispatch?: () => Promise<void> };
+
+function responseTokens(response: HttpResponse): [number | null, number | null] {
+  let value: unknown;
+  try { value = JSON.parse(text(response)); } catch { return [null, null]; }
+  if (!value || typeof value !== "object") return [null, null];
+  const data = value as { usage?: { prompt_tokens?: number; completion_tokens?: number }; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number }; prompt_eval_count?: number; eval_count?: number };
+  const valid = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  const gemini = data.usageMetadata;
+  const output = valid(gemini?.candidatesTokenCount), thinking = valid(gemini?.thoughtsTokenCount);
+  return [
+    valid(data.usage?.prompt_tokens ?? gemini?.promptTokenCount ?? data.prompt_eval_count),
+    gemini ? output === null && thinking === null ? null : (output ?? 0) + (thinking ?? 0)
+      : valid(data.usage?.completion_tokens ?? data.eval_count),
+  ];
+}
+
+/** Transport-level accounting includes compatibility retries and every fallback dispatch exactly once. */
+function recordingTransport(transport: HttpTransport, config: ProviderConfig, usage: UsageRecording): HttpTransport {
+  return async (request) => {
+    const operation = operationContext.getStore();
+    if (!operation) return transport(request);
+    const provider = config.kind === "gemini" || config.kind === "ollama" ? config.kind : config.name;
+    const service = modelService(provider, usage.role);
+    const source = service ? { limit: modelLimit(provider, service), provider, model: config.model } : {};
+    if (service) {
+      const refused = await paidRefusal(service, { limits: source.limit, provider });
+      if (refused) throw new ModelUnavailableError(refused);
+    }
+    executionTimeout();
+    await usage.beforeDispatch?.();
+    const boundedRequest = { ...request, timeoutMs: executionTimeout(request.timeoutMs) };
+    const started = Date.now();
+    let response: HttpResponse | undefined;
+    let failure: unknown;
+    try { response = await transport(boundedRequest); } catch (error) { failure = error; }
+    const ok = response !== undefined && response.status < 400;
+    const code = response?.status ?? null;
+    const error = failure ? safeError(failure) : !ok ? `HTTP ${code}` : null;
+    const [input, output] = response && ok ? responseTokens(response) : [null, null];
+    try {
+      if (service) await logApiCall(service, true, ok ? "ok" : "failed", error ?? usage.role, null, 1, source);
+      await usage.sink({ ...usageContext.getStore(), provider, model: config.model, role: usage.role, operation, ok,
+        status_code: code, rate_limited: code === 429, input_tokens: input, output_tokens: output, duration_ms: Date.now() - started, error });
+    } catch { throw new UsageAccountingError("Provider attempt completed but usage accounting failed; do not retry the paid call automatically."); }
+    if (failure) throw failure;
+    return response!;
+  };
+}
 
 function statusCode(message: string) {
   const match = /\((\d{3})\)/.exec(message);
@@ -516,6 +585,7 @@ export class UsageRecordingRuntime implements ModelRuntime {
     private readonly usage: UsageRecording,
     private readonly log: Logger = logger("model.usage"),
     private readonly clock: () => number = Date.now,
+    private readonly transportRecorded = false,
   ) {}
 
   get provider() { return this.inner.provider; }
@@ -528,11 +598,13 @@ export class UsageRecordingRuntime implements ModelRuntime {
     try {
       await this.usage.sink({ ...usageContext.getStore(), provider: this.provider, model: this.model, role: this.usage.role, ...call });
     } catch (error) {
-      this.log.warn("model_usage_record_failed", { error: error instanceof Error ? error.message : String(error) });
+      this.log.warn("model_usage_record_failed", { error: safeError(error) });
+      throw new UsageAccountingError("Provider attempt completed but usage accounting failed; do not retry the paid call automatically.");
     }
   }
 
   private async measure<T>(operation: ModelCall["operation"], run: () => Promise<T>, tokens: (result: T) => [number | null, number | null]) {
+    if (this.transportRecorded) return operationContext.run(operation, run);
     // A hosted provider the run hasn't ticked is skipped, so the fallback chain moves on.
     const service = modelService(this.provider, this.usage.role);
     const source = service ? { limit: modelLimit(this.provider, service), provider: this.provider, model: this.model } : {};
@@ -549,6 +621,7 @@ export class UsageRecordingRuntime implements ModelRuntime {
       await this.record({ operation, ok: true, status_code: null, rate_limited: false, input_tokens: input, output_tokens: output, duration_ms: this.clock() - started, error: null });
       return result;
     } catch (error) {
+      if (error instanceof UsageAccountingError) throw error;
       const message = safeError(error);
       const code = statusCode(message);
       if (service) await logApiCall(service, true, "failed", `${code ? `HTTP ${code}: ` : ""}${message}`.slice(0, 300));
@@ -592,8 +665,8 @@ export class UsageRecordingRuntime implements ModelRuntime {
 /** The pipeline's model: one provider directly, or an ordered fallback chain. */
 export function createRuntime(settings: Settings, transport: HttpTransport = fetchTransport, log?: Logger, usage?: UsageRecording): ModelRuntime {
   const runtimes = settings.modelProviders.map((config) => {
-    const runtime = providerRuntime(config, transport);
-    return usage ? new UsageRecordingRuntime(runtime, usage) : runtime;
+    const runtime = providerRuntime(config, usage ? recordingTransport(transport, config, usage) : transport);
+    return usage ? new UsageRecordingRuntime(runtime, usage, log, Date.now, true) : runtime;
   });
   return runtimes.length === 1 ? runtimes[0] : new FallbackRuntime(runtimes, log);
 }

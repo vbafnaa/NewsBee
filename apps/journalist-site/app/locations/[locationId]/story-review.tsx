@@ -12,7 +12,8 @@ const categoryLabel = (id: string | null | undefined) => SECTIONS.find((section)
  * Accept or Reject one story a run pulled, with a reason code, a newsletter category and a note. The
  * category starts at the section the pipeline gave the story, if any, and is required on Accept, so a
  * story the pipeline dropped before placing it still says where it belongs. One decision covers every
- * copy of its link.
+ * copy of its link. An accepted story's page can have its links read, one level deeper, in case the page
+ * leads to stories the run missed.
  */
 export default function StoryReview({ runId, itemId, review, section, onSaved }: { runId: string; itemId: string; review: StoryReviewValue; section?: string | null; onSaved?: (review: StoryReviewValue) => void }) {
   const [editing, setEditing] = useState(!review);
@@ -22,6 +23,7 @@ export default function StoryReview({ runId, itemId, review, section, onSaved }:
   const [note, setNote] = useState(review?.reason ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [following, setFollowing] = useState("");
   const other = STORY_OTHER_CODES.includes(code);
   const needsCategory = Boolean(decision) && CATEGORY_REQUIRED_FOR.has(decision);
 
@@ -37,10 +39,25 @@ export default function StoryReview({ runId, itemId, review, section, onSaved }:
     finally { setBusy(false); }
   }
 
+  async function follow() {
+    setBusy(true); setError(""); setFollowing("");
+    try {
+      const started = await adminApi<{ depth: number }>(`runs/${encodeURIComponent(runId)}/actions`, { method: "POST", body: JSON.stringify({ action: "follow_links", item_id: itemId }) });
+      setFollowing(`Reading this page's links at depth ${started.depth}. What they lead to appears in this list, marked with this page, when it finishes.`);
+      window.dispatchEvent(new Event("newsbee:runs-changed"));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
+
   if (review && !editing) return <div className="story-review">
     <span className={`status-badge tone-${review.decision === "accept" ? "ok" : "failed"}`}>{review.decision === "accept" ? "Accepted" : "Rejected"}</span>
     <small> {review.reason_code} {review.reason_label}{review.category ? ` · ${categoryLabel(review.category)}` : ""}{review.reason ? `: ${review.reason}` : ""} · {review.by}</small>
-    <div><button type="button" className="run-inspect-link" onClick={() => setEditing(true)}>Change</button></div>
+    <div><button type="button" className="run-inspect-link" onClick={() => setEditing(true)}>Change</button>
+      {review.decision === "accept" && <> · <button type="button" className="run-inspect-link" disabled={busy || Boolean(following)}
+        title="Reads up to 8 pages linked from this page's own content (not its menus), one level deeper, before writing starts"
+        onClick={() => void follow()}>Read this page's links</button></>}</div>
+    {following && <p className="notice" role="status"><small>{following}</small></p>}
+    {error && <p className="alert" role="alert">{error}</p>}
   </div>;
 
   return <div className="story-review">

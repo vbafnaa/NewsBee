@@ -36,7 +36,7 @@ import { WEB_WINDOW, effectiveWindow } from "../../sourcemap/windows";
 import { saveText, type Details } from "../../editions/details";
 import { jinaRead } from "./jina";
 import { normalizeStoryImage } from "../../../../../shared/story-image";
-import { articleMeta, venuePoint, calendarLinks, deepLinks, listingLinks, trumbaFeeds, FEED_GUESSES, imagesAllowed, mainText, meta, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type ListingLink, type PageArticle, type RightsAction } from "./page";
+import { articleMeta, venuePoint, calendarLinks, deepLinks, feedLinks, listingLinks, trumbaFeeds, FEED_GUESSES, imagesAllowed, mainText, meta, pageRights, parseSitemap, readablePage, rightsAction, SITEMAP_GUESSES, SKIP_PATH, storyLinks, supportingLinks, type ListingLink, type PageArticle, type RightsAction } from "./page";
 import { siteNameProblem, urlDate } from "../../editions/title-rules";
 
 /**
@@ -52,6 +52,12 @@ export function siteNameOf(html: string, pageUrl: string): string | null {
   try { return new URL(pageUrl).pathname.replace(/\/+$/, "") === "" && title ? title : null; } catch { return null; }
 }
 
+/** Whether a title or address names years and all of them are before this one ("2024 State Cheer", "2025-26"). */
+export function pastYearsOnly(text: string, today: string) {
+  const years = [...text.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
+  return years.length > 0 && years.every((year) => year < Number(today.slice(0, 4)));
+}
+
 export const SOURCE_BUDGET_MS = 120_000;
 export const SOURCE_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -64,7 +70,11 @@ const ACCEPT_HTML = "text/html, application/xhtml+xml";
 const ACCEPT_FEED = "application/rss+xml, application/atom+xml, application/xml, text/xml, text/calendar;q=0.9, */*;q=0.5";
 const ACCEPT_XML = "application/xml, text/xml";
 
-export type WebParams = { url: string; feed_url?: string | null; kind?: string; section?: string; inside_area?: boolean; window?: unknown; calendar_urls?: string[] };
+export type WebParams = { url: string; feed_url?: string | null; kind?: string; section?: string; inside_area?: boolean; window?: unknown; calendar_urls?: string[];
+  /** Read only the links on this page (one an editor accepted), one level below `follow_depth`, and nothing else on the site. */
+  follow_page?: string; follow_depth?: number; follow_section?: string | null; follow_title?: string; follow_site_name?: string | null };
+/** Where an item was found: how deep, the page it was on or linked from, how it was read, and that listing's section. */
+type Where = { crawl_depth?: number; section_hint?: string; found_on?: string; found_via?: string };
 
 type Budget = { used: number; max: number; deadline: number; limited: boolean };
 
@@ -145,7 +155,7 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
   let siteRights: RightsAction = "ok";
   let siteImages = true;
   /** The site's own name: a page titled only this is a page of the site, not a story. */
-  let siteName: string | null = null;
+  let siteName: string | null = params.follow_site_name ?? null;
   // A source saved as one dated story is named after that story, so its name says nothing about the site.
   const sourceName = urlDate(site) ? null : task.name;
   let verifiedVenue: { url: string; point: Point; km: number; inside: boolean } | null = null;
@@ -156,7 +166,8 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     ...(local ? { tier: "local", locality: { method: "local_site", matches: [site] } } : { needs_locality: true }),
     section_hint: params.section ?? null, ...extra,
   } as CollectedEvent);
-  const drop = (id: string, title: string, url: string | null, reason: string, day?: string | null) => { dropped.push({ source_event_id: id, title, url, reason, event_date: day ?? null }); };
+  /** Leave an item out with why; `where` keeps how deep it was and the page it was found on, as for kept items. */
+  const drop = (id: string, title: string, url: string | null, reason: string, day?: string | null, where: Where = {}) => { dropped.push({ source_event_id: id, title, url, reason, event_date: day ?? null, ...where }); };
   const add = (item: CollectedEvent) => {
     const key = item.source_url + item.event_date;
     if (seen.has(key) || items.length >= MAX_ITEMS) return;
@@ -171,20 +182,20 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     items.push(item);
   };
 
-  const readFeed = (body: Uint8Array, headers: Record<string, string> = {}) => {
+  const readFeed = (body: Uint8Array, headers: Record<string, string> = {}, where: Where = {}) => {
     const flags = pageRights(headers);
     const action = rightsAction(flags);
     if (action === "skip") return false;
-    if (looksLikeIcal(body)) { readCalendar(body, record.feed_url ?? site); return true; }
+    if (looksLikeIcal(body)) { readCalendar(body, record.feed_url ?? site, false, where); return true; }
     if (!looksLikeFeed(body)) return false;
     let parsed;
     try { parsed = parseNewsFeed(body); } catch { return false; }
     for (const entry of parsed) {
       const id = sha256(entry.id).slice(0, 16);
-      if (entry.published_day < since || entry.published_day > context.today) { drop(id, entry.title, entry.link, "outside_window", entry.published_day); continue; }
-      if (sponsoredItem(entry)) { drop(id, entry.title, entry.link, "sponsored", entry.published_day); continue; }
+      if (entry.published_day < since || entry.published_day > context.today) { drop(id, entry.title, entry.link, "outside_window", entry.published_day, where); continue; }
+      if (sponsoredItem(entry)) { drop(id, entry.title, entry.link, "sponsored", entry.published_day, where); continue; }
       add(base(entry.title, entry.link, entry.published_day, {
-        source_event_id: id, description: action === "ok" ? entry.summary : null,
+        source_event_id: id, description: action === "ok" ? entry.summary : null, ...where,
         ...(action === "link-only" ? { link_only: true } : {}),
         ...(!imagesAllowed(flags) ? { image_blocked: true } : {}),
         ...(entry.coordinates ? { coordinates: entry.coordinates } : {}),
@@ -193,11 +204,11 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     }
     return true;
   };
-  /** Read a calendar file or a page's schema.org events. `where` records how deep it was and a listing's section. */
-  const readCalendar = (body: Uint8Array, url: string, trumba = false, where: { crawl_depth?: number; section_hint?: string } = {}) => {
+  /** Read a calendar file or a page's schema.org events. `where` records how deep it was, the page it came from and a listing's section. */
+  const readCalendar = (body: Uint8Array, url: string, trumba = false, where: Where = {}) => {
     let events;
     try {
-      const parsed = trumba ? parseTrumba(body) : looksLikeIcal(body) ? parseIcal(body, { allowMissingVenue: true }) : parseJsonLd(body);
+      const parsed = trumba ? parseTrumba(body) : looksLikeIcal(body) ? parseIcal(body, { allowMissingVenue: true }) : parseJsonLd(body, url);
       events = parsed.events;
       for (const [reason, count] of Object.entries(parsed.skipped)) record.skipped_unusable[reason] = (record.skipped_unusable[reason] ?? 0) + count;
     } catch (error) { record.pages_checked.push(`${url}: calendar parse failed: ${String(error)}`); return false; }
@@ -205,9 +216,9 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
       const id = sha256(`${url}:${event.source_event_id}`).slice(0, 16);
       const branch = new URL(site).pathname.match(/^\/hours-and-locations\/[^/]+-branch/)?.[0];
       if (trumba && branch && (!event.venue_url || new URL(event.venue_url).hostname !== new URL(site).hostname || new URL(event.venue_url).pathname.replace(/\/$/, "") !== branch)) {
-        drop(id, event.title, event.source_url, "different_or_unknown_branch", event.event_date); continue;
+        drop(id, event.title, event.source_url, "different_or_unknown_branch", event.event_date, where); continue;
       }
-      if (event.event_date < from || event.event_date > until) { drop(id, event.title, event.source_url, "outside_window", event.event_date); continue; }
+      if (event.event_date < from || event.event_date > until) { drop(id, event.title, event.source_url, "outside_window", event.event_date, where); continue; }
       const venueEvidence = verifiedVenue && event.venue_url && new URL(event.venue_url).href.replace(/\/$/, "") === verifiedVenue.url.replace(/\/$/, "") && verifiedVenue.km <= 3 ? verifiedVenue : null;
       add({ ...event, source_event_id: id, venue: event.venue, kind: "event", source_name: task.name,
         ...(local ? { tier: "local", locality: { method: "local_site", matches: [site] } } : { needs_locality: true }),
@@ -223,14 +234,14 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
    * newsletter section), how deep it is (1: linked from the home page; 2: from a listing page), and the
    * page itself when it was already fetched.
    */
-  const readPage = async (url: string, how: string, found: { section?: string | null; depth?: number; prefetched?: Fetched } = {}) => {
+  const readPage = async (url: string, how: string, found: { section?: string | null; depth?: number; prefetched?: Fetched; from?: string } = {}) => {
     const page = found.prefetched ?? await fetchWithin(context, budget, record, url, ACCEPT_HTML);
     if (!page) return;
-    const where = { crawl_depth: found.depth ?? 1, ...(found.section ? { section_hint: found.section } : {}) };
+    const where: Where = { crawl_depth: found.depth ?? 1, ...(found.section ? { section_hint: found.section } : {}), ...(found.from ? { found_on: found.from, found_via: how } : {}) };
     const html = decode(page.body);
     const flags = pageRights(page.headers, html);
     const action = rightsAction(flags);
-    if (action === "skip") { drop(sha256(url).slice(0, 16), url, url, "page opts out of reuse"); return; }
+    if (action === "skip") { drop(sha256(url).slice(0, 16), url, url, "page opts out of reuse", null, { ...where, found_via: how }); return; }
     if (/application\/ld\+json/i.test(html) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(html) && readCalendar(page.body, page.url, false, where)) return;
     let article: PageArticle | null = articleMeta(html, page.url);
     let body = mainText(html);
@@ -251,14 +262,21 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
       if (read) body = read.markdown;
       if (read?.date) article = withDate(read.date, read.title, read.markdown);
     }
-    // Agentic runs let the agent read pages the rules can't date, with a verbatim quote per item.
-    if (undated() && action === "ok" && context.agentModel && extractions < MAX_EXTRACTIONS) {
+    // An event's page (from an events listing, or under /events/) may carry only the date it was
+    // published (a July page about a November final), which says nothing about when the event is.
+    // Unless it names only past years ("2024 Regional Thespy"), the agent reads it for the event's date.
+    const eventPage = found.section === "events" || /\/(events?|calendar)\/[^/]+/i.test(new URL(page.url).pathname);
+    const staleEventPage = () => eventPage && Boolean(article?.date && article.date < since) && !pastYearsOnly(`${article?.title ?? ""} ${page.url}`, context.today);
+    // Agentic runs let the agent read pages the rules can't date, with a verbatim quote per item: news
+    // back over the window, and events ahead to the event horizon.
+    if ((undated() || staleEventPage()) && action === "ok" && context.agentModel && extractions < MAX_EXTRACTIONS) {
       extractions += 1;
-      const extracted = body ? await extractItems(context.agentModel, body, context.location.community?.name ?? context.location.name.split(",")[0], since, context.today).catch(() => []) : [];
+      const extracted = body ? await extractItems(context.agentModel, body, context.location.community?.name ?? context.location.name.split(",")[0], since, until).catch(() => []) : [];
       if (extracted.length) {
-        await recordDecision({ stage: "collect", actor: "agent", subject: page.url, decision: "extracted", reason: `${extracted.length} items, each with a verbatim quote${where.crawl_depth > 1 ? ` (depth ${where.crawl_depth})` : ""}`, model: context.agentModel.servedModel ?? context.agentModel.model });
+        await recordDecision({ stage: "collect", actor: "agent", subject: page.url, decision: "extracted", reason: `${extracted.length} items, each with a verbatim quote${(where.crawl_depth ?? 1) > 1 ? ` (depth ${where.crawl_depth})` : ""}`, model: context.agentModel.servedModel ?? context.agentModel.model });
         await saveText(context.db, page.url, body, { canonical_url: page.url, reuse_allowed: true }).catch(() => undefined);
-        for (const item of extracted) add(base(item.title, page.url, item.date, { source_event_id: sha256(`${page.url}:${item.title}`).slice(0, 16), description: item.summary, found_by: "agent extraction", found_via: how, extracted_quote: item.quote, extracted_by: "agent", ...where }));
+        for (const item of extracted) add(base(item.title, page.url, item.date, { source_event_id: sha256(`${page.url}:${item.title}`).slice(0, 16), description: item.summary, found_by: "agent extraction", found_via: how, extracted_quote: item.quote, extracted_by: "agent",
+          ...(item.date > context.today ? { kind: "event" } : {}), ...where }));
         return;
       }
     }
@@ -266,11 +284,12 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     const day = article.date;
     const id = sha256(page.url).slice(0, 16);
     // A page titled only with the site's name, or a listing heading, is a page of the site (its home
-    // page, a section front), not a story: it is left out with that reason rather than "undated".
-    const navigation = siteNameProblem(article.title, [siteName, siteNameOf(html, page.url), sourceName]);
-    if (navigation) { drop(id, article.title, page.url, navigation, day); return; }
-    if (!day) { drop(id, article.title, page.url, "undated"); return; }
-    if (day < since || day > context.today) { drop(id, article.title, page.url, "outside_window", day); return; }
+    // page, a section front), not a story: it is left out with that reason rather than "undated". A page's
+    // own site name counts only when the home page gave none: some sites put each page's title in og:site_name.
+    const navigation = siteNameProblem(article.title, [siteName, siteName ? null : siteNameOf(html, page.url), sourceName]);
+    if (navigation) { drop(id, article.title, page.url, navigation, day, { ...where, found_via: how }); return; }
+    if (!day) { drop(id, article.title, page.url, "undated", null, { ...where, found_via: how }); return; }
+    if (day < since || day > context.today) { drop(id, article.title, page.url, "outside_window", day, { ...where, found_via: how }); return; }
     const text = action === "ok" ? body : null;
     if (text) await saveText(context.db, page.url, text, { canonical_url: page.url, reuse_allowed: true, supporting_urls: supportingLinks(html, page.url) }).catch((error) => context.log.warn("article_text_cache_failed", { url: page.url, error: String(error) }));
     add(base(article.title, page.url, day, {
@@ -283,14 +302,16 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     }));
   };
 
-  type DeepPage = { url: string; listing: ListingLink };
+  type DeepPage = { url: string; listing: ListingLink; depth: number; how: string };
   let listingsRead = 0;
   /**
-   * Website depth 2: read one listing page. Its own schema.org events and calendar file are read, and
-   * the single stories and events it links to are queued for reading. A listing with neither is read
-   * as a page, so in agentic runs the agent can pick out its items, each with a verbatim quote.
+   * Website depth 2: read one listing page. Its own schema.org events, calendar file and feed are read,
+   * and the single stories and events in its content are queued for reading one level deeper. A listing
+   * with neither is read as a page, so in agentic runs the agent can pick out its items, each with a
+   * verbatim quote. Everything found records the listing's address as `found_on`. `at` is the listing's
+   * own depth (1 for a page the home page links to); `how` and `linkHow` name the way it was found.
    */
-  const readListing = async (listing: ListingLink, queue: DeepPage[], known: Set<string>) => {
+  const readListing = async (listing: ListingLink, queue: DeepPage[], known: Set<string>, at = 1, how = `listing page (${listing.kind})`, linkHow = `listing link (${listing.kind})`) => {
     if (known.has(listing.url) || !budgetAvailable(budget) || budget.used >= PAGE_BUDGET) return;
     known.add(listing.url);
     const page = await fetchWithin(context, budget, record, listing.url, ACCEPT_HTML);
@@ -298,38 +319,60 @@ export async function readSite(task: SourceTask, context: ConnectorContext, reco
     listingsRead += 1;
     const html = decode(page.body);
     const id = sha256(listing.url).slice(0, 16);
-    if (rightsAction(pageRights(page.headers, html)) === "skip") { drop(id, listing.label || listing.url, listing.url, "page opts out of reuse"); return; }
+    if (rightsAction(pageRights(page.headers, html)) === "skip") { drop(id, listing.label || listing.url, listing.url, "page opts out of reuse", null, { crawl_depth: at, found_via: how }); return; }
     const before = items.length;
-    const onListing = { crawl_depth: 1, ...(listing.section ? { section_hint: listing.section } : {}) };
+    const onListing: Where = { crawl_depth: at, found_on: listing.url, ...(listing.section ? { section_hint: listing.section } : {}) };
     if (/application\/ld\+json/i.test(html) && /"@type"\s*:\s*"(?:Event|[A-Za-z]+Event)"/.test(html)) readCalendar(page.body, page.url, false, onListing);
     for (const url of calendarLinks(html, page.url).slice(0, 1)) {
       if (known.has(url)) continue;
       known.add(url);
       const calendar = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
-      if (calendar && rightsAction(pageRights(calendar.headers, "")) !== "skip" && readCalendar(calendar.body, calendar.url, false, { ...onListing, crawl_depth: 2 })) record.calendar_feeds = [...((record.calendar_feeds as string[] | undefined) ?? []), calendar.url];
+      if (calendar && rightsAction(pageRights(calendar.headers, "")) !== "skip" && readCalendar(calendar.body, calendar.url, false, { ...onListing, crawl_depth: at + 1 })) record.calendar_feeds = [...((record.calendar_feeds as string[] | undefined) ?? []), calendar.url];
+    }
+    // A listing's own feed (an events page's RSS) is read as a feed, not as a page.
+    for (const url of [...advertisedFeeds(html, page.url), ...feedLinks(html, page.url)].map((link) => httpsLink(link)).filter((link): link is string => Boolean(link))) {
+      if (known.has(url) || url === record.news_feed_url || url === record.feed_url) continue;
+      known.add(url);
+      const feed = await fetchWithin(context, budget, record, url, ACCEPT_FEED);
+      if (feed && readFeed(feed.body, feed.headers, { ...onListing, crawl_depth: at + 1 })) break;
     }
     // Stories dated in their address before the window would only be left out, so they aren't fetched.
     const links = deepLinks(html, page.url, caps.webDeepPages).filter((url) => !known.has(url) && !((urlDate(url) ?? "9999") < since));
-    for (const url of links) queue.push({ url, listing });
+    for (const url of links) queue.push({ url, listing, depth: at + 1, how: linkHow });
     const structured = items.length - before;
-    if (!links.length && !structured) { await readPage(listing.url, `listing page (${listing.kind})`, { section: listing.section, depth: 1, prefetched: page }); return; }
-    drop(id, listing.label || listing.url, listing.url, `listing page (${listing.kind}): ${structured ? `${structured} events read, ` : ""}${links.length} links followed (depth 2)`);
+    if (!links.length && !structured) { await readPage(listing.url, how, { section: listing.section, depth: at, prefetched: page, from: listing.url }); return; }
+    drop(sha256(`${how}:${listing.url}`).slice(0, 16), listing.label || listing.url, listing.url, `${how}: ${structured ? `${structured} events read, ` : ""}${links.length} links followed (depth ${at + 1})`, null, { crawl_depth: at, found_via: how });
   };
   /** Website depth 2: read the queued stories and events from listing pages, within the site's budgets. */
   const readDeep = async (queue: DeepPage[], known: Set<string>) => {
     let count = 0;
     const atOnce = pLimit(PAGES_AT_ONCE);
     const reading: Array<Promise<void>> = [];
-    for (const { url, listing } of queue) {
+    for (const { url, listing, depth: at, how } of queue) {
       if (count >= caps.webDeepPages || budget.used + reading.length >= PAGE_BUDGET || items.length >= MAX_ITEMS || !budgetAvailable(budget)) break;
       if (known.has(url)) continue;
       known.add(url);
       count += 1;
-      reading.push(atOnce(() => readPage(url, `listing link (${listing.kind})`, { section: listing.section, depth: 2 })));
+      reading.push(atOnce(() => readPage(url, how, { section: listing.section, depth: at, from: listing.url })));
     }
     await Promise.all(reading);
     return count;
   };
+
+  // An editor asked for the links on one page (a story they accepted): that page is read as a listing,
+  // one level below where it was found, and nothing else on the site is read.
+  if (params.follow_page !== undefined) {
+    const followed = httpsLink(params.follow_page);
+    if (!followed) throw new Error("The page to follow has no HTTPS address");
+    const at = Math.max(1, Number(params.follow_depth ?? 1));
+    const queue: DeepPage[] = [];
+    const known = new Set<string>();
+    await readListing({ url: followed, kind: "news", section: params.follow_section ?? null, label: params.follow_title ?? followed }, queue, known, at, "page an editor accepted", "link on a page an editor accepted");
+    const read = await readDeep(queue, known);
+    record.requests_used = budget.used;
+    record.detail = `${budget.used} requests: the links on ${followed}, ${read} pages at depth ${at + 1}; ${items.length} items kept, ${dropped.length} left out${record.out_of_time ? "; stopped at its time budget" : ""}`;
+    return items;
+  }
 
   // 1. Homepage: usage signals, advertised feed, calendars, structured data.
   const home = await fetchWithin(context, budget, record, site, ACCEPT_HTML);

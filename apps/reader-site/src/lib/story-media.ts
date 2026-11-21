@@ -1,5 +1,5 @@
 import { MIN_STORY_IMAGE_HEIGHT, MIN_STORY_IMAGE_WIDTH, normalizeStoryImage, type StoryImage } from "../../../../shared/story-image";
-import { allowsContextPhoto, photoCredit } from "../../../../shared/photo-presentation";
+import { allowsContextPhoto } from "../../../../shared/photo-presentation";
 import { photoStoryMismatch } from "../../../../shared/photo-story-match";
 
 type MediaStory = Partial<StoryImage> & {
@@ -12,6 +12,13 @@ type MediaStory = Partial<StoryImage> & {
   blurb?: string | null;
   when_where?: string | null;
 };
+
+export function imageCredit(media: Partial<StoryImage>, sourceName?: string) {
+  if (media.image_role === "stock") return "Stock image";
+  const author = media.image_credit?.trim() || sourceName?.trim();
+  const place = media.image_role && media.image_place?.trim();
+  return `Image${author ? `: ${author}` : ""}${place ? `, ${place}` : ""}`;
+}
 
 /** Missing or failed photos leave a text-only story, without decorative placeholders. */
 export function createStoryMedia(story: MediaStory, deliveryUrl: string | null, lead = false) {
@@ -48,7 +55,7 @@ export function createStoryMedia(story: MediaStory, deliveryUrl: string | null, 
     figure.classList.remove("is-loading");
     figure.classList.add("has-photo");
     const credit = document.createElement("a");
-    credit.textContent = photoCredit(media, story.source_name);
+    credit.textContent = imageCredit(media, story.source_name);
     credit.href = media.image_source_url!;
     credit.target = "_blank";
     credit.rel = "noopener noreferrer";
@@ -64,20 +71,20 @@ export function createStoryMedia(story: MediaStory, deliveryUrl: string | null, 
       details.className = "photo-details";
       const toggle = document.createElement("summary");
       toggle.textContent = "ⓘ";
-      toggle.setAttribute("aria-label", "Photo details and license");
-      toggle.title = "Photo details and license";
+      toggle.setAttribute("aria-label", "Image details and license");
+      toggle.title = "Image details and license";
       const body = document.createElement("div");
       body.className = "photo-details-body";
       const source = credit.cloneNode(true) as HTMLAnchorElement;
-      source.textContent = `Photo: ${media.image_credit || story.source_name || "original source"}`;
+      source.textContent = `Image: ${media.image_credit || story.source_name || "original source"}`;
       body.append(source, document.createTextNode(" · "), license,
-        document.createTextNode(` · Taken ${media.image_date}. Cropped for layout. ${media.image_role === "stock"
+        document.createTextNode(`${media.image_date ? ` · Date: ${media.image_date}.` : ""} Cropped for layout. ${media.image_role === "stock"
           ? "Stock image; not the event, venue or participants." : media.image_role === "area"
             ? "Area context; not the permitted work or its progress." : media.image_role === "venue" ? "Location context; not the event." : ""}`));
       details.append(toggle, body);
       const label = document.createElement("span");
       label.className = "photo-credit";
-      if (media.image_role === "stock") label.textContent = "Stock Photo";
+      if (media.image_role === "stock") label.textContent = "Stock image";
       else label.append(credit);
       caption.replaceChildren(label, details);
     } else caption.replaceChildren(credit);

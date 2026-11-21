@@ -4,14 +4,20 @@ import { verifyArticle, VERIFICATION_POLICY, verificationSources } from "./claim
 import type { ModelRuntime, JsonSchema } from "./runtime";
 import { decodeHTML } from "entities";
 import { ModelRateLimitError } from "./runtime";
+import { ExecutionBlocked } from "../core/execution-errors";
 import { groundingErrors, reportingErrors, namedEntityErrors, sourceDateConflict } from "./grounding";
 import { addedClaims, proseSentences } from "./news-blurb";
 import { NEWS_KINDS, PURPOSE } from "../editorial/kinds";
-import { editionVoiceGuide, explainVoice, voiceErrors, voiceGuide } from "./voice";
+import { editionVoiceGuide, engagingGuide, explainVoice, voiceErrors, voiceGuide } from "./voice";
 import { explainFloor, floorErrors, type FloorFlags } from "../editorial/floor";
+import {
+  generationPreferenceInstruction,
+  type PublicationGenerationPreferenceValues,
+} from "../../../../shared/publication-settings";
+import { explainReadability, readabilityErrors, restatedSentences } from "./readability";
 export { NEWS_KINDS } from "../editorial/kinds";
 
-export const WRITING_POLICY = "story_v20_sparse_notices";
+export const WRITING_POLICY = "story_v27_engaging";
 export const HEADLINE_MAX = 90;
 export const SUMMARY_MAX = 900;
 export const SUMMARY_WORDS_MAX = 120;
@@ -38,6 +44,7 @@ export const DATE_RULE = "Prefer to keep days, dates, times and venues in the se
 export const PROSE_RULES = "Write flowing prose: no lists, bullet points or line breaks, and do not repeat yourself.";
 export const RULES = `${FACT_RULES} ${DATE_RULE} ${PROSE_RULES}`;
 export const NEWS_RULES = `${FACT_RULES} ${PROSE_RULES}`;
+export const READABILITY_GUIDE = `Write one flowing story, not a list of facts: each sentence adds something new and follows from the one before. Combine closely related facts into one sentence instead of several short ones, never restate a place, date, agency or source already given, and vary how sentences begin. Compare figures only when both come from the source.`;
 export const HEADLINE_GUIDE = "Write a complete, natural headline: identify the event or topic and lead with its most useful development. Preserve its identifying name, but shorten surrounding wording to fit. Never chop a sentence to meet the limit, end on a dangling article or preposition, or use an ellipsis. Prefer a shorter complete thought over a long title followed by a fragment. Examples: 'Lego Build Club invites kids to create together'; 'City Council takes up a budget amendment'; 'Business Tax Basics explains Washington tax rules'.";
 export type StoryInput = { id: string; title: string; description?: string | null; venues?: string[]; kind?: string; [key: string]: unknown };
 export type ItemDraft = { headline: string; summary: string };
@@ -99,6 +106,7 @@ export function headlineErrors(value: string) {
   const errors: string[] = [];
   const trimmed = value.trim();
   if (/(?:\.{3}|…)$/.test(trimmed) || /(?<!-)\b(?:a|an|the|and|or|but|for|with|to|of|in|on|at|from|by|as|into|through|because|that|which|its|their|our|your)\s*[.!?:;,]*$/i.test(trimmed)) errors.push("incomplete_headline");
+  if (/,\s*\d{1,2}$/.test(trimmed) && !/\b(?:19|20)\d{2}$/.test(trimmed)) errors.push("incomplete_headline");
   if (/[,:;\-–—]$/.test(trimmed) || (trimmed.match(/\(/g)?.length ?? 0) !== (trimmed.match(/\)/g)?.length ?? 0)) errors.push("incomplete_headline");
   if (!trimmed || Array.from(trimmed).length > HEADLINE_MAX) errors.push("headline_length");
   return [...new Set(errors)];
@@ -168,7 +176,7 @@ export function requiredDetails(story: StoryInput) {
     const words = ["zero","one","two","three","four","five","six","seven","eight","nine","ten"];
     const n = /^\d+$/.test(quantity[1]) ? Number(quantity[1]) : words.indexOf(quantity[1].toLowerCase());
     const count = `(?:${n}|${words[n] ?? n})`;
-    facts.push({ id: "accommodation_notice", quote: advance[0].trim(), present: draft => new RegExp(`\\b${count}[- ]+(?:business[- ]+)?days?\\b`, "i").test(draft) && /accommodat|disabilit|LEAP/i.test(draft) && /before|advance|ahead/i.test(draft) });
+    facts.push({ id: "accommodation_notice", quote: advance[0].trim(), present: draft => new RegExp(`\\b${count}[- ]+(?:business[- ]+)?days?\\b`, "i").test(draft) && /accommodat|disabilit|LEAP/i.test(draft) && /before|advance|ahead|prior|earlier/i.test(draft) });
   }
   if (story.kind === "obituary") {
     const death = text.match(/(?:died|passed away)\s+(?:on\s+)?((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)/i);
@@ -219,11 +227,12 @@ export function validateItem(story: StoryInput, draft: ItemDraft) {
   errors.push(...dateClaimErrors(draft.summary, allowed).map((error) => `summary:${error}`));
   errors.push(...voiceErrors(draft.headline, allowed, story.kind, "headline").map((error) => `headline:${error}`));
   errors.push(...voiceErrors(draft.summary, allowed, story.kind, "summary").map((error) => `summary:${error}`));
+  errors.push(...readabilityErrors(story, draft));
   const flags = story.floor_flags as FloorFlags | undefined;
   if (flags) errors.push(...floorErrors(draft, flags, (story.people as string[] | undefined) ?? []));
   return [...new Set(errors)];
 }
-export function itemPrompt(story: StoryInput) {
+export function itemPrompt(story: StoryInput, preferences?: PublicationGenerationPreferenceValues | null) {
   const data = { required_details: requiredDetails(story).map(({ id, quote }) => ({ id, quote })), title: story.title, description: story.description ? Array.from(new Intl.Segmenter("en", { granularity: "sentence" }).segment(story.description), ({ segment }) => segment).filter(segment => !expiredDeadlineErrors(story, segment).length).join("") : null, as_of: story.as_of ?? null, source_publication_date: NEWS_KINDS.has(story.kind ?? "") ? story.source_date ?? null : null, venues: story.venues ?? [] };
   const kind = story.kind ?? "event";
   const purpose = PURPOSE[kind] ?? PURPOSE.event;
@@ -231,14 +240,19 @@ export function itemPrompt(story: StoryInput) {
   const people = "Readers connect with people and places: when the description names people, venues, streets or organisations, use those names, and lead with the most human or concrete detail.";
   const floor = typeof story.floor_instructions === "string" && story.floor_instructions ? ` ${story.floor_instructions}` : "";
   const update = story.update_of ? " This is an update to a story printed in an earlier edition: lead with what is new." : "";
-  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${people}${update}${floor} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a short, complete headline, preferably 45–65 characters and always at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. A source_publication_date is when a report appeared, not when its survey, incident or other activity happened. Do not transfer dates between those roles. If as_of is supplied, do not describe past deadlines or expired invitations as currently open; report what the source listed without inferring an outcome. For example, after November 4 write "The source listed November 4 as the bid deadline", never "bids will close November 4" or "bids are due November 4". Do not add the as_of date to the article: it is editorial context, not a source fact. Omit expired procedural details when they add no current value. Include every required_details condition in the prose, preserving its meaning and any advance-notice period. These conditions must not be omitted for brevity. Keep URLs out of prose; the app displays source links separately. Avoid generic benefits and calls to visit a website. A one-sentence factual brief is better than invented purpose, emotion or a generic call to action. Do not write advertising language, address readers as us/our, or tell them to celebrate, join us or not miss out. ${rules} ${HEADLINE_GUIDE} The story's identifying name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
+  const publicationStyle = preferences ? ` Publication preference for this future edition only: ${generationPreferenceInstruction(preferences)}` : "";
+  return `You write for a friendly local community newsletter. Write a short reported-style article, not a calendar listing or promotion, that ${purpose}. ${engagingGuide(kind)} ${people}${update}${floor}${publicationStyle} Lead with the most concrete news, useful opportunity or change, then develop the story with specific source details: what happened or will happen, who is involved, what readers can expect, and why it matters when the source explains this. Connect these details in readable, varied sentences; do not merely restate the title, enumerate activities, or open with 'Join', 'This event', or 'This session'. ${READABILITY_GUIDE} Avoid generic praise such as 'a great opportunity' and invented benefits. ${voiceGuide(kind)} Write a short, complete headline, preferably 45–65 characters and always at most ${HEADLINE_MAX} characters and a summary of 3 to 5 sentences, at most ${SUMMARY_WORDS_MAX} words and ${SUMMARY_MAX} characters. Use fewer sentences when the source is sparse; never pad or fabricate context. A source_publication_date is when a report appeared, not when its survey, incident or other activity happened. Do not transfer dates between those roles. If as_of is supplied, do not describe past deadlines or expired invitations as currently open; report what the source listed without inferring an outcome. For example, after November 4 write "The source listed November 4 as the bid deadline", never "bids will close November 4" or "bids are due November 4". Do not add the as_of date to the article: it is editorial context, not a source fact. Omit expired procedural details when they add no current value. Include every required_details condition in the prose, preserving its meaning and any advance-notice period. These conditions must not be omitted for brevity. Keep URLs out of prose; the app displays source links separately. Avoid generic benefits and calls to visit a website. A one-sentence factual brief is better than invented purpose, emotion or a generic call to action. Do not write advertising language, address readers as us/our, or tell them to celebrate, join us or not miss out. ${rules} ${HEADLINE_GUIDE} The story's identifying name is ${pythonJson(eventName(story.title))}. Output JSON matching this schema:\n${pythonJson(ITEM_SCHEMA)}\nStory:\n${pythonJson(data)}`;
 }
-export function frontPrompt(context: Record<string, unknown>) {
+export function frontPrompt(context: Record<string, unknown>, preferences?: PublicationGenerationPreferenceValues | null) {
   const stories = context.stories as StoryInput[];
-  return `You edit a friendly local community newsletter. Write this edition's headline, at most ${HEADLINE_MAX} characters, about the first (top) story, and a welcoming intro of 1 or 2 sentences, at most ${INTRO_MAX} characters, that teases the stories without listing them all. ${editionVoiceGuide()} ${RULES} ${HEADLINE_GUIDE} The top story's name is ${JSON.stringify(eventName(stories[0].title))}. Output JSON matching this schema:\n${pythonJson(FRONT_SCHEMA)}\nEdition:\n${pythonJson(context)}`;
+  const density = preferences?.front_summary_density === "compact" ? "Keep the intro to one concise sentence." : "Use one or two concise sentences.";
+  const style = preferences ? generationPreferenceInstruction(preferences) : "";
+  return `You edit a friendly local community newsletter. Write this edition's headline, at most ${HEADLINE_MAX} characters, about the first (top) story, and a welcoming intro of 1 or 2 sentences, at most ${INTRO_MAX} characters, that teases the stories without listing them all. ${density} ${style} ${editionVoiceGuide()} ${RULES} ${HEADLINE_GUIDE} The top story's name is ${JSON.stringify(eventName(stories[0].title))}. Output JSON matching this schema:\n${pythonJson(FRONT_SCHEMA)}\nEdition:\n${pythonJson(context)}`;
 }
-export function emailPrompt(context: Record<string, unknown>) {
-  return `You write the email that invites neighbours to read this week's local community newsletter on its website. Write a persuasive blurb of 1 or 2 sentences, at most ${EMAIL_MAX} characters, that makes readers curious enough to click through to the full edition. Tease the most interesting stories without listing them all, and do not repeat the edition headline. ${editionVoiceGuide()} ${RULES} Output JSON matching this schema:\n${pythonJson(EMAIL_SCHEMA)}\nEmail:\n${pythonJson(context)}`;
+export function emailPrompt(context: Record<string, unknown>, preferences?: PublicationGenerationPreferenceValues | null) {
+  const length = preferences?.newsletter_intro_length === "brief" ? "Use exactly one concise sentence." : "Use one or two concise sentences.";
+  const style = preferences ? generationPreferenceInstruction(preferences) : "";
+  return `You write the email that invites neighbours to read this week's local community newsletter on its website. Write a persuasive blurb of 1 or 2 sentences, at most ${EMAIL_MAX} characters, that makes readers curious enough to click through to the full edition. ${length} ${style} Tease the most interesting stories without listing them all, and do not repeat the edition headline. ${editionVoiceGuide()} ${RULES} Output JSON matching this schema:\n${pythonJson(EMAIL_SCHEMA)}\nEmail:\n${pythonJson(context)}`;
 }
 function parseObject<T extends object>(generation: string, schema: JsonSchema, required: string[], limits: Record<string, number>): T {
   const data: unknown = JSON.parse(generation);
@@ -265,6 +279,10 @@ export function explain(errors: string[], title?: string) {
   if (errors.some((error) => /unsupported_(?:novelty|moderation|attribution|developmental_claim|language_claim)$/.test(error))) notes.push("Remove the unsupported novelty, format, attribution, developmental or language assertion. A recurring listing is not a launch. Use only what the description states, even if that means a shorter article.");
   if (errors.some((error) => /unsupported_(?:quote|decision|completion|purpose)/.test(error))) notes.push("Use only verbatim source quotations. Preserve uncertainty and negation: proposed is not approved, and planned is not started or completed. Remove unsupported outcome claims and any inferred purpose, motive or benefit.");
   if (errors.some((error) => error.endsWith("promotional_language"))) notes.push("Rewrite as neutral reported prose. Remove promotional invitations, invented purposes, hype and generic closing lines. Sparse evidence should produce a short factual brief.");
+  if (errors.some((error) => error.endsWith("unsupported_number_range"))) notes.push("The source gives a range (for example '1-2 volunteers'). Keep the range as written or leave the number out; never turn it into one exact number.");
+  if (errors.some((error) => error.endsWith("unsupported_exact_address"))) notes.push("The source gives only a block ('the 2700 block of NE 92nd St'). Keep it at block level; never write it as an exact street address.");
+  const readable = explainReadability(errors);
+  if (readable) notes.push(readable);
   const voice = explainVoice(errors);
   if (voice) notes.push(voice);
   const floor = explainFloor(errors);
@@ -272,7 +290,15 @@ export function explain(errors: string[], title?: string) {
   return notes.join(" ");
 }
 export function rejection(text: string, rejected: object, errors: string[], title?: string) { return `${text}\nYour previous draft was rejected:\n${pythonJson(rejected)}\nProblems found: ${errors.join(", ")}. Rewrite it fixing every problem. ${explain(errors, title)}`; }
-export function retryPrompt(story: StoryInput, rejected: ItemDraft, errors: string[]) { return rejection(itemPrompt(story), rejected, errors, story.title); }
+export function retryPrompt(story: StoryInput, rejected: ItemDraft, errors: string[], preferences?: PublicationGenerationPreferenceValues | null) { return rejection(itemPrompt(story, preferences), rejected, errors, story.title); }
+/** Reasons a source's own sentences cannot be reprinted as a Newsbee article. */
+export function briefErrors(summary: string) {
+  const errors: string[] = [];
+  if (/\b(?:we|our|us|ours)\b/i.test(summary)) errors.push("brief:first_person_source");
+  if (/!/.test(summary) || /\b(?:wonderful|amazing|fantastic|awesome|family-friendly)\b/i.test(summary)) errors.push("brief:promotional_source");
+  if (/:\s*[A-Z][\w/-]*\.(?:\s|$)|(?:^|[.]\s+)[A-Z][a-z]+(?: [A-Z][a-z]+)?:\s/.test(summary)) errors.push("brief:record_fields");
+  return errors;
+}
 /** A short exact-source brief is preferable to invented padding. It must pass the
  * same factual/style/floor checks and cannot override a known source conflict. */
 export function sourceBrief(story: StoryInput) {
@@ -294,6 +320,7 @@ export function sourceBrief(story: StoryInput) {
     const errors = validateItem(story, { headline, summary: sentence }).filter(error => !error.startsWith("missing_important_detail:"));
     if (errors.length || !source.text.includes(sentence) || selected.includes(sentence)) continue;
     const combined = [...selected, sentence].join(" ");
+    if (restatedSentences(combined).length) continue;
     if (combined.length > SUMMARY_MAX || combined.split(/\s+/).length > SUMMARY_WORDS_MAX) continue;
     selected.push(sentence);
     if (selected.length >= 3 && conditions.every(f => f.present(combined))) break;
@@ -301,7 +328,9 @@ export function sourceBrief(story: StoryInput) {
   selected.sort((a, b) => source.text.indexOf(a) - source.text.indexOf(b));
   const summary = selected.join(" ");
   const draft = { headline, summary };
-  if (!selected.length || !source.text.includes(story.title) || validateItem(story, draft).length) return null;
+  // Reprinting the source is a last resort for plain official notices. Promotional or
+  // first-person copy, raw record fields and listing-style text go to an editor instead.
+  if (!selected.length || !source.text.includes(story.title) || validateItem(story, draft).length || briefErrors(summary).length) return null;
   return { draft, disposition: "checks_passed", checks_passed: true, validation_errors: [], source_brief: true, verification: {
     policy: VERIFICATION_POLICY, checks_passed: true, method: "exact_source_brief", errors: [], claims: [
       { id: "headline", text: headline, verdict: "supported", reason: "Original source title.", evidence: [{ source_id: source.id, quote: story.title, url: source.url ?? null }] },
@@ -309,27 +338,56 @@ export function sourceBrief(story: StoryInput) {
     ],
   } };
 }
-export async function writeItem(runtime: ModelRuntime, story: StoryInput, options: { verify?: boolean } = {}) {
+/**
+ * Mechanical fixes that only remove text, so a good draft is not thrown away for one fragment:
+ * a final sentence cut off by the output limit, a parenthetical web link, or a later sentence
+ * that only gives a web or email address (the source link carries those). The repaired draft
+ * then goes through every check as usual.
+ */
+export function repairDraft(draft: ItemDraft): { draft: ItemDraft; repairs: string[] } {
+  const repairs: string[] = [];
+  let summary = draft.summary.replace(/\s*\(\s*<?(?:https?:\/\/|www\.)[^\s)>]+>?\s*\)/gi, () => { repairs.push("removed_parenthetical_link"); return ""; });
+  // Web and email addresses contain dots and question marks; hide them so the sentence
+  // splitter cannot cut one in half, then restore them in any sentence that is kept.
+  const links: string[] = [];
+  summary = summary.replace(/<?(?:https?:\/\/|www\.)[^\s>]*[^\s>.,;:!?)]>?|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gi, (link) => `LINKREF${links.push(link) - 1}X`);
+  let sentences = proseSentences(summary);
+  if (sentences.length > 1 && !FINISHED.test(sentences.at(-1)!.trim())) { sentences = sentences.slice(0, -1); repairs.push("removed_unfinished_sentence"); }
+  const kept = sentences.filter((sentence, index) => {
+    const linkOnly = index > 0 && /LINKREF\d+X/.test(sentence);
+    if (linkOnly) repairs.push("removed_link_sentence");
+    return !linkOnly;
+  });
+  if (!kept.length) return { draft, repairs: [] };
+  summary = kept.join(" ").replace(/LINKREF(\d+)X/g, (_, index) => links[Number(index)]);
+  if (!repairs.length) return { draft, repairs: [] };
+  return { draft: { ...draft, summary }, repairs: [...new Set(repairs)] };
+}
+export async function writeItem(runtime: ModelRuntime, story: StoryInput, options: { verify?: boolean; preferences?: PublicationGenerationPreferenceValues | null } = {}) {
   const started = Date.now();
   const result: Record<string, unknown> = { policy: WRITING_POLICY, attempts: 0 };
-  let text = itemPrompt(story);
+  let text = itemPrompt(story, options.preferences);
   try {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       result.attempts = attempt + 1;
       delete result.verification;
-      const { draft, metrics } = await generate<ItemDraft>(runtime, text, ITEM_SCHEMA, ["headline", "summary"], { headline: HEADLINE_MAX, summary: SUMMARY_MAX });
+      const generated = await generate<ItemDraft>(runtime, text, ITEM_SCHEMA, ["headline", "summary"], { headline: HEADLINE_MAX, summary: SUMMARY_MAX });
+      const { metrics } = generated;
+      const repaired = repairDraft(generated.draft);
+      const draft = repaired.draft;
+      if (repaired.repairs.length) result.repairs = [...new Set([...((result.repairs as string[] | undefined) ?? []), ...repaired.repairs])];
       const errors = validateItem(story, draft);
       if (!errors.length && options.verify) {
         const verification = await verifyArticle(runtime, story, draft);
         result.verification = verification;
         errors.push(...verification.errors);
       }
-      if (errors.length && attempt < MAX_RETRIES) { result.rejected_first = { draft, errors, ...(result.verification ? { verification: result.verification } : {}) }; text = retryPrompt(story, draft, errors) + (result.verification ? `\nEvidence review: ${JSON.stringify(result.verification)}\nRemove unsupported claims and preserve conflicts; never invent replacement details.` : ""); continue; }
+      if (errors.length && attempt < MAX_RETRIES) { result.rejected_first = { draft, errors, ...(result.verification ? { verification: result.verification } : {}) }; text = retryPrompt(story, draft, errors, options.preferences) + (result.verification ? `\nEvidence review: ${JSON.stringify(result.verification)}\nRemove unsupported claims and preserve conflicts; never invent replacement details.` : ""); continue; }
       Object.assign(result, { draft, checks_passed: !errors.length, disposition: errors.length ? "held" : "checks_passed", validation_errors: errors, metrics });
       break;
     }
   } catch (error) {
-    if (error instanceof ModelRateLimitError) throw error;
+    if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
     Object.assign(result, { checks_passed: false, disposition: "held", validation_errors: [], error: `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}` });
   }
   const sourceConflict = [result.verification, (result.rejected_first as { verification?: unknown } | undefined)?.verification].some(report => ((report as { errors?: string[] } | undefined)?.errors ?? []).some(error => error.includes(":conflict:")));
@@ -372,21 +430,21 @@ async function editionText(runtime: ModelRuntime, context: ReturnType<typeof edi
       if (attempt < MAX_RETRIES) { result.rejected_first = { draft, errors }; text = rejection(promptFn(context), draft, errors, stories[0].title); }
     }
   } catch (error) {
-    if (error instanceof ModelRateLimitError) throw error;
+    if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
     result.error = `${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`;
   }
   if (result.fallback) result.fallback_reason = "model_text_held";
   return result;
 }
-export async function writeFront(runtime: ModelRuntime, community: string, week: string, stories: StoryInput[], drafts: ItemDraft[]) {
+export async function writeFront(runtime: ModelRuntime, community: string, week: string, stories: StoryInput[], drafts: ItemDraft[], preferences?: PublicationGenerationPreferenceValues | null) {
   const started = Date.now(); const context = editionContext(community, week, stories, drafts);
-  const result = await editionText(runtime, context, stories, frontPrompt, FRONT_SCHEMA, ["headline", "intro"], { headline: HEADLINE_MAX, intro: INTRO_MAX }, validateFront, "front");
+  const result = await editionText(runtime, context, stories, (value) => frontPrompt(value, preferences), FRONT_SCHEMA, ["headline", "intro"], { headline: HEADLINE_MAX, intro: INTRO_MAX }, validateFront, "front");
   if (result.fallback) Object.assign(result, fallbackFront(community, week, !!stories.length));
   result.checks_passed = !result.fallback; result.wall_seconds = Math.round(Date.now() - started) / 1000; return result;
 }
-export async function writeEmail(runtime: ModelRuntime, community: string, week: string, stories: StoryInput[], drafts: ItemDraft[], front: { headline: string; intro: string }) {
+export async function writeEmail(runtime: ModelRuntime, community: string, week: string, stories: StoryInput[], drafts: ItemDraft[], front: { headline: string; intro: string }, preferences?: PublicationGenerationPreferenceValues | null) {
   const started = Date.now(); const context = { ...editionContext(community, week, stories, drafts), ...front };
-  const result = await editionText(runtime, context, stories, emailPrompt, EMAIL_SCHEMA, ["blurb"], { blurb: EMAIL_MAX }, validateEmail, "email");
+  const result = await editionText(runtime, context, stories, (value) => emailPrompt(value, preferences), EMAIL_SCHEMA, ["blurb"], { blurb: EMAIL_MAX }, validateEmail, "email");
   if (result.fallback) Object.assign(result, fallbackEmail(community, !!stories.length));
   result.checks_passed = !result.fallback; result.wall_seconds = Math.round(Date.now() - started) / 1000; return result;
 }

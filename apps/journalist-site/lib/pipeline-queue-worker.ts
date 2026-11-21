@@ -15,9 +15,9 @@ export async function processNextJob() {
     const maintained = await maintain(deps);
     const executed = await runOne(deps);
     await continueQueue(deps, executed, queueNextJob);
+    await recordSchedulerSafely(deps.db, "followup", null);
     if (maintained) {
       await recordSchedulerSafely(deps.db, "dispatch", null);
-      await recordSchedulerSafely(deps.db, "followup", null);
     }
   } catch (error) {
     log.error("worker_or_handoff_failed", { error: String(error) });

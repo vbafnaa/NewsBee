@@ -1,0 +1,20 @@
+---
+import EditionLayout from "../edition/EditionLayout.astro";
+import PublicationContent from "./PublicationContent.astro";
+import { publicationLinks, type PublicationPage } from "../../lib/publication-view";
+
+interface Props { publicationId: string; releaseId?: string | null; page: PublicationPage | null; error: string }
+const { publicationId, releaseId = null, page, error } = Astro.props;
+const links = publicationLinks(publicationId, releaseId);
+---
+{error ? <EditionLayout title="Publication unavailable | Newsbee">
+  <main id="main" class="nb-container">
+    <p role="alert">{error}</p>
+    <a class="nb-link" href={links.publication}>Latest release</a>
+    <a class="nb-link" href={links.archive}>Publication archive</a>
+    <a class="nb-link" href={links.home || "/"}>Find a location</a>
+  </main>
+</EditionLayout>
+  : page
+    ? <PublicationContent page={page} />
+    : null}

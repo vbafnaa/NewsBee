@@ -33,8 +33,26 @@ even though the journalist service has public routes.
 
 Project environment variables are shared by both services. Set `NEWSBEE_MODE=cloud`,
 `MONGODB_URI`, `MONGODB_DATABASE`, model-provider credentials, Google sign-in credentials
-and `AUTH_SECRET`. Set `NEWSBEE_READER_SITE_URL=https://<your-domain>/reader` for links in
-email previews. Both services first look up the MongoDB `output_channels` document
+and `AUTH_SECRET`. Set `NEWSBEE_READER_SITE_URL=https://<your-domain>/reader` for canonical
+Reader links and private draft preview (an HTTPS root is also accepted; email remains unavailable).
+Missing/blank values retain `/reader`; rejected nonempty values make links and private preview
+explicitly unavailable, without blocking edition metadata or otherwise-permitted editing/saving.
+Workspace warnings and deliberate link retries preserve unfinished and failed edits. Do not
+substitute request headers for canonical configuration. URLs with credentials, query strings,
+fragments or non-HTTPS schemes are rejected, except HTTP localhost/127.0.0.1 in explicit local mode.
+For an invalid-configuration workspace warning, a deployment administrator should correct
+`NEWSBEE_READER_SITE_URL` in the shared project environment, using the actual deployed
+origin such as `https://news.example.org/reader` (no literal quotes, credentials, query or fragment).
+A nonempty relative `/reader` or bare hostname is not an absolute configured URL; leave
+the variable unset/blank only when the same-origin `/reader` fallback is intended.
+Use the next approved `main` deployment to activate the correction, then select **Retry workspace links**.
+That button rereads metadata; it cannot change the deployment environment. Neither Newsroom
+profile's homepage nor retained destination reference metadata override this setting.
+Diagnostics identify the rejected URL category without echoing the configured value.
+Do not treat improved diagnostics or passing local fixtures as proof the hosted environment is repaired.
+Set the same `NEWSBEE_EMAIL_MANAGEMENT_SECRET` in both services for
+opaque publication-email confirmation, preference, and unsubscribe links; it must be at least 32 characters
+and must never be exposed to browser code. Both services first look up the MongoDB `output_channels` document
 whose `_id` is `NEWSBEE_OUTPUT_CHANNEL_ID` (default `reader-site`). An existing document
 must have `enabled: true` and a valid `drive_folder_id`; disabled or malformed channels
 and database/configuration failures are errors, never reasons to use a different folder.
@@ -49,12 +67,11 @@ credentials.
 The OAuth callback remains `https://<your-domain>/api/auth/callback/google`. Seed an
 enabled account in `journalist_admins` before signing in.
 
-To test the image branch, open the existing Vercel project's **Deployments** tab,
-choose **Create Deployment**, and enter `nkd/image_pipeline_integration` or its
-verified commit SHA. Select **Preview** and retain the repository-root project
-configuration so both services build. Keep the production branch set to `main`.
-Use preview-specific MongoDB and reader Drive settings for test runs; deploying
-application code does not isolate a shared database or publish an edition.
+Validate branch changes with local tests and builds; do not request or trigger Vercel
+preview deployments for pull requests or non-`main` branches. Keep both services'
+`git.deploymentEnabled` rules restricted to `main`. Use isolated local MongoDB and
+reader storage for fixture runs; application code does not isolate a shared database
+or publish an edition.
 The bundled watercolor illustrations require no image-generation API key.
 After review, production deployment follows the normal PR merge into `main`;
 an edition still needs the workspace's separate **Publish** action.
@@ -135,6 +152,10 @@ the settings and [APIs and paid calls](../README.md#apis-and-paid-calls) for the
 - The `fixture` search provider is refused, and so are agent tools at `/api/agent-tools`.
 - A run you start needs Vercel Queues, not cron. Whether Queues are available on your plan needs
   confirming.
+- New manual map and edition runs use the deployment's managed model/search configuration for
+  every journalist. No personal API profile is required; initiating-principal attribution,
+  run budgets, hard limits, provider telemetry and audit records remain enforced. This is an
+  operational platform-funded policy, not customer billing or a commercial quota contract.
 - Paid services stay off unless ticked for a run or listed in `NEWSBEE_PAID_ALLOW`. On a deployed
   environment Ollama isn't available, so list `gemini` there, or a run has no model to write with.
 

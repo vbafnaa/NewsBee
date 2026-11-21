@@ -10,6 +10,7 @@ describe("signed-in Google Drive channel folders", () => {
 
   beforeEach(() => {
     vi.resetModules();
+    vi.stubEnv("AUTH_SECRET", "fixture-auth-secret");
     vi.stubEnv("AUTH_GOOGLE_ID", "client-id");
     vi.stubEnv("AUTH_GOOGLE_SECRET", "client-secret");
     getToken.mockReset().mockResolvedValue({
@@ -30,6 +31,7 @@ describe("signed-in Google Drive channel folders", () => {
   it("only reports Drive authorization for the current account and granted scope", async () => {
     const { hasGoogleDriveAuthorization } = await import("../../storage/user-drive");
     await expect(hasGoogleDriveAuthorization(request, "editor@example.com")).resolves.toBe(true);
+    expect(getToken).toHaveBeenCalledWith({ req: request, secret: "fixture-auth-secret" });
     await expect(hasGoogleDriveAuthorization(request, "another@example.com")).resolves.toBe(false);
     getToken.mockResolvedValueOnce({
       email: "editor@example.com",
@@ -100,6 +102,28 @@ describe("signed-in Google Drive channel folders", () => {
       .resolves.toBe("existing-channel-folder");
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.slice(1).some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("reserves a durable Drive identity and reuses it after a lost folder-create response", async () => {
+    const { reserveUserDriveFolderId, provisionUserDriveChannelFolder } = await import("../../storage/user-drive");
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ access_token: "access" }))
+      .mockResolvedValueOnce(Response.json({ ids: ["reserved-folder-id"] }));
+    await expect(reserveUserDriveFolderId(request, "editor@example.com")).resolves.toBe("reserved-folder-id");
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ access_token: "access" }))
+      .mockResolvedValueOnce(new Response("", { status: 404 }))
+      .mockRejectedValueOnce(new Error("Lost response"))
+      .mockResolvedValueOnce(Response.json({ access_token: "access" }))
+      .mockResolvedValueOnce(Response.json({ id: "reserved-folder-id", mimeType: "application/vnd.google-apps.folder" }));
+    await expect(provisionUserDriveChannelFolder(request, "editor@example.com", "pipeline-root-id", channelId, "reserved-folder-id"))
+      .rejects.toThrow("Lost response");
+    await provisionUserDriveChannelFolder(request, "editor@example.com", "pipeline-root-id", channelId, "reserved-folder-id");
+    const folderWrites = fetchMock.mock.calls.filter(([url, init]) => String(url).includes("/drive/v3/files?") && init?.method === "POST");
+    expect(folderWrites).toHaveLength(1);
+    expect(JSON.parse(String(folderWrites[0][1]?.body))).toMatchObject({
+      id: "reserved-folder-id", parents: ["pipeline-root-id"], name: `channel-${channelId}`,
+    });
   });
 
   it("surfaces Shared Drive permission errors without falling back to another credential", async () => {

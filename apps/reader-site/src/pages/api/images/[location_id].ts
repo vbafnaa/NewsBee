@@ -15,7 +15,7 @@ export const GET: APIRoute = async ({ params, url, request }) => {
   const unavailable = (status: number) => new Response(null, { status, headers: { "Cache-Control": "no-store" } });
   if (!editionId || editionId.length > 240 || !/^(0|[1-9]\d{0,4})$/.test(itemIndex)) return unavailable(400);
   try {
-    const { locations, editions } = await readerData();
+    const { locations, editions } = await readerData(undefined, { locationId: params.location_id, editionId });
     if (!locations.some((entry) => entry.id === params.location_id)) return unavailable(404);
     const edition = editions.find((entry) => entry.id === editionId && entry.location_id === params.location_id);
     const item = edition?.items[Number(itemIndex)];

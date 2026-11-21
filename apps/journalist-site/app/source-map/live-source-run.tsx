@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import { formatLiveLog, type LiveDetail } from "./source-run-live-log";
+import JobProgress from "../components/job-progress";
+import { sourceMapActivity } from "../run-progress";
 
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 
@@ -67,9 +69,10 @@ export default function LiveSourceRun({ runId }: { runId: string }) {
 
   return <section className="panel" aria-label="Live source collection log">
     <div className="section-heading"><div><h2>Live run log</h2><p>Automatically records what was triggered, queued and executed. Updates every 3 seconds while collecting.</p></div>
-      {detail && <span className={`status-badge tone-${detail.run.status === "mapping" ? "running" : detail.run.status === "failed" ? "failed" : "ok"}`}>{detail.run.status === "mapping" ? "Live" : detail.run.status}</span>}
+      {detail && <span className={`status-badge tone-${detail.run.status === "mapped" ? "ok" : detail.run.status === "failed" ? "failed" : "idle"}`}>{detail.run.status}</span>}
     </div>
     {error && <p className="alert" role="alert">Log refresh failed: {error}</p>}
+    {detail && <JobProgress label="Generate source map" activity={sourceMapActivity(detail.run, detail.jobs, detail.health.diagnostics)} refreshError={error} />}
     {!detail ? <p role="status">Loading the run log…</p> : <pre ref={logRef} className="source-live-log" aria-label="Source collection events" onScroll={(event) => {
       const element = event.currentTarget;
       follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 40;

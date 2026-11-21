@@ -103,17 +103,22 @@ function jsonLdVenue(value: unknown): string | null {
   const parts = [node.name, street].filter((part): part is string => typeof part === "string").map((part) => part.trim());
   return [...new Set(parts.filter(Boolean))].join(", ") || null;
 }
-export function parseJsonLd(content: Uint8Array): ParsedEvents {
+/**
+ * Schema.org events on a page. `pageUrl` is the page they were read from: a page with a single event
+ * and no link of its own (Wix event pages) is that event's own page, so the page is its link.
+ */
+export function parseJsonLd(content: Uint8Array, pageUrl?: string): ParsedEvents {
   checkSize(content);
   const nodes = jsonLdBlocks(new TextDecoder().decode(content)).flatMap(findEvents);
   count(nodes.length);
   if (!nodes.length) throw new FeedFormatError("Page has no schema.org Event JSON-LD");
   const events: EventFacts[] = [], skipped: Skipped = {};
   const skip = (reason: string) => { skipped[reason] = (skipped[reason] ?? 0) + 1; };
+  const ownPage = nodes.length === 1 ? httpsLink(pageUrl ?? null) : null;
   for (const node of nodes) {
     const title = node.name;
     const venue = jsonLdVenue(node.location);
-    const link = httpsLink(typeof node.url === "string" ? node.url : null);
+    const link = httpsLink(typeof node.url === "string" ? node.url : null) ?? ownPage;
     const start = jsonLdMoment(node.startDate);
     if (/EventCancelled$/i.test(String(node.eventStatus ?? "")) || cancelledTitle(title)) { skip("cancelled"); continue; }
     if (!venue) { skip("no_venue"); continue; }

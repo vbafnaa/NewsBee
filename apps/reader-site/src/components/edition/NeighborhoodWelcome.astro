@@ -5,24 +5,29 @@ interface Props { locationId: string; mediaMode?: string }
 const { locationId, mediaMode } = Astro.props;
 const profile = mediaMode === "illustrated" ? neighborhoodArt(locationId) : null;
 ---
-{profile && <section class="neighborhood-welcome" aria-labelledby="neighborhood-welcome-heading"
-  style={`--community-sky:${profile.presentation?.sky ?? "#edf0e6"};--community-glow:${profile.presentation?.glow ?? "#f6ecd8"}`}>
-  <div class="welcome-copy"><h1 id="neighborhood-welcome-heading">Hello, {profile.name}.</h1></div>
-  <CommunityScene profile={profile} eager layout="immersive" />
+{profile && <section class="neighborhood-welcome" aria-labelledby="neighborhood-welcome-heading">
+  <div class="welcome-copy">
+    <p class="nb-label">A note from your neighborhood</p>
+    <h1 id="neighborhood-welcome-heading">Hello, {profile.name}.</h1>
+    <p class="intro">{profile.intro}</p>
+  </div>
+  <div class="welcome-scene"><CommunityScene profile={profile} eager layout="welcome" /></div>
 </section>}
 <style>
-  .neighborhood-welcome { position: relative; isolation: isolate; overflow: clip; width: 100%;
-    min-height: clamp(38rem, calc(100svh - 8.75rem), 58rem);
-    background: radial-gradient(ellipse at 12% 58%, var(--community-sky), transparent 68%),
-      radial-gradient(ellipse at 88% 38%, var(--community-glow), transparent 65%), var(--color-paper); }
-  .neighborhood-welcome::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
-    background: linear-gradient(to bottom, var(--color-surface) 0%, rgb(255 255 255 / .4) 19%, transparent 43%, transparent 78%, var(--color-surface) 100%); }
-  .welcome-copy { position: relative; z-index: 2; text-align: center; pointer-events: none;
-    width: min(100% - 2rem, 66rem); margin-inline: auto; padding-top: clamp(2rem, 5svh, 4rem); padding-bottom: 24rem; }
-  .welcome-copy > * { pointer-events: auto; }
-  h1 { font-size: clamp(2.75rem, 6.6vw, 6rem); line-height: 1.06; letter-spacing: -.035em; }
+  .neighborhood-welcome { display: grid; gap: var(--space-2); width: min(90rem, calc(100vw - 3rem));
+    min-width: 0; justify-self: center; padding-top: 23px; }
+  .welcome-copy { display: flex; flex-direction: column; align-items: center; gap: var(--space-4);
+    width: 100%; max-width: 42rem; margin-inline: auto; text-align: center; }
+  h1 { font-size: clamp(2.25rem, 5vw, 3.5rem); line-height: 1.12; letter-spacing: -.02em; }
+  .intro { max-width: 28.375rem; color: var(--color-muted); line-height: 28px; text-wrap: pretty; }
+  /* Enlarge the painting and trim its empty paper margins next to the caption.
+     Move the whole scene so its canvas, actors and interaction targets stay aligned. */
+  .welcome-scene { display: flow-root; overflow: clip; min-width: 0; }
+  .welcome-scene :global(community-scene) { margin-block: -10% -8%; }
+  .welcome-scene:has(:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 4px; }
   @media (max-width: 40rem) {
-    .neighborhood-welcome { min-height: max(40rem, calc(100svh - 7.75rem)); }
-    .welcome-copy { padding-top: var(--space-8); padding-bottom: 25rem; }
+    .neighborhood-welcome { width: calc(100vw - 2rem); padding-top: var(--space-4); }
+    .welcome-scene :global(community-scene) { margin-block: -24% -18%; }
+    .nb-label { font-size: 0.6875rem; letter-spacing: .1em; }
   }
 </style>

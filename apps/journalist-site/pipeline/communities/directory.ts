@@ -108,7 +108,7 @@ export async function systemsInArea(db: Db, place: GeographicPlace) {
     && withinArea(place.area, [place.longitude, place.latitude], [outlet.longitude, outlet.latitude])));
 }
 
-async function systemsForOutlets(db: Db, outlets: Array<{ fscskey: string; name: string; address: string; latitude?: number | null; longitude?: number | null }>) {
+async function systemsForOutlets(db: Db, outlets: Array<{ _id?: unknown; fscskey: string; name: string; address: string; latitude?: number | null; longitude?: number | null }>) {
   const byKey = new Map<string, typeof outlets>();
   for (const outlet of outlets) {
     const items = byKey.get(outlet.fscskey) ?? [];
@@ -121,7 +121,8 @@ async function systemsForOutlets(db: Db, outlets: Array<{ fscskey: string; name:
     if (!system) throw new Error(`Directory is missing library system ${key}`);
     systems.push({
       fscskey: key, name: display(system.name), latitude: system.latitude ?? null, longitude: system.longitude ?? null,
-      branches: items.map((item) => ({ name: display(item.name), address: display(item.address), latitude: item.latitude ?? null, longitude: item.longitude ?? null })),
+      branches: items.map((item) => ({ name: display(item.name), address: display(item.address), latitude: item.latitude ?? null, longitude: item.longitude ?? null,
+        ...(item._id ? { directory_outlet_id: String(item._id) } : {}) })),
     });
   }
   return { systems, edition: PLS_EDITION };

@@ -1,14 +1,24 @@
 ---
 import { directoryTown, SUGGESTION_SECTIONS } from "../lib/reader-data";
 import GoogleAnalytics from "../components/GoogleAnalytics.astro";
+import { loadPublicationContributionContext } from "../lib/publication-view";
+import ContributionCommunityChoice from "../components/publication/ContributionCommunityChoice.astro";
 export const prerender = false;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-const id = Astro.url.searchParams.get("location");
+let id = Astro.url.searchParams.get("location");
 let town = null;
 let error = "";
+let publication: Awaited<ReturnType<typeof loadPublicationContributionContext>> = null;
 try {
-  town = id ? await directoryTown(id) : null;
-  if (!town) { Astro.response.status = 404; error = "Choose a community before suggesting a source."; }
+  if (Astro.url.searchParams.has("publication")) {
+    publication = await loadPublicationContributionContext(Astro.url.searchParams);
+    id = publication?.locationId ?? null;
+    if (!publication || publication.invalidLocation) {
+      Astro.response.status = 404; error = "This publication, release, or covered community is unavailable.";
+    }
+  }
+  town = !error && id ? await directoryTown(id) : null;
+  if (!error && !town && (!publication || id)) { Astro.response.status = 404; error = "Choose a community before suggesting a source."; }
 } catch (cause) {
   console.error("Source suggestion page unavailable", cause);
   Astro.response.status = 503; error = "Source suggestions are temporarily unavailable.";
@@ -16,8 +26,10 @@ try {
 ---
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /><GoogleAnalytics /><title>Suggest a source | Newsbee</title></head>
-<body><main><a href={base || "/"} class="brand">Newsbee</a><h1>Suggest a source</h1>
+<body><main><a href={publication ? publication.links.publication : base || "/"} class="brand">Newsbee</a><h1>Suggest a source</h1>
   {error && <p role="alert">{error}</p>}
+  {!error && publication && !id && <ContributionCommunityChoice context={publication} kind="suggest" />}
+  {publication && town && <p>For {publication.name} · <a href={publication.links.contribute("suggest")}>Choose a covered community</a></p>}
   {town && <><p>Know a useful source for {town.name}? An editor checks every suggestion before it is added.</p>
     <form id="suggest-form" data-base={base} data-location={town.id}>
       <label>Name<input name="name" minlength="2" maxlength="120" required /></label>
@@ -26,7 +38,8 @@ try {
       <label>Why it matters (optional)<textarea name="why" maxlength="300"></textarea></label>
       <button type="submit">Send to the editor</button>
     </form><p id="suggest-status" role="status"></p></>}
-  <p><a href={`${base || "/"}${id ? `?location=${encodeURIComponent(id)}` : ""}`}>Back to the newsletter</a></p>
+  <p><a href={publication ? publication.links.page : `${base || "/"}${id ? `?location=${encodeURIComponent(id)}` : ""}`}>{publication ? `Back to ${publication.name}'s release` : "Back to the community"}</a></p>
+  {publication && <p><a href={base}>Discover other publications and communities</a></p>}
 </main><script>
   const form = document.querySelector<HTMLFormElement>("#suggest-form");
   form?.addEventListener("submit", async (event) => {

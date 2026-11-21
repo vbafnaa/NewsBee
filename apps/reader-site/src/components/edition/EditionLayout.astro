@@ -4,20 +4,22 @@
 // the neighborhood pages (components/edition/NeighborhoodPage.astro).
 import "../../../../../shared/design-tokens.css";
 import GoogleAnalytics from "../GoogleAnalytics.astro";
-interface Props { title: string; noindex?: boolean }
-const { title, noindex = false } = Astro.props;
+interface Props { title: string; noindex?: boolean; analytics?: boolean; skipLabel?: string }
+const { title, noindex = false, analytics = true, skipLabel = "Skip to stories" } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <GoogleAnalytics />
+    <link rel="stylesheet" href={`${base}/fonts/reader-fonts.css`} />
+    {analytics && <GoogleAnalytics />}
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <title>{title}</title>
   </head>
   <body id="top">
-    <a class="nb-skip" href="#main">Skip to stories</a>
+    <a class="nb-skip" href="#main">{skipLabel}</a>
     <slot />
     <script>
       // Lead stories: keep the summary no wider than the headline's longest line.
@@ -50,6 +52,8 @@ const { title, noindex = false } = Astro.props;
   /* This page uses corners at half the shared radius scale.
      :root:root outranks the shared tokens' :root whatever order the CSS loads in. */
   :root:root {
+    --font-display: "Inter", sans-serif;
+    --font-body: "Roboto", sans-serif;
     --radius-xs: 1px;
     --radius-sm: 2px;
     --radius-lg: 4px;
@@ -57,7 +61,7 @@ const { title, noindex = false } = Astro.props;
     --radius-2xl: 8px;
   }
   *, *::before, *::after { box-sizing: border-box; }
-  html { scroll-padding-top: 5.5rem; }
+  html { scroll-padding-top: calc(var(--reader-header-height, 4.5rem) + 1rem); scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--color-surface);
@@ -76,7 +80,6 @@ const { title, noindex = false } = Astro.props;
   img { display: block; max-width: 100%; }
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
-  html { scroll-behavior: smooth; }
 
   .nb-container {
     width: 100%;

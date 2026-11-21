@@ -3,7 +3,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import sheet from "../../../../../shared/source-sheet-inventory.json";
 import { importSheetInventory, SHEET_CATALOG, type SheetEntry, type SheetInventory } from "../../sourcemap/sheet-import";
-import { collectableSources, reviewedLocationSources, setSourceStatus, sourceMap, taskFor, upsertCandidates } from "../../sourcemap/store";
+import { collectableSources, pageDecisions, resumeSource, reviewedLocationSources, saveSourceReviews, setSourceStatus, sourceMap, SOURCE_REVIEWS, taskFor, upsertCandidates } from "../../sourcemap/store";
 import { applyReviewedContentPolicy, reviewedSourceTransport } from "../../sourcemap/source-review";
 import { sourceInventory } from "../../../lib/map-data";
 import { libraryConnector } from "../../connectors/library";
@@ -81,6 +81,32 @@ it("keeps permission holds after discovery or a direct status change and prevent
   expect(() => taskFor((original))).toThrow(/access review/);
 });
 
+it("fails activation before writing a verdict or training example and keeps bulk outcomes separate", async () => {
+  await importSheetInventory(db, inventory([entry({ decision: "permission_required" })]), true);
+  const original = (await sourceMap(db).findOne({ location_id: location.id }))!;
+  await upsertCandidates(db, location.id, [{ source_id: "eligible", name: "Eligible publisher", url: "https://publisher.example.test/news",
+    reader: "web", params: {}, section: "news", inside_area: true, found_by: { method: "editor", detail: "Fixture" }, status: "proposed" }]);
+  const result = await saveSourceReviews(db, location.id, [original.source_id, "eligible"], { decision: "accept" }, "editor@example.test");
+  expect(result.saved.map((row) => row.source_id)).toEqual(["eligible"]);
+  expect(result.failed).toEqual([{ source_id: original.source_id, detail: expect.stringContaining("No decision or training label was saved") }]);
+  expect(await sourceMap(db).findOne({ _id: original._id })).toEqual(original);
+  expect(await pageDecisions(db).findOne({ source_id: original.source_id })).toBeNull();
+  expect(await db.collection(SOURCE_REVIEWS).countDocuments({ source_id: original.source_id })).toBe(0);
+  await expect(resumeSource(db, location.id, original.source_id)).rejects.toThrow("access review");
+});
+
+it("does not resume expired approvals or alternate feed aliases", async () => {
+  await importSheetInventory(db, inventory(), true);
+  const original = (await sourceMap(db).findOne({ location_id: location.id }))!;
+  await setSourceStatus(db, location.id, original.source_id, "paused");
+  await sourceMap(db).updateOne({ _id: original._id }, { $set: { "access_review.expires_on": "2000-01-01" } });
+  await expect(resumeSource(db, location.id, original.source_id)).rejects.toThrow("access review");
+  await upsertCandidates(db, location.id, [{ source_id: "web:resume-alias", name: "Alternate feed", reader: "web", url: feed,
+    params: { url: feed }, section: "events", inside_area: true, found_by: { method: "editor", detail: "Fixture alias" }, status: "active" }]);
+  await reviewedLocationSources(db, location.id);
+  await expect(resumeSource(db, location.id, "web:resume-alias")).rejects.toThrow("access review");
+  expect(await collectableSources(db, location.id, today)).toEqual([]);
+});
 it("preserves selected branches, editor notes and paused status on repeated imports and rediscovery", async () => {
   await importSheetInventory(db, inventory(), true);
   let original = (await sourceMap(db).findOne({ location_id: location.id }))!;

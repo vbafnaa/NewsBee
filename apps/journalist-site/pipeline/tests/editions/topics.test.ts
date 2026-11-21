@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { topicOf } from "../../../../../shared/topics";
+import { topicOf, topicOfFiled } from "../../../../../shared/topics";
 
 const news = (title: string, description = "") => topicOf({ kind: "state_news", title, description });
 
@@ -45,5 +45,30 @@ describe("reader topics", () => {
     expect(topicOf({ kind: "news_report", title: "Light rail service changes" })).toBe("transit");
     expect(topicOf({ kind: "public_record", title: "Apartment construction permit issued" })).toBe("housing");
     expect(topicOf({ kind: "safety_incident", title: "Burglary at a business" })).toBeNull();
+  });
+
+  it("follows the section a story was filed under, so reader headings match the workspace", () => {
+    // Real Wedgwood items whose headline words pointed to a different reader section.
+    const dahl = { kind: "local_news", title: "Dahl Field Restroom Renovation Schedule Update", description: "New restroom construction and permit schedule." };
+    expect(topicOf(dahl)).toBe("housing");
+    expect(topicOfFiled({ ...dahl, section_id: "community" })).toBe("community");
+    const cuts = { kind: "local_news", title: "Seattle's Proposed Fire Department Cuts Expose Stretched Emergency Response", description: "The council budget proposal." };
+    expect(topicOfFiled({ ...cuts, section_id: "civic" })).toBe("policy");
+    expect(topicOfFiled({ kind: "local_news", title: "Lincoln Stuns Franklin 24-20 In Regular Season Finale", section_id: "sports" })).toBe("sports");
+    expect(topicOfFiled({ kind: "local_news", title: "Permit filed for townhomes", section_id: "real_estate" })).toBe("housing");
+    expect(topicOfFiled({ kind: "meeting_outcome", title: "Board votes", section_id: "civic" })).toBe("policy");
+  });
+
+  it("keeps keyword topics for general sections and editions published before sections were saved", () => {
+    const bus = { kind: "news_report", title: "Light rail service changes" };
+    expect(topicOfFiled(bus)).toBe("transit");
+    expect(topicOfFiled({ ...bus, section_id: "news" })).toBe("transit");
+    expect(topicOfFiled({ ...bus, section_id: null })).toBe("transit");
+    expect(topicOfFiled({ kind: "local_news", title: "Gallery opens new mural exhibit", section_id: "events" })).toBe("culture");
+    // Real items the pipeline's keywords misfiled as milestones or safety keep their reader topic.
+    expect(topicOfFiled({ kind: "news_report", title: "Japanese Butoh group Sankai Juku to bring their powerful presence in movement and dance to the Moore Theatre", section_id: "obituaries" })).toBe("culture");
+    expect(topicOfFiled({ kind: "news_report", title: "Cascadia Art Museum celebrates Zoe Dusanne, who collected and championed Japanese art", section_id: "obituaries" })).toBe("culture");
+    // Courts, incidents and obituaries never join a topic section, whatever their filing.
+    expect(topicOfFiled({ kind: "court_case", title: "Council member's case continues", section_id: "civic" })).toBeNull();
   });
 });

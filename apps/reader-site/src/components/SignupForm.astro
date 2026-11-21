@@ -1,4 +1,5 @@
 ---
+import { NEWSLETTER_TOPICS } from "../lib/newsletter";
 interface Props {
   locationId?: string;
   locationName?: string;
@@ -11,15 +12,19 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   data-location-name={locationName} data-launch-notification={String(launchNotification)}>
   <label for="signup-email">Your email</label>
   <input id="signup-email" name="email" type="email" autocomplete="email" maxlength="254" aria-describedby="signup-note" required />
-  <button type="submit">Sign up for weekly editions</button>
+  <details class="signup-topics"><summary>Choose topics (optional)</summary>
+    <p>Leave all topics unchecked to receive everything.</p>
+    <div class="topic-options">{NEWSLETTER_TOPICS.map((topic) => <label><input type="checkbox" name="topics" value={topic.id} />{topic.label}</label>)}</div>
+  </details>
+  <button type="submit">Save community preferences</button>
   <label class="signup-consent">
     <input id="signup-consent" name="consent" type="checkbox" required />
     <span>I agree to receive weekly Newsbee editions by email for <strong id="signup-location">{locationName}</strong>{launchNotification
       ? ", including a launch notification when coverage becomes available."
       : "."}</span>
   </label>
-  <p id="signup-note" class="signup-note">We save your email, selected community, and consent.
-    Email delivery is not active yet; this signup is for future editions.</p>
+  <p id="signup-note" class="signup-note">We save your email, community, topic choices, and consent for future editions.
+    Email delivery has not launched. This saves preferences only; no confirmation email is sent and no delivery starts.</p>
 </form>
 <p id="signup-status" role="status"></p>
 <script>
@@ -45,14 +50,15 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.value.trim(), consent: consent.checked, launch_notification: launchNotification,
+          topics: new FormData(form).getAll("topics"),
         }),
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(15000),
       });
       if (!response.ok) throw new Error(`API returned HTTP ${response.status}`);
+      const result = await response.json();
       if (current !== submission) return;
       form.reset();
-      status.textContent = `You're signed up for future weekly editions for ${locationName}.${launchNotification
-        ? " We'll also notify you when coverage launches." : ""} Email delivery is not active yet.`;
+      status.textContent = result.detail ?? `Your preferences for ${locationName} are saved.`;
       button.disabled = false;
     } catch (error) {
       if (current === submission) {
@@ -73,4 +79,11 @@ const apiUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
   .signup-consent { display: flex; align-items: flex-start; gap: 0.6rem; text-align: left; font-size: 0.85rem; }
   #signup-consent { flex-shrink: 0; margin-top: 0.35rem; }
   .signup-note { font-size: 0.8rem; color: var(--muted); }
+  .signup-topics { text-align: left; font-size: .875rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  .signup-topics p { margin-block: .5rem; color: var(--color-muted); font-size: .8125rem; }
+  .topic-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-block: .75rem; }
+  .topic-options label { display: flex; gap: .5rem; align-items: baseline; min-width: 0; }
+  .topic-options input { flex-shrink: 0; }
+  @media (max-width: 25rem) { .topic-options { grid-template-columns: 1fr; } }
 </style>

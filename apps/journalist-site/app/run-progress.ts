@@ -1,3 +1,5 @@
+import type { EditionWorkActivity } from "@/pipeline/publications/generation";
+
 export type RunProgressJob = {
   kind: string;
   status: string;
@@ -17,6 +19,102 @@ export type RunProgressStage = {
 };
 
 type RunProgress = { status: string; error?: string | null; stage_transitions?: Array<{ status: string }> };
+
+export type JobActivity = {
+  state: "queued" | "running" | "waiting" | "paused" | "blocked" | "cancelling" | "cancelled" | "failed" | "completed" | "unknown";
+  text: string;
+};
+
+const stoppedActivity = (status: string): JobActivity | null => {
+  switch (status) {
+    case "paused": return { state: "paused", text: "Paused" };
+    case "blocked": return { state: "blocked", text: "Blocked - needs attention" };
+    case "cancelling": return { state: "cancelling", text: "Cancelling - waiting for executing work to settle" };
+    case "cancelled": return { state: "cancelled", text: "Cancelled" };
+    case "failed": return { state: "failed", text: "Failed - needs attention" };
+    default: return null;
+  }
+};
+
+type ActivityRun = { status: string; execution_blocked?: { reason: string } };
+
+export function sourceMapActivity(run: ActivityRun, jobs: Pick<RunProgressJob, "kind" | "status">[],
+  diagnostics?: { issues: Array<{ severity: string }> } | null): JobActivity {
+  const stopped = stoppedActivity(run.status);
+  if (stopped) return stopped;
+  if (run.status === "mapped") return { state: "completed", text: "Source map complete" };
+  if (run.execution_blocked || diagnostics?.issues.some((issue) => issue.severity === "failed"))
+    return { state: "blocked", text: "Blocked - inspect the run log" };
+  if (run.status !== "mapping") return { state: "unknown", text: "Source-map status unavailable" };
+  const current = jobs.find((job) => job.status === "running") ?? jobs.find((job) => job.status === "pending");
+  if (!current && jobs.some((job) => job.status === "failed"))
+    return { state: "blocked", text: "Source-map work failed - inspect recovery" };
+  if (!current) return { state: "queued", text: "Waiting for source-map work to be scheduled" };
+  const stage = ({
+    discover: "Finding and checking sources", agent_round: "Exploring additional sources",
+    review_map: "Reviewing sources", finish_map: "Saving source addresses",
+  } as Record<string, string>)[current.kind] ?? "Collecting sources";
+  return current.status === "running" ? { state: "running", text: stage }
+    : { state: "queued", text: `Queued - ${stage.toLowerCase()}` };
+}
+
+type EditionActivity = { status: string; children: Array<ActivityRun & { work?: EditionWorkActivity }> };
+
+export function editionGenerationActivity(generation: EditionActivity, now = Date.now() / 1000): JobActivity {
+  const stage = editionGenerationStage(generation);
+  const work = generation.children.flatMap((child) => child.work ? [child.work] : []);
+  if (!work.length) return stage;
+  const sourceChecks = work.reduce((sum, item) => sum + item.source_checks_completed, 0);
+  const storySteps = work.reduce((sum, item) => sum + item.story_steps_completed, 0);
+  const counts = `${sourceChecks} source check${sourceChecks === 1 ? "" : "s"} finished; ${storySteps} story-writing step${storySteps === 1 ? "" : "s"} completed (not a count of approved stories).`;
+  const times = work.flatMap((item) => [item.last_started_at, item.last_completed_at])
+    .filter((time): time is number => time !== null && Number.isFinite(time) && time > 0 && time <= now);
+  const lastActivity = times.length ? Math.max(...times) : null;
+  const elapsed = lastActivity === null ? null : Math.floor((now - lastActivity) / 60);
+  const recent = elapsed === null ? "No work activity confirmed yet."
+    : elapsed < 1 ? "Last work confirmed less than a minute ago."
+      : `Last work confirmed ${elapsed} minute${elapsed === 1 ? "" : "s"} ago.`;
+  const canAdvance = ["running", "queued"].includes(stage.state);
+  const active = [...new Set(work.flatMap((item) => item.active))].sort();
+  const unconfirmed = canAdvance && (elapsed === null || elapsed >= 5);
+  const current = canAdvance && active.length ? `${unconfirmed ? "Last known step" : "Current step"}: ${active.join("; ")}.` : "";
+  return {
+    state: unconfirmed ? "waiting" : stage.state,
+    text: [`${stage.text}.`, counts, current, recent,
+      unconfirmed ? "No recent progress confirmed. A longer step may still be running; inspect activity and recovery if this continues." : ""]
+      .filter(Boolean).join(" "),
+  };
+}
+
+function editionGenerationStage(generation: EditionActivity): JobActivity {
+  const stopped = stoppedActivity(generation.status);
+  if (stopped) return stopped;
+  if (generation.status === "ready") return { state: "completed", text: "Edition draft ready" };
+  if (!["starting", "running", "combining"].includes(generation.status))
+    return { state: "unknown", text: "Generation status unavailable" };
+  const children = generation.children;
+  if (children.some((child) => child.execution_blocked || ["failed", "cancelled", "blocked", "published"].includes(child.status)))
+    return { state: "blocked", text: "Community work needs attention - inspect recovery" };
+  if (children.some((child) => child.status === "paused")) return { state: "paused", text: "Community work paused" };
+  if (children.some((child) => child.status === "cancelling"))
+    return { state: "cancelling", text: "Community work cancelling" };
+  if (generation.status === "starting") return { state: "queued", text: "Queued - preparing community runs" };
+  if (generation.status === "combining") return { state: "running", text: "Combining community drafts" };
+  const unfinished = children.filter((child) => child.status !== "built");
+  if (!unfinished.length) return { state: "waiting", text: "Waiting for the combined edition draft" };
+  if (unfinished.every((child) => ["awaiting_authoring", "awaiting_finish"].includes(child.status)))
+    return { state: "waiting", text: "Waiting at a community stage checkpoint" };
+  const stages = new Set(unfinished.map((child) => child.status));
+  if (unfinished.some((child) => !["collecting", "awaiting_authoring", "authoring", "awaiting_finish", "finishing", "publishing"].includes(child.status)))
+    return { state: "unknown", text: "Community stage unavailable - inspect activity" };
+  if (stages.size > 1) return { state: "running", text: "Preparing community drafts - multiple stages" };
+  switch (unfinished[0].status) {
+    case "collecting": return { state: "running", text: "Gathering local reporting" };
+    case "authoring": return { state: "running", text: "Writing stories" };
+    case "finishing": case "publishing": return { state: "running", text: "Preparing community drafts" };
+    default: return { state: "unknown", text: "Community stage unavailable - inspect activity" };
+  }
+}
 
 /** Source-map runs use different durable jobs from story collection. */
 export function sourcePipelineProgress(run: RunProgress, jobs: RunProgressJob[]): RunProgressStage[] {

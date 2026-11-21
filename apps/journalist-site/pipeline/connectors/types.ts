@@ -8,11 +8,12 @@ import type { EventFacts } from "./common";
 import type { Fetcher } from "./fetcher";
 import type { Community } from "../../../../shared/community-directory";
 import type { Story } from "../editions/stories";
+import type { LocationPreparation } from "../../../../shared/location-readiness";
 
 /** Source types the orchestrator can run. Each must be registered in registry.ts (checked by the compiler). */
 export type SourceType = "library" | "meetings" | "hazards" | "trending" | "homesafety" | "housing" | "remembrance" | "justice" | "community" | "web" | "opendata" | "newssearch" | "sweep" | "property";
 
-export type LibraryBranch = { name: string; address: string; latitude?: number | null; longitude?: number | null };
+export type LibraryBranch = { name: string; address: string; latitude?: number | null; longitude?: number | null; directory_outlet_id?: string };
 
 export type WebsiteLookup = {
   status: string;
@@ -58,6 +59,11 @@ export type LocationProfile = {
   source_map_version?: number;
   community?: Community;
   source_coverage?: { status: "ready" | "partial" | "no_local_sources"; area: string; gaps: string[]; discovery_gaps?: string[]; checked_at: string };
+  preparation?: LocationPreparation;
+  evidence_revision?: number;
+  evidence_provenance?: { url: string; reason: string; at: string; by: string };
+  boundary_provenance?: { url: string; reason: string; at: string; by: string };
+  removal_pending?: boolean;
 };
 
 /** The per-source ingestion record every collector returns (Python SystemIngestion). */
@@ -110,7 +116,9 @@ export function sourceResult(
 export type CollectedEvent = EventFacts & Record<string, unknown>;
 
 /** An item a reader saw but did not keep, with the reason; shown on the edition map. */
-export type DroppedItem = { source_event_id: string; title: string; url: string | null; reason: string; event_date?: string | null };
+export type DroppedItem = { source_event_id: string; title: string; url: string | null; reason: string; event_date?: string | null;
+  /** Where it was found, as for kept items: how deep, the page it was on or linked from, and how. */
+  crawl_depth?: number; found_on?: string; found_via?: string; section_hint?: string };
 
 export type CollectedSource = { result: SourceResult; events: CollectedEvent[]; dropped?: DroppedItem[] };
 

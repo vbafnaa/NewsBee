@@ -20,6 +20,9 @@ import { recordPublishedCounts } from "../sourcemap/store";
 import { runs } from "./runs";
 import { uniqueEditionPhotos } from "../images/uniqueness";
 import { photoStoryMismatch } from "../../../../shared/photo-story-match";
+import { BeeError, closeOtherBeeGames, freezeBeeGame, publishBeeGame } from "../games/save-the-bee";
+import { decoratePublicationEdition, type PublicationSettingsDocument } from "../publications/settings";
+import { ensurePublicationIndexes } from "../publications/access";
 
 export type PublishableEdition = { id: string; location_id: string } & Record<string, unknown>;
 
@@ -70,7 +73,11 @@ export async function publishToReader(db: Db, store: ArtifactStore, edition: Pub
   const selectedFolderId = folderId ?? await readerFolder(db);
   const items = Array.isArray(edition.items) ? edition.items.map(item => photoStoryMismatch(item, item)
     ? Object.fromEntries(Object.entries(item).filter(([key]) => key !== "image" && !key.startsWith("image_"))) : item) : null;
-  const payload = items ? { ...edition, items: await uniqueEditionPhotos(db, items) } : edition;
+  const editorial = items ? { ...edition, items: await uniqueEditionPhotos(db, items) } : edition;
+  await ensurePublicationIndexes(db);
+  const publication = await db.collection<PublicationSettingsDocument>(COLLECTIONS.outputChannels)
+    .findOne({ drive_folder_id: selectedFolderId, enabled: true });
+  const payload = publication ? decoratePublicationEdition(publication, editorial) : editorial;
   await channelArtifactStore(db, store, selectedFolderId).saveJson(selectedFolderId, editionFileName(edition), payload);
   await writeReaderDirectory(db, store, selectedFolderId);
   return selectedFolderId;
@@ -91,23 +98,35 @@ export async function publishEdition(db: Db, store: ArtifactStore, locationId: s
   const draft = await editions.findOne({ id: editionId, location_id: locationId });
   if (!draft) throw new PublishConflict(`No edition ${editionId} for this location`);
   if (!FINISHED_EDITION_STATUSES.includes(draft.status) || !draft.published) throw new PublishConflict("This edition isn't finished yet. Wait for its run to build it.");
+  const run = await runs(db).findOne({ _id: draft.run_id });
+  if (run?.publication_generation_id) {
+    throw new PublishConflict("This location draft belongs to a combined publication draft and cannot be published separately.");
+  }
   const selectedFolderId = folderId ?? await readerFolder(db);
   const first = draft.status === "built";
+  if (first || await db.collection("bee_games").findOne({ locationId, editionId })) {
+    try { await freezeBeeGame(db, locationId, editionId); }
+    catch (error) {
+      if (error instanceof BeeError) throw new PublishConflict(error.message);
+      throw error;
+    }
+  }
   const at = Date.now() / 1000;
   // The reader shows the edition with the latest published_at, so this one becomes the live one.
   const corrected = await correctedEdition(db, draft);
   const payload = { ...(corrected ?? draft.published), published_at: at };
+  await closeOtherBeeGames(db, locationId, editionId, at * 1000);
   const claimed = await editions.updateOne({ id: editionId, status: draft.status }, { $set: {
     status: "published", published_at: at, "published.published_at": at, published_by: by, last_published_at: at,
     ...(first ? { first_published_at: at } : {}),
   } });
   if (!claimed.modifiedCount) throw new PublishConflict("This edition changed while publishing. Reload and try again.");
-  const run = await runs(db).findOne({ _id: draft.run_id });
   if (first) {
     if (run?.options?.count_history !== false) await recordPublished(db, run?.today ?? draft.today, payload, new Map(Object.entries(draft.tokens ?? {})));
     await recordPublishedCounts(db, locationId, new Map(Object.entries((draft.source_counts as Record<string, number> | undefined) ?? {})));
   }
   const folder = await publishToReader(db, store, payload, selectedFolderId);
+  await publishBeeGame(db, locationId, editionId, at * 1000);
   if (run) {
     await runs(db).updateOne({ _id: run._id }, { $set: {
       status: "published", updated_at: at, "published.reader_folder": folder, "published.by": by, "published.at": at,
@@ -120,8 +139,16 @@ export async function publishEdition(db: Db, store: ArtifactStore, locationId: s
 
 /** A location's finished editions, newest first, with which one the reader shows. */
 export async function finishedEditions(db: Db, locationId: string, limit = 30) {
+  const publicationRunIds = await runs(db).distinct("_id", {
+    location_id: locationId,
+    publication_generation_id: { $exists: true },
+  });
   const rows = await db.collection<DraftDoc>(COLLECTIONS.editions).find(
-    { location_id: locationId, status: { $in: FINISHED_EDITION_STATUSES } },
+    {
+      location_id: locationId,
+      status: { $in: FINISHED_EDITION_STATUSES },
+      ...(publicationRunIds.length ? { run_id: { $nin: publicationRunIds } } : {}),
+    },
     { projection: { id: 1, run_id: 1, status: 1, built_at: 1, published_at: 1, first_published_at: 1, published_by: 1, created_at: 1, window_start: 1, window_end: 1, "published.headline": 1, "published.items": 1, summary: 1 } },
   ).sort({ created_at: -1 }).limit(limit).toArray();
   const live = rows.filter((row) => row.status === "published").sort((a, b) => Number(b.published_at ?? 0) - Number(a.published_at ?? 0))[0]?.id ?? null;

@@ -23,6 +23,21 @@
       "title": "CorrectionNotice",
       "type": "object"
     },
+    "SponsorPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "slot": { "type": "string", "enum": ["home_after_top_news", "home_before_newsroom"] },
+        "sponsor_name": { "type": "string", "maxLength": 120 },
+        "headline": { "type": "string", "maxLength": 160 },
+        "body": { "type": "string", "maxLength": 500 },
+        "landing_url": { "type": "string", "format": "uri" },
+        "image_url": { "type": ["string", "null"], "format": "uri" },
+        "enabled": { "type": "boolean" }
+      },
+      "required": ["id", "slot", "sponsor_name", "headline", "body", "landing_url", "image_url", "enabled"]
+    },
     "EditionItem": {
       "properties": {
         "illustration_id": { "type": "string", "enum": ["music","books","permits","community","performance","comedy","improv","trees","civic","transit","sports","games","arts","improv-prompts","theatre-curtain","theatre-tickets","theatre-stage","comedy-duo","improv-props","puppets","reception","film","volunteers","autumn-park","soccer","basketball","baseball","curling","restaurants","podcast","halloween","civic-budget","neighborhood-meeting","music-keys","event-calendar","tickets","civic-housing","civic-papers","film-reel","food-kitchen"] },
@@ -276,6 +291,30 @@
       },
       "title": "Corrections",
       "type": "array"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "schema_version": { "type": "integer", "const": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "display_name": { "type": "string", "maxLength": 120 },
+        "description": { "type": ["string", "null"], "maxLength": 500 },
+        "homepage_url": { "type": ["string", "null"], "format": "uri" },
+        "logo_url": { "type": ["string", "null"], "format": "uri" }
+      },
+      "required": ["id", "schema_version", "revision", "display_name", "description", "homepage_url", "logo_url"]
+    },
+    "sponsor_placements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "placements": { "type": "array", "maxItems": 2, "items": { "$ref": "#/$defs/SponsorPlacement" } }
+      },
+      "required": ["schema_version", "revision", "placements"]
     }
   },
   "required": [

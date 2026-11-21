@@ -1,0 +1,35 @@
+---
+import type { NewsroomTab } from "../../lib/edition-view";
+import SectionHeading from "./SectionHeading.astro";
+import StoryMedia from "./StoryMedia.astro";
+interface Props { tabs: NewsroomTab[]; moreHref: (id: string) => string }
+const { tabs, moreHref } = Astro.props;
+---
+<section id="other-news" class="other-news" aria-labelledby="other-news-heading">
+  <SectionHeading id="other-news-heading" label="Other news" />
+  <div class="stories">
+    {tabs.map((tab) => {
+      const story = tab.stories[0];
+      return story && <article id={tab.id} class="story">
+        <a class="topic nb-label" href={moreHref(tab.id)}>{tab.label}</a>
+        <StoryMedia photo={story.photo} illustration={story.illustration} />
+        <span class="nb-label">{story.date}</span>
+        <h3><a class="nb-card-link" href={story.href} data-story-id={story.storyId ?? undefined}><span class="nb-title">{story.title}</span></a></h3>
+        <p class="dek">{story.dek}</p>
+        <a class="nb-link more" href={moreHref(tab.id)}>More on {tab.label}</a>
+      </article>;
+    })}
+  </div>
+</section>
+<style>
+  .other-news { display: grid; gap: var(--space-8); }
+  .stories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); }
+  .story { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); min-width: 0; }
+  .story :global(figure) { width: 100%; }
+  .topic { color: var(--color-ink); text-underline-offset: .2em; }
+  h3 { font-size: var(--text-h3); line-height: var(--leading-h3); letter-spacing: var(--tracking-h3); }
+  .dek { color: var(--color-ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .more { margin-top: auto; font-size: var(--text-sm); font-weight: 600; }
+  @media (max-width: 48rem) { .stories { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 40rem) { .stories { grid-template-columns: 1fr; } }
+</style>

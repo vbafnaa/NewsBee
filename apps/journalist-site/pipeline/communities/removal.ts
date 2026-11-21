@@ -1,9 +1,11 @@
 import type { Db } from "mongodb";
+import type { Principal } from "../accounts/identity";
 import { loadSettings } from "../core/config";
 import { logger } from "../core/log";
 import { acquireWorker, releaseWorker, renewWorkerLease } from "../orchestration/jobs";
 import { readerFolder, writeReaderDirectory } from "../orchestration/publish";
-import { removeLocationFromOutputChannels } from "../orchestration/output-channels";
+import { assertLocationRemovalPublicationActor, removeLocationFromOutputChannels } from "../orchestration/output-channels";
+import { PublicationLifecycleConflict } from "../publications/lifecycle";
 import { artifactSegment, type ArtifactStore } from "../storage/artifacts";
 import { COLLECTIONS } from "../storage/mongo";
 import { channelArtifactStore } from "../storage/mongo-channel-artifacts";
@@ -88,8 +90,26 @@ async function planRemoval(db: Db, store: ArtifactStore, id: string): Promise<Re
 }
 
 /** Keep the profile and durable file manifest until every cleanup step succeeds. */
-export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
+export async function removeLocation(db: Db, store: ArtifactStore, id: string, actor?: Principal) {
   await getLocation(db, id, true);
+  await assertLocationRemovalPublicationActor(db, id, actor);
+  const assertNoPublicationReference = async () => {
+    const livePublication = await db.collection(COLLECTIONS.outputChannels).findOne({
+      "reader_publication.latest_release_id": { $type: "string" },
+      "reader_publication.location_ids": id,
+    }, { projection: { name: 1, "reader_publication.latest_release_id": 1 } });
+    if (livePublication) {
+      throw new LocationBusy(`Withdraw or correct the latest release for ${String(livePublication.name)} before removing this location`);
+    }
+    const pending = await db.collection(COLLECTIONS.publicationDrafts).findOne({
+      editorial_status: { $in: ["approved", "publishing"] },
+      "approval.snapshot.locations.id": id,
+    }, { projection: { publication_id: 1, editorial_status: 1 } });
+    if (pending) {
+      throw new LocationBusy(`Reopen or finish the ${String(pending.editorial_status)} publication draft before removing this location`);
+    }
+  };
+  await assertNoPublicationReference();
   const token = await acquireWorker(db);
   if (!token) throw new LocationBusy("A pipeline worker or cleanup is still running; wait for it to finish, then retry removal");
   const locations = db.collection<RemovalDocument>(COLLECTIONS.locations);
@@ -98,6 +118,7 @@ export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
   try {
     await getLocation(db, id, true);
     await assertLocationIdle(db, id);
+    await assertNoPublicationReference();
     await locations.updateOne({ _id: id, removal: { $exists: false } }, { $set: { removal: { started_at: Date.now() / 1000 } } });
     marked = true;
     await assertLocationIdle(db, id);
@@ -113,8 +134,8 @@ export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
     }
     stage = "updating the reader directory";
     await renewWorkerLease(db, token);
+    await removeLocationFromOutputChannels(db, store, id, actor);
     await writeReaderDirectory(db, store);
-    await removeLocationFromOutputChannels(db, store, id);
     let removedFiles = 0;
     stage = "removing generated files";
     for (const [index, file] of plan.files.entries()) {
@@ -141,6 +162,7 @@ export async function removeLocation(db: Db, store: ArtifactStore, id: string) {
       log.error("location_removal_error_record_failed", { location_id: id, error: String(recordError) });
       throw new Error(`${detail} Could not save the error status: ${String(recordError)}`);
     }
+    if (cause instanceof PublicationLifecycleConflict) throw cause;
     throw new Error(detail);
   } finally {
     await releaseWorker(db, token);

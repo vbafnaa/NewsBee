@@ -6,7 +6,8 @@ import { publishToReader, writeReaderDirectory } from "../../orchestration/publi
 import { LocalArtifacts } from "../../storage/artifacts";
 
 const mocks = vi.hoisted(() => ({
-  findOne: vi.fn<() => Promise<ReaderChannel | null>>(),
+  findOne: vi.fn(),
+  createIndexes: vi.fn(async () => []),
   collection: vi.fn(),
 }));
 
@@ -37,12 +38,12 @@ beforeEach(() => {
     _id: "fixture-channel", enabled: true, drive_folder_id: "channel-folder",
   });
   mocks.collection.mockReset().mockImplementation((name: string) => {
-    if (name === "output_channels") return { findOne: mocks.findOne };
+    if (name === "output_channels") return { findOne: mocks.findOne, createIndexes: mocks.createIndexes };
     if (name === "editions") return { distinct: async () => ["fixture-wa"] };
     if (name === "locations") return {
       find: () => ({ toArray: async () => [{ id: "fixture-wa", name: "Fixture", systems: [] }] }),
     };
-    throw new Error(`Unexpected collection: ${name}`);
+    return { createIndexes: mocks.createIndexes };
   });
   saveJson = vi.spyOn(store, "saveJson").mockResolvedValue("mocked-file");
 });
@@ -58,7 +59,7 @@ it("resolves the same channel for reader, publisher and directory before the fal
   await expect(readerFolderId()).resolves.toBe("channel-folder");
   await expect(publishToReader(db, store, edition)).resolves.toBe("channel-folder");
   await expect(writeReaderDirectory(db, store)).resolves.toEqual(["fixture-wa"]);
-  expect(mocks.findOne).toHaveBeenCalledTimes(3);
+  expect(mocks.findOne).toHaveBeenCalledTimes(4);
   expect(mocks.findOne).toHaveBeenCalledWith(
     { _id: "fixture-channel" }, { projection: { _id: 1, enabled: 1, drive_folder_id: 1 } },
   );
@@ -133,9 +134,13 @@ it("rejects an invalid fallback when the channel is absent", async () => {
   expect(saveJson).not.toHaveBeenCalled();
 });
 
-it("preserves explicit folder overrides without querying the channel", async () => {
-  mocks.findOne.mockRejectedValue(new Error("Must not query"));
+it("preserves explicit folder overrides without resolving the configured channel", async () => {
+  mocks.findOne.mockImplementation(async (filter: Record<string, unknown>) => {
+    if ("_id" in filter) throw new Error("Must not resolve configured channel");
+    return null;
+  });
   await expect(publishToReader(db, store, edition, "explicit-folder")).resolves.toBe("explicit-folder");
-  expect(mocks.findOne).not.toHaveBeenCalled();
+  expect(mocks.findOne).toHaveBeenCalledOnce();
+  expect(mocks.findOne).toHaveBeenCalledWith({ drive_folder_id: "explicit-folder", enabled: true });
   expect(saveJson.mock.calls.map(([folder]) => folder)).toEqual(["explicit-folder", "explicit-folder"]);
 });

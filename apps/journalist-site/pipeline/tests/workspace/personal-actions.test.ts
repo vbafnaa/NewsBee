@@ -85,7 +85,7 @@ it("reports video readiness from personal fal.ai credentials only for non-owners
   expect((await (await videoInfo(request({}), context)).json()).falConfigured).toBe(true);
   expect(state.fetch).not.toHaveBeenCalled();
 });
-it("preserves owner deployment video readiness and existing owner-only creation access", async () => {
+it("preserves owner deployment video readiness and requires editors to have authorized credentials", async () => {
   expect((await videoAction(request({ action: "generate-video" }), context)).status).toBe(403);
   state.deps!.principal = owner;
   expect((await (await videoInfo(request({}), context)).json()).falConfigured).toBe(true);
@@ -101,10 +101,8 @@ it("uses the owner's personal fal.ai key without requiring unused model credenti
   expect((await videoAction(request({ action: "generate-video", package: {} }), context)).status).toBe(200);
   expect(state.fetch.mock.calls[0][1]?.headers).toMatchObject({ Authorization: "Key personal-fal" });
 });
-it("allows owner chunked uploads but blocks non-owners", async () => {
+it("allows an editor to complete a chunked upload", async () => {
   const mp4 = Buffer.from([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]);
-  expect((await videoAction(request({ action: "start-upload", size: mp4.length }), context)).status).toBe(403);
-  state.deps!.principal = owner;
   const started = await videoAction(request({ action: "start-upload", size: mp4.length }), context);
   expect(started.status).toBe(200);
   const { uploadId } = await started.json() as { uploadId: string };

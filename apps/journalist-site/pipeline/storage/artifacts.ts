@@ -11,6 +11,8 @@ import { DriveArtifacts } from "./drive";
 import { MongoArtifacts } from "./mongo-artifacts";
 import { getDatabase } from "./mongo";
 import { usesMongoArtifacts } from "../../../../shared/artifact-store";
+import type { Db } from "mongodb";
+import { withSiteWriter } from "../../../../shared/restore-maintenance";
 
 export type StoredFile = { id: string; name: string };
 
@@ -144,12 +146,29 @@ export function localDriveRoot() {
   return process.env.NEWSBEE_LOCAL_DRIVE_DIR ?? path.join(repositoryRoot(), ".local", "stage2", "drive");
 }
 
-export function getArtifacts(): ArtifactStore {
-  if (override) return override;
-  if (usesMongoArtifacts()) return new MongoArtifacts(getDatabase);
+export function fencedArtifacts<T extends ArtifactStore>(store: T, db: Db): T {
+  const reads = new Set(["readBinary", "readJson", "readText", "list", "findFolder", "listEntries"]);
+  return new Proxy(store, {
+    get(target, property) {
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (reads.has(String(property))) return value.bind(target);
+      return (...args: unknown[]) => withSiteWriter(db, async () => Reflect.apply(value, target, args));
+    },
+  });
+}
+
+export function getArtifacts(db?: Db): ArtifactStore {
+  if (override) return db ? fencedArtifacts(override, db) : override;
+  // NEWSBEE_ARTIFACT_STORE=mongo: this repository's MongoDB artifact store, fenced like the others.
+  if (usesMongoArtifacts()) {
+    const store = new MongoArtifacts(getDatabase);
+    return db ? fencedArtifacts(store, db) : store;
+  }
   const mode = (process.env.NEWSBEE_MODE ?? "local").trim().toLowerCase();
   if (!["cloud", "local"].includes(mode)) throw new Error("NEWSBEE_MODE must be 'local' or 'cloud'");
-  return mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
+  const store = mode === "cloud" ? new DriveArtifacts() : new LocalArtifacts(localDriveRoot());
+  return db ? fencedArtifacts(store, db) : store;
 }
 
 /** Folder that holds pipeline run artifacts (not visible to the reader site). */

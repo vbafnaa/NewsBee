@@ -24,7 +24,7 @@ export const MIN_STORY_IMAGE_WIDTH = 240;
 export const MIN_STORY_IMAGE_HEIGHT = 120;
 
 /** Syntactic public-URL check. Server fetchers must also check DNS and every redirect. */
-export function safeImageUrl(value: unknown, baseUrl?: string): string | null {
+export function safePublicHttpsUrl(value: unknown, baseUrl?: string): string | null {
   if (typeof value !== "string" || !value.trim() || value.length > 4096 || /[\u0000-\u001f\u007f]/.test(value) || /[\u0020\\]/.test(value.trim()) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i.test(value)) return null;
   try {
     const url = baseUrl ? new URL(value.trim(), baseUrl) : new URL(value.trim());
@@ -45,6 +45,10 @@ export function safeImageUrl(value: unknown, baseUrl?: string): string | null {
     url.hash = "";
     return url.toString();
   } catch { return null; }
+}
+
+export function safeImageUrl(value: unknown, baseUrl?: string): string | null {
+  return safePublicHttpsUrl(value, baseUrl);
 }
 
 function label(value: unknown, max: number): string | undefined {

@@ -1,0 +1,54 @@
+---
+import StoryMedia from "../edition/StoryMedia.astro";
+import ShareLink from "../edition/ShareLink.astro";
+import StoryConversation from "../edition/StoryConversation.astro";
+import PublicationShell from "./PublicationShell.astro";
+import { publicationPageLinks, type PublicationPage } from "../../lib/publication-view";
+import type { Article } from "../../lib/edition-view";
+
+interface Props { page: PublicationPage; article: Article }
+const { page, article } = Astro.props;
+const links = publicationPageLinks(page);
+const paragraphs = article.text.split(/\n\s*\n|\n/).map((text) => text.trim()).filter(Boolean);
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const conversationRelease = !page.preview && page.release && !page.release.withdrawn ? page.release : null;
+---
+<PublicationShell page={page} title={`${article.headline} | ${page.publication.displayName}`} subPage>
+  <article class="full-story" aria-labelledby="article-title">
+    <a class="back nb-link" href={links.page}>Back to {page.publication.displayName}</a>
+    <header>
+      <p class="nb-label">{article.category} · {article.date}{article.locationLabel ? ` · ${article.locationLabel}` : ""}</p>
+      <h1 id="article-title">{article.headline}</h1>
+      <p class="byline">{article.byline || page.publication.displayName}</p>
+    </header>
+    <StoryMedia photo={article.photo} illustration={article.illustration} lead />
+    <div class="article-text">{paragraphs.map((text) => <p>{text}</p>)}</div>
+    {article.whenWhere && <p class="when-where">{article.whenWhere}</p>}
+    <footer class="article-source"><small>Sources: {article.sources.length ? article.sources.map((source, index) => <>
+      {index > 0 && "; "}<a class="nb-link" href={source.url} target="_blank" rel="noopener noreferrer">{source.name}</a>
+    </>) : article.sourceName}</small></footer>
+    {!page.preview && <div class="article-actions" data-print-hide>
+      <ShareLink href={links.story(article.key)} title={`${article.headline} | ${page.publication.displayName}`} label="Share this story" />
+      {conversationRelease && <>
+        <a class="nb-button nb-button-quiet" href="#story-comments" data-focus-comments><img src={`${base}/icons/article-comments.svg`} alt="" width="17" height="17" />Comments <span class="comment-count" data-story-comment-count>0</span></a>
+        <a class="nb-button nb-button-quiet" href="#story-feedback"><img src={`${base}/icons/article-feedback.svg`} alt="" width="17" height="17" />Give feedback</a>
+      </>}
+    </div>}
+    {conversationRelease && <StoryConversation publicationId={page.publication.id} releaseId={conversationRelease.id} storyId={article.key} />}
+  </article>
+</PublicationShell>
+
+<style>
+  .full-story { width: 100%; max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: var(--space-6); overflow-wrap: anywhere; }
+  .back { align-self: flex-start; font-size: var(--text-sm); }
+  header { display: grid; gap: var(--space-4); }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  .byline, .when-where, .article-source { color: var(--color-muted); font-size: var(--text-sm); }
+  .article-text { display: grid; gap: var(--space-5); font-size: var(--text-lg); line-height: 1.8; }
+  .article-source { border-top: 1px solid var(--color-line); padding-top: var(--space-4); }
+  .article-actions { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-2); border-block: 1px solid var(--color-line); padding-block: 14px; }
+  .article-actions .nb-button { min-height: 38px; gap: var(--space-2); padding: var(--space-2) 14px; line-height: 1.6; }
+  .article-actions img { flex-shrink: 0; }
+  .comment-count { display: grid; place-items: center; min-width: 20px; height: 20px; padding-inline: var(--space-1); border-radius: var(--radius-pill); background: var(--color-surface); font-size: 0.6875rem; line-height: 1; }
+  @media print { [data-print-hide] { display: none !important; } }
+</style>

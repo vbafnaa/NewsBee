@@ -1,7 +1,9 @@
 /** Cross-source newsworthiness scoring, ported from shared/model_inference/newsworthiness.py. */
 import type { ModelRuntime } from "./runtime";
 import { ModelRateLimitError } from "./runtime";
+import { ExecutionBlocked } from "../core/execution-errors";
 import { compareText } from "../editions/stories";
+import { executionTimeout } from "../core/execution-deadline";
 
 export const RANKING_POLICY = "newsworthiness_v4_recall";
 export const WEIGHTS = { civic: 3, appeal: 2, special: 1 } as const;
@@ -89,13 +91,13 @@ async function rateBatch(runtime: ModelRuntime, batch: Candidate[], fallback: (c
     report.attempts = attempt + 1;
     try {
       const local = runtime.provider === "ollama";
-      const generation = await runtime.generateStructured(prompt(missing, local ? 280 : DESCRIPTION_PREVIEW), RatingsSchema, { numCtx: local ? 4096 : 8192, numPredict: local ? 1200 : 1800, keepAlive: "10m" });
+      const generation = await runtime.generateStructured(prompt(missing, local ? 280 : DESCRIPTION_PREVIEW), RatingsSchema, { numCtx: local ? 4096 : 8192, numPredict: local ? 1200 : 1800, keepAlive: "10m", timeoutMs: executionTimeout() });
       if (!generation.done || generation.done_reason === "length") throw new Error("Ranking did not finish within the output budget");
       const parsed = parseRatings(JSON.parse(generation.response), new Set(missing.map((item) => item.id)));
       for (const [id, rating] of parsed) ratings.set(id, rating);
       if (parsed.size !== missing.length) (report.errors as string[]).push(`Missing ${missing.length - parsed.size} candidate ratings`);
     } catch (error) {
-      if (error instanceof ModelRateLimitError) throw error;
+      if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
       (report.errors as string[]).push(`${error instanceof Error ? error.name : "Error"}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

@@ -1,0 +1,34 @@
+---
+import EditionLayout from "../../../../components/edition/EditionLayout.astro";
+import PublicationContent from "../../../../components/publication/PublicationContent.astro";
+import { fetchPublicationPreview, PreviewUnavailable } from "../../../../lib/publication-preview";
+import { publicationPreviewPage } from "../../../../lib/publication-view";
+import { PRIVATE_PREVIEW_HEADERS } from "../../../../../../../shared/publication-preview";
+export const prerender = false;
+for (const [name, value] of Object.entries(PRIVATE_PREVIEW_HEADERS)) Astro.response.headers.set(name, value);
+let page = null;
+let error = "";
+try {
+  if (Astro.url.searchParams.getAll("revision").length !== 1) {
+    throw new PreviewUnavailable(422, "Select one exact draft revision to preview.");
+  }
+  const preview = await fetchPublicationPreview(Astro.request, Astro.params.publicationId!, Astro.params.draftId!, Astro.url.searchParams.get("revision"));
+  page = publicationPreviewPage(preview);
+  const story = Astro.url.searchParams.get("story");
+  const section = Astro.url.searchParams.get("section");
+  if (story && !page.articles.some((item) => item.key === story)
+    || section && !["all", "events"].includes(section) && !page.allSections.some((item) => item.id === section)) {
+    throw new PreviewUnavailable(404, "This selection is not part of the selected draft revision.");
+  }
+} catch (cause) {
+  Astro.response.status = cause instanceof PreviewUnavailable ? cause.status : 503;
+  error = cause instanceof PreviewUnavailable ? cause.message : "Draft preview is temporarily unavailable.";
+}
+---
+{error ? <EditionLayout title="Draft preview unavailable | Newsbee" noindex analytics={false}>
+  <main id="main" class="nb-container">
+    <h1>Private draft preview unavailable</h1>
+    <p role="alert">{error}</p>
+    <p>No public release was loaded. Return to the editorial workspace and select the draft again.</p>
+  </main>
+</EditionLayout> : page && <PublicationContent page={page} />}

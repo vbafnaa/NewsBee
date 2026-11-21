@@ -216,11 +216,13 @@ export function storyLinks(html: string, pageUrl: string, cap: number): string[]
 /**
  * Kinds of listing page, most wanted first, each with the newsletter section its items most likely
  * belong to. Matched against a link's path and its text. A listing is a short address (a section of
- * the site), never a single story.
+ * the site), never a single story. "Programs", "activities" and "team" are left out: on real sites they
+ * are degree, service and staff pages far more often than listings (and "activities" is in the name of
+ * the state's school sports association, so it matched every link there).
  */
 export const LISTING_KINDS = [
-  { kind: "events", section: "events", pattern: /\b(events?|calendars?|happenings|what'?s-?on|things-to-do|activities|programs?)\b/i },
-  { kind: "sports", section: "sports", pattern: /\b(sports?|athletics?|schedules?|scores|results|teams?)\b/i },
+  { kind: "events", section: "events", pattern: /\b(events?|calendars?|happenings|what'?s-?on|things-to-do)\b/i },
+  { kind: "sports", section: "sports", pattern: /\b(sports?|athletics?|schedules?|scores|results)\b/i },
   { kind: "obituaries", section: "obituaries", pattern: /\b(obituar(y|ies)|obits?|memorials?|tributes?)\b/i },
   { kind: "meetings", section: "civic", pattern: /\b(meetings?|agendas?|minutes|hearings?|public-notices?)\b/i },
   { kind: "safety", section: "safety", pattern: /\b(alerts?|police|fire|safety|emergenc(y|ies)|crime)\b/i },
@@ -237,6 +239,19 @@ function anchors(html: string, pageUrl: string) {
   return out;
 }
 const sameSite = (url: URL, pageUrl: string) => url.protocol === "https:" && url.hostname.replace(/^www\./, "") === new URL(pageUrl).hostname.replace(/^www\./, "");
+/** A feed or data file (RSS, Atom, XML), read as a feed rather than as a page. */
+const FEED_FILE = /\.(rss|atom|xml)$|\/(feed|rss)\/?$/i;
+
+/** Same-site feed files a listing page links to (an events page's own RSS feed), at most two. Sitemaps aren't feeds. */
+export function feedLinks(html: string, pageUrl: string): string[] {
+  const out: string[] = [];
+  for (const { url } of anchors(html, pageUrl)) {
+    if (!sameSite(url, pageUrl) || !FEED_FILE.test(url.pathname) || /sitemap/i.test(url.pathname)) continue;
+    url.hash = "";
+    if (!out.includes(url.toString())) out.push(url.toString());
+  }
+  return out.slice(0, 2);
+}
 
 /**
  * Same-site listing pages a page links to (events, calendar, sports, obituaries, meetings, safety, news),
@@ -263,15 +278,29 @@ export function listingLinks(html: string, pageUrl: string, cap: number): Listin
 }
 
 /**
- * The single stories and events a listing page links to: same-site pages below the listing's own address
- * (/events/fall-festival under /events), and anything that looks like a story. At most `cap`.
+ * A page's own content, for finding the links it lists: the site's menus, header, footer, sidebars,
+ * forms and scripts are removed, and `<main>` is used when the page marks it. These parts repeat on
+ * every page of a site, so following their links would multiply the pages read without finding
+ * anything new. Works the same on any page, whatever its template.
+ */
+export function contentHtml(html: string): string {
+  const cleaned = html.replace(/<(script|style|noscript|svg|nav|header|footer|aside|form|iframe|template)\b[\s\S]*?<\/\1>/gi, " ");
+  const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(cleaned)?.[1] ?? /<[a-z]+\b[^>]*\brole=["']main["'][^>]*>([\s\S]*)/i.exec(cleaned)?.[1];
+  return main ?? /<body\b[^>]*>([\s\S]*)<\/body>/i.exec(cleaned)?.[1] ?? cleaned;
+}
+
+/**
+ * The single stories and events a listing page links to, from its own content (`contentHtml`), never its
+ * menus: same-site pages below the listing's own address (/events/fall-festival under /events), and
+ * anything that looks like a story. At most `cap`.
  */
 export function deepLinks(html: string, listingUrl: string, cap: number): string[] {
   const base = new URL(listingUrl).pathname.replace(/\/$/, "");
-  const out = new Set(storyLinks(html, listingUrl, cap));
+  html = contentHtml(html);
+  const out = new Set(storyLinks(html, listingUrl, cap).filter((link) => !FEED_FILE.test(new URL(link).pathname)));
   for (const { url } of anchors(html, listingUrl)) {
     if (out.size >= cap) break;
-    if (!sameSite(url, listingUrl) || SKIP_PATH.test(url.pathname) || /ical|\.ics$/i.test(url.pathname + url.search)) continue;
+    if (!sameSite(url, listingUrl) || SKIP_PATH.test(url.pathname) || FEED_FILE.test(url.pathname) || /ical|\.ics$/i.test(url.pathname + url.search)) continue;
     url.hash = "";
     const path = url.pathname.replace(/\/$/, "");
     if (base && path.startsWith(`${base}/`) && path.length > base.length + 3) out.add(url.toString());

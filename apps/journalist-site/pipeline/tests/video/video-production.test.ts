@@ -21,6 +21,7 @@ const generatedContent = {
   youtubeTags: ["Moses Lake", "local news"],
   tiktokCaption: "Moses Lake authorized twelve housing permits. AI-generated presenter. #MosesLake",
   spokenScript: "From Moses Lake, city officials report twelve housing units were authorized in September, with estimated construction value reaching two point six million dollars. Those permits are approvals, not completed homes.",
+  editorialDirection: "Do not depict the permitted homes as already built.",
 };
 
 describe("video production content", () => {
@@ -34,6 +35,8 @@ describe("video production content", () => {
     expect(validateVideoPackage({ ...content, generationPrompt: "tampered" })).not.toHaveProperty("generationPrompt");
     expect(content.videoPrompt).toContain("Vertical portrait 9:16 composition");
     expect(content.videoPrompt).toContain(generatedContent.spokenScript);
+    expect(content.videoPrompt).toContain("A softly blurred Moses Lake, WA landscape");
+    expect(content.videoPrompt).toContain(`Editorial direction: ${generatedContent.editorialDirection}`);
     expect(content.youtubeDescription).toContain("AI-generated presenter");
     expect(content.youtubeDescription).toContain("Full Newsbee story: https://newsbee-seven.vercel.app/reader?");
     expect(content.tiktokCaption).toContain("AI-generated presenter");
@@ -43,6 +46,14 @@ describe("video production content", () => {
       youtubeTitle: generatedContent.youtubeTitle,
       spokenScript: generatedContent.spokenScript,
     });
+  });
+
+  it("fills a custom channel template with the story location, dialogue, direction, and renderer duration", async () => {
+    const content = await generateVideoPackage(new FakeModel(() => generatedContent), story,
+      "{{location}} · {{duration}} seconds\n{{dialogue}}\n{{editorialDirection}}");
+    expect(content.videoPrompt).toBe(
+      `Moses Lake, WA · 15 seconds\n${generatedContent.spokenScript}\n${generatedContent.editorialDirection}`,
+    );
   });
 
   it("creates estimated SRT cues no longer than 42 characters", () => {

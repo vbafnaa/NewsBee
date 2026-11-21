@@ -80,7 +80,10 @@ beforeEach(async () => {
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.database.mockResolvedValue(db);
   await db.dropDatabase();
-  await db.collection("journalist_admins").insertOne({ email: "fixture@example.test", enabled: true });
+  await db.collection("journalist_admins").insertMany([
+    { email: "fixture@example.test", principalId: "fixture-admin", enabled: true, role: "admin" },
+    { email: "owner@example.test", principalId: "fixture-owner", enabled: true, role: "owner" },
+  ]);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.resetAllMocks(); });
 afterAll(async () => { await client?.close(); await server?.stop(); });
@@ -111,14 +114,19 @@ it("protects every map read before database dependencies, checking only for a si
   expect(mocks.deps).not.toHaveBeenCalled();
 });
 
-it("opens map reads to a signed-in journalist with no password cookie", async () => {
+it("opens map reads to signed-in operators but denies an editor without the internal password", async () => {
   vi.stubEnv("NEWSBEE_INTERNAL_PASSWORD", password);
-  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  vi.stubEnv("NEWSBEE_OWNER_EMAIL", "owner@example.test");
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.test", newsbeePrincipalId: "fixture-owner" } });
   const handler = vi.fn().mockResolvedValue({ read: true });
   const response = await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler);
   expect(response.status).toBe(200);
   expect(handler).toHaveBeenCalledWith({ db });
-  mocks.auth.mockResolvedValue({ user: { email: "stranger@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test", newsbeePrincipalId: "fixture-admin" } });
+  expect((await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler)).status).toBe(200);
+  await db.collection("journalist_admins").updateOne({ email: "fixture@example.test" }, { $set: { role: "editor" } });
+  expect((await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler)).status).toBe(403);
+  mocks.auth.mockResolvedValue({ user: { email: "stranger@example.test", newsbeePrincipalId: "unknown-principal" } });
   expect((await internalRoute(new Request("https://workspace.example.test/api/maps/source-map"), handler)).status).toBe(403);
 });
 
@@ -143,7 +151,7 @@ it("renders the internal map gate without journalist sign-in and unlocks with a 
   expect(page.type).toBe(MapShell);
   const gate = page.props.children.props;
   const locked = renderToStaticMarkup(await InternalGate({ ...gate, children: "protected fixture" }));
-  expect(locked).toContain("Signed-in journalists open these maps directly");
+  expect(locked).toContain("Signed-in Newsbee operators open these maps directly");
   expect(locked).toContain('action="/api/internal-access"');
   expect(locked).not.toContain("protected fixture");
   unlocked();
@@ -167,16 +175,20 @@ it("never grants admin data, source mutation or pipeline privileges to a map coo
   expect(mocks.database).not.toHaveBeenCalled();
 });
 
-it("redirects the former interest and usage map route to Google Analytics", () => {
+it("redirects the former interest and usage map route to Google Analytics for owners", async () => {
   expect(GOOGLE_ANALYTICS_URL).toBe("https://analytics.google.com/analytics/web/#/a415516569p563321884/reports/intelligenthome?params=_u..nav%3Dmaui");
-  expect(() => InterestUsagePage()).toThrow(`redirect:${GOOGLE_ANALYTICS_URL}`);
+  vi.stubEnv("NEWSBEE_OWNER_EMAIL", "owner@example.test");
+  mocks.auth.mockResolvedValue({ user: { email: "owner@example.test", newsbeePrincipalId: "fixture-owner" } });
+  await expect(InterestUsagePage()).rejects.toThrow(`redirect:${GOOGLE_ANALYTICS_URL}`);
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test", newsbeePrincipalId: "fixture-admin" } });
+  await expect(InterestUsagePage()).rejects.toThrow(`redirect:${GOOGLE_ANALYTICS_URL}`);
   const navigation = renderToStaticMarkup(MapShell({ page: "source-map", title: "Source map", description: "Map", children: "Map" }));
   expect(navigation).toContain(`href="${GOOGLE_ANALYTICS_URL.replaceAll("&", "&amp;")}"`);
-  expect(mocks.database).not.toHaveBeenCalled();
+  expect(mocks.database).toHaveBeenCalled();
 });
 
 it("keeps admin model usage bounded and permits authenticated source editing without a map cookie", async () => {
-  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test", newsbeePrincipalId: "fixture-admin" } });
   mocks.allowlist.mockResolvedValue(true);
   mocks.deps.mockResolvedValue({ db });
   await db.collection<{ _id: string; id: string; systems: unknown[] }>("locations").insertOne({ _id: "fixture-wa", id: "fixture-wa", systems: [] });
@@ -189,7 +201,7 @@ it("keeps admin model usage bounded and permits authenticated source editing wit
 });
 
 it("defaults catalog imports to validation and requires an authenticated same-origin apply", async () => {
-  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test", newsbeePrincipalId: "fixture-admin" } });
   mocks.allowlist.mockResolvedValue(true);
   const context = { params: Promise.resolve({ locationId: "fixture-wa" }) };
   const body = { version: 1, location_id: "fixture-wa", sources: [{ id: "organizer", name: "Town Garden organizer", kind: "supplied", status: "pending",
@@ -217,7 +229,7 @@ it("defaults catalog imports to validation and requires an authenticated same-or
 });
 
 it("keeps deletion same-origin and owner-only, while allowing the owner to remove an idle fixture", async () => {
-  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "fixture@example.test", newsbeePrincipalId: "fixture-admin" } });
   mocks.allowlist.mockResolvedValue(true);
   const context = { params: Promise.resolve({ locationId: "fixture-wa" }) };
   const request = (origin: string) => new Request("https://workspace.example.test/api/admin/locations/fixture-wa", { method: "DELETE", headers: { origin } });

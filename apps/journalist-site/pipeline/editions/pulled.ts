@@ -17,8 +17,12 @@ export type PulledGroup = {
   status: string; step: string; reason: string | null; section: string | null; rank: number | null; score: number | null; why: string | null;
   story_id: string | null; copies: number; sources: number; source_names: string[]; items: PulledCopy[];
   replication: Replication | null; pre_rank: number | null; review: Pick<StoryDecisionDoc, "decision" | "reason_code" | "reason_label" | "reason" | "category" | "by" | "at"> | null;
-  /** Where the website reader found it: 1 linked from the home page, 2 from a listing page; and on which page. */
-  crawl_depth: number | null; found_on: string | null;
+  /**
+   * Where the website reader found it: depth 1 is linked from the home page, 2 from a listing page;
+   * `found_on` is that page's address and `found_via` how it was read. `followed_by` is the editor who
+   * asked for the links on `found_on`, when it was found that way after review.
+   */
+  crawl_depth: number | null; found_on: string | null; found_via: string | null; followed_by: string | null;
 };
 export type PulledSource = { source_id: string; name: string; url: string | null; collection: string | null; detail: string | null; found: number; kept: number; dropped: number; published: number; reasons: Array<{ reason: string; count: number }> };
 export type PulledFilters = { q?: string | null; status?: string | null; source?: string | null; decision?: string | null; reason?: string | null; offset?: number; limit?: number };
@@ -54,8 +58,10 @@ export async function pulledStories(db: Db, runId: string, filters: PulledFilter
       story_id: lead.story_id ?? null, copies: copies.length, sources: new Set(copies.map((item) => item.source_id)).size, source_names: [...new Set(copies.map((item) => item.source_name))],
       items: copies.map((item) => ({ _id: item._id, source_id: item.source_id, source_name: item.source_name, status: item.status, reason: item.reason, step: item.step, event_date: item.event_date, section: item.section ?? null, rank: item.rank ?? null })),
       replication: lead.replication ?? null, pre_rank: typeof lead.pre_rank?.score === "number" ? lead.pre_rank.score : null,
-      crawl_depth: typeof lead.facts?.crawl_depth === "number" ? lead.facts.crawl_depth : null,
-      found_on: typeof lead.facts?.found_via === "string" ? lead.facts.found_via : typeof lead.facts?.found_by === "string" ? lead.facts.found_by : null,
+      crawl_depth: typeof lead.facts?.crawl_depth === "number" ? lead.facts.crawl_depth : lead.found?.crawl_depth ?? null,
+      found_on: typeof lead.facts?.found_on === "string" ? lead.facts.found_on : lead.found?.found_on ?? null,
+      found_via: typeof lead.facts?.found_via === "string" ? lead.facts.found_via : typeof lead.facts?.found_by === "string" ? lead.facts.found_by : lead.found?.found_via ?? null,
+      followed_by: lead.followed_by ?? null,
       review: review ? { decision: review.decision, reason_code: review.reason_code, reason_label: review.reason_label, reason: review.reason, category: review.category ?? null, by: review.by, at: review.at } : null,
     };
   });

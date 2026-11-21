@@ -6,13 +6,29 @@ import { COLLECTIONS } from "../../storage/mongo";
 import { createOutputChannel } from "../../orchestration/output-channels";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 import { mongoChannelFolderId } from "../../../../../shared/reader-folder";
-import { GET, POST } from "../../../app/api/admin/output-channels/[channelId]/editions/route";
+import { GET, PATCH, POST } from "../../../app/api/admin/output-channels/[channelId]/editions/route";
 
 const state = vi.hoisted(() => ({ db: null as Db | null, store: null as ArtifactStore | null, owner: "journalist-1" }));
 vi.mock("@/lib/admin-api", () => ({
   adminRoute: async (_request: Request, handler: (deps: unknown) => Promise<unknown>) => {
     try {
-      const result = await handler({ db: state.db!, store: state.store!, principal: { id: state.owner } });
+      const result = await handler({
+        db: state.db!,
+        store: state.store!,
+        principal: { id: state.owner, email: `${state.owner}@example.test`, role: "editor" },
+      });
+      return result instanceof Response ? result : Response.json(result);
+    } catch (error) {
+      return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    }
+  },
+  publicationRoute: async (_request: Request, handler: (deps: unknown) => Promise<unknown>) => {
+    try {
+      const result = await handler({
+        db: state.db!,
+        store: state.store!,
+        principal: { id: state.owner, email: `${state.owner}@example.test`, role: "editor" },
+      });
       return result instanceof Response ? result : Response.json(result);
     } catch (error) {
       return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 500 });
@@ -71,6 +87,25 @@ beforeEach(async () => {
   });
 });
 afterAll(async () => { await client?.close(); await server?.stop(); });
+
+it("saves and restores a channel's reusable template for its owner", async () => {
+  const load = async () => (await GET(new Request(url), context)).json();
+  const patch = (videoPromptTemplate: string | null) => PATCH(new Request(url, {
+    method: "PATCH", body: JSON.stringify({ videoPromptTemplate }),
+  }), context);
+  const defaults = await load();
+  expect(defaults.videoPromptTemplate).toContain("{{dialogue}}");
+  const custom = "Community report from {{location}}. Read exactly: {{dialogue}}";
+  expect((await patch(custom)).status).toBe(200);
+  expect((await load()).videoPromptTemplate).toBe(custom);
+  state.owner = "another-journalist";
+  expect((await GET(new Request(url), context)).status).toBe(404);
+  expect((await patch(null)).status).toBe(404);
+  state.owner = "journalist-1";
+  expect((await load()).videoPromptTemplate).toBe(custom);
+  expect((await patch(null)).status).toBe(200);
+  expect((await load()).videoPromptTemplate).toBe(defaults.defaultVideoPromptTemplate);
+});
 
 it("publishes one story at a time without hiding previously published channel stories", async () => {
   const initial = await (await GET(new Request(url), context)).json();

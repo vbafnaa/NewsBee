@@ -22,7 +22,7 @@ import { decisionOf, OTHER_CODES, reasonLabel, REASONS } from "../../sourcemap/r
 import { addSourceLink, InvalidSourceLink } from "../../connectors/manual-links";
 import { loadSettings } from "../../core/config";
 import {
-  collectableSources, emptyHealth, MAX_REVIEW_REASON, recordSourceRun, removeLocationSources, saveSourceReview, setSourceStatus, sourceMap,
+  collectableSources, emptyHealth, MAX_REVIEW_REASON, pageDecisions, recordSourceRun, removeLocationSources, runSources, savePageDecisions, saveSourceReview, setSourceStatus, sourceMap,
   SOURCE_REVIEWS, upsertCandidates, webSourceId, type SourceCandidate, type SourceRecord, type SourceReviewEntry, type SourceStatus,
 } from "../../sourcemap/store";
 
@@ -40,12 +40,12 @@ beforeAll(async () => {
 }, 60_000);
 beforeEach(async () => {
   await db.dropDatabase();
-  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test" } });
+  mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test", newsbeePrincipalId: "fixture-labeller" } });
   mocks.headers.mockResolvedValue(new Headers({ host }));
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.database.mockResolvedValue(db);
   mocks.deps.mockResolvedValue({ db });
-  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", enabled: true });
+  await db.collection("journalist_admins").insertOne({ email: "labeller@example.test", principalId: "fixture-labeller", enabled: true, role: "admin" });
   await db.collection<{ _id: string }>(COLLECTIONS.locations).insertOne({ _id: locationId, id: locationId, name: "Fixture Town", state: "WA", systems: [] } as never);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.resetAllMocks(); });
@@ -88,6 +88,23 @@ describe("labelling a source", () => {
     expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["promoted"]);
   });
 
+  it("never activates an access-held source through Accept or a reasoning-only edit", async () => {
+    await seed("held", "paused");
+    await sourceMap(db).updateOne({ _id: `${locationId}:held` }, { $set: { access_review: {
+      inventory_ids: [], decision: "permission_required", collection_allowed: false, reason: "Publisher permission required",
+      evidence: ["https://held.example.test/terms"], checked_on: "2026-01-01", expires_on: "2099-12-31",
+      images_allowed: false, allowed_urls: [], collection_params: {}, collection_reader: "web",
+    } } });
+    expect((await patch({ source_id: "held", decision: "accept" })).status).toBe(400);
+    expect(await record("held")).toMatchObject({ status: "paused" });
+    expect((await record("held")).review).toBeUndefined();
+    expect(await history("held")).toHaveLength(0);
+    await label("held", { decision: "reject" });
+    expect((await patch({ source_id: "held", reason_code: "R9", reason: "Awaiting the publisher's permission" })).status).toBe(200);
+    expect(await record("held")).toMatchObject({ status: "rejected", review: { decision: "reject", reason_code: "R9" } });
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual([]);
+  });
+
   it("keeps a pinned source pinned, even when accepted after a mistaken reject", async () => {
     await seed("p", "pinned");
     await label("p", { decision: "accept" });
@@ -98,7 +115,7 @@ describe("labelling a source", () => {
     expect((await record("p")).status).toBe("pinned");
   });
 
-  it("with no Pin, Pause or Activate buttons, the Decision alone decides what runs collect", async () => {
+  it("continues supporting explicit Accept as well as operational controls", async () => {
     // Paused (for example from a failing source's alert): Accept reads it again.
     await seed("q", "paused");
     expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual([]);
@@ -117,6 +134,66 @@ describe("labelling a source", () => {
     expect((await record("k")).status).toBe("pinned");
     await label("k", { decision: "reject" });
     expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["q"]);
+  });
+
+  it("pauses and resumes pins and dormancy without changing labels or their training history", async () => {
+    await seed("p", "pinned");
+    await label("p", { decision: "accept", reason_code: "A1" });
+    const before = await record("p");
+    expect((await patch({ source_id: "p", status: "paused" })).status).toBe(200);
+    expect((await record("p")).review).toEqual(before.review);
+    expect((await patch({ source_id: "p", status: "resume" })).status).toBe(200);
+    expect(await record("p")).toMatchObject({ status: "pinned", review: before.review });
+    expect(await history("p")).toHaveLength(1);
+    await seed("sleep", "dormant");
+    await sourceMap(db).updateOne({ _id: `${locationId}:sleep` }, { $set: { dormant_until: "2099-12-31" } });
+    await patch({ source_id: "sleep", status: "paused" });
+    await patch({ source_id: "sleep", status: "resume" });
+    expect(await record("sleep")).toMatchObject({ status: "dormant", dormant_until: "2099-12-31" });
+    expect((await collectableSources(db, locationId, today)).map((source) => source.source_id)).toEqual(["p"]);
+    expect(await history("sleep")).toHaveLength(0);
+  });
+
+  it("reports secondary history failures truthfully after saving the live review", async () => {
+    await seed("audit");
+    const collection = db.collection(SOURCE_REVIEWS);
+    const insert = Object.getPrototypeOf(collection).insertOne;
+    const spy = vi.spyOn(Object.getPrototypeOf(collection), "insertOne").mockImplementation(function (this: typeof collection, ...args: unknown[]) {
+      if (this.collectionName === SOURCE_REVIEWS) return Promise.reject(new Error("Fixture history unavailable"));
+      return insert.apply(this, args);
+    });
+    try {
+      await expect(label("audit", { decision: "accept" })).rejects.toThrow("Review and live status (active) were saved");
+    } finally { spy.mockRestore(); }
+    expect(await record("audit")).toMatchObject({ status: "active", review: { decision: "accept" } });
+  });
+
+  it("keeps isolated page decisions separate from live activation", async () => {
+    await seed("isolated", "proposed");
+    const source = await record("isolated");
+    await runSources(db, "fixture-isolated-run").insertOne(source);
+    await sourceMap(db).deleteOne({ _id: source._id });
+    const result = await savePageDecisions(db, locationId, "fixture-isolated-run", ["isolated"], { decision: "accept" }, "labeller@example.test");
+    expect(result.failed).toEqual([]);
+    expect(result.saved[0]).toMatchObject({ status: "active", review: { decision: "accept" } });
+    expect(await pageDecisions(db).findOne({ source_id: "isolated" })).toMatchObject({ decision: "accept", run_id: "fixture-isolated-run" });
+    expect(await sourceMap(db).countDocuments()).toBe(0);
+    expect(await runSources(db, "fixture-isolated-run").findOne({ _id: source._id })).toMatchObject({ status: "proposed" });
+  });
+
+  it("returns actual eligible library system choices and rejects missing or foreign selections without collection", async () => {
+    await db.collection(COLLECTIONS.locations).updateOne({ _id: locationId }, { $set: { systems: [
+      { fscskey: "fixture-system", name: "Fixture Library", branches: [{ name: "Fixture branch", address: "1 Main St" }] },
+      { fscskey: "no-branches", name: "Unselected system", branches: [] },
+    ] } });
+    const response = await (await GET(new Request(`https://${host}/api/admin/locations/${locationId}/source-map`), context)).json();
+    expect(response.systems).toEqual([{ id: "fixture-system", name: "Fixture Library" }]);
+    for (const system_id of [undefined, "foreign-system", "no-branches"]) {
+      await expect(addSourceLink(db, loadSettings(), locationId, { type: "library", name: "Catalogue",
+        url: "https://library.example.test/events", system_id })).rejects.toThrow("eligible library system");
+    }
+    expect(await sourceMap(db).countDocuments()).toBe(0);
+    expect(await db.collection(COLLECTIONS.manualLinks).countDocuments()).toBe(0);
   });
 
   it("saves a reason without touching the status, before or after a decision", async () => {
@@ -376,7 +453,7 @@ describe("the labelling API", () => {
     await seed("a");
     mocks.auth.mockResolvedValue(null);
     expect((await patch({ source_id: "a", decision: "reject" })).status).toBe(401);
-    mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test" } });
+    mocks.auth.mockResolvedValue({ user: { email: "labeller@example.test", newsbeePrincipalId: "fixture-labeller" } });
     expect((await patch({ source_id: "a", decision: "reject" }, { origin: "https://elsewhere.example.test" })).status).toBe(403);
     expect((await record("a")).status).toBe("active");
     expect(await history("a")).toEqual([]);

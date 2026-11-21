@@ -80,7 +80,7 @@ it("serves editions before map runs, then oldest first", async () => {
   expect(stageKinds({ status: "mapping" })).toContain("finish_map");
 });
 
-it("uses HTTP recovery until a queue consumer actually runs, not just until a worker ticks", async () => {
+it("tracks recent queue deliveries separately from worker ticks", async () => {
   const current = 2_000_000;
   expect(queueConsumerActive(await schedulerState(db, current), current)).toBe(false);
   await db.collection("pipeline_heartbeat").updateOne(

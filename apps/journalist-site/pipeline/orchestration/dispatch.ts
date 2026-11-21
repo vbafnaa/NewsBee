@@ -9,6 +9,8 @@ import { COLLECTIONS } from "../storage/mongo";
 import { isParallelKind, type Job } from "./jobs";
 import { expireOverdueRuns } from "./diagnostics";
 import { openRunIds, stageKinds, workableRuns } from "./runs";
+import { recoverStartingPublicationGenerations } from "../publications/generation";
+import type { OrchestratorDeps } from "./orchestrator";
 
 const now = () => Date.now() / 1000;
 /** Housekeeping runs at most this often, however many jobs are moving. */
@@ -61,11 +63,22 @@ export async function continueQueue(deps: { db: Db; settings: Settings }, execut
   const plan = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
   if (executed) for (let index = 0; index < plan.send; index += 1) await queue();
   const wake = !executed && plan.send > 0 ? Math.min(plan.wakeIn ?? RETRY_WAKE_SECONDS, RETRY_WAKE_SECONDS) : plan.wakeIn;
-  if (wake !== null && await claimWake(deps.db, now() + wake)) await queue(wake);
+  if (wake !== null) {
+    const at = now() + wake;
+    if (await claimWake(deps.db, at)) {
+      try {
+        await queue(wake);
+      } catch (error) {
+        // A rejected delivery is not an outstanding wake-up; allow the worker retry to send it.
+        await heartbeat(deps.db).updateOne({ _id: "scheduler", wake_at: at }, { $unset: { wake_at: "" } });
+        throw error;
+      }
+    }
+  }
 }
 
 /** The heartbeat and run deadlines, once a minute rather than on every job. Returns whether it ran. */
-export async function maintain(deps: { db: Db; settings: Settings }, current = now()) {
+export async function maintain(deps: OrchestratorDeps, current = now()) {
   try {
     const due = await heartbeat(deps.db).updateOne(
       { _id: "scheduler", $or: [{ maintained_at: { $exists: false } }, { maintained_at: { $lt: current - MAINTENANCE_SECONDS } }] },
@@ -77,6 +90,7 @@ export async function maintain(deps: { db: Db; settings: Settings }, current = n
     if ((error as { code?: number }).code === 11000) return false;
     throw error;
   }
+  await recoverStartingPublicationGenerations(deps);
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
   await cancelLeftoverJobs(deps.db, current);
   return true;

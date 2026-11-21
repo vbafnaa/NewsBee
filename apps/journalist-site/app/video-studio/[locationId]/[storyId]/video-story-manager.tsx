@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { signIn } from "next-auth/react";
+import type { VideoProvider } from "@/pipeline/video-production";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ContentPackage = {
@@ -27,8 +28,10 @@ type Story = {
 type Video = {
   _id: string;
   status: string;
+  canRefresh?: boolean;
   prompt: string;
   source?: "upload";
+  provider?: VideoProvider;
   created_at: number;
   error?: string;
   drive_url?: string;
@@ -51,6 +54,7 @@ type Data = {
   videos?: Video[];
   video?: Video;
   falConfigured?: boolean;
+  desktopConfigured?: boolean;
   model?: string;
   youtube?: { connected: boolean; email: string | null };
   youtubeChannels?: YouTubeChannel[];
@@ -71,13 +75,20 @@ type YouTubeLocationSettings = {
 const emptyPackage: EditablePackage = {
   youtubeTitle: "", youtubeDescription: "", youtubeTags: [], tiktokCaption: "", spokenScript: "", videoPrompt: "", subtitlesSrt: "", tagsText: "",
 };
+const providerNames = { fal: "fal.ai", desktop: "Desktop Video" };
 const activeStatuses = new Set(["submitting", "queued", "processing", "uploading"]);
 const uploadChunkBytes = 2 * 1024 * 1024;
 const maxUploadBytes = 100 * 1024 * 1024;
 
-export default function VideoStoryManager({ locationId, storyId, accountEmail, owner, backHref }: {
-  locationId: string; storyId: string; accountEmail: string; owner: boolean; backHref: string;
+export default function VideoStoryManager({ locationId, storyId, channelId, accountEmail, owner, backHref }: {
+  locationId: string; storyId: string; channelId?: string; accountEmail: string; owner: boolean; backHref: string;
 }) {
+  const path = `/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`;
+  function storyUrl(extra?: Record<string, string>) {
+    const query = new URLSearchParams({ ...(channelId ? { channel: channelId } : {}), ...extra });
+    return query.size ? `${path}?${query}` : path;
+  }
+  const endpoint = storyUrl();
   const [story, setStory] = useState<Story | null>(null);
   const [content, setContent] = useState<EditablePackage>(emptyPackage);
   const [videos, setVideos] = useState<Video[]>([]);
@@ -86,6 +97,9 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [falConfigured, setFalConfigured] = useState(false);
+  const [desktopConfigured, setDesktopConfigured] = useState(false);
+  const [provider, setProvider] = useState<VideoProvider>("fal");
+  const providerConfigured = provider === "desktop" ? desktopConfigured : falConfigured;
   const [model, setModel] = useState("");
   const [youtube, setYoutube] = useState<Data["youtube"]>({ connected: false, email: null });
   const [youtubeSettings, setYoutubeSettings] = useState<YouTubeLocationSettings | null>(null);
@@ -101,7 +115,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`);
+    const response = await fetch(endpoint);
     const data = await response.json() as Data;
     if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
     setStory(data.story ?? null);
@@ -109,13 +123,14 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     setPackagePrompt(data.packagePrompt ?? "");
     setPackagePromptReconstructed(Boolean(data.packagePromptReconstructed));
     setFalConfigured(Boolean(data.falConfigured));
+    setDesktopConfigured(Boolean(data.desktopConfigured));
     setModel(data.model ?? "");
     setYoutube(data.youtube ?? { connected: false, email: null });
     setYoutubeSettings(data.youtubeSettings ?? null);
     setContent(data.package
       ? { ...data.package, tagsText: data.package.youtubeTags.join(", ") }
       : emptyPackage);
-  }, [locationId, storyId]);
+  }, [endpoint]);
 
   useEffect(() => {
     if (!owner) return;
@@ -125,7 +140,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
       setYoutubeLoading(true);
       setError("");
       try {
-        const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "list-youtube-channels" }),
@@ -143,7 +158,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
           return;
         }
         if (youtubeSettings?.channel_id !== selected.id) {
-          const saveResponse = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+          const saveResponse = await fetch(endpoint, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "save-youtube-location-settings", channelId: selected.id, playlistId: "" }),
@@ -152,7 +167,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
           if (!saveResponse.ok) throw new Error(savedData.detail ?? `Request failed (${saveResponse.status})`);
           if (!cancelled) setYoutubeSettings(savedData.youtubeSettings ?? null);
         }
-        const playlistResponse = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+        const playlistResponse = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "list-youtube-playlists", channelId: selected.id }),
@@ -172,36 +187,62 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     }
     void loadChannels();
     return () => { cancelled = true; };
-  }, [locationId, owner, storyId, youtube?.connected, youtubeSettings?.channel_id, youtubeSettings?.playlist_id]);
+  }, [endpoint, owner, youtube?.connected, youtubeSettings?.channel_id, youtubeSettings?.playlist_id]);
 
   useEffect(() => {
     void load().catch((caught: unknown) => setError(caught instanceof Error ? caught.message : String(caught)));
   }, [load]);
 
-  const pendingIds = useMemo(() => videos.filter((video) => activeStatuses.has(video.status)).map((video) => video._id).join(","), [videos]);
-  useEffect(() => {
-    if (!owner || !pendingIds) return;
-    const timer = window.setInterval(async () => {
-      try {
-        const responses = await Promise.all(pendingIds.split(",").map((videoId) => fetch(
-          `/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "refresh-video", videoId }) },
-        )));
-        const failed = responses.find((response) => !response.ok);
-        if (failed) {
-          const data = await failed.json() as Data;
-          throw new Error(data.detail ?? `Request failed (${failed.status})`);
-        }
-        const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`);
-        const data = await response.json() as Data;
-        if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-        setVideos(data.videos ?? []);
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : String(caught));
+  const pendingJobs = useMemo(() => {
+    const jobs = { fal: [] as string[], desktop: [] as string[] };
+    for (const video of videos) {
+      if (video.canRefresh && ["queued", "processing", "uploading"].includes(video.status)) {
+        jobs[video.provider ?? "fal"].push(video._id);
       }
-    }, 6000);
-    return () => window.clearInterval(timer);
-  }, [load, locationId, owner, pendingIds, storyId]);
+    }
+    return { fal: jobs.fal.join(","), desktop: jobs.desktop.join(",") };
+  }, [videos]);
+  const { fal: falPendingIds, desktop: desktopPendingIds } = pendingJobs;
+  useEffect(() => {
+    let stopped = false;
+    const timers: number[] = [];
+    function schedule(pendingIds: string, interval: number) {
+      if (!pendingIds) return;
+      let checking = false;
+      timers.push(window.setInterval(async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          const responses = await Promise.all(pendingIds.split(",").map((videoId) => fetch(
+            endpoint,
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "refresh-video", videoId }) },
+          )));
+          const failed = responses.find((response) => !response.ok);
+          if (failed) {
+            const data = await failed.json() as Data;
+            throw new Error(data.detail ?? `Request failed (${failed.status})`);
+          }
+          const results = await Promise.all(responses.map((response) => response.json() as Promise<Data>));
+          if (!stopped) {
+            setVideos((current) => current.map((video) => {
+              const updated = results.find((data) => data.video?._id === video._id)?.video;
+              return updated ? { ...video, ...updated } : video;
+            }));
+          }
+        } catch (caught) {
+          if (!stopped) setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+          checking = false;
+        }
+      }, interval));
+    }
+    if (falConfigured) schedule(falPendingIds, 6000);
+    if (desktopConfigured) schedule(desktopPendingIds, 60_000);
+    return () => {
+      stopped = true;
+      timers.forEach((timer) => window.clearInterval(timer));
+    };
+  }, [endpoint, falConfigured, desktopConfigured, falPendingIds, desktopPendingIds]);
 
   function toPayload() {
     return {
@@ -220,7 +261,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...(packageBody ? { package: packageBody } : {}), ...extra }),
@@ -232,12 +273,15 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
       if (data.packagePromptReconstructed !== undefined) setPackagePromptReconstructed(data.packagePromptReconstructed);
       if (data.story) setStory(data.story);
       if (data.videos) setVideos(data.videos);
-      if (data.video) setVideos((current) => current.map((video) => video._id === data.video!._id ? data.video! : video));
+      if (data.video) setVideos((current) => current.map((video) => video._id === data.video!._id ? { ...video, ...data.video } : video));
       if (data.youtubeSettings) setYoutubeSettings(data.youtubeSettings);
-      if (action === "generate-content") setNotice("Content package created. Review and edit every field before requesting a video.");
+      if (action === "generate-content") {
+        setReviewed(false);
+        setNotice("Content package created. Review and edit every field before requesting a video.");
+      }
       else if (action === "save-package") setNotice("Video package saved.");
       else if (action === "generate-video") {
-        setNotice("Video request submitted to fal.ai.");
+        setNotice(`Video request submitted to ${providerNames[provider]}.`);
         await load();
       } else if (action === "publish-youtube") {
         setNotice(data.warning ?? `Uploaded to YouTube as ${privacyStatus}${youtubeSettings?.playlist_title ? ` and added to ${youtubeSettings.playlist_title}` : ""}.`);
@@ -256,7 +300,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "save-youtube-location-settings", channelId, playlistId }),
@@ -283,7 +327,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     if (!channelId) return;
     setYoutubeLoading(true);
     try {
-      const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "list-youtube-playlists", channelId }),
@@ -303,14 +347,14 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     setBusy("refresh-video");
     setError("");
     try {
-      const response = await fetch(`/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "refresh-video", videoId }),
       });
       const data = await response.json() as Data;
       if (!response.ok) throw new Error(data.detail ?? `Request failed (${response.status})`);
-      if (data.video) setVideos((current) => current.map((video) => video._id === data.video!._id ? data.video! : video));
+      if (data.video) setVideos((current) => current.map((video) => video._id === data.video!._id ? { ...video, ...data.video } : video));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -324,7 +368,6 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
     setError("");
     setNotice("");
     setUploadProgress(0);
-    const endpoint = `/api/admin/video-production/${encodeURIComponent(locationId)}/${encodeURIComponent(storyId)}`;
     try {
       if (!uploadFile.name.toLowerCase().endsWith(".mp4") || uploadFile.type !== "video/mp4" ||
           !uploadFile.size || uploadFile.size > maxUploadBytes) {
@@ -338,7 +381,7 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
       if (!start.ok || !started.uploadId) throw new Error(started.detail ?? "Could not start video upload");
       const count = Math.ceil(uploadFile.size / uploadChunkBytes);
       for (let index = 0; index < count; index += 1) {
-        const response = await fetch(`${endpoint}?action=upload-chunk&uploadId=${encodeURIComponent(started.uploadId)}&index=${index}`, {
+        const response = await fetch(storyUrl({ action: "upload-chunk", uploadId: started.uploadId, index: String(index) }), {
           method: "POST", headers: { "Content-Type": "application/octet-stream" },
           body: uploadFile.slice(index * uploadChunkBytes, (index + 1) * uploadChunkBytes),
         });
@@ -368,6 +411,8 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
   return (
     <section className="workspace-panel">
       <p><Link href={backHref}>← Back to channel workspace</Link></p>
+      {error && <p role="alert">{error}</p>}
+      {notice && <p role="status">{notice}</p>}
       {story && <>
         <h2>{story.title}</h2>
         <p>{story.summary}</p>
@@ -376,8 +421,25 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
           <dt>Story date</dt><dd>{story.eventDate || "Not listed"}</dd>
           <dt>Original source</dt><dd>{story.sourceUrl ? <a href={story.sourceUrl} target="_blank" rel="noreferrer">{story.sourceUrl}</a> : "Not listed"}</dd>
         </dl>
-        <p>Model: <strong>{model}</strong> · 15 seconds · 9:16 portrait · native audio generation.</p>
-        {!falConfigured && <p role="alert">Add a fal.ai key in Environment &amp; API settings to enable video generation. Only the configured owner may use the server&apos;s <code>FAL_KEY</code>.</p>}
+        <label>Video generation method
+          <select value={provider} disabled={Boolean(busy)} onChange={(event) => setProvider(event.target.value === "desktop" ? "desktop" : "fal")}>
+            <option value="fal">fal.ai</option>
+            <option value="desktop">Desktop Video</option>
+          </select>
+        </label>
+        <p><strong>{provider === "desktop" ? "MiniMax H3" : model}</strong> · 15 seconds · 9:16 portrait{provider === "fal" && " · native audio generation"}</p>
+        <div className="button-row">
+          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void post("generate-content")}>
+            {busy === "generate-content" ? "Generating prompt…" : "Generate video prompt"}
+          </button>
+          <button type="button" disabled={Boolean(busy) || !content.youtubeTitle.trim() || !content.videoPrompt.trim() || !providerConfigured || !reviewed}
+            onClick={() => void post("generate-video", toPayload(), { provider })}>
+            {busy === "generate-video" ? "Submitting…" : `Generate video with ${providerNames[provider]}`}
+          </button>
+        </div>
+        {!providerConfigured && <p><Link href="/account">Add a {providerNames[provider]} key in Environment &amp; API settings</Link> to use this method.</p>}
+        {!content.youtubeTitle && <p>Generate a video prompt first.</p>}
+        {content.youtubeTitle && !reviewed && <p>Review the prompt below and check the review box to enable generation.</p>}
         {owner && <div className="button-row">
           {youtube?.connected
             ? <p role="status">YouTube connected as <strong>{youtube.email}</strong>.</p>
@@ -419,56 +481,49 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
             <option value="public">Public — publish immediately</option>
           </select>
         </label>}
-        {owner && <div className="button-row">
-          <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void post("generate-content")}>
-            {busy === "generate-content" ? "Generating package…" : "Generate the video package"}
-          </button>
-          <button type="button" className="secondary" disabled={Boolean(busy) || !content.youtubeTitle} onClick={() => void post("save-package", toPayload())}>
-            {busy === "save-package" ? "Saving…" : "Save edits"}
-          </button>
-        </div>}
-        {!owner && !content.youtubeTitle && <p>No video package has been created for this story yet.</p>}
         {packagePrompt && <details><summary>Full AI prompt for title, description and script</summary>
           {packagePromptReconstructed && <p>Original prompt was not saved for this older package; this is reconstructed from the current story.</p>}
           <pre className="artifact-preview">{packagePrompt}</pre>
         </details>}
         {content.youtubeTitle && <>
           <div className="form-grid">
-            <label>YouTube title<input maxLength={100} value={content.youtubeTitle} readOnly={!owner} onChange={(event) => setContent({ ...content, youtubeTitle: event.target.value })} /></label>
-            <label>YouTube tags<input value={content.tagsText} readOnly={!owner} onChange={(event) => setContent({ ...content, tagsText: event.target.value })} /></label>
-            <label className="full-width">YouTube description<textarea rows={8} maxLength={5000} value={content.youtubeDescription} readOnly={!owner} onChange={(event) => setContent({ ...content, youtubeDescription: event.target.value })} /></label>
-            <label className="full-width">TikTok caption<textarea rows={4} value={content.tiktokCaption} readOnly={!owner} onChange={(event) => setContent({ ...content, tiktokCaption: event.target.value })} /></label>
-            <label className="full-width">Exact spoken dialogue<textarea rows={4} value={content.spokenScript} readOnly={!owner} onChange={(event) => setContent({ ...content, spokenScript: event.target.value })} /></label>
-            <label className="full-width">fal.ai generation prompt<textarea rows={14} value={content.videoPrompt} readOnly={!owner} onChange={(event) => setContent({ ...content, videoPrompt: event.target.value })} /></label>
-            <label className="full-width">English SRT draft<textarea rows={10} value={content.subtitlesSrt} readOnly={!owner} onChange={(event) => setContent({ ...content, subtitlesSrt: event.target.value })} /></label>
+            <label>YouTube title<input maxLength={100} value={content.youtubeTitle} onChange={(event) => setContent({ ...content, youtubeTitle: event.target.value })} /></label>
+            <label>YouTube tags<input value={content.tagsText} onChange={(event) => setContent({ ...content, tagsText: event.target.value })} /></label>
+            <label className="full-width">YouTube description<textarea rows={8} maxLength={5000} value={content.youtubeDescription} onChange={(event) => setContent({ ...content, youtubeDescription: event.target.value })} /></label>
+            <label className="full-width">TikTok caption<textarea rows={4} value={content.tiktokCaption} onChange={(event) => setContent({ ...content, tiktokCaption: event.target.value })} /></label>
+            <label className="full-width">Exact spoken dialogue<textarea rows={4} value={content.spokenScript} onChange={(event) => setContent({ ...content, spokenScript: event.target.value })} /></label>
+            <label className="full-width">Video generation prompt<textarea rows={14} value={content.videoPrompt} onChange={(event) => {
+              setContent({ ...content, videoPrompt: event.target.value });
+              setReviewed(false);
+            }} /></label>
+            <label className="full-width">English SRT draft<textarea rows={10} value={content.subtitlesSrt} onChange={(event) => setContent({ ...content, subtitlesSrt: event.target.value })} /></label>
           </div>
           <p role="note">Subtitle timing is estimated from the script, not transcribed from generated audio. Review the rendered video, correct the dialogue and SRT, and update any time-sensitive facts before publishing.</p>
-          {owner && <label className="checkbox-label">
+          <label className="checkbox-label">
             <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />
             I reviewed the facts and prompt, and will check the rendered speech and captions before posting.
-          </label>}
-        </>}
-        {owner && <div className="button-row">
-          <button type="button" disabled={Boolean(busy) || !content.youtubeTitle || !falConfigured || !reviewed} onClick={() => void post("generate-video", toPayload())}>
-            {busy === "generate-video" ? "Submitting…" : "Generate video with fal.ai"}
+          </label>
+          <button type="button" className="secondary" disabled={Boolean(busy) || !content.youtubeTitle.trim()} onClick={() => void post("save-package", toPayload())}>
+            {busy === "save-package" ? "Saving…" : "Save story prompt and edits"}
           </button>
-          {!content.youtubeTitle && <small>Generate the video package first to enable fal.ai generation.</small>}
-        </div>}
-        {owner && <div>
+        </>}
+        <div>
           <label>Upload an MP4 video to this story (up to 100 MB)
             <input type="file" accept="video/mp4,.mp4" disabled={Boolean(busy)} onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadProgress(0); }} />
           </label>
           <button type="button" className="secondary" disabled={Boolean(busy) || !uploadFile} onClick={() => void uploadVideo()}>
             {busy === "upload-video" ? `Uploading… ${uploadProgress}%` : "Upload video"}
           </button>
-        </div>}
-        {notice && <p role="status">{notice}</p>}
-        {error && <p role="alert">{error}</p>}
+        </div>
         <h2>Generated videos</h2>
         {videos.length === 0 ? <p>No video generations yet.</p> : <div className="story-list">
           {videos.map((video) => <article className="story-card" key={video._id}>
-            <h3>{new Date(video.created_at).toLocaleString()} · {video.source === "upload" ? "Uploaded video" : video.status.replaceAll("_", " ")}</h3>
+            <h3>{new Date(video.created_at).toLocaleString()} · {video.source === "upload" ? "Uploaded video" : `${providerNames[video.provider ?? "fal"]} · ${video.status.replaceAll("_", " ")}`}</h3>
             {video.drive_url && <p><a href={video.drive_url} target="_blank" rel="noreferrer">Open video in Google Drive</a></p>}
+            {video.provider === "desktop" && video.status === "complete" && <p>To publish from Newsbee, download the video from Google Drive and upload it above.</p>}
+            {video.status === "complete" && video.drive_file_id && <p><a
+              href={storyUrl({ download: video._id })}
+              download>Download video</a></p>}
             {video.drive_file_id && <p>Stored file reference: {video.drive_file_id}</p>}
             {video.youtube_url && <p>
               <a href={video.youtube_url} target="_blank" rel="noreferrer">Open on YouTube</a>
@@ -485,8 +540,10 @@ export default function VideoStoryManager({ locationId, storyId, accountEmail, o
               </button>}
             {video.source !== "upload" && <details><summary>Prompt used for this generation</summary><pre className="artifact-preview">{video.prompt}</pre></details>}
             {video.error && <p role="alert">{video.error}</p>}
-            {owner && video.status === "upload_failed" && <button type="button" className="secondary" disabled={Boolean(busy)} onClick={() => void refreshVideo(video._id)}>Retry Google Drive upload</button>}
-            {activeStatuses.has(video.status) && <p role="status">{owner ? "Generation status refreshes automatically." : "Generation status updates when the owner opens this story."}</p>}
+            {video.canRefresh && video.status === "upload_failed" && <button type="button" className="secondary" disabled={Boolean(busy) || !falConfigured} onClick={() => void refreshVideo(video._id)}>Retry Google Drive upload</button>}
+            {activeStatuses.has(video.status) && <p role="status">{video.canRefresh && (video.provider === "desktop" ? desktopConfigured : falConfigured)
+              ? "Generation status refreshes automatically."
+              : "Generation status updates when the submitting account opens this story with its provider key."}</p>}
           </article>)}
         </div>}
       </>}

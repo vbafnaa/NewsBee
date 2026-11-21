@@ -26,11 +26,12 @@ const PERSONAL = {
   serpapiKey: "personal-serpapi", searchapiKey: "personal-searchapi", brightdataKey: "personal-brightdata", brightdataZone: "personal-serp-zone",
   brightdataUnlockerZone: "personal-unlocker-zone", exaKey: "personal-exa", scrapingbeeKey: "personal-scrapingbee", jinaKey: "personal-jina", attomKey: "personal-attom",
   falKey: "personal-fal",
+  desktopVideoKey: "personal-desktop",
 };
 const ENVIRONMENT = {
   NEWSBEE_GEMINI_API_KEY: "env-gemini", NEWSBEE_SERPAPI_API_KEY: "env-serpapi", NEWSBEE_SEARCHAPI_API_KEY: "env-searchapi", NEWSBEE_BRIGHTDATA_API_KEY: "env-brightdata",
   NEWSBEE_BRIGHTDATA_ZONE: "env-serp-zone", NEWSBEE_BRIGHTDATA_UNLOCKER_ZONE: "env-unlocker-zone", NEWSBEE_EXA_API_KEY: "env-exa", NEWSBEE_TAVILY_API_KEY: "env-tavily",
-  NEWSBEE_SCRAPINGBEE_API_KEY: "env-scrapingbee", NEWSBEE_JINA_API_KEY: "env-jina", NEWSBEE_ATTOM_API_KEY: "env-attom", FAL_KEY: "env-fal",
+  NEWSBEE_SCRAPINGBEE_API_KEY: "env-scrapingbee", NEWSBEE_JINA_API_KEY: "env-jina", NEWSBEE_ATTOM_API_KEY: "env-attom", FAL_KEY: "env-fal", DESKTOP_VIDEO_API_KEY: "env-desktop",
 };
 
 let server: MongoMemoryServer, client: MongoClient, db: Db;
@@ -92,14 +93,14 @@ describe("Account & API settings: every planned service's personal value is used
     expect(settings.integrations).toMatchObject({
       serpapiKey: null, searchapiKey: null, brightdataKey: null,
       brightdataZone: null, brightdataUnlockerZone: null, exaKey: null,
-      scrapingbeeKey: null, jinaKey: null, attomKey: null, falKey: null,
+      scrapingbeeKey: null, jinaKey: null, attomKey: null, falKey: null, desktopVideoKey: null,
     });
     expect(settings.tavilySearchApiKey).toBeNull();
   });
 
   it("lists a field for every service, the Web Unlocker zone included, and keeps them write-only", async () => {
     const profile = safeProfile(await (async () => { await runSettings(); return effectiveCredentialProfile(db, principal); })());
-    expect(profile?.config?.integrations).toMatchObject({ serpapiKey: "configured", searchapiKey: "configured", brightdataKey: "configured", brightdataZone: "configured", brightdataUnlockerZone: "configured", exaKey: "configured", scrapingbeeKey: "configured", jinaKey: "configured", attomKey: "configured", falKey: "configured" });
+    expect(profile?.config?.integrations).toMatchObject({ serpapiKey: "configured", searchapiKey: "configured", brightdataKey: "configured", brightdataZone: "configured", brightdataUnlockerZone: "configured", exaKey: "configured", scrapingbeeKey: "configured", jinaKey: "configured", attomKey: "configured", falKey: "configured", desktopVideoKey: "configured" });
     expect(profile?.config?.tavilySearchApiKey).toBe("configured");
     for (const secret of [...Object.values(PERSONAL), "personal-gemini", "personal-tavily"]) expect(JSON.stringify(profile)).not.toContain(secret);
   });

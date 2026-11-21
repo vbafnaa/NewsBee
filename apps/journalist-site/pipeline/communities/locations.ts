@@ -12,7 +12,8 @@ import { lookupWebsite, httpsOrigin } from "./wikidata";
 import { nameKey } from "./venues";
 import { GEOGRAPHIC_PLACES } from "../../../../shared/geography";
 import type { GeographicDocument } from "./geocoder";
-import { sourceCoverage } from "./source-coverage";
+import { sourceCoverage, sourceEvidenceByLocation } from "./source-coverage";
+import type { SourceRecord } from "../sourcemap/store";
 import { discoverCommunityNews } from "./news-discovery";
 
 type LocationDocument = LocationProfile & { _id: string; [key: string]: any };
@@ -33,20 +34,19 @@ export async function getLocation(db: Db, id: string, allowRemoval = false): Pro
   return profileFromDocument(db, profile, allowRemoval);
 }
 
-async function profileFromDocument(db: Db, profile: LocationDocument, allowRemoval: boolean): Promise<LocationProfile> {
+async function profileFromDocument(db: Db, profile: LocationDocument, allowRemoval: boolean, evidence?: SourceRecord[]): Promise<LocationProfile> {
   if (profile.removal && !allowRemoval) throw new LocationBusy(`${profile.id} is being removed; retry cleanup in Location details`);
-  const { _id: _ignored, removal, ...result } = profile;
+  const { _id: _ignored, removal, evidence_events: _evidenceEvents, ...result } = profile;
   if (removal) result.removal_pending = true;
-  if (result.community) {
-    const manual = await db.collection(COLLECTIONS.manualLinks).find({ location_id: profile.id }).project<{ connector: string }>({ connector: 1 }).toArray();
-    result.source_coverage = sourceCoverage(result, result.source_coverage?.discovery_gaps, manual.map((link) => link.connector));
-  }
+  const sources = evidence ?? (await sourceEvidenceByLocation(db, [profile.id])).get(profile.id) ?? [];
+  result.source_coverage = sourceCoverage(result, result.source_coverage?.discovery_gaps, [], sources);
   return result as LocationProfile;
 }
 
 export async function listLocations(db: Db): Promise<LocationProfile[]> {
-  const docs = await db.collection<LocationDocument>(COLLECTIONS.locations).find({}).sort({ name: 1 }).toArray();
-  return Promise.all(docs.map((profile) => profileFromDocument(db, profile, true)));
+  const docs = await db.collection<LocationDocument>(COLLECTIONS.locations).find({}).sort({ name: 1, _id: 1 }).toArray();
+  const evidence = await sourceEvidenceByLocation(db, docs.map((profile) => profile.id));
+  return Promise.all(docs.map((profile) => profileFromDocument(db, profile, true, evidence.get(profile.id) ?? [])));
 }
 
 export async function onboardLocation(db: Db, transport: HttpTransport, placeIdentity: string, options: OnboardOptions = {}): Promise<LocationProfile> {
@@ -125,7 +125,7 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     }
     log.info("government_source_onboarded", { location_id: placeIdentity, status: profile.government.status, platform: profile.government.platform, tenant: profile.government.tenant, detail: profile.government.detail });
   }
-  const existing = await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).findOne({ _id: placeIdentity });
+  const existing = await db.collection<LocationDocument>(COLLECTIONS.locations).findOne({ _id: placeIdentity });
   if (existing) {
     const previous = existing as unknown as LocationProfile;
     const oldSystems = new Map((previous.systems ?? []).map((system) => [system.fscskey, system]));
@@ -138,11 +138,28 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     }
     const oldGovernment = previous.government;
     if (oldGovernment?.detail === MANAGED_SOURCE_DETAIL || oldGovernment?.detail === DISABLED_GOVERNMENT_DETAIL) profile.government = oldGovernment;
+    if (previous.preparation) profile.preparation = previous.preparation;
+    if (previous.evidence_revision) {
+      profile.systems = previous.systems;
+      profile.community = previous.community;
+      profile.directory_edition = previous.directory_edition;
+      profile.evidence_revision = previous.evidence_revision;
+      profile.evidence_provenance = previous.evidence_provenance;
+      profile.boundary_provenance = previous.boundary_provenance;
+    }
   }
   if (profile.community) profile.source_coverage = sourceCoverage(profile, gaps);
   try {
     const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne(
-      { _id: placeIdentity, removal: { $exists: false } }, { ...profile, _id: placeIdentity }, { upsert: !initial },
+      { _id: placeIdentity, removal: { $exists: false },
+        ...(existing?.evidence_revision === undefined ? { evidence_revision: { $exists: false } } : { evidence_revision: existing.evidence_revision }) },
+      {
+        ...profile,
+        ...(existing?.preparation_events ? { preparation_events: existing.preparation_events } : {}),
+        ...(existing?.evidence_events ? { evidence_events: existing.evidence_events } : {}),
+        _id: placeIdentity,
+      },
+      { upsert: !initial },
     );
     if (initial && !saved.matchedCount) throw new LocationBusy(`${placeIdentity} changed during onboarding; reload its cleanup state`);
   } catch (error) {
@@ -150,7 +167,7 @@ export async function onboardLocation(db: Db, transport: HttpTransport, placeIde
     throw error;
   }
   log.info("location_onboarded", { location_id: placeIdentity, systems: profile.systems.length });
-  return profile;
+  return getLocation(db, placeIdentity);
 }
 
 export async function updateSources(db: Db, id: string, websites: Record<string, string | null>, government: { platform: string; tenant: string } | null): Promise<LocationProfile> {
@@ -172,10 +189,13 @@ export async function updateSources(db: Db, id: string, websites: Record<string,
     pages_checked: [], detail: DISABLED_GOVERNMENT_DETAIL,
   };
   if (profile.community) profile.source_coverage = sourceCoverage(profile, profile.source_coverage?.discovery_gaps);
-  const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).replaceOne({ _id: id, removal: { $exists: false } }, { ...profile, _id: id }, { upsert: false });
+  const saved = await db.collection<LocationDocument>(COLLECTIONS.locations).updateOne({
+    _id: id, removal: { $exists: false },
+    ...(profile.evidence_revision === undefined ? { evidence_revision: { $exists: false } } : { evidence_revision: profile.evidence_revision }),
+  }, { $set: { systems: profile.systems, government: profile.government, source_coverage: profile.source_coverage } });
   if (!saved.matchedCount) throw new LocationBusy(`${id} changed while saving sources; reload its cleanup state`);
   log.info("location_sources_updated", { location_id: id });
-  return profile;
+  return getLocation(db, id);
 }
 
 export class LocationBusy extends Error {}
@@ -193,6 +213,7 @@ const LOCATION_COLLECTIONS = [
   ["photo_catalog_sources", "photo_catalog_sources"], ["photo_catalog_cache", "photo_catalog_cache"],
   ["photo_supply_invites", "photo_supply_invites"], ["photo_supply_submissions", "photo_supply_submissions"],
   ["edition_photo_claims", "edition_photo_claims"],
+  ["model_operation_receipts", "model_operation_receipts"],
 ] as const;
 
 export async function assertLocationIdle(db: Db, id: string) {

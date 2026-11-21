@@ -1,0 +1,33 @@
+---
+import type { ReaderSponsorPlacement } from "../../lib/reader-data";
+
+interface Props {
+  placement?: ReaderSponsorPlacement;
+}
+
+const { placement } = Astro.props;
+---
+{placement && (
+  <aside class="sponsor-placement" aria-label={`Sponsored placement from ${placement.sponsor_name}`}>
+    <p class="sponsor-label">Sponsored</p>
+    <div class="sponsor-body">
+      {placement.image_url && <img src={placement.image_url} alt="" loading="lazy" decoding="async" />}
+      <div>
+        <p class="sponsor-name">{placement.sponsor_name}</p>
+        <h2>{placement.headline}</h2>
+        <p>{placement.body}</p>
+        <a href={placement.landing_url} target="_blank" rel="sponsored noopener noreferrer">Learn more</a>
+      </div>
+    </div>
+  </aside>
+)}
+
+<style>
+  .sponsor-placement { border: 1px solid var(--color-line); border-radius: var(--radius-xl); padding: var(--space-6); background: var(--color-surface); }
+  .sponsor-label { font: var(--weight-heading) var(--text-xs)/1 var(--font-body); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+  .sponsor-body { display: grid; grid-template-columns: minmax(0, 10rem) 1fr; gap: var(--space-6); align-items: center; }
+  .sponsor-body img { width: 100%; max-height: 8rem; object-fit: cover; border-radius: var(--radius-lg); }
+  .sponsor-name { font-weight: var(--weight-heading); }
+  .sponsor-body h2 { margin-block: var(--space-2); }
+  @media (max-width: 40rem) { .sponsor-body { grid-template-columns: 1fr; } }
+</style>

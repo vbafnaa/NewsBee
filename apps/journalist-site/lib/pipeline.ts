@@ -16,6 +16,8 @@ import { ensureSearchIndexes } from "@/pipeline/search/provider";
 import { ensureDecisionIndexes } from "@/pipeline/trace/decisions";
 import { ensureApiCallIndexes } from "@/pipeline/trace/gateway";
 import { ensureVideoProductionIndexes } from "@/pipeline/video-production";
+import { ensurePublicationGenerationIndexes } from "@/pipeline/publications/generation";
+import { ensurePublicationEmailIndexes } from "@/pipeline/email/indexes";
 
 let indexes: Promise<void> | null = null;
 
@@ -23,7 +25,7 @@ let indexes: Promise<void> | null = null;
 export async function pipelineDeps(): Promise<OrchestratorDeps> {
   const settings = infrastructureSettings();
   const db = await getDatabase();
-  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureStoryReviewIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db), ensureVideoProductionIndexes(db)]).then(() => undefined).catch((error) => {
+  indexes ??= Promise.all([ensureJobIndexes(db), ensureJobLogIndexes(db), ensureFetchStateIndexes(db), ensureRunIndexes(db), ensureUsageIndexes(db), ensureSourceMapIndexes(db), ensureItemIndexes(db), ensureStoryReviewIndexes(db), ensureTextIndexes(db), ensureDecisionIndexes(db), ensureApiCallIndexes(db), ensureSearchIndexes(db), ensureVideoProductionIndexes(db), ensurePublicationGenerationIndexes(db), ensurePublicationEmailIndexes(db)]).then(() => undefined).catch((error) => {
     indexes = null;
     throw error;
   });
@@ -32,7 +34,7 @@ export async function pipelineDeps(): Promise<OrchestratorDeps> {
   const deps: OrchestratorDeps = {
     db,
     settings,
-    store: getArtifacts(),
+    store: getArtifacts(db),
     model: NO_MODEL,
   };
   deps.runtimeForRun = (run) => runtimesForRun(deps, run);

@@ -36,7 +36,9 @@ export type StorySnapshot = {
   description: string | null; kind: string | null; venue: string | null; schedule: string | null;
   area: string | null; locality_method: string | null; locality_evidence: string[];
   site_name: string | null; source_tier: string | null; section_hint: string | null;
-  found_on_page: string | null; crawl_depth: number | null; extracted_by: string | null; extracted_quote: string | null; link_only: boolean;
+  /** The page it was on or linked from (a listing page, or a page an editor asked to follow), how it was read, and who asked. */
+  found_on_page: string | null; found_via: string | null; followed_by: string | null;
+  crawl_depth: number | null; extracted_by: string | null; extracted_quote: string | null; link_only: boolean;
   update_of: string | null; would_have_blocked: string[]; access_overrides: string[];
   copies: Array<{ item_id: string; url: string | null; source_id: string; source_name: string; status: string; step: string; reason: string | null }>;
   sources: Array<{ source_id: string; name: string; url: string | null; reader: string | null; tier: string | null; found_by: string | null; status: string | null }>;
@@ -153,7 +155,8 @@ async function storySnapshot(db: Db, run: PipelineRun, copies: CollectedItem[], 
     description: text(facts.description), kind: text(facts.kind), venue: text(facts.venue), schedule: text(facts.schedule_text),
     area: text(facts.tier), locality_method: locality?.method ?? null, locality_evidence: strings(locality?.matches).slice(0, 8),
     site_name: text(facts.site_name), source_tier: text(facts.source_tier), section_hint: text(facts.section_hint),
-    found_on_page: text(facts.found_via) ?? text(facts.found_by), crawl_depth: typeof facts.crawl_depth === "number" ? facts.crawl_depth : null,
+    found_on_page: text(facts.found_on) ?? lead.found?.found_on ?? null, found_via: text(facts.found_via) ?? text(facts.found_by) ?? lead.found?.found_via ?? null, followed_by: lead.followed_by ?? null,
+    crawl_depth: typeof facts.crawl_depth === "number" ? facts.crawl_depth : lead.found?.crawl_depth ?? null,
     extracted_by: text(facts.extracted_by), extracted_quote: text(facts.extracted_quote), link_only: facts.link_only === true,
     update_of: text(facts.update_of), would_have_blocked: lead.would_have_blocked ?? [], access_overrides: lead.access_overrides ?? [],
     copies: copies.map((item) => ({ item_id: item._id, url: item.url, source_id: item.source_id, source_name: item.source_name, status: item.status, step: item.step, reason: item.reason })),
@@ -236,7 +239,8 @@ const COLUMNS: Array<[string, (doc: StoryDecisionDoc, exportedAt: string) => unk
   ["site_name", (doc) => doc.story?.site_name], ["sources", (doc) => doc.source_names], ["source_urls", (doc) => doc.source_urls],
   ["source_readers", (doc) => doc.story?.sources.map((source) => source.reader).filter(Boolean)], ["source_tiers", (doc) => doc.story?.sources.map((source) => source.tier).filter(Boolean)],
   ["source_found_by", (doc) => doc.story?.sources.map((source) => source.found_by).filter(Boolean)], ["story_source_tier", (doc) => doc.story?.source_tier],
-  ["found_on_page", (doc) => doc.story?.found_on_page], ["crawl_depth", (doc) => doc.story?.crawl_depth], ["section_hint", (doc) => doc.story?.section_hint],
+  ["found_on_page", (doc) => doc.story?.found_on_page], ["found_via", (doc) => doc.story?.found_via], ["followed_by", (doc) => doc.story?.followed_by],
+  ["crawl_depth", (doc) => doc.story?.crawl_depth], ["section_hint", (doc) => doc.story?.section_hint],
   ["extracted_by", (doc) => doc.story?.extracted_by], ["extracted_quote", (doc) => doc.story?.extracted_quote], ["link_only", (doc) => doc.story?.link_only],
   ["copies", (doc) => doc.replication?.copies ?? doc.item_ids.length], ["copy_sources", (doc) => doc.replication?.sources ?? doc.source_ids.length],
   ["independent_publishers", (doc) => doc.replication?.independent], ["publishers", (doc) => doc.replication?.publishers],

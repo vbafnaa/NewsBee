@@ -15,6 +15,7 @@ import PhotoSupplyManager from "./photo-supply-manager";
 import AlertsList from "../../alerts/alerts-list";
 import { WINDOWS } from "@/pipeline/sourcemap/windows";
 import { LOCATION_TABS } from "./tabs";
+import BeeGameReview from "./bee-game-review";
 
 /** Production steps and reader tools for one location. */
 type Run = { _id: string; kind?: string; isolated?: boolean; edition_id?: string | null; status: string; created_at: number; completed_at: number | null };
@@ -104,10 +105,14 @@ export default function LocationTabs({ locationId, tab, name, owner = false, run
   const { state, error } = useMapState(locationId);
   const finished = useEditions(locationId);
   const waiting = finished.editions?.filter((edition) => edition.status === "built").length ?? 0;
-  const live = finished.editions?.find((edition) => edition.live) ?? null;
   return <>
     <div className="card-actions workspace-links"><Link href={`${base}/source-map`}>Source map</Link><a href={`/reader?location=${encodeURIComponent(locationId)}`}>Reader</a></div>
-    <nav className="tabs workspace-tabs" aria-label="Location workflow">{LOCATION_TABS.map(([id, label]) => <Link key={id} href={`${base}?tab=${id}`} aria-current={tab === id ? "page" : undefined}>{label}{id === "published" && waiting ? ` (${waiting})` : ""}</Link>)}</nav>
+    <nav className="tabs workspace-tabs" aria-label="Location preparation">{LOCATION_TABS.filter(([id]) => id !== "edition" && id !== "published").map(([id, label]) => <Link key={id} href={`${base}?tab=${id}`} aria-current={tab === id ? "page" : undefined}>{label}</Link>)}</nav>
+    <p><Link className="button secondary" href="/newsroom">Open a newsroom to prepare and publish editions</Link></p>
+    <details className="panel" open={tab === "edition" || tab === "published" || undefined}><summary>Advanced legacy maintenance</summary>
+      <p>Historical location editions and their tools remain available. Use a newsroom for normal editorial work.</p>
+      <div className="card-actions"><Link href={`${base}?tab=edition`}>Legacy story collection</Link><Link href={`${base}?tab=published`}>Legacy editions and publishing{waiting ? ` (${waiting})` : ""}</Link></div>
+    </details>
     {error && <p className="alert" role="alert">{error}</p>}
     {tab === "overview" && <>
       <div className="step-grid">
@@ -123,24 +128,18 @@ export default function LocationTabs({ locationId, tab, name, owner = false, run
             <Link className="button" href={`${base}?tab=collect-sources`}>{state.lastMap && OPEN.includes(state.lastMap.status) ? "Continue" : "Collect sources"}</Link>
           </>}
         </section>
-        <section className="panel step-card"><p className="eyebrow">Step 3</p><h2>Collect stories</h2>
-          {!state ? <p role="status">Loading…</p> : <>
-            <p>{state.lastEdition ? <><span className={`status-badge tone-${tone(state.lastEdition.status)}`}>{state.lastEdition.status === "built" ? "ready to publish" : state.lastEdition.status.replaceAll("_", " ")}</span> {when(state.lastEdition.created_at)}</> : "No editions yet."}</p>
-            <Link className="button" href={`${base}?tab=edition`}>{state.lastEdition && OPEN.includes(state.lastEdition.status) ? "Continue" : "Collect stories"}</Link>
-          </>}
-        </section>
-        <section className="panel step-card"><p className="eyebrow">Step 4</p><h2>Publish</h2>
-          <p>{waiting ? `${waiting} ready to publish` : live ? `Live: ${when(live.published_at)}` : "Nothing published yet."}</p>
-          <Link className="button" href={`${base}?tab=published`}>{waiting ? "Review and publish" : "Open"}</Link>
-        </section>
       </div>
       <h2>Needs attention</h2><AlertsList locationId={locationId} actions />
     </>}
     {tab === "collect-sources" && <>
       {state && <SourcesGuide state={state} />}
       <h2>Collect sources</h2>
-      {runId && <Dashboard locationId={locationId} kind="map" inspectorOnly />}
+      {runId && <Dashboard locationId={locationId} runId={runId} kind="map" inspectorOnly />}
       <SourceRuns locationId={locationId} runId={runId} canEdit locations={[]} routeFor={(_, run) => `${base}?${new URLSearchParams({ tab: "collect-sources", ...(run ? { run } : {}) })}`} />
+      <details className="panel"><summary>Review current source network and labels</summary>
+        <SourceMapManager locationId={locationId} editable />
+        <Link href={`${base}?tab=settings#location-evidence`}>Review location evidence and readiness</Link>
+      </details>
     </>}
     {tab === "sources" && <>
       <h2>All sources</h2>
@@ -156,8 +155,8 @@ export default function LocationTabs({ locationId, tab, name, owner = false, run
           : <>{state.unreviewed} sources to review (not read until accepted). <Link href={`${base}?tab=sources`}>Review</Link></>}
       </p>}
       <p className="chart-caption">Collects source items, ranks and writes stories, then prepares the edition front page and email. Review held stories and reader submissions here; publish the finished edition in <Link href={`${base}?tab=published`}>Publish</Link>.</p>
-      <Dashboard locationId={locationId} owner={owner} kind="edition" />
-      <RunItems locationId={locationId} />
+      <Dashboard locationId={locationId} runId={runId} owner={owner} kind="edition" />
+      <RunItems locationId={locationId} selectedRunId={runId} />
       <InboxView locationId={locationId} only={["held"]} />
       <div id="reader-stories"><NeighbourStoryReview locationId={locationId} /></div>
       <div id="family-notices"><RemembranceReview locationId={locationId} /></div>
@@ -177,6 +176,7 @@ function PublishList({ locationId, editions, error, reload }: { locationId: stri
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [failure, setFailure] = useState("");
+  const [gameReady, setGameReady] = useState<Record<string, boolean>>({});
   const base = `/locations/${encodeURIComponent(locationId)}`;
   async function publish(edition: FinishedEdition) {
     if (!window.confirm(edition.status === "built" ? "Publish this edition to the reader?" : "Make this edition live again?")) return;
@@ -201,11 +201,12 @@ function PublishList({ locationId, editions, error, reload }: { locationId: stri
         <p className="chart-caption">{edition.window[0]} to {edition.window[1]} · {edition.items} stories{edition.held ? ` · ${edition.held} held` : ""} · built {when(edition.built_at)}{edition.published_at ? ` · published ${when(edition.published_at)}${edition.published_by ? ` by ${edition.published_by}` : ""}` : ""}</p>
       </div>
       <div className="card-actions">
-        {!edition.live && <button type="button" disabled={busy !== null} onClick={() => void publish(edition)}>{busy === edition.id ? "Publishing…" : edition.status === "built" ? "Publish" : "Make live"}</button>}
+        {!edition.live && <button type="button" disabled={busy !== null || (edition.status === "built" && !gameReady[edition.id])} onClick={() => void publish(edition)}>{busy === edition.id ? "Publishing…" : edition.status === "built" ? "Publish" : "Make live"}</button>}
         <Link href={`${base}?tab=edition&run=${encodeURIComponent(edition.run_id)}`}>Review stories</Link>
         <Link href={`/edition-map?location=${encodeURIComponent(locationId)}&run=${encodeURIComponent(edition.run_id)}`}>Funnel</Link>
         {edition.status === "published" && <a href={`/reader?location=${encodeURIComponent(locationId)}&edition=${encodeURIComponent(edition.id)}`}>Read</a>}
       </div>
+      <BeeGameReview locationId={locationId} editionId={edition.id} onReady={ready => setGameReady(current => current[edition.id] === ready ? current : { ...current, [edition.id]: ready })} />
     </li>)}</ul>
   </section>;
 }

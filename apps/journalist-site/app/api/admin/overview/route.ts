@@ -4,7 +4,7 @@ import { overview } from "@/pipeline/orchestration/overview";
 
 export const dynamic = "force-dynamic";
 
-/** The dashboard: one row per location with its funnel against the previous edition, plus the model, queue and alert strip. */
+/** Queue-first operations data plus one bulk-loaded row per location. */
 export async function GET(request: Request) {
   return adminRoute(request, async ({ db, settings }) => {
     await expireOverdueRuns(db, settings.runTimeoutSeconds);

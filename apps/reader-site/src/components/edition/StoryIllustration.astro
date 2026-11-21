@@ -1,7 +1,7 @@
 ---
-import { illustrationAsset, type EditorialIllustration } from "../../../../../shared/editorial-illustrations";
-interface Props { illustration: EditorialIllustration; lead?: boolean }
-const { illustration, lead = false } = Astro.props;
+import { illustrationAsset, ILLUSTRATION_DISCLOSURE, type EditorialIllustration } from "../../../../../shared/editorial-illustrations";
+interface Props { illustration: EditorialIllustration; lead?: boolean; caption?: boolean }
+const { illustration, lead = false, caption = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const asset = illustration.asset_id ?? illustration.id;
 ---
@@ -10,9 +10,18 @@ const asset = illustration.asset_id ?? illustration.id;
     srcset={`${illustrationAsset(asset, base, true)} 960w, ${illustrationAsset(asset, base)} 1536w`}
     sizes={lead ? "(max-width: 40rem) calc(100vw - 2rem), 800px" : "(max-width: 40rem) calc(100vw - 2rem), 480px"}
     alt={illustration.alt} width="1536" height="1024" loading={lead ? "eager" : "lazy"} decoding="async" />
+  {caption && <figcaption>
+    <a href={`${base}/illustrations`}>Image: Newsbee - AI-generated illustration</a>
+    <details><summary aria-label="Image details" title="Image details">ⓘ</summary><p>{ILLUSTRATION_DISCLOSURE}</p></details>
+  </figcaption>}
 </figure>
 <style>
   .story-illustration { margin: 0; min-width: 0; }
   img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: contain; mix-blend-mode: multiply;
     mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent), linear-gradient(to bottom, transparent, #000 4%, #000 96%, transparent); mask-composite: intersect; }
+  figcaption { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1); margin-top: 0.4375rem; color: var(--color-muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+  figcaption > a { color: inherit; text-decoration: none; }
+  figcaption > a:hover { text-decoration: underline; }
+  summary { cursor: pointer; font-size: 0.6875rem; }
+  details p { max-width: 36ch; padding-block: var(--space-2); }
 </style>

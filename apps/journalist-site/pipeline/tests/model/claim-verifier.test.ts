@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
 import { articleClaims, validateVerification, verifyArticle } from '../../model/claim-verifier';
 import { FakeModel } from '../support/fake-model';
-import { ModelRateLimitError } from '../../model/runtime';
+import { ModelRateLimitError, UsageAccountingError } from '../../model/runtime';
+import { ModelBudgetExceeded } from '../../model/budget';
 const input = { title: 'School closure', description: 'Veterans Day is a no-school day on November 11.' };
 const draft = { headline: 'School closure', summary: 'School is closed on November 11.' };
 const rows = () => ({ claims: articleClaims(draft).map(claim => ({ id: claim.id, verdict: 'supported', reason: 'Closure is explicit.', evidence: [{ source_id: 'input', quote: 'Veterans Day is a no-school day on November 11.' }] })) });
@@ -22,6 +23,18 @@ it('fails closed on malformed and unfinished verification', async () => {
 });
 it('propagates model quota backoff instead of turning it into an editorial verdict', async () => {
   await expect(verifyArticle(new FakeModel(() => { throw new ModelRateLimitError('quota', 30); }), input, draft)).rejects.toBeInstanceOf(ModelRateLimitError);
+});
+it.each([new ModelBudgetExceeded('managed_platform', 123, 2), new UsageAccountingError('accounting unavailable')])('propagates execution blocks through verification and writing without a paid retry: %s', async error => {
+  const { writeItem, writeFront } = await import('../../model/story-writer');
+  for (const operation of [
+    (model: FakeModel) => verifyArticle(model, input, draft),
+    (model: FakeModel) => writeItem(model, { ...input, id: 'closure' }, { verify: true }),
+    (model: FakeModel) => writeFront(model, 'Town', 'This week', [{ ...input, id: 'closure' }], [draft]),
+  ]) {
+    const model = new FakeModel(() => { throw error; });
+    await expect(operation(model)).rejects.toBe(error);
+    expect(model.calls).toHaveLength(1);
+  }
 });
 it('gives a rejected semantic draft one bounded rewrite and verifies the replacement', async () => {
   const { writeItem } = await import('../../model/story-writer');

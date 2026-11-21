@@ -14,7 +14,7 @@ import { storySources } from "../../../../shared/source-attribution";
  *                   PUBLISHED_PER_SECTION stories have passed
  *   finishAuthoring front page and email, the edition, the ledger and the edition map
  */
-import { refineRanking } from "../ranking/edition-ranker";
+import { engagementSnapshot, refineRanking, type EngagementSnapshot } from "../ranking/edition-ranker";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
@@ -27,6 +27,7 @@ import { collapse, whenWhere, weekLabel, type SourceEvent, type Story } from "./
 import { COLLECTIONS } from "../storage/mongo";
 import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError } from "../model/runtime";
+import { ExecutionBlocked } from "../core/execution-errors";
 import * as ranking from "../model/newsworthiness";
 import { pythonJson } from "../model/newsworthiness";
 import { hasFactualityError } from "../model/grounding";
@@ -34,13 +35,17 @@ import * as writer from "../model/story-writer";
 import * as policy from "../editorial/policy";
 import * as withdrawals from "../editorial/withdrawals";
 import { CRISIS_LINE, floorErrors, floorFlags, floorInstructions, stripFloorDetails } from "../editorial/floor";
-import { currentOptions, limits, relaxedContentAllowed, rulesOff } from "../core/run-options";
+import { currentOptions, currentPublicationPreferences, limits, relaxedContentAllowed, rulesOff } from "../core/run-options";
 import { previewContent } from "../email/preview";
+import { emailAvailable } from "../../../../shared/email-availability";
+import { recoveredEmailOutput, unavailableEmailOutput, type EmailOutput } from "../email/output";
 import { sourceType } from "../ranking";
 import { coverageTypes, storyKinds } from "../connectors/registry";
 import { assemble, collectedItems, type PoolSection, type Replication, type RunOverrides } from "./assemble";
 import { preRate, rankAgreement, PRE_RANK_POLICY, type PreRank } from "../ranking/pre-ranker";
 import { sourceAcceptRates } from "./story-reviews";
+import { receiptRuntime } from "../model/receipts";
+import { boundedBulkWrite } from "../storage/bulk";
 import { detailsText, EXTRACTION_POLICY, extractDetails, mergeDetails, saveText, type Details } from "./details";
 import { contentHash, EVIDENCE_POLICY, EvidenceReader, evidenceFor, evidenceText, missingDetails, rankingDescription, selectPassages, supportedFacts } from "./evidence";
 import { SECTIONS, sectionLabel, type SectionId } from "../sourcemap/sections";
@@ -64,15 +69,16 @@ const PRIMARY_TIERS = new Set(["official", "organisation", "business"]);
 export const STORY_DETAILS = "story_details";
 export const STORY_IMAGES = "story_images";
 export type AuthoringDeps = { db: Db; model: ModelRuntime; rankingModel?: ModelRuntime; lightModel?: ModelRuntime; settings: Settings; log: Logger; transport?: HttpTransport };
-export type AuthoringInput = { location: LocationProfile; runId: string; today: string; window: [string, string]; sourceResults: SourceResult[]; overrides?: RunOverrides };
+export type AuthoringInput = { location: LocationProfile; runId: string; today: string; window: [string, string]; sourceResults: SourceResult[]; sourceIds?: string[]; overrides?: RunOverrides };
 export type RankedCandidate = ranking.Candidate & { rating: ranking.Rating; score: number; rated_by: "model" | "rule" | "pre_ranker"; rank: number; section_rank: number; source_id: string; source_type: string; tier: string; section: SectionId; explain?: unknown };
 type EditionPayload = { id: string; location_id: string; location_name: string; window_start: string; window_end: string; published_at: number; headline: string; intro: string; items: Array<Record<string, any>>; coverage: string[]; corrections: Array<{ story_id: string; reason: string; created_at: number }> };
 type EntryDoc = { id: string; edition_id: string; position: number; disposition: string; story_id: string; source_id: string; source_type: string; tier: string; section: SectionId; event_date: string; result: Record<string, any> };
 export type DraftDoc = {
   id: string; run_id: string; location_id: string; location_name: string; today: string; window_start: string; window_end: string; status: string; created_at: number;
-  model: string; provider: string; validation_policy: string; published?: EditionPayload; email_preview?: { subject: string; text: string; html: string }; summary?: Record<string, unknown>;
+  model: string; provider: string; validation_policy: string; published?: EditionPayload; email_preview?: { subject: string; text: string; html: string } | null; email_output?: EmailOutput; summary?: Record<string, unknown>;
   events: SourceEvent[]; source_results: SourceResult[]; candidates: RankedCandidate[]; pool_sections: PoolSection[]; section_rankings: Record<string, RankedCandidate[]>;
   tokens: Record<string, string[]>; funnel: Record<string, number>; ranking: Record<string, unknown>; event_count: number; story_count: number; started_at_ms: number; [key: string]: unknown;
+  ranking_evidence?: { version: 1; engagement: EngagementSnapshot; source_rates: Array<[string, { accepted: number; rejected: number }]>; source_rates_error?: string };
 };
 
 /** Repeating items print as compact lists: separate stories would crowd the edition and cost far more model calls. */
@@ -94,18 +100,19 @@ function heldReasons(entries: Array<{ disposition: string; result: Record<string
   for (const entry of entries) if (entry.disposition === "held") for (const error of (entry.result.validation_errors?.length ? entry.result.validation_errors : entry.result.error ? [entry.result.error] : [])) counts[error] = (counts[error] ?? 0) + 1;
   return counts;
 }
-function cacheKey(settings: Settings, locationId: string, candidate: writer.StoryInput & { venues: string[] }) {
+export function storyCacheKey(settings: Settings, locationId: string, candidate: writer.StoryInput & { venues: string[] }) {
   // The profile is part of the key, so an exploration draft is never reused by a strict run.
   const values = { title: candidate.title, description: candidate.description ?? null, venues: candidate.venues, kind: candidate.kind ?? "event", as_of: candidate.as_of ?? null, source_date: candidate.source_date ?? null, floor_flags: candidate.floor_flags ?? null, people: candidate.people ?? [], verification_sources: candidate.verification_sources ?? [], ...(rulesOff("quality") || rulesOff("sensitive") || rulesOff("topic_content") || relaxedContentAllowed() ? { loosened: true } : {}) };
   const sortedContent = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)));
-  const key = createHash("sha256").update(pythonJson([configuredModel(settings) || DEFAULT_MODEL, VALIDATION_POLICY, sortedContent])).digest("hex");
+  const preferences = currentPublicationPreferences();
+  const key = createHash("sha256").update(pythonJson([configuredModel(settings) || DEFAULT_MODEL, VALIDATION_POLICY, preferences, sortedContent])).digest("hex");
   return `${locationId}:${key}`;
 }
 async function checkedItem(deps: AuthoringDeps, candidate: writer.StoryInput & { community_id: string; venues: string[] }) {
-  const key = cacheKey(deps.settings, candidate.community_id, candidate);
+  const key = storyCacheKey(deps.settings, candidate.community_id, candidate);
   const cached = await deps.db.collection(COLLECTIONS.storyCache).findOne({ cache_key: key });
   if (cached?.result?.draft && cached.result.verification?.policy === VERIFICATION_POLICY && cached.result.verification.checks_passed === true && writer.validateItem(candidate, cached.result.draft).length === 0) return { ...cached.result, cache_hit: true, wall_seconds: 0 };
-  const result = await writer.writeItem(deps.model, candidate, { verify: true });
+  const result = await writer.writeItem(deps.model, candidate, { verify: true, preferences: currentPublicationPreferences()?.explicit_values });
   if (result.disposition === "checks_passed") await deps.db.collection(COLLECTIONS.storyCache).updateOne({ cache_key: key }, { $set: { cache_key: key, location_id: candidate.community_id, result } }, { upsert: true });
   return { ...result, cache_hit: false };
 }
@@ -118,7 +125,7 @@ export async function startAuthoring(deps: AuthoringDeps, input: AuthoringInput)
   if (old) return { id: old.id, sections: old.pool_sections.filter((section) => !old.section_rankings?.[section.id]).map((section) => section.id) };
   const start = Date.now();
   const transport = deps.transport ?? (await import("../core/http")).fetchTransport;
-  const pool = await assemble({ db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location: input.location, today: input.today, log: deps.log, runId: input.runId, overrides: input.overrides });
+  const pool = await assemble({ db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location: input.location, today: input.today, log: deps.log, runId: input.runId, sourceIds: input.sourceIds, overrides: input.overrides });
   const id = input.runId;
   const doc: DraftDoc = {
     id, run_id: input.runId, location_id: input.location.id, location_name: input.location.name, today: input.today, window_start: input.window[0], window_end: input.window[1],
@@ -152,15 +159,28 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
     for (const story of active) {
       const index = draft.events.findIndex((event) => event.facts === story.facts);
       if (index >= 0) evidenceFields[`events.${index}.facts.evidence`] = evidenceFor(story);
-      await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: story.id }, { $set: { evidence: evidenceFor(story) } });
     }
+    await boundedBulkWrite(collectedItems(deps.db), active.map(story => ({ updateMany: {
+      filter: { run_id: draft.run_id, story_id: story.id }, update: { $set: { evidence: evidenceFor(story) } },
+    } })));
     if (Object.keys(evidenceFields).length) await drafts(deps.db).updateOne({ id: draftId }, { $set: evidenceFields });
-    const rankingModel = deps.rankingModel ?? deps.model;
+    const rankingModel = receiptRuntime(deps.db, deps.rankingModel ?? deps.model,
+      `${draft.run_id}:${sectionId}:${VALIDATION_POLICY}:${pythonJson([currentOptions(), currentPublicationPreferences()])}`,
+      { runId: draft.run_id, locationId: draft.location_id });
     // The local pre-ranker rates every story in shadow, and stands in where the model gives no rating.
-    const rates = await sourceAcceptRates(deps.db, draft.location_id).catch((error) => {
-      deps.log.warn("source_accept_rates_failed", { run_id: draft.run_id, error: String(error) });
-      return undefined;
-    });
+    let snapshot = draft.ranking_evidence;
+    if (!snapshot) {
+      let sourceRatesError: string | undefined;
+      const [engagement, rates] = await Promise.all([engagementSnapshot(deps.db, draft.location_id), sourceAcceptRates(deps.db, draft.location_id).catch(error => {
+        if (error instanceof ExecutionBlocked) throw error;
+        sourceRatesError = String(error);
+        deps.log.warn("source_accept_rates_failed", { run_id: draft.run_id, error: sourceRatesError });
+        return new Map<string, { accepted: number; rejected: number }>();
+      })]);
+      snapshot = { version: 1, engagement, source_rates: [...rates], ...(sourceRatesError ? { source_rates_error: sourceRatesError } : {}) };
+      await drafts(deps.db).updateOne({ id: draftId }, { $set: { ranking_evidence: snapshot } });
+    }
+    const rates = new Map(snapshot.source_rates);
     const preRanks = new Map<string, PreRank>(active.map((story) => [story.id, preRate({
       id: story.id, title: story.title, description: story.description, kind: story.kind, tier: String(story.facts.tier ?? "local"),
       source_tier: story.facts.source_tier as string | undefined, section: sectionId, first_date: story.first.event_date, occurrences: story.scheduledOccurrences.length,
@@ -184,21 +204,22 @@ export async function rankSection(deps: AuthoringDeps, draftId: string, sectionI
       runId: `${draft.run_id}:${sectionId}`, locationId: draft.location_id, community: draft.location_name,
       sourceTypes: new Map(active.map((story) => [story.id, sourceType(story.first.source_id)])),
       sourceIds: new Map(active.map((story) => [story.id, story.first.source_id])),
+      evidence: snapshot.engagement,
     });
     const ranked = refined.map((candidate, index) => {
       const story = byId.get(candidate.id)!;
       return { ...candidate, rank: 0, section_rank: index + 1, source_id: story.first.source_id, source_type: sourceType(story.first.source_id), tier: String(story.facts.tier ?? "local"), section: sectionId as SectionId } as RankedCandidate;
     });
-    await drafts(deps.db).updateOne({ id: draftId }, { $set: { [`section_rankings.${sectionId}`]: ranked, [`ranking.${sectionId}`]: { ...report, refinement, provider: rankingModel.provider, model: rankingModel.model } } });
-    for (const candidate of ranked) {
+    await boundedBulkWrite(collectedItems(deps.db), ranked.map(candidate => {
       const pre = preRanks.get(candidate.id);
-      await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: candidate.id }, { $set: {
+      return { updateMany: { filter: { run_id: draft.run_id, story_id: candidate.id }, update: { $set: {
         rank: candidate.section_rank, score: (candidate.explain as { final?: number } | undefined)?.final ?? candidate.score,
         why: `${candidate.rated_by === "pre_ranker" ? "pre-ranker (no model rating): " : ""}${candidate.rating.category.replace(/_/g, " ")}; civic ${candidate.rating.civic}, appeal ${candidate.rating.appeal}, special ${candidate.rating.special}`,
         model_rating: { rated_by: candidate.rated_by, category: candidate.rating.category, civic: candidate.rating.civic, appeal: candidate.rating.appeal, special: candidate.rating.special },
         ...(pre ? { pre_rank: { score: pre.score, civic: pre.rating.civic, appeal: pre.rating.appeal, special: pre.rating.special, rules: pre.rules, policy: pre.policy } } : {}),
-      } });
-    }
+      } } } };
+    }));
+    await drafts(deps.db).updateOne({ id: draftId }, { $set: { [`section_rankings.${sectionId}`]: ranked, [`ranking.${sectionId}`]: { ...report, refinement, provider: rankingModel.provider, model: rankingModel.model } } });
   }
   const refreshed = (await drafts(deps.db).findOne({ id: draftId }))!;
   if (refreshed.pool_sections.some((section) => !refreshed.section_rankings?.[section.id])) return { ready: false };
@@ -324,7 +345,7 @@ async function storyDetails(deps: AuthoringDeps, draft: DraftDoc, story: Story):
     const { section: _section, ...values } = extracted;
     details = values;
   } catch (error) {
-    if (error instanceof ModelRateLimitError) throw error;
+    if (error instanceof ModelRateLimitError || error instanceof ExecutionBlocked) throw error;
     packet.extraction = "failed";
     packet.extraction_error = error instanceof Error ? error.message : String(error);
     deps.log.warn("details_extraction_failed", { story_id: story.id, error: error instanceof Error ? error.message : String(error) });
@@ -338,10 +359,11 @@ async function storyDetails(deps: AuthoringDeps, draft: DraftDoc, story: Story):
 /** Persist exactly one candidate result, including its one validation retry, per invocation. */
 export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const collection = drafts(deps.db);
-  const draft = await collection.findOne({ id: draftId });
+  const draft = await collection.findOne({ id: draftId }, { projection: { section_rankings: 0, pool_sections: 0, tokens: 0, ranking: 0, ranking_evidence: 0 } });
   if (!draft) throw new Error(`No authoring draft: ${draftId}`);
   if (draft.status !== "drafting") return { more: false, done: true };
-  const entries = await getEntries(deps.db, draftId);
+  const entries = await deps.db.collection<Pick<EntryDoc, "story_id" | "section" | "disposition" | "result">>(COLLECTIONS.editionEntries)
+    .find({ edition_id: draftId }, { projection: { story_id: 1, section: 1, disposition: 1, "result.validation_errors": 1, "result.error": 1 } }).toArray();
   const caps = limits();
   const doneIds = new Set(entries.map((entry) => entry.story_id));
   const passedBySection = new Map<string, number>();
@@ -418,7 +440,7 @@ export async function authorNextStory(deps: AuthoringDeps, draftId: string) {
   const position = entries.length;
   await deps.db.collection(COLLECTIONS.editionEntries).updateOne({ id: `${draftId}:${candidate.id}` }, { $set: { id: `${draftId}:${candidate.id}`, edition_id: draftId, position, story_id: story.id, source_id: story.first.source_id, source_type: candidate.source_type, tier: candidate.tier, section: candidate.section, event_date: story.first.event_date, disposition: result.disposition, result } }, { upsert: true });
   await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: story.id }, { $set: { status: result.disposition === "held" ? "held" : "candidate", step: "authoring", ...(result.disposition === "held" ? { reason: `held: ${(result.validation_errors ?? [result.error]).filter(Boolean).join(", ")}` } : {}) } });
-  const refreshed = await getEntries(deps.db, draftId);
+  const refreshed = [...entries, { story_id: story.id, section: candidate.section, disposition: String(result.disposition), result }];
   const passedAfter = new Map<string, number>();
   for (const entry of refreshed) if (entry.disposition === "checks_passed") passedAfter.set(entry.section, (passedAfter.get(entry.section) ?? 0) + 1);
   const more = pendingOf(new Set(refreshed.map((entry) => entry.story_id)), passedAfter).length > 0;
@@ -450,7 +472,10 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const collection = drafts(deps.db);
   const draft = await collection.findOne({ id: draftId });
   if (!draft) throw new Error(`No authoring draft: ${draftId}`);
-  if (draft.status === "built" || draft.status === "published") return { edition: draft.published, emailPreview: draft.email_preview, summary: draft.summary, tokens: draft.tokens };
+  if (draft.status === "built" || draft.status === "published") {
+    const emailOutput = recoveredEmailOutput(draft.email_preview);
+    return { edition: draft.published, emailPreview: emailOutput.status === "available" ? emailOutput.preview : null, emailOutput, summary: draft.summary, tokens: draft.tokens };
+  }
   if (draft.status !== "ready") return { done: false, more: true };
   let entries = await getEntries(deps.db, draftId);
   const reviewed = await reviewedLocationSources(deps.db, draft.location_id);
@@ -478,8 +503,11 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const itemStories = ordered.map((entry) => (entry.result.writing_source ?? entry.result.story) as writer.StoryInput);
   const itemDrafts = ordered.map((entry) => entry.result.draft as writer.ItemDraft);
   const week = weekLabel(draft.window_start, draft.window_end);
-  const front = await writer.writeFront(deps.model, community(draft.location_name), week, itemStories, itemDrafts);
-  const email = await writer.writeEmail(deps.model, community(draft.location_name), week, itemStories, itemDrafts, { headline: String(front.headline), intro: String(front.intro) });
+  const preferences = currentPublicationPreferences()?.explicit_values;
+  const front = await writer.writeFront(deps.model, community(draft.location_name), week, itemStories, itemDrafts, preferences);
+  const email = emailAvailable()
+    ? await writer.writeEmail(deps.model, community(draft.location_name), week, itemStories, itemDrafts, { headline: String(front.headline), intro: String(front.intro) }, preferences)
+    : null;
   const now = Date.now() / 1000;
   const sourceName = (sourceId: string, url?: string | null) => (sourceId.startsWith("sweep:") ? hostOf(url) : null) || (draft.source_results.find((result) => result.source_id === sourceId)?.name ?? "Local source");
   const illustrated = currentOptions().image_mode === "illustrated";
@@ -509,18 +537,19 @@ export async function finishAuthoring(deps: AuthoringDeps, draftId: string) {
   const payload: EditionPayload & { media_mode?: "illustrated" | "photos" } = { id: draftId, location_id: draft.location_id, location_name: draft.location_name, window_start: draft.window_start, window_end: draft.window_end, published_at: now, headline: String(front.headline), intro: String(front.intro), items: visualItems, coverage: editionCoverage(draft.source_results), corrections: [] as Array<{ story_id: string; reason: string; created_at: number }>,
     ...(currentOptions().image_mode ? { media_mode: illustrated ? "illustrated" as const : "photos" as const } : {}) };
   if (!validEditionShape(payload)) throw new Error("Generated edition does not match the published edition contract");
-  const emailPreview = previewContent(draft.location_name, draft.location_id, { headline: payload.headline, intro: payload.intro, email: email as { blurb?: string } });
+  const emailPreview = email ? previewContent(draft.location_name, draft.location_id, { headline: payload.headline, intro: payload.intro, email: email as { blurb?: string } }) : null;
+  const emailOutput: EmailOutput = emailPreview ? { status: "available", preview: emailPreview } : unavailableEmailOutput();
   const allEntries = await getEntries(deps.db, draftId);
-  const summary = { included: passed.length, by_section: Object.fromEntries([...perSection].map(([section, count]) => [section, Math.min(count, caps.publishedPerSection)])), local_included: passed.filter((entry) => entry.tier === "local").length, wider_included: passed.filter((entry) => WIDER_TIERS.has(entry.tier)).length, held: allEntries.filter((entry) => entry.disposition === "held").length, attempted: allEntries.length, not_attempted: draft.candidates.length - allEntries.length, events: draft.event_count, stories: draft.story_count, ranked: draft.candidates.length, funnel: draft.funnel, ranking: draft.ranking, duration_seconds: Math.round((Date.now() - Number(draft.started_at_ms)) / 1000) / 1000, model: draft.model, provider: draft.provider, policy: draft.validation_policy, held_reasons: heldReasons(allEntries), model_errors: draft.model_errors ?? [], front, email };
+  const summary = { included: passed.length, by_section: Object.fromEntries([...perSection].map(([section, count]) => [section, Math.min(count, caps.publishedPerSection)])), local_included: passed.filter((entry) => entry.tier === "local").length, wider_included: passed.filter((entry) => WIDER_TIERS.has(entry.tier)).length, held: allEntries.filter((entry) => entry.disposition === "held").length, attempted: allEntries.length, not_attempted: draft.candidates.length - allEntries.length, events: draft.event_count, stories: draft.story_count, ranked: draft.candidates.length, funnel: draft.funnel, ranking: draft.ranking, duration_seconds: Math.round((Date.now() - Number(draft.started_at_ms)) / 1000) / 1000, model: draft.model, provider: draft.provider, policy: draft.validation_policy, held_reasons: heldReasons(allEntries), model_errors: draft.model_errors ?? [], front, email, email_output: emailOutput };
   // Built, not published: a person reviews it and publishes it to the reader (orchestration/publish.ts).
   const sourceCounts: Record<string, number> = {};
   for (const entry of passed) sourceCounts[entry.source_id] = (sourceCounts[entry.source_id] ?? 0) + 1;
-  await collection.updateOne({ id: draftId }, { $set: { status: "built", built_at: now, published_at: now, published: payload, email_preview: emailPreview, summary, front, email, held_reasons: summary.held_reasons, model_errors: summary.model_errors, source_counts: sourceCounts } });
+  await collection.updateOne({ id: draftId }, { $set: { status: "built", built_at: now, published_at: now, published: payload, email_preview: emailPreview, email_output: emailOutput, summary, front, email, held_reasons: summary.held_reasons, model_errors: summary.model_errors, source_counts: sourceCounts } });
   const publishedIds = new Set(items.map((item) => item.story_id));
   await collectedItems(deps.db).updateMany({ run_id: draft.run_id, story_id: { $in: [...publishedIds] } }, { $set: { status: "published", step: "published", reason: null } });
   await collectedItems(deps.db).updateMany({ run_id: draft.run_id, status: "candidate" }, { $set: { status: "not_selected", reason: `candidate not published: the section already had ${caps.publishedPerSection} stories`, step: "authoring" } });
   deps.log.info("Edition built", { edition_id: draftId, location_id: draft.location_id, included: summary.included, held: summary.held, attempted: summary.attempted, front_fallback: front.fallback, duration_seconds: summary.duration_seconds });
-  return { edition: payload, emailPreview, summary, tokens: draft.tokens };
+  return { edition: payload, emailPreview, emailOutput, summary, tokens: draft.tokens };
 }
 
 export async function latestPublished(deps: Pick<AuthoringDeps, "db"> & Partial<AuthoringDeps>, locationId: string) {

@@ -4,7 +4,7 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { loadSettings, lightSettings } from "../../core/config";
 import type { HttpTransport } from "../../core/http";
 import { createRuntime, UsageRecordingRuntime, withModelUsageContext, type ModelCall, type ModelRuntime } from "../../model/runtime";
-import { detailedModelUsage, modelPriceOverrides, mongoUsageSink, UNASSIGNED_USAGE } from "../../model/usage";
+import { detailedModelUsage, modelPriceOverrides, modelUsageSummary, mongoUsageSink, UNASSIGNED_USAGE } from "../../model/usage";
 
 let server: MongoMemoryServer;
 let client: MongoClient;
@@ -22,6 +22,29 @@ const call = (overrides: Partial<ModelCall> = {}): ModelCall => ({
 });
 
 describe("model usage aggregation", () => {
+  it("keeps Health totals unknown when an unpriced model is mixed with a priced model having no recent calls", async () => {
+    await mongoUsageSink(db, () => now - 2 * DAY)(call());
+    await mongoUsageSink(db, () => now - 1000)(call({ model: "unpriced" }));
+    await mongoUsageSink(db, () => now + DAY)(call());
+    const report = await modelUsageSummary(db, config.modelProviders, now);
+    expect(report.totals.last_24h).toMatchObject({ calls: 1, estimated_cost_usd: null, known_cost_usd: null, cost_complete: false });
+    expect(report.totals.last_7d).toMatchObject({ calls: 2, estimated_cost_usd: null, cost_complete: false });
+    expect(report.totals.last_7d.known_cost_usd).toBeCloseTo(.0036);
+    expect(report.providers.find((row) => row.model === "unpriced")?.observed).toEqual({ last_call_at: (now - 1000) / 1000, last_success_at: (now - 1000) / 1000, last_failure_at: null });
+  });
+
+  it("distinguishes explicit free prices from missing tokens and preserves detailed known subtotals", async () => {
+    const free = { ...config.modelProviders[0], usage: { ...config.modelProviders[0].usage, inputCostPerMTok: 0, outputCostPerMTok: 0 } };
+    await mongoUsageSink(db, () => now)(call());
+    const complete = await modelUsageSummary(db, [free], now);
+    expect(complete.totals.last_24h).toMatchObject({ estimated_cost_usd: 0, known_cost_usd: 0, cost_complete: true });
+    await mongoUsageSink(db, () => now)(call({ output_tokens: null }));
+    const incomplete = await modelUsageSummary(db, config.modelProviders, now);
+    expect(incomplete.totals.last_24h).toMatchObject({ estimated_cost_usd: null, calls_without_tokens: 1, cost_complete: false });
+    expect(incomplete.totals.last_24h.known_cost_usd).toBeCloseTo(.0036);
+    expect((await detailedModelUsage(db, config.modelProviders, { days: 1 }, now)).totals.estimated_cost_usd).toBeCloseTo(.0036);
+  });
+
   it("reconciles model/location/role/day totals, counts fallbacks and leaves unknown costs unpriced", async () => {
     await db.collection<{ _id: string; name: string }>("locations").insertOne({ _id: "town-wa", name: "Town, WA" });
     const sink = mongoUsageSink(db, () => now - 1000);

@@ -1,10 +1,14 @@
 import { cookies } from "next/headers";
 import { INTERNAL_COOKIE, validInternalToken } from "./internal-access";
 import { currentPrincipal } from "./admin-session";
+import { isOperator } from "@/pipeline/accounts/identity";
 
 const passwordUnlocked = async () => validInternalToken((await cookies()).get(INTERNAL_COOKIE)?.value, process.env.NEWSBEE_INTERNAL_PASSWORD);
-/** A signed-in journalist needs no password. The password cookie is checked first, so it never needs a sign-in lookup. */
-const signedIn = async () => Boolean(await currentPrincipal().catch(() => null));
+/** Signed-in Newsbee operators can open internal operational maps. */
+const signedIn = async () => {
+  const principal = await currentPrincipal().catch(() => null);
+  return principal ? isOperator(principal) : false;
+};
 
 export async function internalUnlocked() {
   return await passwordUnlocked() || await signedIn();

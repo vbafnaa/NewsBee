@@ -15,6 +15,7 @@ import { enqueue, runJobs } from "./jobs";
 import { getRun, RunConflict, runs } from "./runs";
 import { IMAGE_RESULTS, imageResultId, type ImageResult } from "../images/pipeline";
 import { getLocation } from "../communities/locations";
+import type { FollowPayload } from "./orchestrator";
 
 const now = () => Date.now() / 1000;
 
@@ -76,6 +77,38 @@ export async function recollectSource(db: Db, runId: string, sourceId: string, b
   const jobId = await enqueue(db, { kind: "collect_source", run_id: runId, location_id: run.location_id, payload: { task }, dedupe_key: `collect:${runId}:${sourceId}:${Math.round(at)}` });
   await runs(db).updateOne({ _id: runId }, { $set: { "sources.$[source].job_id": jobId } }, { arrayFilters: [{ "source.source_id": sourceId }] });
   return { job_id: jobId };
+}
+
+/**
+ * Read the links on one item's page (a story an editor accepted), one level deeper than it was found,
+ * before writing starts. What they lead to is added to the run, marked with the page and the editor;
+ * nothing the run has is replaced. The source's access review and budgets apply as when collecting it.
+ */
+export async function followPageLinks(db: Db, runId: string, itemId: string, by: string) {
+  const run = await getRun(db, runId);
+  if (!run) throw new Error(`Unknown run: ${runId}`);
+  await getLocation(db, run.location_id);
+  if (!["collecting", "awaiting_authoring"].includes(run.status)) throw new RunConflict("A page's links can be read only before writing starts. Reassemble the run first.");
+  const item = await collectedItems(db).findOne({ _id: itemId, run_id: runId });
+  if (!item) throw new Error(`Unknown item: ${itemId}`);
+  if (!item.url) throw new RunConflict("This story has no page to read");
+  const task = (run.collection_tasks ?? []).find((candidate) => candidate.source_id === item.source_id);
+  if (!task) throw new Error(`Source is not part of this run: ${item.source_id}`);
+  if (task.type !== "web") throw new RunConflict("Only stories from website sources have page links to read");
+  const source = run.sources.find((candidate) => candidate.source_id === item.source_id);
+  if (source?.status === "pending") throw new RunConflict("This source is still being collected. Read the page's links once it finishes.");
+  const depth = typeof item.facts?.crawl_depth === "number" ? item.facts.crawl_depth : item.found?.crawl_depth ?? 1;
+  const at = now();
+  const moved = await runs(db).updateOne({ _id: runId, status: { $in: ["collecting", "awaiting_authoring"] } }, {
+    $set: { status: "collecting", updated_at: at, "sources.$[source].status": "pending" },
+    $push: { stage_transitions: { status: "collecting", by, at } },
+  }, { arrayFilters: [{ "source.source_id": item.source_id }] });
+  if (!moved.matchedCount) throw new RunConflict("The run changed. Reload and retry.");
+  const payload: FollowPayload = { task, item_id: itemId, page: item.url, depth, title: item.title, by,
+    section: item.section ?? (typeof item.facts?.section_hint === "string" ? item.facts.section_hint : item.found?.section_hint ?? null),
+    site_name: typeof item.facts?.site_name === "string" ? item.facts.site_name : null, source_status: source?.status ?? "completed" };
+  const jobId = await enqueue(db, { kind: "follow_links", run_id: runId, location_id: run.location_id, payload, dedupe_key: `follow:${runId}:${itemId}:${Math.round(at)}` });
+  return { job_id: jobId, page: item.url, depth: depth + 1 };
 }
 
 /** Throw away the draft and assemble again (after editor overrides, or new sources). */

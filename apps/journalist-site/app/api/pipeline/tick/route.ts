@@ -3,7 +3,7 @@ import { pipelineDeps } from "@/lib/pipeline";
 import { queueNextJob } from "@/lib/pipeline-queue";
 import { logger } from "@/pipeline/core/log";
 import { tick, type OrchestratorDeps } from "@/pipeline/orchestration/orchestrator";
-import { dispatchPlan } from "@/pipeline/orchestration/dispatch";
+import { dispatchPlan, maintain } from "@/pipeline/orchestration/dispatch";
 import { recordSchedulerSafely } from "@/pipeline/orchestration/scheduler";
 
 export const maxDuration = 300;
@@ -19,6 +19,7 @@ async function handle(request: Request) {
     deps = await pipelineDeps();
     if (deps.settings.mode !== "cloud") return Response.json(await tick(deps, { budgetMs: 30_000 }));
 
+    await maintain(deps);
     const plan = await dispatchPlan(deps.db, deps.settings.collectConcurrency);
     const workers = plan.send || (plan.wakeIn !== null ? 1 : 0);
     for (let index = 0; index < workers; index += 1) await queueNextJob();

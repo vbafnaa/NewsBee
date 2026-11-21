@@ -7,16 +7,18 @@ import { HttpStatusError } from "../core/http";
  * attempts.
  */
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Db, Filter } from "mongodb";
 import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { ModelRateLimitError } from "../model/runtime";
 import { safeError } from "../core/redaction";
+import { withSiteWriter } from "../../../../shared/restore-maintenance";
 
-export const JOB_KINDS = ["discover", "agent_round", "review_map", "finish_map", "plan_sources", "collect_source", "author_start", "author_rank", "author_story", "image_story", "stock_story", "author_finish"] as const;
+export const JOB_KINDS = ["discover", "agent_round", "review_map", "finish_map", "plan_sources", "collect_source", "follow_links", "author_start", "author_rank", "author_story", "image_story", "stock_story", "author_finish"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 /** These can overlap within a run. The rest build on each other, so a run does them one at a time. */
-const PARALLEL_KINDS: readonly JobKind[] = ["discover", "collect_source"];
+const PARALLEL_KINDS: readonly JobKind[] = ["discover", "collect_source", "follow_links"];
 export function isParallelKind(kind: JobKind) { return PARALLEL_KINDS.includes(kind); }
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
@@ -128,7 +130,12 @@ export async function enqueue(
 export async function recoverExpired(db: Db) {
   const current = now();
   const expired = await jobs(db).find({ status: "running", lease_until: { $lt: current } }).toArray();
+  const recovered: Job[] = [];
   for (const job of expired) {
+    const run = await db.collection<{ _id: string; publication_generation_id?: string }>(COLLECTIONS.runs).findOne({ _id: job.run_id });
+    if (run?.publication_generation_id && await db.collection(COLLECTIONS.publicationGenerations).findOne({
+      _id: run.publication_generation_id as never, status: "cancelling",
+    })) continue;
     const exhausted = job.attempts >= MAX_ATTEMPTS;
     const updated = await jobs(db).updateOne(
       { _id: job._id, status: "running", claim_token: job.claim_token },
@@ -143,8 +150,9 @@ export async function recoverExpired(db: Db) {
       },
     );
     if (updated.modifiedCount) log.warn("lease_expired", { kind: job.kind, job_id: job._id, failed: exhausted });
+    if (updated.modifiedCount && exhausted) recovered.push(job);
   }
-  return expired.filter((job) => job.attempts >= MAX_ATTEMPTS);
+  return recovered;
 }
 
 /** Atomically claim the oldest available job. */
@@ -154,14 +162,14 @@ export async function claim(db: Db, kinds?: readonly JobKind[], jobId?: string, 
   if (kinds) filter.kind = { $in: [...kinds] };
   if (jobId) filter._id = jobId;
   if (runId) filter.run_id = runId;
-  return jobs(db).findOneAndUpdate(
+  return withSiteWriter(db, () => jobs(db).findOneAndUpdate(
     filter,
     {
       $set: { status: "running", started_at: current, lease_until: current + LEASE_SECONDS, claim_token: randomUUID(), dispatched_at: current, dispatch_error: null },
       $inc: { attempts: 1 },
     },
     { sort: { created_at: 1, _id: 1 }, returnDocument: "after" },
-  );
+  ));
 }
 
 /** Queue many jobs in one write, in order. A job already queued is left alone. */
@@ -223,16 +231,35 @@ export type Lease = { id: string; token: string };
 async function acquireLease(db: Db, id: string): Promise<Lease | null> {
   const token = randomUUID();
   try {
-    const lease = await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOneAndUpdate(
+    const lease = await withSiteWriter(db, () => db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOneAndUpdate(
       { _id: id, lease_until: { $lte: now() } },
       { $set: { token, lease_until: now() + LEASE_SECONDS } },
       { upsert: true, returnDocument: "after" },
-    );
+    ));
     return lease?.token === token ? { id, token } : null;
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 11000) return null;
     throw error;
   }
+}
+
+const ADMISSION_LEASE = "run-admission";
+
+/** Serializes admission decisions that span the run and publication-generation collections. */
+export function acquireAdmissionLease(db: Db) {
+  return acquireLease(db, ADMISSION_LEASE);
+}
+
+/** Advisory only: never claim, renew or release the admission lease while inspecting it. */
+export async function admissionLeaseActive(db: Db) {
+  return Boolean(await db.collection<WorkerLease>(COLLECTIONS.heartbeat).findOne({
+    _id: ADMISSION_LEASE, lease_until: { $not: { $lte: now() } },
+  }, { projection: { _id: 1 } }));
+}
+
+/** Reconciliation is idempotent, but one worker owns a parent transition at a time. */
+export function acquirePublicationGenerationLease(db: Db, generationId: string) {
+  return acquireLease(db, `publication-generation:${generationId}`);
 }
 
 export async function releaseLease(db: Db, lease: Lease) {
@@ -258,6 +285,38 @@ export async function acquireSlot(db: Db, slots: number): Promise<Lease | null> 
 
 /** A run's serial jobs share this, so they stay in order while other work overlaps. */
 export function acquireRunLease(db: Db, runId: string) { return acquireLease(db, `run-serial:${runId}`); }
+
+const jobExecution = new AsyncLocalStorage<{ db: Db; job: Job }>();
+
+export async function assertJobExecutionCurrent() {
+  const active = jobExecution.getStore();
+  if (active && !await jobs(active.db).findOne({
+    _id: active.job._id, status: "running", claim_token: active.job.claim_token,
+  }, { projection: { _id: 1 } })) throw new LostLeaseError(`Lost job lease: ${active.job._id}`);
+}
+
+/** Unlike dispatch expiry, settlement proves that this particular worker exited. */
+export async function withJobExecution<T>(db: Db, job: Job, work: () => Promise<T>): Promise<T> {
+  if (!job.claim_token) return work();
+  const lease = { id: `job-execution:${job._id}:${job.claim_token}`, token: job.claim_token };
+  await db.collection(COLLECTIONS.heartbeat).insertOne({
+    _id: lease.id as never, token: lease.token, run_id: job.run_id,
+    execution_active: true, lease_until: job.lease_until,
+  });
+  try {
+    return await jobExecution.run({ db, job }, async () => {
+      await assertJobExecutionCurrent();
+      return work();
+    });
+  }
+  finally { await releaseLease(db, lease); }
+}
+
+export async function activeRunExecutions(db: Db, runIds: string[]) {
+  return db.collection(COLLECTIONS.heartbeat).countDocuments({
+    run_id: { $in: runIds }, execution_active: true, token: { $ne: null },
+  });
+}
 
 /** Everything stopped, for removing a location: no slot may be in use. */
 export async function acquireWorker(db: Db) {
@@ -330,9 +389,9 @@ export async function runJobs(db: Db, runId: string) {
 }
 
 /** Discard queued work; in-flight work retains its lease until the worker exits. */
-export async function cancelRunJobs(db: Db, runId: string) {
+export async function cancelRunJobs(db: Db, runId: string, kinds?: JobKind[]) {
   return jobs(db).updateMany(
-    { run_id: runId, status: "pending" },
+    { run_id: runId, status: "pending", ...(kinds ? { kind: { $in: kinds } } : {}) },
     { $set: { status: "cancelled", completed_at: now(), lease_until: null, claim_token: null, error: "Run cancelled" } },
   );
 }

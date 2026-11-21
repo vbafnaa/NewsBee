@@ -1,0 +1,200 @@
+---
+import EditionLayout from "../components/edition/EditionLayout.astro";
+import SiteHeader from "../components/edition/SiteHeader.astro";
+import SiteFooter from "../components/edition/SiteFooter.astro";
+import { legacyReaderDiscovery, publicationBrowseCatalog } from "../lib/reader-data";
+import { BROWSE_TOPICS, browseDate, browseFilters, browseHref, buildBrowsePage, editionHref } from "../lib/browse-editions";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const filters = browseFilters(Astro.url.searchParams);
+let unavailable = false;
+const [data, publicationCatalog] = await Promise.all([
+  legacyReaderDiscovery({ locationId: filters.location, editionId: filters.edition, catalog: true }),
+  publicationBrowseCatalog(undefined, { locationId: filters.location, editionId: filters.edition }),
+]).catch((error) => {
+  console.error("Published story browser unavailable", error);
+  unavailable = true;
+  return [{ locations: [], editions: [] }, { locations: [], releases: [] }] as const;
+});
+const browse = buildBrowsePage({
+  locations: [...data.locations, ...publicationCatalog.locations],
+  editions: data.editions,
+  publicationReleases: publicationCatalog.releases,
+  publicationLocations: publicationCatalog.locations,
+}, filters, base);
+if (unavailable) Astro.response.status = 503;
+else if (browse.invalidReason) Astro.response.status = filters.topic && !BROWSE_TOPICS.some((topic) => topic.id === filters.topic) ? 400 : 404;
+const community = browse.selectedLocation;
+const town = community?.name.split(",")[0].trim() ?? "All communities";
+const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" });
+const more = { heading: "Get involved", links: [
+  { label: "Find another neighborhood", href: base || "/" },
+  ...(community ? [
+    { label: "Latest edition", href: browse.latestHref },
+    { label: "Sign up for weekly editions", href: `${base}/subscribe?location=${encodeURIComponent(community.id)}` },
+    { label: "Share your story", href: `${base}/share?location=${encodeURIComponent(community.id)}` },
+  ] : []),
+] };
+---
+<EditionLayout title={`${community ? `${town} stories and past editions` : "Browse local stories"} | Newsbee`}>
+  <SiteHeader town={town} today={today} visible={[]} homeHref={base || "/"} pageHref={browse.latestHref}
+    locationId={community?.id} subscribeHref={community ? browse.latestHref : `${base}#landing`}
+    subscribeLabel={community ? "Latest editions" : "Find your community"} />
+  <main id="main" class="nb-container browser">
+    <header class="browse-heading">
+      <p class="nb-label">Your community, beyond this week</p>
+      <h1>Stories and past editions</h1>
+      <p>Find local stories across published editions, newest first. Event dates and details may have changed since publication.</p>
+      {community && <a class="nb-link latest" href={browse.latestHref}>{browse.latestLabel}</a>}
+    </header>
+
+    {unavailable ? <section class="empty-state" role="alert">
+      <h2>Stories are unavailable right now</h2>
+      <p>Please try again in a moment.</p>
+      <a class="nb-link" href={Astro.url.href}>Try again</a>
+    </section> : <>
+      <div class="filters">
+        <form class="community-filter" method="get" action={`${base}/browse`}>
+          <label>Community
+            <select name="location">
+              <option value="" selected={!filters.location}>All communities</option>
+              {browse.locations.map((location) => <option value={location.id} selected={filters.location === location.id}>{location.name}</option>)}
+            </select>
+          </label>
+          {filters.q && <input type="hidden" name="q" value={filters.q} />}
+          {filters.topic && <input type="hidden" name="topic" value={filters.topic} />}
+          <button class="nb-button nb-button-quiet" type="submit">Choose community</button>
+        </form>
+        <form class="search-filter" method="get" action={`${base}/browse`} role="search" aria-label="Published stories">
+          {community && <input type="hidden" name="location" value={community.id} />}
+          <label class="query">Search stories
+            <input name="q" type="search" value={filters.q} placeholder="A place, topic, or headline" maxlength="200" />
+          </label>
+          <label>Topic
+            <select name="topic">
+              <option value="" selected={!filters.topic}>All topics</option>
+              {BROWSE_TOPICS.map((topic) => <option value={topic.id} selected={filters.topic === topic.id}>{topic.label}</option>)}
+            </select>
+          </label>
+          {community && <label>Edition
+            <select name="edition" aria-describedby="edition-filter-note">
+              <option value="" selected={!filters.edition}>All published editions</option>
+              {browse.editionOptions.map((edition) => <option value={edition.id} selected={filters.edition === edition.id}>
+                {edition.kind === "publication" ? `${edition.publicationName} · ` : ""}{browseDate(edition.publishedAt)}
+              </option>)}
+            </select>
+          </label>}
+          <button class="nb-button nb-button-primary" type="submit">Find stories</button>
+        </form>
+        {community && <p id="edition-filter-note" class="filter-note">Choose an indexed issue to search it. <a class="nb-link" href="#editions">Browse full publication and edition history</a>{browse.historyTotal > 50 && " for older issues."}</p>}
+        {browse.publicationReleaseCount > 0 && <p class="filter-note">Search the latest publication editions here. For older stories, open a past edition below or visit the publication's archive.</p>}
+      </div>
+
+      {browse.invalidReason ? <section class="empty-state" role="alert">
+        <h2>We couldn’t find that selection</h2>
+        <p>{browse.invalidReason}</p>
+        <a class="nb-link" href={browseHref(base)}>Browse published stories</a>
+      </section> : <>
+        <section id="stories" class="story-results" aria-labelledby="results-title">
+          <div class="results-heading">
+            <h2 id="results-title">{filters.q ? `Results for “${filters.q}”` : community ? `Stories from ${town}` : "Across our communities"}</h2>
+            <p class="muted">{browse.total} {browse.total === 1 ? "story" : "stories"}{browse.selectedEdition ? ` in the ${browseDate(browse.selectedEdition.publishedAt)} edition` : " across published editions"}</p>
+          </div>
+          {browse.total ? <ol class="stories">
+            {browse.stories.map((story) => <li class="story" data-browse-story>
+              <p class="nb-label">{story.topicLabel} · {story.locationName}{story.publicationName ? ` · ${story.publicationName}` : ""}</p>
+              <h3><a class="nb-card-link" href={story.href}><span class="nb-title">{story.headline}</span></a></h3>
+              <p class="summary">{story.summary}</p>
+              <p class="story-date">Published {browseDate(story.publishedAt)}{story.eventDate && ` · Story date: ${story.eventDate.slice(0, 10)}`}</p>
+              <a class="nb-link edition-link" href={story.editionHref}>Read this {story.kind === "publication" ? "publication release" : "edition"}</a>
+              {story.versionCount > 1 && <details class="versions">
+                <summary>Also published in {story.versionCount - 1} {story.versionCount === 2 ? "other edition" : "other editions"}</summary>
+                <ul>{story.otherVersions.map((version) => <li><a class="nb-link" href={version.href}>Story from {browseDate(version.publishedAt)}</a></li>)}</ul>
+                {story.versionCount > story.otherVersions.length + 1 && <p>Showing the five most recent other versions. Select an edition above to find older versions.</p>}
+              </details>}
+            </li>)}
+          </ol> : <div class="empty-state">
+            <h3>No published stories match this search</h3>
+            <p>Try fewer words, another topic, or all editions.</p>
+            <a class="nb-link" href={browseHref(base, { location: filters.location })}>Clear the search</a>
+          </div>}
+          {browse.pages > 1 && <nav class="pagination" aria-label="Story result pages">
+            {browse.page > 1 && <a class="nb-button nb-button-quiet" rel="prev" href={`${browseHref(base, { ...browse.filters, page: browse.page - 1 })}#stories`}>Previous stories</a>}
+            <span>Page {browse.page} of {browse.pages}</span>
+            {browse.page < browse.pages && <a class="nb-button nb-button-quiet" rel="next" href={`${browseHref(base, { ...browse.filters, page: browse.page + 1 })}#stories`}>More stories</a>}
+          </nav>}
+        </section>
+
+        <section id="editions" class="edition-history" aria-labelledby="history-title">
+          <div class="results-heading">
+            <h2 id="history-title">{community ? `${town} edition history` : "Published editions"}</h2>
+            <p class="muted">{browse.historyTotal} published {browse.historyTotal === 1 ? "issue" : "issues"}. Publication releases appear once even when they cover several communities.</p>
+          </div>
+          {browse.history.length ? <ol class="editions">
+            {browse.history.map((edition) => <li>
+              <div>
+                <p class="nb-label">{edition.kind === "publication" ? `${edition.publicationName} · Publication release` : "Newsbee neighborhood edition"} · {browseDate(edition.publishedAt)}{!community && ` · ${edition.locationName}`}{edition.withdrawn ? " · Withdrawn" : ""}</p>
+                <h3><a class="nb-card-link" href={edition.href}><span class="nb-title">{edition.headline}</span></a></h3>
+                <p class="muted">{edition.storyCount === null ? `${edition.windowStart} to ${edition.windowEnd}` : `${edition.storyCount} ${edition.storyCount === 1 ? "story" : "stories"}`}</p>
+              </div>
+              <div class="edition-actions">
+                <a class="nb-link" href={edition.href}>Read {edition.kind === "publication" ? "release" : "edition"}</a>
+                {edition.searchable && <a class="nb-link" href={browseHref(base, { location: edition.locationId, edition: edition.id })}>Search this {edition.kind === "publication" ? "release" : "edition"}</a>}
+              </div>
+            </li>)}
+          </ol> : <p>No published editions are available yet.</p>}
+          {browse.historyPages > 1 && <nav class="pagination" aria-label="Edition history pages">
+            {browse.historyPage > 1 && <a class="nb-button nb-button-quiet" href={`${browseHref(base, { ...browse.filters, historyPage: browse.historyPage - 1 })}#editions`}>Newer editions</a>}
+            <span>Page {browse.historyPage} of {browse.historyPages}</span>
+            {browse.historyPage < browse.historyPages && <a class="nb-button nb-button-quiet" href={`${browseHref(base, { ...browse.filters, historyPage: browse.historyPage + 1 })}#editions`}>Older editions</a>}
+          </nav>}
+        </section>
+      </>}
+    </>}
+  </main>
+  <SiteFooter place={community?.name ?? "our communities"} visible={[]} homeHref={base || "/"} pageHref={browse.latestHref}
+    neighborhoods={browse.locations.map((location) => ({ label: location.name.split(",")[0].trim(), href: editionHref(base, location.id) }))} more={more} />
+</EditionLayout>
+
+<style>
+  main.browser { gap: var(--space-12); padding-top: var(--space-12); }
+  .browse-heading { display: grid; gap: var(--space-4); max-width: 48rem; }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  h2 { font-size: var(--text-h2); line-height: var(--leading-h2); letter-spacing: var(--tracking-h2); overflow-wrap: anywhere; }
+  h3 { font-size: var(--text-h3); line-height: var(--leading-h3); overflow-wrap: anywhere; }
+  .latest { justify-self: start; }
+  .filters { display: grid; gap: var(--space-5); padding: var(--space-6); background: var(--color-paper); border-radius: var(--radius-xl); }
+  form { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-4); }
+  label { display: grid; gap: var(--space-2); flex: 1 1 11rem; min-width: 0; font-size: var(--text-sm); font-weight: 600; }
+  .query { flex: 2 1 16rem; }
+  .community-filter label { max-width: 30rem; }
+  input, select { min-width: 0; width: 100%; min-height: 2.75rem; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); background: var(--color-surface); color: var(--color-ink); font: 400 var(--text-base)/1.4 var(--font-body); }
+  .filters button { min-height: 2.75rem; justify-content: center; }
+  .filter-note, .muted, .story-date, .edition-link, .versions, .edition-actions { color: var(--color-muted); font-size: var(--text-sm); }
+  .story-results, .edition-history { display: grid; gap: var(--space-6); min-width: 0; }
+  .results-heading { display: grid; gap: var(--space-2); }
+  ol { list-style: none; margin: 0; padding: 0; }
+  .stories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-8); }
+  .story { display: flex; flex-direction: column; gap: var(--space-3); padding-block: var(--space-5); border-top: 1px solid var(--color-line); min-width: 0; }
+  .summary { color: var(--color-ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .story-date { margin-top: auto; }
+  .story .nb-label, .story-date, .editions .nb-label { overflow-wrap: anywhere; }
+  .edition-link { align-self: flex-start; color: var(--color-ink); }
+  .versions { padding-top: var(--space-2); }
+  .versions summary { cursor: pointer; }
+  .versions ul { display: grid; gap: var(--space-2); padding-left: var(--space-5); }
+  .editions li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); border-top: 1px solid var(--color-line); padding-block: var(--space-5); }
+  .editions li > div:first-child { display: grid; gap: var(--space-2); min-width: 0; }
+  .edition-actions { display: grid; gap: var(--space-2); flex-shrink: 0; }
+  .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-4); font-size: var(--text-sm); }
+  .empty-state { display: grid; justify-items: start; gap: var(--space-3); padding-block: var(--space-6); }
+  @media (max-width: 40rem) {
+    main.browser { padding-top: var(--space-8); gap: var(--space-8); }
+    .filters { padding: var(--space-5); }
+    form { align-items: stretch; flex-direction: column; }
+    label, .query { flex: auto; width: 100%; }
+    .stories { grid-template-columns: 1fr; gap: var(--space-4); }
+    .editions li { align-items: flex-start; flex-direction: column; gap: var(--space-3); }
+    .edition-actions { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); }
+  }
+</style>

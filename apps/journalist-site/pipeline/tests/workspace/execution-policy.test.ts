@@ -4,12 +4,13 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { credentialProfile, revokeCredentialProfile, saveCredentialProfile } from "../../accounts/credentials";
 import { principalById, principalForEmail, type Principal } from "../../accounts/identity";
-import { assertBindingCurrent, authorizePaidAction, capabilityReasons, executionModels, infrastructureSettings, normalizedPlan, personalSettings, prepareBinding } from "../../accounts/execution";
+import { assertBindingCurrent, authorizePaidAction, capabilityReasons, executionModels, infrastructureSettings, normalizedPlan, personalSettings, prepareBinding, prepareManagedBinding } from "../../accounts/execution";
 import { loadSettings } from "../../core/config";
-import { NO_MODEL, personalRequestDeps, runtimesForRun } from "../../accounts/runtime";
+import { managedRequestDeps, NO_MODEL, personalRequestDeps, runtimesForRun } from "../../accounts/runtime";
 import { withRunContext, resolveRunOptions } from "../../core/run-options";
 import type { HttpRequest, HttpTransport } from "../../core/http";
 import { redact, safeError } from "../../core/redaction";
+import { withModelUsageContext } from "../../model/runtime";
 import { ensureRunIndexes, getRun, newRun, runs, type PipelineRun } from "../../orchestration/runs";
 import { executeJob, runOne, startMapRun, type OrchestratorDeps } from "../../orchestration/orchestrator";
 import { ensureJobIndexes, enqueue, runJobs } from "../../orchestration/jobs";
@@ -17,7 +18,7 @@ import { expireOverdueRuns } from "../../orchestration/diagnostics";
 import { getArtifacts, type ArtifactStore } from "../../storage/artifacts";
 import { COLLECTIONS } from "../../storage/mongo";
 
-let server: MongoMemoryServer, client: MongoClient, db: Db, owner: Principal, editor: Principal, other: Principal, deps: OrchestratorDeps;
+let server: MongoMemoryServer, client: MongoClient, db: Db, owner: Principal, editor: Principal, other: Principal, admin: Principal, deps: OrchestratorDeps;
 const requests: HttpRequest[] = [];
 const options = () => resolveRunOptions({ mode: "manual", flow: "current", paid: { gemini: 10, openai_compatible: 10, agent_model: 10 } });
 const location = (id: string) => ({ id, name: `Fixture ${id}`, state: "WA", systems: [], government: null });
@@ -46,12 +47,36 @@ async function boundRun(choices = options(), principal = editor) {
   await runs(db).insertOne(run);
   return run;
 }
+async function managedRun(choices = options(), principal = editor) {
+  const run = newRun(location("one"), { by: principal.email, kind: "manual" }, "2099-01-01", ["2099-01-01", "2099-01-08"], [], null, null, choices);
+  run.admission = "publication";
+  run.publication_id = "assigned";
+  run.publication_generation_id = "generation";
+  run.execution = await prepareManagedBinding(db, deps.settings, principal, "one", "edition", choices, "assigned");
+  await db.collection(COLLECTIONS.publicationGenerations).insertOne({
+    _id: "generation" as never, publication_id: "assigned", status: "running",
+  });
+  await runs(db).insertOne(run);
+  return { run, started: true };
+}
+it("never grants an Admin environment keys through the historical toggle", async () => {
+  vi.stubEnv("USE_ENV_VAR_FOR_KEYS", "true");
+  await db.collection("journalist_credentials").deleteOne({ _id: admin.id });
+  await expect(prepareManagedBinding(db, deps.settings, admin, "one", "edition", options(), "assigned"))
+    .rejects.toThrow("personal model API key");
+  await expect(saveCredentialProfile(db, admin, { source: "environment" })).rejects.toThrow("Other operators must save personal API keys");
+  expect(requests).toHaveLength(0);
+});
+
 async function generate(run: PipelineRun, selected = deps) {
   const runtime = await runtimesForRun(selected, run);
-  return withRunContext({ db, runId: run._id, locationId: run.location_id, options: run.options!, sponsorId: run.execution?.sponsorId }, () => runtime.model.generate("Fixture prompt only."));
+  return withRunContext({ db, runId: run._id, locationId: run.location_id, options: run.options!, sponsorId: run.execution?.sponsorId }, () =>
+    withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion },
+      () => runtime.model.generate("Fixture prompt only.")));
 }
 beforeAll(async () => { server = await MongoMemoryServer.create({ instance: { launchTimeout: 30_000 } }); client = await MongoClient.connect(server.getUri()); db = client.db("isolated-execution-policy"); }, 45_000);
 beforeEach(async () => {
+  vi.stubEnv("USE_ENV_VAR_FOR_KEYS", undefined);
   vi.stubEnv("NEWSBEE_MODE", "cloud");
   vi.stubEnv("NEWSBEE_OWNER_EMAIL", "owner@example.test");
   vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", JSON.stringify({ fixture: randomBytes(32).toString("base64") }));
@@ -64,9 +89,17 @@ beforeEach(async () => {
   await db.dropDatabase(); requests.length = 0;
   owner = (await principalForEmail(db, "owner@example.test"))!;
   editor = await seedEditor("editor"); other = await seedEditor("other");
+  admin = { id: "admin", email: "admin@example.test", role: "admin" };
+  await db.collection("journalist_admins").insertOne({ email: admin.email, principalId: admin.id, role: admin.role, enabled: true });
+  await db.collection(COLLECTIONS.outputChannels).insertOne({
+    _id: "assigned" as never, owner_id: owner.id, name: "Assigned newsroom", enabled: true,
+    selected_location_ids: ["one", "two"], allowed_location_ids: ["one", "two"],
+    members: [editor, other, admin].map((person) => ({ principal_id: person.id, role: "editor" })),
+  });
   await ensureRunIndexes(db); await ensureJobIndexes(db);
   await db.collection(COLLECTIONS.locations).insertMany(["one", "two"].map((id) => ({ ...location(id), _id: id })));
   deps = { db, settings: infrastructureSettings(), store, model: NO_MODEL, transport: mockTransport };
+  await save(admin);
 });
 afterEach(() => vi.unstubAllEnvs());
 afterAll(async () => { await client?.close(); await server?.stop(); });
@@ -104,6 +137,7 @@ it.each([
 });
 
 it("does not grant a deployed editor access to a keyless local model", async () => {
+  vi.stubEnv("USE_ENV_VAR_FOR_KEYS", undefined);
   vi.stubEnv("NEWSBEE_MODE", "cloud");
   vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "ollama");
   vi.stubEnv("NEWSBEE_OLLAMA_MODEL", "fixture-local-model");
@@ -181,6 +215,22 @@ it("preserves automatic deployment defaults for the configured owner only", asyn
   vi.stubEnv("NEWSBEE_OWNER_EMAIL", "replacement@example.test");
   await expect(generate(run)).rejects.toThrow("owner-only");
   expect(requests).toHaveLength(1);
+});
+it("defaults Owner edition children and release packages to deployed model credentials without personal setup", async () => {
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini");
+  vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-owner-deployment-key");
+  const { run } = await managedRun(options(), owner);
+  expect(run.execution).toMatchObject({ source: "environment", credentialVersion: 0, sponsorId: owner.id });
+  expect(await credentialProfile(db, owner)).toBeNull();
+  expect(await generate(run)).toBe("personal answer");
+  const oneOff = await managedRequestDeps(deps, owner, {
+    runId: "owner-package", role: "release-video-package", publicationId: "assigned",
+  });
+  expect(await oneOff.discoveryModel.generate("Fixture package")).toBe("personal answer");
+  expect(requests.map((request) => request.headers?.["x-goog-api-key"]))
+    .toEqual(["fixture-owner-deployment-key", "fixture-owner-deployment-key"]);
+  expect(await db.collection("model_usage").findOne({ run_id: "owner-package" }))
+    .toMatchObject({ funding: "environment", sponsor_id: owner.id, role: "release-video-package" });
 });
 it("blocks historical editor environment bindings even with a current personal profile", async () => {
   await save();
@@ -337,8 +387,7 @@ it("rechecks credentials on already constructed runtimes after replacement or re
   expect(requests).toHaveLength(0);
 });
 it("atomically admits only one concurrent map/edition across locations and users", async () => {
-  await save(); await save(other);
-  const results = await Promise.allSettled(["one", "two"].map((id, index) => startMapRun({ ...deps, principal: index ? other : editor }, id, { by: "fixture", kind: "manual" }, options())));
+  const results = await Promise.allSettled(["one", "two"].map((id) => startMapRun({ ...deps, principal: admin }, id, { by: "fixture", kind: "manual" }, options())));
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
   expect(await runs(db).countDocuments({ admission: "newsroom", status: "mapping" })).toBe(1);
 });
@@ -346,12 +395,12 @@ it.each(["awaiting_authoring", "awaiting_finish", "collecting"] as const)("retai
   await save(); const run = await boundRun();
   await runs(db).updateOne({ _id: run._id }, { $set: { status, execution_blocked: { reason: "fixture pause", at: 1 }, created_at: 1 } });
   expect(await expireOverdueRuns(db, 1)).toEqual([]);
-  await expect(startMapRun({ ...deps, principal: editor }, "two", { by: editor.email, kind: "manual" }, options())).rejects.toThrow("Newsroom busy");
+  await expect(startMapRun({ ...deps, principal: admin }, "two", { by: admin.email, kind: "manual" }, options())).rejects.toThrow("Newsroom busy");
 });
 it.each(["mapped", "published", "failed", "cancelled"] as const)("releases the slot at terminal status %s", async (status) => {
   await save(); const run = await boundRun();
   await runs(db).updateOne({ _id: run._id }, { $set: { status } });
-  expect((await startMapRun({ ...deps, principal: editor }, "two", { by: editor.email, kind: "manual" }, options())).started).toBe(true);
+  expect((await startMapRun({ ...deps, principal: admin }, "two", { by: admin.email, kind: "manual" }, options())).started).toBe(true);
 });
 it("pauses an unbound legacy job without calls or consuming retry attempts", async () => {
   const run = newRun(location("one"), { by: "admin", kind: "manual" }, "2099-01-01", ["2099-01-01", "2099-01-08"], []);
@@ -418,15 +467,31 @@ it("redacts credential-bearing content URLs without stripping ordinary source qu
   expect(redact({ url: "https://provider.example.test/feed?api_key=fixture-secret&page=2" })).toEqual({ url: "https://provider.example.test/feed?page=2" });
   expect(redact({ url: "https://source.example.test/article?page=2" })).toEqual({ url: "https://source.example.test/article?page=2" });
 });
-it("lets a signed-in editor run a map end to end on their own keys, with nothing from the owner", async () => {
-  await save();
-  const result = await startMapRun({ ...deps, principal: editor }, "one", { by: editor.email, kind: "manual" }, options());
+it("runs an assigned journalist's edition child on managed providers without a credential profile", async () => {
+  const result = await managedRun();
   expect(result.started).toBe(true);
-  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, source: "personal", credentialVersion: 1 });
+  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, initiatedBy: editor.id, source: "platform", credentialVersion: 0 });
+  expect(await credentialProfile(db, editor)).toBeNull();
   expect(await generate(result.run)).toBe("personal answer");
-  expect(requests.map((request) => request.headers?.["x-goog-api-key"])).toEqual(["fixture-personal-key"]);
+  expect(requests.map((request) => request.headers?.["x-goog-api-key"])).toEqual(["deployment-key-must-never-be-used"]);
   expect(JSON.stringify(requests)).not.toContain("fixed-admin");
-  expect(await db.collection("journalist_funding_audit").distinct("funding")).toEqual(["personal"]);
+  expect(await db.collection("journalist_funding_audit").findOne({ run_id: result.run._id })).toMatchObject({
+    sponsor_id: editor.id, credential_version: 0, funding: "platform", provider: "gemini", model: "gemini-flash-latest",
+  });
+  expect(await db.collection(COLLECTIONS.modelUsage).findOne({ run_id: result.run._id })).toMatchObject({
+    sponsor_id: editor.id, credential_version: 0, provider: "gemini", role: "writing", ok: true,
+  });
+  await save(editor, "fixture-later-personal-key");
+  expect((await getRun(db, result.run._id))?.execution_blocked).toBeUndefined();
+  expect(JSON.stringify(await db.collection("journalist_funding_audit").find({}).toArray())).not.toContain("deployment-key-must-never-be-used");
+});
+it("does not read or decrypt a legacy credential row when admitting a new managed run", async () => {
+  await db.collection("journalist_credentials").insertOne({
+    _id: editor.id, version: 41, source: "personal", revoked: false,
+    keyId: "unavailable", iv: "invalid", tag: "invalid", ciphertext: "invalid",
+  });
+  const result = await managedRun();
+  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, source: "platform", credentialVersion: 0 });
 });
 it("admits the free local fixture search for an agentic map run, with no search key or budget, and refuses it deployed", async () => {
   await save();
@@ -436,10 +501,11 @@ it("admits the free local fixture search for an agentic map run, with no search 
   vi.stubEnv("NEWSBEE_MODE", "local");
   const local = fixture();
   expect(capabilityReasons(settings, local, true)).toEqual([]);
-  const result = await startMapRun({ ...deps, principal: editor }, "one", { by: editor.email, kind: "manual" }, local);
+  const result = await startMapRun({ ...deps, settings: infrastructureSettings(), principal: admin }, "one", { by: admin.email, kind: "manual" }, local);
   expect(result.started).toBe(true);
   expect(result.run.options).toMatchObject({ search_provider: "fixture", map_flow: "agentic" });
   // Deployed: refused at admission, and by the run options themselves.
+  vi.stubEnv("USE_ENV_VAR_FOR_KEYS", undefined);
   vi.stubEnv("NEWSBEE_MODE", "cloud");
   expect(capabilityReasons(settings, local, true)).toContain("Fixture search cannot be used for admitted newsroom runs.");
   expect(fixture).toThrow("The fixture search provider is local only.");
@@ -463,15 +529,89 @@ it("keeps an unfinished run started with an old purpose and approval running on 
   expect(requests).toHaveLength(1);
   expect(requests[0].headers?.["x-goog-api-key"]).toBe("fixture-personal-key");
 });
-it("runs an editor's map end to end on a non-Gemini model, and records which provider and model served it", async () => {
-  await saveCredentialProfile(db, editor, { source: "personal", config: { modelProviders: [{ name: "openai", kind: "openai", model: "editor-model", baseUrl: "https://llm.example.test/v1", apiKey: "fixture-openai-key" }] } });
-  const result = await startMapRun({ ...deps, principal: editor }, "one", { by: editor.email, kind: "manual" }, resolveRunOptions({ mode: "manual", flow: "current", paid: { model: 10 } }));
-  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, source: "personal" });
+it("runs an assigned edition on a non-Gemini managed model and records provider funding", async () => {
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "openai");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_MODEL", "managed-model");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_BASE_URL", "https://llm.example.test/v1");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_API_KEY", "fixture-managed-openai-key");
+  const result = await managedRun(resolveRunOptions({ mode: "manual", flow: "current", paid: { model: 10 } }));
+  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, source: "platform" });
   expect(await generate(result.run)).toBe("fixed admin answer");
   expect(requests.map((request) => new URL(request.url).hostname)).toEqual(["llm.example.test"]);
   expect(JSON.stringify(requests)).not.toContain("generativelanguage");
-  expect(await db.collection("api_calls").findOne({ run_id: result.run._id, outcome: "ok" })).toMatchObject({ service: "model", provider: "openai", model: "editor-model" });
-  expect(await db.collection("journalist_funding_audit").findOne({ run_id: result.run._id })).toMatchObject({ provider: "openai", model: "editor-model", sponsor_id: editor.id, funding: "personal" });
+  expect(await db.collection("api_calls").findOne({ run_id: result.run._id, outcome: "ok" })).toMatchObject({ service: "model", provider: "openai", model: "managed-model" });
+  expect(await db.collection("journalist_funding_audit").findOne({ run_id: result.run._id })).toMatchObject({ provider: "openai", model: "managed-model", sponsor_id: editor.id, funding: "platform" });
+});
+it("keeps an assigned Admin on personal keys through queued runtime creation and blocks changed credentials", async () => {
+  const result = await startMapRun({ ...deps, principal: admin }, "one", { by: admin.email, kind: "manual" }, options());
+  expect(result.run.execution).toMatchObject({ source: "personal", sponsorId: admin.id, credentialVersion: 1 });
+  expect(await runJobs(db, result.run._id)).not.toHaveLength(0);
+  const runtime = await runtimesForRun(deps, result.run);
+  expect(await generate(result.run)).toBe("personal answer");
+  expect(requests[0].headers?.["x-goog-api-key"]).toBe("fixture-personal-key");
+  expect(await db.collection("journalist_funding_audit").findOne({ run_id: result.run._id })).toMatchObject({ funding: "personal" });
+  await save(admin, "replacement-admin-key");
+  await expect(runtime.model.generate("retry")).rejects.toThrow("changed");
+  expect(requests).toHaveLength(1);
+});
+it("denies unassigned managed admission and rechecks membership and global role on an already-created runtime", async () => {
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, { $set: { members: [] } });
+  await expect(managedRun()).rejects.toThrow("assigned newsroom");
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, {
+    $set: { members: [{ principal_id: editor.id, role: "editor" }] },
+  });
+  const { run } = await managedRun();
+  const runtime = await runtimesForRun(deps, run);
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, { $set: { members: [] } });
+  await expect(runtime.model.generate("retry")).rejects.toThrow("assigned newsroom");
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, {
+    $set: { members: [{ principal_id: editor.id, role: "editor" }] },
+  });
+  await db.collection("journalist_admins").updateOne({ principalId: editor.id }, { $set: { role: "admin" } });
+  await expect(runtime.model.generate("retry")).rejects.toThrow("Administrators must use personal API keys");
+  expect(requests).toHaveLength(0);
+});
+it("refuses a journalist's source run outside an assigned newsroom", async () => {
+  await expect(startMapRun({ ...deps, principal: editor }, "one", { by: editor.email, kind: "manual" }, options()))
+    .rejects.toThrow("only from an assigned newsroom");
+  expect(await runs(db).countDocuments()).toBe(0);
+});
+it("lets a journalist collect sources for a community their newsroom covers, billed to the newsroom-managed allowance", async () => {
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "openai");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_MODEL", "managed-model");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_BASE_URL", "https://llm.example.test/v1");
+  vi.stubEnv("NEWSBEE_LLM_OPENAI_API_KEY", "fixture-managed-openai-key");
+  const result = await startMapRun({ ...deps, principal: editor }, "one", { by: editor.email, kind: "manual" },
+    resolveRunOptions({ mode: "manual", flow: "current", paid: { model: 10 } }), false, "assigned");
+  expect(result.started).toBe(true);
+  expect(result.run).toMatchObject({ kind: "map", trigger: { by: editor.email, kind: "manual" } });
+  expect(result.run.execution).toMatchObject({ sponsorId: editor.id, initiatedBy: editor.id, source: "platform", publicationId: "assigned" });
+  const stored = (await getRun(db, result.run._id))!;
+  await expect(assertBindingCurrent(db, stored)).resolves.toBeTruthy();
+  expect(await generate(stored)).toBe("fixed admin answer");
+  expect(await db.collection("journalist_funding_audit").findOne({ run_id: result.run._id }))
+    .toMatchObject({ sponsor_id: editor.id, funding: "platform", funding_identity: "managed" });
+  // Losing the newsroom assignment stops the run, as it does for editions.
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, { $set: { members: [{ principal_id: other.id, role: "editor" }] } });
+  await expect(assertBindingCurrent(db, stored)).rejects.toThrow("assigned newsroom");
+});
+it("refuses a journalist's source run for an uncovered community or another newsroom's community", async () => {
+  await db.collection(COLLECTIONS.locations).insertMany(["three", "four"].map((id) => ({ ...location(id), _id: id })));
+  await db.collection(COLLECTIONS.outputChannels).insertOne({
+    _id: "elsewhere" as never, owner_id: owner.id, name: "Another newsroom", enabled: true,
+    selected_location_ids: ["four"], allowed_location_ids: ["four"], members: [{ principal_id: other.id, role: "editor" }],
+  });
+  const start = (locationId: string, publicationId: string) => startMapRun({ ...deps, principal: editor }, locationId,
+    { by: editor.email, kind: "manual" }, options(), false, publicationId);
+  await expect(start("three", "assigned")).rejects.toThrow(/assigned newsroom|outside/);
+  await expect(start("four", "assigned")).rejects.toThrow(/assigned newsroom|outside/);
+  await expect(start("four", "elsewhere")).rejects.toThrow(/assigned newsroom|outside/);
+  expect(await runs(db).countDocuments()).toBe(0);
+});
+it("leaves operators' source runs on their own keys, with or without a newsroom", async () => {
+  const result = await startMapRun({ ...deps, principal: admin }, "one", { by: admin.email, kind: "manual" }, options());
+  expect(result.run.execution).toMatchObject({ source: "personal", sponsorId: admin.id });
+  expect(result.run.execution).not.toHaveProperty("publicationId");
 });
 it("keeps an unfinished run saved with the old Gemini and OpenAI-compatible budgets running under the one model budget", async () => {
   await save();

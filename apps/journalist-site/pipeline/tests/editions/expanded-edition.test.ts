@@ -7,6 +7,13 @@ import { COLLECTIONS } from "../../storage/mongo";
 import { CANDIDATES_PER_SECTION, MAX_PER_SOURCE_IN_SECTION, MAX_WIDER_ITEMS, PUBLISHED_PER_SECTION, RATED_PER_SECTION } from "../../sourcemap/sections";
 import { FakeModel } from "../support/fake-model";
 import { resolveRunOptions, withRunContext } from "../../core/run-options";
+import * as writer from "../../model/story-writer";
+import * as emailPreview from "../../email/preview";
+import { saveEmailOutput } from "../../email/output";
+import { executeJob } from "../../orchestration/orchestrator";
+import { claim, enqueue } from "../../orchestration/jobs";
+import { newRun, runs } from "../../orchestration/runs";
+import type { ArtifactStore } from "../../storage/artifacts";
 
 vi.mock("../../editions/edition-map", () => ({ writeEditionMap: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../model/story-writer", async (importOriginal) => ({
@@ -20,6 +27,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await client?.close(); await server?.stop(); });
 beforeEach(async () => {
+  vi.clearAllMocks();
   await db.dropDatabase();
   deps = { db, settings: loadSettings({ NEWSBEE_MODE: "local" }), model: new FakeModel(() => { throw new Error("No live model calls"); }), log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } };
 });
@@ -116,4 +124,61 @@ it("publishes secondary source links without losing original attribution", async
   const sources = [{ name: "Original newsroom", url: "https://example.test/news" }, { name: "City records", url: "https://city.example/record" }];
   await db.collection(COLLECTIONS.editionEntries).updateOne({ story_id: "story-0" }, { $set: { "result.sources": sources } });
   expect((await finishAuthoring(deps, "run")).edition?.items[0].sources).toEqual(sources);
+});
+
+it.each(["standalone", "combined-child"])("finishes and recovers a nonempty %s without email generation, rendering or artifacts", async (kind) => {
+  await seed("ready", [candidate(0)]);
+  await entry(0);
+  const options = resolveRunOptions({ image_mode: "illustrated", paid: {} }, {});
+  const run = newRun(
+    { id: "fixture-wa", name: "Fixture, WA", state: "WA", systems: [], government: null },
+    { kind: "manual", by: "editor@example.test" }, "2026-10-29", ["2026-10-29", "2026-11-04"], [], null, null, options,
+  );
+  run._id = "run";
+  run.status = "finishing";
+  run.draft_id = "run";
+  if (kind === "combined-child") {
+    run.publication_generation_id = "generation";
+    await db.collection(COLLECTIONS.publicationGenerations).insertOne({ _id: "generation" as never, status: "running" });
+  }
+  await runs(db).insertOne(run);
+  const store = {
+    kind: "local", ensureFolder: vi.fn(async (parent: string, name: string) => `${parent}/${name}`),
+    saveJson: vi.fn(async (_folder: string, name: string, _value: unknown) => name),
+    saveText: vi.fn(),
+  };
+  const render = vi.spyOn(emailPreview, "previewContent");
+  store.saveJson.mockRejectedValueOnce(new Error("artifact persistence interrupted"));
+  const finishJob = async () => {
+    const id = await enqueue(db, { run_id: "run", location_id: "fixture-wa", kind: "author_finish", payload: { draft_id: "run" } });
+    return executeJob({ ...deps, store: store as unknown as ArtifactStore }, (await claim(db, ["author_finish"], id))!);
+  };
+  await expect(finishJob()).rejects.toThrow("artifact persistence interrupted");
+  const saved = await db.collection(COLLECTIONS.editions).findOne({ id: "run" });
+  expect(saved).toMatchObject({ status: "built", email: null, email_preview: null, email_output: { status: "unavailable" } });
+  await db.collection(COLLECTIONS.jobs).updateMany({ run_id: "run", kind: "author_finish" }, { $set: { status: "pending", claim_token: null, lease_until: null } });
+  expect(await finishJob()).toMatchObject({ edition_id: "run", items: 1 });
+  expect(await runs(db).findOne({ _id: "run" })).toMatchObject({ status: "built", published: { artifacts: { edition: "run.json", sources: "run.json" } } });
+  expect(store.saveJson.mock.calls.filter(([, , value]) => (value as any).edition).at(-1)?.[2]).toMatchObject({ edition: saved!.published });
+  expect(writer.writeFront).toHaveBeenCalledTimes(1);
+  expect(writer.writeEmail).not.toHaveBeenCalled();
+  expect(render).not.toHaveBeenCalled();
+  expect(store.saveText).not.toHaveBeenCalled();
+  expect(store.ensureFolder.mock.calls.some(([, name]) => name === "email-previews")).toBe(false);
+  expect((deps.model as FakeModel).calls).toHaveLength(0);
+  render.mockRestore();
+});
+
+it("keeps historical email readable without recreating artifacts during finish recovery", async () => {
+  await seed("built", []);
+  const preview = { subject: "Historical subject", text: "Historical text", html: "<p>Historical HTML</p>" };
+  await db.collection(COLLECTIONS.editions).updateOne({ id: "run" }, { $set: { email_preview: preview } });
+  const result = await finishAuthoring(deps, "run");
+  expect(result).toMatchObject({ emailPreview: null, emailOutput: { status: "unavailable" } });
+  expect(await db.collection(COLLECTIONS.editions).findOne({ id: "run" })).toMatchObject({ email_preview: preview });
+  const store = { saveText: vi.fn() } as unknown as ArtifactStore;
+  const folder = vi.fn();
+  await expect(saveEmailOutput(store, folder, "run", { status: "available", preview })).resolves.toEqual({});
+  expect(folder).not.toHaveBeenCalled();
+  expect(store.saveText).not.toHaveBeenCalled();
 });

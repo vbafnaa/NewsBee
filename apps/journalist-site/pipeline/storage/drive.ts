@@ -2,12 +2,17 @@
 import { createSign, randomUUID } from "node:crypto";
 import { artifactSegment, type ArtifactStore, type StoredFile } from "./artifacts";
 
-type DriveFile = { id: string; name?: string; mimeType?: string };
+type DriveFile = { id: string; name?: string; mimeType?: string; ownedByMe?: boolean; driveId?: string };
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,200}$/;
 
 let cachedToken: { value: string; expiresAt: number } | undefined;
 let tokenRequest: Promise<string> | undefined;
+
+function timedFetch(url: string, init?: RequestInit) {
+  const timeout = AbortSignal.timeout(30_000);
+  return fetch(url, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+}
 
 function base64url(value: string | Buffer) {
   return Buffer.from(value).toString("base64url");
@@ -63,7 +68,7 @@ async function accessToken(): Promise<string> {
     const signer = createSign("RSA-SHA256");
     signer.update(unsigned);
     const assertion = `${unsigned}.${base64url(signer.sign(privateKey))}`;
-    const response = await fetch("https://oauth2.googleapis.com/token", {
+    const response = await timedFetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
@@ -79,15 +84,23 @@ async function accessToken(): Promise<string> {
   return tokenRequest;
 }
 
-async function driveRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+class DriveQuotaError extends Error {}
+
+function driveError(operation: string, status: number, detail: string, guidance = "") {
+  const message = `Google Drive ${operation} failed (${status}): ${detail.slice(0, 500)}${guidance}`;
+  return status === 403 && /service accounts do not have storage quota|storageQuotaExceeded/i.test(detail)
+    ? new DriveQuotaError(message)
+    : new Error(message);
+}
+
+async function driveRequest<T>(url: string, init?: RequestInit, token?: string): Promise<T> {
+  const response = await timedFetch(url, {
     ...init,
-    headers: { Authorization: `Bearer ${await accessToken()}`, ...init?.headers },
+    headers: { Authorization: `Bearer ${token ?? await accessToken()}`, ...init?.headers },
     cache: "no-store",
   });
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 500);
-    throw new Error(`Google Drive request failed (${response.status}): ${detail}`);
+    throw driveError("request", response.status, await response.text());
   }
   return response.json() as Promise<T>;
 }
@@ -101,22 +114,38 @@ function checkId(id: string) {
   return id;
 }
 
-async function findFile(parentId: string, name: string, mimeType?: string) {
+async function findFile(parentId: string, name: string, mimeType?: string, token?: string, newest = false, signal?: AbortSignal) {
   const query = [`'${quoted(checkId(parentId))}' in parents`, `name = '${quoted(name)}'`, "trashed = false"];
   if (mimeType) query.push(`mimeType = '${mimeType}'`);
   const params = new URLSearchParams({
     q: query.join(" and "),
-    fields: "files(id,name,mimeType)",
+    fields: token ? "files(id,name,mimeType,ownedByMe,driveId)" : "files(id,name,mimeType)",
     pageSize: "10",
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });
-  const result = await driveRequest<{ files: DriveFile[] }>(`https://www.googleapis.com/drive/v3/files?${params}`);
+  if (newest) params.set("orderBy", "modifiedTime desc");
+  const result = await driveRequest<{ files: DriveFile[] }>(`https://www.googleapis.com/drive/v3/files?${params}`, { signal }, token);
+  if (token && !mimeType) return result.files.find((file) => file.ownedByMe || file.driveId);
   return result.files[0];
 }
 
 export class DriveArtifacts implements ArtifactStore {
   readonly kind = "drive" as const;
+  private editorToken?: Promise<string>;
+
+  constructor(private readonly quotaFallback?: () => Promise<string>, private readonly signal?: AbortSignal) {}
+
+  private async withWriteQuotaFallback<T>(write: (token?: string) => Promise<T>) {
+    if (this.editorToken) return write(await this.editorToken);
+    try {
+      return await write();
+    } catch (error) {
+      if (!(error instanceof DriveQuotaError) || !this.quotaFallback) throw error;
+      this.editorToken ??= this.quotaFallback();
+      return write(await this.editorToken);
+    }
+  }
 
   async listEntries(parentId: string): Promise<(StoredFile & { mimeType: string })[]> {
     const files: (StoredFile & { mimeType: string })[] = [];
@@ -130,7 +159,7 @@ export class DriveArtifacts implements ArtifactStore {
         includeItemsFromAllDrives: "true",
       });
       if (pageToken) params.set("pageToken", pageToken);
-      const page = await driveRequest<{ files?: DriveFile[]; nextPageToken?: string }>(`https://www.googleapis.com/drive/v3/files?${params}`);
+      const page = await driveRequest<{ files?: DriveFile[]; nextPageToken?: string }>(`https://www.googleapis.com/drive/v3/files?${params}`, { signal: this.signal });
       files.push(...(page.files ?? []).map((file) => ({ id: file.id, name: file.name ?? "", mimeType: file.mimeType ?? "application/octet-stream" })));
       pageToken = page.nextPageToken;
     } while (pageToken);
@@ -138,9 +167,9 @@ export class DriveArtifacts implements ArtifactStore {
   }
 
   async removeById(id: string) {
-    const response = await fetch(
+    const response = await timedFetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(id))}?supportsAllDrives=true`,
-      { method: "DELETE", headers: { Authorization: `****** accessToken()}` }, cache: "no-store" },
+      { method: "DELETE", headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store", signal: this.signal },
     );
     if (!response.ok && response.status !== 404) throw new Error(`Google Drive artifact cleanup failed (${response.status})`);
   }
@@ -179,59 +208,85 @@ export class DriveArtifacts implements ArtifactStore {
   }
 
   async ensureFolder(parentId: string, name: string) {
-    const found = await findFile(parentId, name, FOLDER_MIME);
+    return this.withWriteQuotaFallback((token) => this.writeFolder(parentId, name, token));
+  }
+
+  private async writeFolder(parentId: string, name: string, token?: string) {
+    const found = await findFile(parentId, name, FOLDER_MIME, token, false, this.signal);
     if (found) return found.id;
     const created = await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
-    });
+      signal: this.signal,
+    }, token);
     return created.id;
   }
 
   async saveText(parentId: string, name: string, value: string, mimeType: string) {
-    let file = await findFile(parentId, name);
-    file ??= await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true", {
+    return this.withWriteQuotaFallback((token) => this.writeText(parentId, name, value, mimeType, token));
+  }
+
+  private async writeText(parentId: string, name: string, value: string, mimeType: string, token?: string) {
+    const file = await findFile(parentId, name, undefined, token, Boolean(this.quotaFallback));
+    const metadata = JSON.stringify({ name, mimeType, parents: [parentId] });
+    if (!file && this.quotaFallback) {
+      const boundary = randomUUID();
+      const body = [
+        `--${boundary}`, "Content-Type: application/json; charset=UTF-8", "", metadata,
+        `--${boundary}`, `Content-Type: ${mimeType}; charset=UTF-8`, "", value,
+        `--${boundary}--`, "",
+      ].join("\r\n");
+      const created = await driveRequest<DriveFile>(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+        { method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body },
+        token,
+      );
+      return created.id;
+    }
+    const target = file ?? await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, mimeType, parents: [parentId] }),
+      body: metadata,
     });
     const response = await fetch(
-      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(file.id)}?uploadType=media&supportsAllDrives=true`,
+      `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(target.id)}?uploadType=media&supportsAllDrives=true`,
       {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": `${mimeType}; charset=UTF-8` },
+        headers: { Authorization: `Bearer ${token ?? await accessToken()}`, "Content-Type": `${mimeType}; charset=UTF-8` },
         body: value,
         cache: "no-store",
       },
     );
     if (!response.ok) {
-      const detail = (await response.text()).slice(0, 500);
-      const quotaGuidance = detail.includes("Service Accounts do not have storage quota")
+      const detail = await response.text();
+      const quotaGuidance = !this.quotaFallback && detail.includes("Service Accounts do not have storage quota")
         ? " The parent folder must be on a Shared Drive where the service account has at least Contributor access; a My Drive folder shared with the account is not sufficient."
         : "";
-      throw new Error(`Google Drive file upload failed (${response.status}): ${detail}${quotaGuidance}`);
+      throw driveError("file upload", response.status, detail, quotaGuidance);
     }
-    return file.id;
+    return target.id;
   }
 
   async saveBinary(parentId: string, name: string, value: Uint8Array, mimeType: string) {
     artifactSegment(name);
-    let file = await findFile(parentId, name);
+    let file = await findFile(parentId, name, undefined, undefined, false, this.signal);
     file ??= await driveRequest<DriveFile>("https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, mimeType, parents: [checkId(parentId)] }),
+      signal: this.signal,
     });
     const bytes = new Uint8Array(value.byteLength);
     bytes.set(value);
-    const response = await fetch(
+    const response = await timedFetch(
       `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(checkId(file.id))}?uploadType=media&supportsAllDrives=true`,
       {
         method: "PATCH",
-        headers: { Authorization: `****** accessToken()}`, "Content-Type": mimeType },
+        headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": mimeType },
         body: bytes.buffer,
         cache: "no-store",
+        signal: this.signal,
       },
     );
     if (!response.ok) {
@@ -267,9 +322,9 @@ export class DriveArtifacts implements ArtifactStore {
   }
 
   async readBinary(fileId: string) {
-    const response = await fetch(
+    const response = await timedFetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(checkId(fileId))}?alt=media&supportsAllDrives=true`,
-      { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store" },
+      { headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store", signal: this.signal },
     );
     if (!response.ok) throw new Error(`Google Drive file read failed (${response.status})`);
     const length = Number(response.headers.get("content-length") ?? 0);

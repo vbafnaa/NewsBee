@@ -32,6 +32,9 @@ import type { Db } from "mongodb";
 import type { Settings } from "../core/config";
 import { currentOptions, runContext } from "../core/run-options";
 import type { ModelRuntime } from "../model/runtime";
+import { receiptRuntime } from "../model/receipts";
+import { ExecutionBlocked } from "../core/execution-errors";
+import { executionTimeout } from "../core/execution-deadline";
 import { fill, limit, PLAYBOOK_RULES, template } from "../playbook";
 import { decisionOf, REASONS, reasonLabel, type ReasonCode } from "../sourcemap/reasons";
 import { SECTION_LABELS, type SectionId } from "../sourcemap/sections";
@@ -207,7 +210,8 @@ export async function geminiCheck(context: DiscoveryContext, candidates: SourceC
   if (!candidates.length) return counts;
   const runId = runContext()?.runId ?? null;
   const at = new Date().toISOString();
-  const model = checkModel(context);
+  const selectedModel = checkModel(context);
+  const model = selectedModel && runId ? receiptRuntime(context.db, selectedModel, `${runId}:mapping-check:${options.route}`) : selectedModel;
   const decisions: Array<Omit<Decision, "run_id" | "location_id" | "at">> = [];
   const subject = (candidate: SourceCandidate) => candidate.url ?? candidate.source_id;
   const existing = new Map((await sourceMap(context.db).find({ _id: { $in: candidates.map((candidate) => `${context.location.id}:${candidate.source_id}`) } }, { projection: { status: 1, review: 1, gemini: 1 } }).toArray()).map((record) => [record._id, record]));
@@ -251,9 +255,10 @@ export async function geminiCheck(context: DiscoveryContext, candidates: SourceC
     let verdicts = new Map<string, Parsed | null>();
     try {
       counts.calls += 1;
-      const response = await model!.generateStructured(checkPrompt(context, batch, past), CHECK_SCHEMA, { numPredict: checkOutputTokens(batch.length) });
+      const response = await model!.generateStructured(checkPrompt(context, batch, past), CHECK_SCHEMA, { numPredict: checkOutputTokens(batch.length), timeoutMs: executionTimeout() });
       verdicts = parseVerdicts(response.response);
     } catch (error) {
+      if (error instanceof ExecutionBlocked) throw error;
       const message = error instanceof Error ? error.message : String(error);
       if (stopsChecking(message)) stopped = message;
       for (const item of batch) unjudged(item.candidate, `Not judged: the model call failed (${message.slice(0, 200)})`);

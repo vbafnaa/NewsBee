@@ -1,4 +1,4 @@
-import { MongoClient, type Db } from "mongodb";
+import { MongoClient, type CommandStartedEvent, type Db } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { Story, collapse, type SourceEvent } from "../../editions/stories";
@@ -14,12 +14,13 @@ import * as storyReviews from "../../editions/story-reviews";
 import { FakeModel } from "../support/fake-model";
 import { ModelRateLimitError } from "../../model/runtime";
 import { mainText, supportingLinks } from "../../connectors/web/page";
+import * as editionRanker from "../../ranking/edition-ranker";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "93.184.216.34" }]) }));
 vi.mock("../../editions/edition-map", () => ({ writeEditionMap: vi.fn().mockResolvedValue(undefined) }));
 let server: MongoMemoryServer, client: MongoClient, db: Db, serial = 0;
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("source-evidence"); });
+beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri(), { monitorCommands: true }); db = client.db("source-evidence"); });
 afterAll(async () => { await client?.close(); await server?.stop(); });
 beforeEach(async () => { await db.dropDatabase(); vi.clearAllMocks(); });
 const url = () => `https://evidence-${++serial}.example.test/news`;
@@ -238,6 +239,60 @@ async function seed(transport: HttpTransport, lightModel?: FakeModel) {
   const deps: AuthoringDeps = { db, settings: loadSettings({ NEWSBEE_MODE: "local" }), model, lightModel, transport, log };
   return { deps, id, model };
 }
+it("reuses one versioned engagement and acceptance snapshot across sections and retries", async () => {
+  const { deps, id } = await seed(transport());
+  await db.collection(COLLECTIONS.editions).insertOne({ id: "history", location_id: "fixture-wa", status: "published", published_at: 1 });
+  await db.collection(COLLECTIONS.editionEntries).insertOne({ edition_id: "history", story_id: "previous", disposition: "checks_passed", result: { ranking: { category: "other" } } });
+  let evidenceReads = 0;
+  const observed = (event: CommandStartedEvent) => {
+    if (event.commandName === "aggregate" && event.command.aggregate === "reader_engagement"
+      || event.commandName === "find" && event.command.find === COLLECTIONS.editions && event.command.filter.status === "published"
+      || event.commandName === "find" && event.command.find === COLLECTIONS.editionEntries && event.command.filter.disposition === "checks_passed") evidenceReads += 1;
+  };
+  client.on("commandStarted", observed);
+  const engagement = vi.spyOn(editionRanker, "engagementSnapshot");
+  const acceptance = vi.spyOn(storyReviews, "sourceAcceptRates");
+  try {
+    await db.collection<DraftDoc>(COLLECTIONS.editions).updateOne({ id: "run" }, { $set: {
+      pool_sections: ["news", "events", "sports"].map(section => ({ id: section, label: section, stories: [id] })),
+    } });
+    await rankSection(deps, "run", "news");
+    const snapshot = (await db.collection<DraftDoc>(COLLECTIONS.editions).findOne({ id: "run" }))!.ranking_evidence;
+    await db.collection(storyReviews.STORY_DECISIONS).insertOne({ location_id: "fixture-wa", source_ids: ["web:garden"], decision: "reject" });
+    await rankSection(deps, "run", "events");
+    await rankSection(deps, "run", "sports");
+    expect(engagement).toHaveBeenCalledTimes(1);
+    expect(acceptance).toHaveBeenCalledTimes(1);
+    expect(evidenceReads).toBe(6);
+    expect((await db.collection<DraftDoc>(COLLECTIONS.editions).findOne({ id: "run" }))!.ranking_evidence).toEqual(snapshot);
+  } finally { client.off("commandStarted", observed); engagement.mockRestore(); acceptance.mockRestore(); }
+});
+
+it("repairs per-item ranking writes before publishing a completed section marker", async () => {
+  const { deps, model } = await seed(transport());
+  const original = db.collection.bind(db);
+  let failed = false;
+  const intercepted = vi.spyOn(db, "collection").mockImplementation((...args: Parameters<typeof db.collection>) => {
+    const collection = original(...args);
+    if (args[0] === "collected_items") {
+      const bulk = collection.bulkWrite.bind(collection);
+      collection.bulkWrite = async (operations, options) => {
+        if (!failed && JSON.stringify(operations).includes("model_rating")) { failed = true; throw new Error("injected ranking write interruption"); }
+        return bulk(operations, options);
+      };
+    }
+    return collection;
+  });
+  try {
+    await expect(rankSection(deps, "run", "news")).rejects.toThrow("injected ranking write interruption");
+    expect((await original<DraftDoc>(COLLECTIONS.editions).findOne({ id: "run" }))!.section_rankings.news).toBeUndefined();
+    const paidBefore = model.calls.length;
+    await rankSection(deps, "run", "news");
+    expect(model.calls).toHaveLength(paidBefore);
+    expect((await collectedItems(db).findOne({ _id: "item" }))?.model_rating).toMatchObject({ rated_by: "model" });
+  } finally { intercepted.mockRestore(); }
+});
+
 it("ranks with gathered evidence, persists it, and writes from it even without a light model", async () => {
   const { deps, model } = await seed(transport());
   await rankSection(deps, "run", "news");

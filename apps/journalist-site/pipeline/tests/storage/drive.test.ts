@@ -118,8 +118,28 @@ describe("Drive service-account configuration", () => {
     expect(fileId).toBe("created-video-id");
     const [url, init] = fetchMock.mock.calls.find(([input]) => typeof input === "string" && input.includes("/upload/"))!;
     expect(new URL(url as string).searchParams.get("supportsAllDrives")).toBe("true");
-    expect(init?.headers).toMatchObject({ "Content-Type": "video/mp4" });
+    expect(init?.headers).toMatchObject({ "Content-Type": "video/mp4", Authorization: "Bearer test-access-token" });
     expect(Array.from(new Uint8Array(init?.body as ArrayBuffer))).toEqual([1, 2, 3]);
+  });
+
+  it("authenticates backup artifact deletion and propagates transfer cancellation", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_JSON", json);
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "test-access-token" });
+      if (init?.method === "DELETE") return new Response(null, { status: 204 });
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const controller = new AbortController();
+    const drive = new DriveArtifacts(undefined, controller.signal);
+    await drive.removeById("backup-file-id");
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toMatchObject({ Authorization: "Bearer test-access-token" });
+    const listing = drive.listEntries("backup-root-id");
+    await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBe(3));
+    controller.abort(new Error("Transfer cancelled"));
+    await expect(listing).rejects.toThrow("Transfer cancelled");
   });
 
   it("reads a bounded binary video from a Shared Drive", async () => {
@@ -157,6 +177,47 @@ describe("Drive service-account configuration", () => {
 
     await expect(new DriveArtifacts().saveText("my-drive-folder", "log.txt", "log", "text/plain"))
       .rejects.toThrow("a My Drive folder shared with the account is not sufficient");
+  });
+
+  it("uses the editor's Drive token after the service account hits its storage quota", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    const editorToken = vi.fn(async () => "editor-access-token");
+    fetchMock.mockImplementation(async (input, init) => {
+      if (input === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "service-token" });
+      const authorization = (init?.headers as Record<string, string>)?.Authorization;
+      if (init?.method === "PATCH") {
+        expect(authorization).toBe("Bearer service-token");
+        return Response.json({ error: { message: "Service Accounts do not have storage quota." } }, { status: 403 });
+      }
+      if (init?.method === "POST") {
+        expect(authorization).toBe("Bearer editor-access-token");
+        expect(String(input)).toContain("uploadType=multipart");
+        expect(init.body).toContain('{"items":[]}');
+        return Response.json({ id: "editor-file-id" });
+      }
+      return Response.json({ files: [{ id: "legacy-file-id", ownedByMe: false }] });
+    });
+    const { DriveArtifacts } = await import("../../storage/drive");
+    const drive = new DriveArtifacts(editorToken);
+
+    await expect(drive.saveJson("my-drive-folder", "edition.json", { items: [] })).resolves.toBe("editor-file-id");
+    await expect(drive.saveJson("my-drive-folder", "another.json", { items: [] })).resolves.toBe("editor-file-id");
+    expect(editorToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use the editor's Drive token for a permissions error", async () => {
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL", email);
+    vi.stubEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY", pem);
+    const editorToken = vi.fn(async () => "editor-access-token");
+    fetchMock.mockResolvedValueOnce(Response.json({ access_token: "service-token" }))
+      .mockResolvedValueOnce(Response.json({ files: [] }))
+      .mockResolvedValueOnce(Response.json({ error: { message: "Insufficient permissions" } }, { status: 403 }));
+    const { DriveArtifacts } = await import("../../storage/drive");
+
+    await expect(new DriveArtifacts(editorToken).saveJson("my-drive-folder", "edition.json", {}))
+      .rejects.toThrow("Insufficient permissions");
+    expect(editorToken).not.toHaveBeenCalled();
   });
 
   it("reports the configured identity and whether the pipeline folder is on a Shared Drive", async () => {

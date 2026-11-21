@@ -1,6 +1,6 @@
 /**
  * Isolated real Next UI + Mongo fixture. No Google login, external requests or worker scheduling.
- * Open /fixture/session?as=owner|editor|other. Spending endpoints below are deliberately mocked.
+ * Open /fixture/session?as=owner|admin|editor-a|editor-b. Spending endpoints below are deliberately mocked.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
@@ -8,17 +8,54 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MongoClient } from "mongodb";
-import { MongoMemoryServer } from "mongodb-memory-server";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 import { encode, decode } from "next-auth/jwt";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const appPort = Number(process.env.FIXTURE_APP_PORT ?? 3007), previewPort = Number(process.env.FIXTURE_PREVIEW_PORT ?? 3010);
 const secret = randomBytes(32).toString("base64");
-const memory = await MongoMemoryServer.create({ instance: { ip: "127.0.0.1" } });
+const memory = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: "wiredTiger", ip: "127.0.0.1" } });
 const mongo = await MongoClient.connect(memory.getUri());
 const db = mongo.db("isolated-account-ui");
-const principals = Object.fromEntries(["owner", "editor", "other"].map((id) => [id, { id: `fixture-${id}`, email: `${id}@example.test`, role: id === "owner" ? "owner" : "editor" }]));
-await db.collection("journalist_admins").insertMany(Object.values(principals).map((principal) => ({ email: principal.email, principalId: principal.id, role: principal.role, enabled: true })));
+const principals = {
+  owner: { id: "fixture-owner", email: "owner@example.test", role: "owner" },
+  admin: { id: "fixture-admin", email: "admin@example.test", role: "admin" },
+  "editor-a": { id: "fixture-editor-a", email: "editor-a@example.test", role: "editor" },
+  "editor-b": { id: "fixture-editor-b", email: "editor-b@example.test", role: "editor" },
+};
+await db.collection("journalist_admins").insertMany(Object.values(principals).map((principal) => ({
+  email: principal.email,
+  principalId: principal.id,
+  role: principal.role,
+  enabled: true,
+  revision: 0,
+})));
+await db.collection("output_channels").insertMany([
+  {
+    _id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    owner_id: principals.owner.id,
+    members: [{ principal_id: principals["editor-a"].id, role: "editor" }],
+    name: "Alpha Fixture",
+    enabled: true,
+    destinations: [{ type: "reader", url: "" }],
+    drive_folder_id: "mongo:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    selected_location_ids: ["fixture-one"],
+    published_location_ids: [],
+    publication_scope_version: 1,
+  },
+  {
+    _id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    owner_id: principals.owner.id,
+    members: [{ principal_id: principals["editor-b"].id, role: "editor" }],
+    name: "Beta Fixture",
+    enabled: true,
+    destinations: [{ type: "reader", url: "" }],
+    drive_folder_id: "mongo:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    selected_location_ids: ["fixture-two"],
+    published_location_ids: [],
+    publication_scope_version: 1,
+  },
+]);
 await db.collection("locations").insertMany(["one", "two"].map((id) => ({ _id: `fixture-${id}`, id: `fixture-${id}`, name: `Fixture ${id}`, state: "WA", systems: [], government: null })));
 for (const id of ["one", "two"]) {
   const at = new Date("2099-01-01T00:00:00Z"), location_id = `fixture-${id}`;
@@ -58,8 +95,8 @@ if (process.argv.includes("--workspace-review")) {
   const stamp = Date.now() / 1000;
   await db.collection("pipeline_runs").insertOne({
     _id: "fixture-review-run", kind: "edition", location_id: "fixture-one", location_name: "Fixture one",
-    trigger: { by: principals.editor.email, kind: "manual" },
-    execution: { sponsorId: principals.editor.id, initiatedBy: principals.editor.id, credentialVersion: 1, source: "personal", planHash: "fixture-plan" },
+    trigger: { by: principals["editor-a"].email, kind: "manual" },
+    execution: { sponsorId: principals["editor-a"].id, initiatedBy: principals["editor-a"].id, credentialVersion: 1, source: "personal", planHash: "fixture-plan" },
     status: "published", created_at: stamp - 600, updated_at: stamp, completed_at: stamp,
     sources: [], today: "2099-01-01", window: ["2099-01-01", "2099-01-08"], draft_id: null,
     edition_id: null, published: { items: 0, held: 0, held_reasons: {}, artifacts: {} }, error: null, authoring_started_at: stamp - 300,
@@ -100,7 +137,7 @@ const preview = createServer(async (request, response) => {
     const url = new URL(request.url, `http://127.0.0.1:${previewPort}`);
     if (url.pathname === "/fixture/session") {
       const name = url.searchParams.get("as") ?? "owner";
-      if (!tokens[name]) return json(response, 400, { detail: "Choose owner, editor or other." });
+      if (!tokens[name]) return json(response, 400, { detail: "Choose owner, admin, editor-a or editor-b." });
       response.writeHead(302, { "Set-Cookie": `authjs.session-token=${tokens[name]}; HttpOnly; Path=/; SameSite=Lax`, Location: url.searchParams.get("next") ?? "/account" }); response.end(); return;
     }
     if (url.pathname === "/fixture/reset") {
@@ -155,7 +192,7 @@ const preview = createServer(async (request, response) => {
     response.writeHead(upstream.status, outgoing); response.end(Buffer.from(await upstream.arrayBuffer()));
   } catch (error) { console.error("Fixture request failed:", error.message); json(response, 500, { detail: "Fixture request failed; inspect local fixture output." }); }
 });
-preview.listen(previewPort, "127.0.0.1", () => console.log(`Isolated account UI: http://127.0.0.1:${previewPort}/fixture/session?as=owner (also editor, other). All pipeline starts/reconnects/paid run actions are mocked; external fetch blocked.`));
+preview.listen(previewPort, "127.0.0.1", () => console.log(`Isolated account UI: http://127.0.0.1:${previewPort}/fixture/session?as=owner&next=/admin/access (also admin, editor-a, editor-b). All pipeline starts/reconnects/paid run actions are mocked; external fetch blocked.`));
 async function close() { preview.close(); next.kill(); await mongo.close(); await memory.stop(); }
 process.once("SIGINT", () => void close().finally(() => process.exit()));
 process.once("SIGTERM", () => void close().finally(() => process.exit()));

@@ -1,5 +1,10 @@
 export type MapStage = "review" | "save";
 
+export function canAddAcceptedSources(run: { isolated?: boolean; status: string; stage_transitions?: { status: string }[] }): boolean {
+  return run.isolated === true && (run.status === "failed" ||
+    (run.stage_transitions?.filter((entry) => entry.status === "mapping").length ?? 0) > 1);
+}
+
 export function mapJobIsPast(kind: string, jobs: { kind: string }[]): boolean {
   return jobs.some((later) =>
     (["discover", "agent_round"].includes(kind) && ["review_map", "finish_map"].includes(later.kind))

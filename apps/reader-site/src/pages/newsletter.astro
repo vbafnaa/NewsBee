@@ -1,0 +1,105 @@
+---
+import "../../../../shared/design-tokens.css";
+import { readerDatabase } from "../lib/reader-data";
+import { NEWSLETTER_TOPICS, newsletterAccess, newsletterConfig, type Subscription } from "../lib/newsletter";
+import { EMAIL_UNAVAILABLE } from "../../../../shared/email-availability";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+const config = newsletterConfig();
+const id = Astro.url.searchParams.get("id") ?? "", token = Astro.url.searchParams.get("token") ?? "";
+const confirming = Astro.url.searchParams.get("confirm") === "1";
+let sub: Subscription | null = null;
+let error = "";
+if (!config) { error = "Newsletter preferences are temporarily unavailable. Please try again later."; Astro.response.status = 503; }
+else {
+  try { sub = await newsletterAccess(await readerDatabase(), config, id, token, confirming ? "confirm" : "manage"); }
+  catch { error = "Newsletter preferences could not be loaded. Please try again."; Astro.response.status = 503; }
+  if (!sub && !error) { error = "This link is invalid or expired. Sign up again to receive a new confirmation link."; Astro.response.status = 404; }
+}
+const selected = confirming ? sub?.pending?.topics ?? sub?.topics ?? [] : sub?.topics ?? [];
+---
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" /><meta name="referrer" content="no-referrer" />
+    <title>Newsletter preferences | Newsbee</title></head>
+  <body><main>
+    <header><a class="brand" href={base}>Newsbee</a><p>Your community, this week</p></header>
+    <h1>{confirming ? "Confirm your newsletter" : "Your newsletter preferences"}</h1>
+    {sub ? <>
+      <p>{sub.locationName} · {sub.email}</p>
+      {sub.status === "unsubscribed" && !confirming && <p class="notice">You're currently unsubscribed from this community.</p>}
+      <form data-newsletter-form data-api={`${base}/api/newsletter/preferences`} data-id={id} data-token={token} data-confirming={String(confirming)}>
+        {confirming ? <><p id="email-unavailable">{EMAIL_UNAVAILABLE}</p>
+          <p>{selected.length ? selected.map((topic) => NEWSLETTER_TOPICS.find((entry) => entry.id === topic)?.label).join(", ") : "All topics"}</p>
+          <button type="submit" disabled aria-describedby="email-unavailable">Confirmation unavailable</button></>
+          : <><fieldset><legend>Choose the topics you want</legend><p>Leave all topics unchecked to receive everything.</p>
+            <div class="topics">{NEWSLETTER_TOPICS.map((topic) => <label><input type="checkbox" name="topics" value={topic.id} checked={selected.includes(topic.id)} />{topic.label}</label>)}</div>
+          </fieldset>
+          <label class="consent"><input type="checkbox" name="consent" required checked={sub.status === "active"} />I want weekly Newsbee editions for this community.</label>
+          <button type="submit">Save preferences</button>
+          <button class="quiet" data-unsubscribe type="button" hidden={sub.status === "unsubscribed"}>Unsubscribe from this community</button></>}
+      </form>
+      <p role="status" aria-live="polite" data-status></p>
+      <noscript>Enable JavaScript to confirm or update your newsletter preferences.</noscript>
+      <p><a href={`${base}?location=${encodeURIComponent(sub.locationId)}`}>Read {sub.locationName}'s latest edition</a></p>
+    </> : <><p role="alert">{error}</p><p><a href={`${base}#landing`}>Find your community and sign up</a></p></>}
+    <p><a href={`${base}/contact`}>Contact Newsbee</a></p>
+  </main></body>
+</html>
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-newsletter-form]");
+  const status = document.querySelector<HTMLElement>("[data-status]");
+  let busy = false;
+  const save = async (action: string) => {
+    if (!form || !status || busy || (action !== "unsubscribe" && !form.reportValidity())) return;
+    busy = true;
+    const buttons = [...form.querySelectorAll<HTMLButtonElement>("button")];
+    buttons.forEach((button) => button.disabled = true);
+    status.textContent = "Saving...";
+    try {
+      const response = await fetch(form.dataset.api!, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: form.dataset.id, token: form.dataset.token, action, topics: new FormData(form).getAll("topics"), consent: new FormData(form).get("consent") === "on" }), signal: AbortSignal.timeout(15000) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail ?? "Could not save preferences.");
+      status.textContent = result.detail;
+      if (action === "confirm" && result.manage_url) {
+        const link = document.createElement("a"); link.textContent = "Manage newsletter preferences"; link.href = result.manage_url;
+        status.append(" ", link); form.hidden = true;
+      } else if (action === "unsubscribe") {
+        form.querySelector<HTMLInputElement>('[name="consent"]')!.checked = false;
+        form.querySelector<HTMLElement>("[data-unsubscribe]")!.hidden = true;
+      } else if (action === "preferences") {
+        form.querySelector<HTMLElement>("[data-unsubscribe]")!.hidden = false;
+      }
+    } catch (error) { status.textContent = error instanceof Error ? error.message : "Could not save preferences. Please try again."; }
+    finally { busy = false; buttons.forEach((button) => button.disabled = false); }
+  };
+  form?.addEventListener("submit", (event) => { event.preventDefault(); void save(form.dataset.confirming === "true" ? "confirm" : "preferences"); });
+  form?.querySelector("[data-unsubscribe]")?.addEventListener("click", () => void save("unsubscribe"));
+</script>
+<style is:global>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--color-paper); color: var(--color-ink); font: 17px/1.6 Arial, sans-serif; }
+  main { width: 100%; max-width: 42rem; margin: 2rem auto; padding: 2rem; overflow-wrap: anywhere; }
+  header { text-align: center; border-bottom: 1px solid var(--color-line); padding-bottom: 1rem; }
+  .brand { font: 600 3rem/1 Georgia, serif; text-decoration: none; }
+  header p { color: var(--color-muted); }
+  h1 { font: 600 1.75rem/1.2 Georgia, serif; }
+  form { display: grid; gap: 1rem; margin-block: 1.5rem; }
+  form[hidden], [hidden] { display: none !important; }
+  fieldset { min-inline-size: 0; margin: 0; padding: 1rem; border: 1px solid var(--color-line-strong); border-radius: var(--radius-sm); }
+  legend { font-weight: 600; }
+  fieldset p { margin-top: 0; font-size: .875rem; color: var(--color-muted); }
+  .topics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  label { display: flex; align-items: baseline; gap: .5rem; font-size: .9375rem; }
+  input { flex-shrink: 0; }
+  button { min-height: 44px; padding: .75rem 1rem; border: 1px solid var(--color-bee-deep); border-radius: var(--radius-sm); background: var(--color-bee); color: var(--color-ink); font: 600 1rem/1.4 Arial, sans-serif; cursor: pointer; }
+  button.quiet { background: var(--color-surface); border-color: var(--color-line-strong); }
+  button:disabled { opacity: .65; cursor: wait; }
+  a { color: var(--color-ink); text-underline-offset: .2em; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+  .notice { padding: 1rem; background: var(--color-cream); }
+  @media (max-width: 40rem) { main { margin: 0; padding: 1.5rem 1rem; } .topics { grid-template-columns: 1fr; } }
+</style>

@@ -147,6 +147,7 @@ export type SourceRecord = {
   /** Listed with a link only (court portals, public notices): never collected. */
   link_only?: boolean;
   status: SourceStatus;
+  paused_status?: SourceStatus | null;
   note?: string | null;
   review?: SourceReview;
   window?: LookupWindow | null;
@@ -191,7 +192,7 @@ export function runSources(db: Db, runId: string) {
  */
 export const PAGE_DECISIONS = "page_decisions";
 export type PageDecision = { _id: string; location_id: string; key: string; url: string | null; name: string | null; section: SectionId | null; source_id: string | null;
-  decision: SourceDecision | null; reason_code: ReasonCode | null; reason: string | null; by: string; at: string; run_id: string | null };
+  decision: SourceDecision | null; reason_code: ReasonCode | null; reason: string | null; by: string; at: string; run_id: string | null; published_to_map?: boolean };
 export function pageDecisions(db: Db) { return db.collection<PageDecision>(PAGE_DECISIONS); }
 /** The key a page's decision is kept under: its normalised address, or its source id for a structured source. */
 export function pageKey(record: Pick<SourceRecord, "url" | "source_id">) { return record.url ? normaliseUrl(record.url) : `source:${record.source_id}`; }
@@ -208,20 +209,20 @@ export async function earlierPageDecisions(db: Db, locationId: string, records: 
   return new Map(found.map((decision) => [ids.get(decision._id)!, decision]));
 }
 
-async function keepPageDecision(db: Db, locationId: string, record: Pick<SourceRecord, "url" | "source_id" | "name" | "section">, review: SourceReview, runId: string | null) {
+async function keepPageDecision(db: Db, locationId: string, record: Pick<SourceRecord, "url" | "source_id" | "name" | "section">, review: SourceReview, runId: string | null, publishedToMap = false) {
   const key = pageKey(record);
   await pageDecisions(db).replaceOne({ _id: `${locationId}:${key}` }, {
     location_id: locationId, key, url: record.url, name: record.name, section: record.section, source_id: record.source_id,
-    decision: review.decision, reason_code: review.reason_code ?? null, reason: review.reason, by: review.by, at: review.at, run_id: runId,
+    decision: review.decision, reason_code: review.reason_code ?? null, reason: review.reason, by: review.by, at: review.at, run_id: runId, ...(publishedToMap ? { published_to_map: true } : {}),
   }, { upsert: true });
 }
 
 /**
  * Saves a person's decision on a page a test-mode run found, as `saveSourceReview` does for the
- * source map and with the same rules for codes and text, but by page: the run's own record and the
- * source map are left as they are. Returns the status the page would have with this decision.
+ * source map and with the same rules for codes and text. An explicit accept can also add a
+ * saved page from an interrupted run to the live source map.
  */
-export async function savePageDecision(db: Db, locationId: string, runId: string, sourceId: string, change: ReviewChange, by: string) {
+export async function savePageDecision(db: Db, locationId: string, runId: string, sourceId: string, change: ReviewChange, by: string, publishAccepted = false) {
   const record = await runSources(db, runId).findOne({ _id: `${locationId}:${sourceId}` });
   if (!record) throw new Error(`Unknown source: ${sourceId}`);
   const previous = await pageDecisions(db).findOne({ _id: `${locationId}:${pageKey(record)}` });
@@ -231,22 +232,44 @@ export async function savePageDecision(db: Db, locationId: string, runId: string
   if (nextCode && decisionOf(nextCode) !== decision) throw new Error("Invalid reason code: it doesn't belong to this source's decision");
   const reason = change.reason !== undefined ? change.reason : code && OTHER_CODES.includes(code) && code !== nextCode ? null : previous?.reason ?? null;
   const review: SourceReview = { decision, reason_code: nextCode, reason, initial_status: record.status, by, at: new Date().toISOString() };
+  const publish = publishAccepted && change.decision === "accept";
+  if (publish || previous?.run_id === runId && previous.published_to_map) {
+    const live = sourceMap(db);
+    const samePage = await live.findOne({ _id: record._id })
+      ?? (record.url ? await live.findOne({ location_id: locationId, url: record.url, reader: record.reader }) : null);
+    if (publish && !samePage) {
+      const { _id, review: _review, ...source } = record;
+      await live.updateOne({ _id }, { $setOnInsert: {
+        ...source, status: "proposed", health: emptyHealth(), score: 0, dormant_until: null,
+        first_seen: review.at, last_seen: review.at,
+      } }, { upsert: true });
+    }
+    if (publish || samePage) {
+      return saveSourceReview(db, locationId, samePage?.source_id ?? sourceId, {
+        decision: change.decision, reason_code: review.reason_code, reason: review.reason,
+      }, by, runId);
+    }
+  }
   await keepPageDecision(db, locationId, record, review, runId);
   const status: SourceStatus = decision === "reject" ? "rejected" : decision === "accept" ? "active" : record.status;
-  await db.collection<SourceReviewEntry>(SOURCE_REVIEWS).insertOne({
-    location_id: locationId, source_id: sourceId, url: record.url, name: record.name, section: record.section,
-    source_tier: record.source_tier ?? null, scope: record.scope ?? null, source_kind: record.source_kind ?? null,
-    found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
-  });
+  try {
+    await db.collection<SourceReviewEntry>(SOURCE_REVIEWS).insertOne({
+      location_id: locationId, source_id: sourceId, url: record.url, name: record.name, section: record.section,
+      source_tier: record.source_tier ?? null, scope: record.scope ?? null, source_kind: record.source_kind ?? null,
+      found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
+    });
+  } catch (error) {
+    throw new Error(`Test-mode page decision was saved; live source map unchanged, but history persistence failed. Reload before retrying: ${error instanceof Error ? error.message : String(error)}`);
+  }
   return { status, review };
 }
 
 /** One decision for many of a test-mode run's pages, each saved on its own, as `saveSourceReviews` does. */
-export async function savePageDecisions(db: Db, locationId: string, runId: string, sourceIds: string[], change: ReviewChange, by: string) {
+export async function savePageDecisions(db: Db, locationId: string, runId: string, sourceIds: string[], change: ReviewChange, by: string, publishAccepted = false) {
   const saved: Array<{ source_id: string; status: SourceStatus; review: SourceReview }> = [];
   const failed: Array<{ source_id: string; detail: string }> = [];
   for (const sourceId of [...new Set(sourceIds)]) {
-    try { saved.push({ source_id: sourceId, ...await savePageDecision(db, locationId, runId, sourceId, change, by) }); }
+    try { saved.push({ source_id: sourceId, ...await savePageDecision(db, locationId, runId, sourceId, change, by, publishAccepted) }); }
     catch (error) { failed.push({ source_id: sourceId, detail: error instanceof Error ? error.message : String(error) }); }
   }
   return { saved, failed };
@@ -371,7 +394,7 @@ export async function collectableSources(db: Db, locationId: string, today: stri
   const proposed = flow === "agentic" && options.proposedUntilApproved === false;
   const statuses = proposed ? ["active", "pinned", "dormant", "proposed"] : ["active", "pinned", "dormant"];
   const records = await reviewedLocationSources(db, locationId);
-  return records.filter((record) => statuses.includes(record.status) && !record.link_only
+  return records.filter((record) => statuses.includes(record.status) && record.review?.decision !== "reject" && !record.link_only
     && reviewAllowsCollection(record.access_review, today)
     && (record.status !== "dormant" || !record.dormant_until || record.dormant_until <= today))
     .sort((a, b) => Number(b.status === "pinned") - Number(a.status === "pinned") || b.score - a.score || a.name.localeCompare(b.name));
@@ -446,63 +469,94 @@ export async function recordPublishedCounts(db: Db, locationId: string, counts: 
   }
 }
 
-export async function setSourceStatus(db: Db, locationId: string, sourceId: string, status: SourceStatus, note?: string | null) {
+export async function setSourceStatus(db: Db, locationId: string, sourceId: string, status: SourceStatus, note?: string | null, expectedStatus?: SourceStatus) {
+  const source = (await reviewedLocationSources(db, locationId)).find((record) => record.source_id === sourceId);
+  if (!source) throw new Error(`Unknown source: ${sourceId}`);
+  if (expectedStatus && source.status !== expectedStatus) throw new Error("Invalid status: source changed; reload and try again");
   if (["active", "pinned", "dormant"].includes(status)) {
-    await reviewedLocationSources(db, locationId);
-    const source = await sourceMap(db).findOne({ _id: `${locationId}:${sourceId}` });
-    if (!source) throw new Error(`Unknown source: ${sourceId}`);
+    if (source.review?.decision === "reject") throw new Error("Invalid status: change the rejected Decision first");
     if (!reviewAllowsCollection(source.access_review, new Date().toISOString().slice(0, 10))) {
       throw new Error(`Invalid source access review: ${source.access_review?.reason}. Update the review before enabling collection.`);
     }
+    if (source.link_only) throw new Error("Invalid status: this source is link-only and cannot resume collection");
   }
   const set: Record<string, unknown> = { status, ...(note !== undefined ? { note } : {}) };
-  if (status !== "dormant") set.dormant_until = null;
-  const result = await sourceMap(db).updateOne({ _id: `${locationId}:${sourceId}` }, { $set: set });
-  if (!result.matchedCount) throw new Error(`Unknown source: ${sourceId}`);
+  set.paused_status = status === "paused" ? source.status === "paused" ? source.paused_status ?? null : source.status : null;
+  if (status !== "dormant" && status !== "paused") set.dormant_until = null;
+  const result = await sourceMap(db).updateOne({
+    _id: source._id, status: source.status, review: source.review ?? { $exists: false },
+    access_review: source.access_review ?? { $exists: false }, link_only: source.link_only ?? { $exists: false },
+  }, { $set: set });
+  if (!result.matchedCount) throw new Error("Invalid status: source changed; reload and try again");
+}
+
+export async function resumeSource(db: Db, locationId: string, sourceId: string) {
+  const source = await sourceMap(db).findOne({ _id: `${locationId}:${sourceId}` });
+  if (!source) throw new Error(`Unknown source: ${sourceId}`);
+  if (source.status !== "paused") throw new Error("Invalid status: only paused sources can resume");
+  const status = source.paused_status ?? (source.review?.initial_status === "pinned" ? "pinned" : "active");
+  if (!["active", "pinned", "dormant"].includes(status)) throw new Error("Invalid status: accept this source before enabling collection");
+  await setSourceStatus(db, locationId, sourceId, status, undefined, "paused");
 }
 
 /**
  * Saves a person's label and appends it to `source_reviews`. Send only what changed: a decision
  * moves the live status, and clearing it (null) restores the initial status; a reason alone
  * leaves the status alone. A changed decision clears the reason code, and leaving an Other code clears
- * its text; a note from before codes stays. The history row comes last, so a failed save can simply be
- * sent again.
+ * its text; a note from before codes stays. Activation is checked before any label/training write;
+ * status and review change together. Secondary persistence failures explicitly report what was saved.
  */
-export async function saveSourceReview(db: Db, locationId: string, sourceId: string, change: { decision?: SourceDecision | null; reason_code?: ReasonCode | null; reason?: string | null }, by: string) {
+export async function saveSourceReview(db: Db, locationId: string, sourceId: string, change: { decision?: SourceDecision | null; reason_code?: ReasonCode | null; reason?: string | null }, by: string, fromRunId: string | null = null) {
   const at = new Date().toISOString();
   const _id = `${locationId}:${sourceId}`;
+  let activationGuard = {};
+  if (change.decision !== undefined) {
+    const source = (await reviewedLocationSources(db, locationId)).find((record) => record.source_id === sourceId);
+    if (!source) throw new Error(`Unknown source: ${sourceId}`);
+    const nextStatus = change.decision === "reject" ? "rejected" : change.decision === "accept" ? "active" : source.review?.initial_status ?? source.status;
+    if (["active", "pinned", "dormant"].includes(nextStatus)
+      && !reviewAllowsCollection(source.access_review, at.slice(0, 10))) {
+      throw new Error(`Invalid source access review: ${source.access_review?.reason}. No decision or training label was saved.`);
+    }
+    activationGuard = { status: source.status, access_review: source.access_review ?? { $exists: false } };
+  }
   const decision = { $ifNull: ["$review.decision", null] };
   const code = { $ifNull: ["$review.reason_code", null] };
   const nextCode = change.reason_code !== undefined ? { $literal: change.reason_code } : change.decision !== undefined ? { $cond: [{ $eq: [decision, { $literal: change.decision }] }, code, null] } : code;
   // A code sent alone must suit the stored decision. Checking it in the write means a decision saved at the same moment can't slip past.
   const matches = change.reason_code && change.decision === undefined ? { "review.decision": decisionOf(change.reason_code) } : {};
   // One atomic write, so a reason and a decision saved together can't lose each other. $literal keeps "$..." text as text.
-  const record = await sourceMap(db).findOneAndUpdate({ _id, ...matches }, [{ $set: {
+  const record = await sourceMap(db).findOneAndUpdate({ _id, ...matches, ...activationGuard }, [{ $set: {
     "review.initial_status": { $ifNull: ["$review.initial_status", "$status"] },
     "review.decision": change.decision !== undefined ? { $literal: change.decision } : { $ifNull: ["$review.decision", null] },
     "review.reason_code": nextCode,
     "review.reason": change.reason !== undefined ? { $literal: change.reason } : { $cond: [{ $and: [{ $in: [code, OTHER_CODES] }, { $ne: [code, nextCode] }] }, null, { $ifNull: ["$review.reason", null] }] },
     "review.by": { $literal: by },
     "review.at": { $literal: at },
-  } }], { returnDocument: "after" });
+  } }, ...(change.decision !== undefined ? [{ $set: {
+    status: change.decision === "reject" ? "rejected" : change.decision === "accept"
+      ? { $cond: [{ $or: [{ $eq: ["$status", "pinned"] }, { $eq: ["$review.initial_status", "pinned"] }, { $eq: ["$paused_status", "pinned"] }] }, "pinned", "active"] }
+      : "$review.initial_status",
+    paused_status: null,
+  } }, { $set: { dormant_until: { $cond: [{ $eq: ["$status", "dormant"] }, "$dormant_until", null] } } }] : [])], { returnDocument: "after" });
   if (!record?.review) {
     if (change.reason_code && await sourceMap(db).countDocuments({ _id })) throw new Error("Invalid reason code: it doesn't belong to this source's decision");
+    if (await sourceMap(db).countDocuments({ _id })) throw new Error("Invalid review: source changed; reload and try again. No decision or training label was saved.");
     throw new Error(`Unknown source: ${sourceId}`);
   }
   const review = record.review;
   // The same decision shows on this page's row in test-mode source runs.
-  await keepPageDecision(db, locationId, record, review, null);
-  let status = record.status;
-  if (change.decision !== undefined) {
-    const pinned = record.status === "pinned" || review.initial_status === "pinned";
-    status = change.decision === "reject" ? "rejected" : change.decision === "accept" ? pinned ? "pinned" : "active" : review.initial_status;
-    await setSourceStatus(db, locationId, sourceId, status);
+  const status = record.status;
+  try {
+    await keepPageDecision(db, locationId, record, review, fromRunId, fromRunId !== null);
+    await db.collection<SourceReviewEntry>(SOURCE_REVIEWS).insertOne({
+      location_id: locationId, source_id: sourceId, url: record.url, name: record.name, section: record.section,
+      source_tier: record.source_tier ?? null, scope: record.scope ?? null, source_kind: record.source_kind ?? null,
+      found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
+    });
+  } catch (error) {
+    throw new Error(`Review and live status (${status}) were saved, but page-decision/history persistence failed. Reload before retrying: ${error instanceof Error ? error.message : String(error)}`);
   }
-  await db.collection<SourceReviewEntry>(SOURCE_REVIEWS).insertOne({
-    location_id: locationId, source_id: sourceId, url: record.url, name: record.name, section: record.section,
-    source_tier: record.source_tier ?? null, scope: record.scope ?? null, source_kind: record.source_kind ?? null,
-    found_by: record.found_by, status, link_only: record.link_only ?? false, non_scrapable_reason: nonScrapableReason(record), ...review, reason_label: reasonLabel(review.reason_code),
-  });
   return { status, review };
 }
 
@@ -554,4 +608,22 @@ export async function locationSources(db: Db, locationId: string) {
 /** Deletes source records only: their labels stay in `source_reviews`. */
 export async function removeLocationSources(db: Db, locationId: string) {
   await sourceMap(db).deleteMany({ location_id: locationId });
+}
+
+/** Source health across a newsroom's communities, for the journalist Overview. */
+export async function newsroomSourceHealth(db: Db, locationIds: string[]) {
+  if (!locationIds.length) return { active: 0, healthy: 0, needReview: 0, needAttention: 0, lastCheckedAt: null as number | null, firstAttentionLocation: null as string | null };
+  const rows = await sourceMap(db).find({ location_id: { $in: locationIds }, status: { $in: ["active", "pinned", "proposed"] } },
+    { projection: { location_id: 1, status: 1, "health.consecutive_failures": 1, "health.last_status": 1, "health.last_run_at": 1 } }).toArray();
+  const active = rows.filter((row) => row.status === "active" || row.status === "pinned");
+  const failing = active.filter((row) => (row.health?.consecutive_failures ?? 0) > 0 || Boolean(row.health?.last_status && row.health.last_status !== "ingested"));
+  const checked = rows.map((row) => row.health?.last_run_at ?? 0).filter((value) => value > 0);
+  return {
+    active: active.length,
+    healthy: active.length - failing.length,
+    needReview: rows.filter((row) => row.status === "proposed").length,
+    needAttention: failing.length,
+    lastCheckedAt: checked.length ? Math.max(...checked) : null,
+    firstAttentionLocation: failing[0]?.location_id ?? null,
+  };
 }

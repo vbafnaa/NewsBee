@@ -29,7 +29,7 @@ type Stored = {
 };
 export class CredentialValidationError extends Error {}
 const invalid = (message: string): never => { throw new CredentialValidationError(message); };
-const integrationKeys = ["serpapiKey", "searchapiKey", "brightdataKey", "brightdataZone", "brightdataUnlockerZone", "exaKey", "scrapingbeeKey", "typesafeKey", "openrouterKey", "attomKey", "jinaKey", "falKey"] as const;
+const integrationKeys = ["serpapiKey", "searchapiKey", "brightdataKey", "brightdataZone", "brightdataUnlockerZone", "exaKey", "scrapingbeeKey", "typesafeKey", "openrouterKey", "attomKey", "jinaKey", "falKey", "desktopVideoKey"] as const;
 export function emptyPersonalConfig(): PersonalConfig {
   const defaults = loadSettings({ NODE_ENV: process.env.NODE_ENV, NEWSBEE_MODE: "cloud" });
   return {
@@ -38,7 +38,7 @@ export function emptyPersonalConfig(): PersonalConfig {
     integrations: {
       serpapiKey: null, searchapiKey: null, brightdataKey: null, brightdataZone: null, brightdataUnlockerZone: null,
       exaKey: null, scrapingbeeKey: null, typesafeKey: null, openrouterKey: null,
-      attomKey: null, jinaKey: null, falKey: null, typesafeBase: defaults.integrations.typesafeBase, jevModel: defaults.integrations.jevModel,
+      attomKey: null, jinaKey: null, falKey: null, desktopVideoKey: null, typesafeBase: defaults.integrations.typesafeBase, jevModel: defaults.integrations.jevModel,
     },
   };
 }
@@ -63,10 +63,13 @@ function decrypt(row: Stored): PersonalConfig | null {
 const project = (row: Stored): CredentialProfile => ({
   userId: row._id, version: row.version, source: row.source, config: decrypt(row), revoked: row.revoked,
 });
+export function canUseEnvironmentKeys(principal: Principal): boolean {
+  return isConfiguredOwner(principal);
+}
 export async function credentialProfile(db: Db, principal: Principal): Promise<CredentialProfile | null> {
   const row = await db.collection<Stored>("journalist_credentials").findOne({ _id: principal.id });
   if (!row) return null;
-  if (row.source === "environment" && !isConfiguredOwner(principal)) return project({ ...row, revoked: true });
+  if (row.source === "environment" && !canUseEnvironmentKeys(principal)) return project({ ...row, revoked: true });
   return project(row);
 }
 export async function effectiveCredentialProfile(db: Db, principal: Principal): Promise<CredentialProfile | null> {
@@ -74,7 +77,7 @@ export async function effectiveCredentialProfile(db: Db, principal: Principal): 
   if (!current) throw new ExecutionBlocked("The sponsoring account is disabled. Further paid work is blocked.");
   const stored = await credentialProfile(db, current);
   if (stored) return stored;
-  return isConfiguredOwner(current)
+  return canUseEnvironmentKeys(current)
     ? { userId: current.id, version: 0, source: "environment", config: null, revoked: false, automatic: true }
     : null;
 }
@@ -108,7 +111,7 @@ function configFor(input: CredentialInput["config"], previous: PersonalConfig | 
   result.tavilySearchApiKey = secret(input.tavilySearchApiKey, result.tavilySearchApiKey);
   if (input.integrations !== undefined) {
     if (!input.integrations || typeof input.integrations !== "object" || Array.isArray(input.integrations)) return invalid("Invalid integrations");
-    for (const key of integrationKeys) result.integrations[key] = secret(input.integrations[key], result.integrations[key]);
+    for (const key of integrationKeys) result.integrations[key] = secret(input.integrations[key], result.integrations[key] ?? null);
     result.integrations.typesafeBase = url(input.integrations.typesafeBase, result.integrations.typesafeBase);
     result.integrations.jevModel = text(input.integrations.jevModel, result.integrations.jevModel, "Jev model");
   }
@@ -148,9 +151,9 @@ async function write(db: Db, principal: Principal, input: CredentialInput | null
   for (let attempt = 0; attempt < 20; attempt++) {
     const old = await collection.findOne({ _id: principal.id });
     const version = (old?.version ?? 0) + 1;
-    const source = input?.source ?? old?.source ?? (isConfiguredOwner(principal) ? "environment" : "personal");
+    const source = input?.source ?? old?.source ?? (canUseEnvironmentKeys(principal) ? "environment" : "personal");
     if (input && source !== "personal" && source !== "environment") return invalid("Invalid credential source");
-    if (input && source === "environment" && !isConfiguredOwner(principal)) return invalid("Only the owner configured by NEWSBEE_OWNER_EMAIL may choose deployment defaults. Editors must save personal API keys.");
+    if (input && source === "environment" && !isConfiguredOwner(principal)) return invalid("Only the owner configured by NEWSBEE_OWNER_EMAIL may choose deployment defaults. Other operators must save personal API keys.");
     const config = input && source === "personal" ? configFor(input.config, old && !old.revoked ? decrypt(old) : null) : null;
     const row: Stored = { _id: principal.id, version, source, revoked: !input };
     if (config) {
@@ -171,7 +174,7 @@ async function write(db: Db, principal: Principal, input: CredentialInput | null
     }
     await blockSponsoredRuns(db, principal.id, input
       ? "The sponsor's API settings changed. Explicitly reconnect this run before continuing."
-      : "The sponsor's API settings were revoked. Save credentials and explicitly reconnect this run before continuing.");
+      : "The sponsor's API settings were revoked. Save credentials and explicitly reconnect this run before continuing.", true);
     return { userId: principal.id, version, source, config, revoked: !input };
   }
   throw new Error("Credential profile changed concurrently; retry");

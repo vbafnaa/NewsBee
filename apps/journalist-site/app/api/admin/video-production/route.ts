@@ -12,7 +12,12 @@ export async function GET(request: Request) {
   return adminRoute(request, async (deps) => {
     const personal = await personalRequestDeps(deps, deps.principal!, undefined, false, false);
     const locationId = new URL(request.url).searchParams.get("locationId");
-    if (!locationId) return { locations: await videoLocations(deps.db), falConfigured: falVideoConfigured(personal.settings.integrations.falKey), model: falVideoModel() };
-    return { ...(await videoStoriesForLocation(deps.db, locationId)), falConfigured: falVideoConfigured(personal.settings.integrations.falKey), model: falVideoModel() };
+    const providers = {
+      falConfigured: falVideoConfigured(personal.settings.integrations.falKey),
+      desktopConfigured: Boolean(personal.settings.integrations.desktopVideoKey),
+      model: falVideoModel(),
+    };
+    if (!locationId) return { locations: await videoLocations(deps.db), ...providers };
+    return { ...(await videoStoriesForLocation(deps.db, locationId)), ...providers };
   });
 }

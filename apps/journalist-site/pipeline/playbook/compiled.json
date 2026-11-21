@@ -1,5 +1,5 @@
 {
- "version": "75fd5546e632bb1f",
+ "version": "09591263dfccc6fd",
  "categories": [
   {
    "id": "events",
@@ -1965,7 +1965,7 @@
    "text": "Words that put a story in this section.",
    "set": "item_keywords",
    "order": 4,
-   "regex": "athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\\bdefeated\\b|\\bleague\\b.*\\b(game|match|season)\\b",
+   "regex": "athlet|varsity|football|soccer|basketball|volleyball|baseball|softball|wrestling|swim meet|track and field|cross country|playoff|final score|\\bdefeated\\b|\\bleague\\b.*\\b(game|match|season)\\b|\\bregular[- ]season\\b|\\bseason (finale|opener)\\b|\\b(stuns|beats|tops|edges|routs|falls to)\\b.*\\b\\d{1,3}-\\d{1,3}\\b",
    "flags": "i",
    "consumers": [
     "manual",

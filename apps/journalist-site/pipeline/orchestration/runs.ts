@@ -15,10 +15,13 @@ import { collectedItems } from "../editions/assemble";
 import type { ExecutionBinding } from "../accounts/execution";
 import type { CategoryCoverage } from "../sourcemap/store";
 import { PLAYBOOK_VERSION } from "../playbook";
+import type { PublicationPreferenceSnapshot } from "../../../../shared/publication-settings";
+import type { executionBlock } from "../core/execution-errors";
+import { EXECUTABLE_PUBLICATION_GENERATION_STATUSES } from "../publications/generation-status";
 
 /** Count retained inputs in the store authoring reads, not connector/run summary counters. */
-export async function collectionCandidateCount(db: Db, runId: string): Promise<number> {
-  return collectedItems(db).countDocuments({ run_id: runId, status: { $ne: "dropped" }, facts: { $ne: null } });
+export async function collectionCandidateCount(db: Db, runId: string, sourceIds?: string[]): Promise<number> {
+  return collectedItems(db).countDocuments({ run_id: runId, status: { $ne: "dropped" }, facts: { $ne: null }, ...(sourceIds ? { source_id: { $in: sourceIds } } : {}) });
 }
 
 export type RunStatus = "mapping" | "mapped" | "collecting" | "awaiting_authoring" | "authoring" | "awaiting_finish" | "finishing" | "publishing" | "built" | "published" | "failed" | "cancelled";
@@ -36,7 +39,7 @@ export const RESTARTABLE_RUN_STATUSES: RunStatus[] = [...FINISHED_RUN_STATUSES, 
 /** The jobs each stage may run. Discovery stays under collecting for runs started before map runs. */
 const STAGE_KINDS: Partial<Record<RunStatus, JobKind[]>> = {
   mapping: ["discover", "agent_round", "review_map", "finish_map"],
-  collecting: ["discover", "agent_round", "plan_sources", "collect_source"],
+  collecting: ["discover", "agent_round", "plan_sources", "collect_source", "follow_links"],
   authoring: ["author_start", "author_rank", "author_story", "image_story", "stock_story"],
   finishing: ["author_finish"],
   publishing: ["author_finish"],
@@ -47,6 +50,11 @@ export function stageKinds(run: Pick<PipelineRun, "status">): JobKind[] { return
 export async function workableRuns(db: Db) {
   return runs(db).aggregate<PipelineRun>([
     { $match: { status: { $in: PROCESSING_RUN_STATUSES }, execution_blocked: { $exists: false } } },
+    { $lookup: { from: COLLECTIONS.publicationGenerations, localField: "publication_generation_id", foreignField: "_id", as: "generation" } },
+    { $match: { $or: [
+      { publication_generation_id: { $exists: false } },
+      { "generation.status": { $in: [...EXECUTABLE_PUBLICATION_GENERATION_STATUSES] } },
+    ] } },
     { $addFields: { is_map: { $eq: ["$kind", "map"] } } },
     { $sort: { is_map: 1, created_at: 1, _id: 1 } },
     { $lookup: {
@@ -60,7 +68,7 @@ export async function workableRuns(db: Db) {
       ],
     } },
     { $match: { "work.0": { $exists: true } } },
-    { $project: { work: 0, is_map: 0 } },
+    { $project: { work: 0, is_map: 0, generation: 0 } },
   ]).toArray();
 }
 
@@ -85,13 +93,24 @@ export type RunSource = {
 };
 
 /** A source as it stood when the run planned collection; the map itself changes later. */
+export function partialCollectionSources(run: PipelineRun): string[] | undefined {
+  if (run.kind === "map" || run.status !== "failed" || run.draft_id) return;
+  const lastStage = run.stage_transitions?.filter((transition) => PROCESSING_RUN_STATUSES.includes(transition.status)).at(-1)?.status;
+  if (lastStage !== "collecting" && (lastStage || !/^Timed out after .* while collecting\./.test(run.error ?? ""))) return;
+  return run.sources.filter((source) => source.status === "completed" && source.result_status !== "failed").map((source) => source.source_id);
+}
+
 export type RunSourceSnapshot = { source_id: string; name: string; url: string | null; reader: string; status: string; section: string; found_by: string; detail: string; tier: string | null; topics: string[]; collected: boolean; skip_reason: string | null };
 
 export type PipelineRun = {
   _id: string;
-  admission?: "newsroom";
+  admission?: "newsroom" | "publication";
+  /** Present only for bounded child runs that belong to one combined publication draft. */
+  publication_generation_id?: string;
+  publication_id?: string;
+  publication_preference_snapshot?: PublicationPreferenceSnapshot;
   execution?: ExecutionBinding;
-  execution_blocked?: { reason: string; at: number };
+  execution_blocked?: ReturnType<typeof executionBlock>;
   /** A map run only writes the source map. Absent on runs from before the split, which were editions. */
   kind?: "map" | "edition";
   /** A finished map run's sources per category, as they stood when it ended. */
@@ -110,6 +129,7 @@ export type PipelineRun = {
   /** The `today` of this location's last published run; connectors looking back since the last edition start here. */
   last_edition_day?: string | null;
   sources: RunSource[];
+  partial_collection_source_ids?: string[];
   collection_tasks?: SourceTask[];
   /** False until the source map has been read into collection tasks (after discovery). */
   planned?: boolean;
@@ -159,6 +179,7 @@ export async function ensureRunIndexes(db: Db) {
   await runs(db).createIndexes([
     { key: { location_id: 1, created_at: -1 } },
     { key: { status: 1, created_at: -1 } },
+    { key: { publication_generation_id: 1, created_at: 1 }, name: "publication_generation_children" },
   ]);
   // The index's statuses grew with map runs, and an index's filter can't be changed in place.
   const open = (await runs(db).indexes()).find((index) => index.name === "one_open_run_per_location");
@@ -169,7 +190,11 @@ export async function ensureRunIndexes(db: Db) {
   // and the collecting-only index remains in place until the stronger index exists.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const active = await runs(db).find({ status: { $in: ACTIVE_RUN_STATUSES } }).toArray();
-    if (active.length > 1) {
+    const parentIds = new Set(active.map((run) => run.publication_generation_id).filter((id): id is string => Boolean(id)));
+    const compatibleChildren = active.length > 1
+      && parentIds.size === 1
+      && active.every((run) => run.admission === "publication" && run.publication_generation_id);
+    if (active.length > 1 && !compatibleChildren) {
       await runs(db).updateMany({ _id: { $in: active.map((run) => run._id) } }, {
         $set: { execution_blocked: { reason: "Historical unfinished runs conflict with the global newsroom slot. Cancel excess runs explicitly before reconnecting or claiming the remaining run.", at: now() } },
       });
@@ -314,6 +339,24 @@ export async function openRunIds(db: Db) {
 
 export class RunConflict extends Error {}
 
+/** Publication-generation children are controlled only through their parent workflow. */
+export async function assertStandaloneRunControl(db: Db, runId: string) {
+  const run = await getRun(db, runId);
+  if (!run) throw new Error(`Unknown run: ${runId}`);
+  if (run.publication_generation_id) {
+    throw new RunConflict("This location draft is managed by its combined publication generation.");
+  }
+  return run;
+}
+
+export async function assertStandaloneEditionControl(db: Db, locationId: string, editionId: string) {
+  const edition = await db.collection<{ run_id?: string }>(COLLECTIONS.editions).findOne(
+    { id: editionId, location_id: locationId },
+    { projection: { run_id: 1 } },
+  );
+  if (edition?.run_id) await assertStandaloneRunControl(db, edition.run_id);
+}
+
 /** A terminal transition; competing publication must acquire the publishing stage first. */
 export async function cancelRun(db: Db, runId: string, by: string) {
   const current = now();
@@ -339,7 +382,10 @@ export async function currentRuns(db: Db): Promise<CurrentRun[]> {
 
 export async function recentRuns(db: Db, options: { locationId?: string; limit?: number; offset?: number } = {}) {
   return runs(db)
-    .find(options.locationId ? { location_id: options.locationId } : {})
+    .find({
+      publication_generation_id: { $exists: false },
+      ...(options.locationId ? { location_id: options.locationId } : {}),
+    })
     .sort({ created_at: -1, _id: -1 })
     .skip(options.offset ?? 0)
     .limit(options.limit ?? 20)

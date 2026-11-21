@@ -3,7 +3,7 @@ import StoryIllustration from "./StoryIllustration.astro";
 import StoryPhoto from "./StoryPhoto.astro";
 import type { ArticlePhoto } from "../../lib/edition-view";
 import type { EditorialIllustration } from "../../../../../shared/editorial-illustrations";
-interface Props { illustration?: EditorialIllustration; photo?: ArticlePhoto; lead?: boolean }
-const { illustration, photo, lead = false } = Astro.props;
+interface Props { illustration?: EditorialIllustration; photo?: ArticlePhoto; lead?: boolean; caption?: boolean }
+const { illustration, photo, lead = false, caption = false } = Astro.props;
 ---
-{illustration ? <StoryIllustration illustration={illustration} lead={lead} /> : photo ? <StoryPhoto photo={photo} lead={lead} /> : null}
+{illustration ? <StoryIllustration illustration={illustration} lead={lead} caption={caption} /> : photo ? <StoryPhoto photo={photo} lead={lead} /> : null}

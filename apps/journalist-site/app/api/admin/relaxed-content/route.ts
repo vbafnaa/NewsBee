@@ -1,4 +1,5 @@
 import { adminRoute } from "@/lib/admin-api";
+import { ownerGuard } from "@/lib/admin-session";
 import { COLLECTED_ITEMS } from "@/pipeline/editions/assemble";
 import { ITEM_TEXTS } from "@/pipeline/editions/details";
 import { sourceMap } from "@/pipeline/sourcemap/store";
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 /** Deletes everything collected by skipping an access rule: stored text, items and proposed sources. */
 export async function DELETE(request: Request) {
+  const denied = await ownerGuard(request);
+  if (denied) return denied;
   return adminRoute(request, async ({ db }) => {
     const texts = await db.collection(ITEM_TEXTS).deleteMany({ relaxed: true });
     const items = await db.collection(COLLECTED_ITEMS).deleteMany({ "access_overrides.0": { $exists: true } });

@@ -1,20 +1,18 @@
 ---
-import { TOPICS } from "../../../../../shared/topics";
+import { sectionNavigation } from "../../lib/reader-navigation";
 type Link = { label: string; href: string };
 // place: "Ballard, Seattle" for the tagline. more: the last column (links to submit, sign up…).
 // pageHref: the neighborhood page the section links point into, when this is one of its sub-pages.
-interface Props { place: string; neighborhoods: Link[]; visible: string[]; more: { heading: string; links: Link[] }; homeHref?: string; pageHref?: string }
-const { place, neighborhoods, visible, more, homeHref = "#top", pageHref = "" } = Astro.props;
+interface Props { place: string; neighborhoods: Link[]; visible: string[]; more: { heading: string; links: Link[] }; homeHref?: string; pageHref?: string; sectionLinks?: Link[] }
+const { place, neighborhoods, visible, more, homeHref = "#top", pageHref = "", sectionLinks } = Astro.props;
 const columns = [
   { heading: "Neighborhoods", links: neighborhoods },
   {
     heading: "Sections",
-    links: [
+    links: sectionLinks ?? [
       { label: "Home", id: "top" },
-      { label: "Top News", id: "top-news" },
-      { label: "Events", id: "events" },
-      ...TOPICS.map((topic) => ({ label: topic.label, id: topic.id })),
-    ].filter((link) => link.id === "top" || visible.includes(link.id))
+      ...sectionNavigation(visible, true),
+    ]
       .map((link) => ({ label: link.label, href: link.id === "top" && pageHref ? pageHref : `${pageHref}#${link.id}` })),
   },
   more,

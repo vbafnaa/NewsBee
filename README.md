@@ -85,6 +85,35 @@ Data lives under the ignored `.local/stage2/` (MongoDB and a local stand-in for 
 The first run downloads MongoDB, and the first location search loads the Census and
 library directories, so allow a minute or two. Stop with Ctrl+C.
 
+The local stack also seeds two synthetic publications (Northside Weekly and Harbor Daily),
+their ready/onboarded locations, owner/admin and separately assigned editor role demos.
+`local-draft-1` and `local-draft-2` are published through the real approval/release helpers;
+Northside has a correction and `local-unpublished-1` is editable (including an original
+story with source controls), while `local-unpublished-2` is approved but unpublished.
+Fixtures use the November 9-15, 2026 window and publication timestamps from setup time.
+Existing local role identities are unchanged; use `/api/local-role?as=editor-a&returnTo=/newsroom`
+(or `owner`, `admin`, `editor-b`) to switch.
+
+Review data is initialized once per database, repairs the older incomplete `local-draft-*`
+seed, and is preserved on subsequent starts. Use a fresh `NEWSBEE_LOCAL_DATA_DIR` and
+`MONGODB_DATABASE` for a clean review; only loopback `MONGODB_URI` values are accepted.
+`NEWSBEE_LOCAL_JOURNALIST_PORT`, `NEWSBEE_LOCAL_READER_PORT` and `NEWSBEE_LOCAL_MONGO_PORT`
+isolate parallel stacks. `NEWSBEE_LOCAL_SEED_ONLY=1` seeds and exits without apps or ticks.
+No provider, email or deployment calls are made by seeding.
+
+The default `NEWSBEE_LOCAL_REVIEW_SCENARIO=source-runs` includes isolated active
+`local-source-run-a`, historical `local-source-run-b`, and Harbor's `local-old-run`
+behind 205 newer history rows. A failed combined parent records a stopped, unsponsored
+child. Select `blocked-generation` to instead keep that parent running with an
+execution-blocked child; A becomes cancelled so the two workflows never compete for the
+global newsroom slot. Switching scenarios deliberately resets only these synthetic
+workflow states; restarting the same scenario preserves edits/cancellations. No jobs
+are queued. Cancel the synthetic active workflow before starting real local work.
+Source and media URLs use reserved `.test` domains, not live reporting. For isolated
+browser checks, fulfill `https://media.newsbee.example.test/review.svg` with
+`apps/journalist-site/scripts/fixtures/review.svg` and block other external requests;
+the media intentionally has no external server.
+
 **4. Make an edition.** In **Location workspaces**, search for a town or a neighbourhood (for example
 `Ballard, Seattle`, then **Search all communities**), add it, and open its workspace. In
 **Collect sources**, click **Start source run**, then accept or reject the pages it found. Manage
@@ -98,11 +127,12 @@ after collection and after writing, for debugging one stage.
 Paid services are off until you tick them for a run, so with the defaults a run makes no paid
 calls and uses Ollama. See [Run options](#run-options) and [APIs and paid calls](#apis-and-paid-calls).
 In the journalist workspace, **Operations → Environment & API settings** stores personal
-provider keys. Editors must use their own keys, with no server credential selection or fallback.
+provider keys. Set `USE_ENV_VAR_FOR_KEYS=true` on the journalist server to let editors
+without a saved profile use server API keys automatically. Saved personal profiles keep using their own keys.
 Only the exact configured owner may select **Use API keys from server environment**;
 that owner uses server defaults automatically or may save personal
 overrides. Switching sources or revoking a profile pauses unfinished runs until reconnected.
-Historical editor environment selections are blocked until personal keys are saved and runs explicitly reconnected.
+Turning off the flag blocks editor runs bound to server keys. To continue those runs with personal keys, save a personal profile and reconnect.
 Browsing and other keyless actions stay available.
 
 **Troubleshooting:** "No model provider can serve requests" means the API key is missing or
@@ -436,10 +466,13 @@ back-off, and no Facebook, Nextdoor, Instagram, X, Reddit, TikTok or Legacy.com.
 
 ## Pages
 
-- **Journalist workspace:** the Newsroom hub, location workspaces (Overview
-  with alerts and their fixes, Sources, Collect sources, Collect stories, Publish and Settings), the Editorial
-  inbox, and Operations (System, Storage, Clear data, Users, settings and approvals). Sources are
-  edited only in a location's **Sources** tab.
+- **Newsbee Newsroom:** `/newsroom` and `/newsroom/<publication-id>` are the paid journalist
+  product for publication-scoped weekly review, original reporting, web/email preview, approval,
+  publishing, audience delivery and video creation.
+- **Newsbee Admin:** `/admin` is the queue-first platform-operations portal for location readiness,
+  source pipelines, publications, access, usage and feedback. Internal maps, system/storage,
+  data clearing, user administration and provider settings are operator-only and never appear in
+  Newsbee Newsroom.
 - **Internal maps:** `/source-map` has **All sources** (the source network) and **Source runs**:
   read each source map run page by page (settings it used, how it ended, limits, stages, every page
   with its checks and verdicts, by tool, the agent log, and a comparison with another source run). `/edition-map` shows one funnel per run, from the first search to the final
@@ -447,8 +480,8 @@ back-off, and no Facebook, Nextdoor, Instagram, X, Reddit, TikTok or Legacy.com.
   coverage, cost per service and a comparison of two runs.
   `/interest-usage` shows distinct edition-view,
   subscription-signup and interest-signup metrics on a geographic heat grid and exact-count
-  table, with date/location filters and explicit history limits. All three open inside the workspace
-  for a signed-in journalist, or behind `NEWSBEE_INTERNAL_PASSWORD` for anyone without an account.
+  table, with date/location filters and explicit history limits. All three open inside Newsbee Admin
+  for a signed-in operator, or behind `NEWSBEE_INTERNAL_PASSWORD` for anyone without an account.
   Maps are read-only for everyone: source runs are started, and pages and sources accepted or
   rejected, only in a location's workspace, under **Sources**.
 - **System → Model usage** (`/health?view=usage`, administrator-only): calls, reported input/output

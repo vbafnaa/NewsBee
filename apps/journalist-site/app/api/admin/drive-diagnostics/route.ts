@@ -1,6 +1,8 @@
 import { adminGuard } from "@/lib/admin-session";
 import { loadSettings } from "@/pipeline/core/config";
 import { driveFolderDetails, driveServiceAccountEmail, testDriveUpload } from "@/pipeline/storage/drive";
+import { getDatabase } from "@/pipeline/storage/mongo";
+import { withSiteWriter } from "../../../../../../shared/restore-maintenance";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,7 @@ export async function POST(request: Request) {
     return Response.json({ detail: "Configure NEWSBEE_PIPELINE_DRIVE_FOLDER_ID in cloud mode first" }, { status: 400 });
   }
   try {
-    return Response.json(await testDriveUpload(settings.pipelineDriveFolderId),
+    return Response.json(await withSiteWriter(await getDatabase(), () => testDriveUpload(settings.pipelineDriveFolderId!)),
       { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 500 });

@@ -1,0 +1,69 @@
+---
+import EditionLayout from "../../../components/edition/EditionLayout.astro";
+import ShareLink from "../../../components/edition/ShareLink.astro";
+import SiteFooter from "../../../components/edition/SiteFooter.astro";
+import SiteHeader from "../../../components/edition/SiteHeader.astro";
+import { publicationArchive } from "../../../lib/reader-data";
+import { publicationLinks } from "../../../lib/publication-view";
+export const prerender = false;
+const { publicationId } = Astro.params;
+const loaded = await publicationArchive(publicationId!).catch((cause) => {
+  console.error("Publication archive unavailable", cause);
+  Astro.response.status = 502;
+  return null;
+});
+if (!loaded) Astro.response.status = 404;
+const links = publicationLinks(publicationId!);
+const today = new Date().toLocaleDateString("en-US", {
+  weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles",
+});
+---
+<EditionLayout title={loaded ? `${loaded.summary.display_name} archive | Newsbee` : "Archive unavailable | Newsbee"}>
+  {loaded && <SiteHeader town={loaded.summary.display_name} today={today} visible={[]}
+    homeHref={links.publication} homeLabel={`${loaded.summary.display_name}, publication home`} pageHref={links.publication}
+    browseHref={links.section("all")} browseLabel="Latest release stories"
+    subscribeHref={links.newsletter} subscribeLabel="Publication newsletter" />}
+  <main id="main" class="nb-container archive">
+    {loaded ? <>
+      <a class="nb-link" href={links.publication}>Latest release</a>
+      <header>
+        <p class="nb-label">Publication archive</p>
+        <h1>{loaded.summary.display_name}</h1>
+        <p>Read past editions, including correction notices and withdrawn history. Each link opens that published version.</p>
+        <ShareLink href={links.archive} title={`${loaded.summary.display_name} archive`} label="Share archive" />
+      </header>
+      <ol>{loaded.manifest.archive.map((entry) => <li>
+        <div>
+          <p class="nb-label">{entry.withdrawn ? "Withdrawn release" : entry.supersedes_release_id ? "Corrected release" : "Publication release"}</p>
+          <h2><a class="nb-card-link" href={`${links.publication}/releases/${encodeURIComponent(entry.release_id)}`}><span class="nb-title">{entry.title}</span></a></h2>
+          <p>{entry.window_start} to {entry.window_end} · {entry.locations.map((location) => location.name).join(" · ")}</p>
+          {entry.withdrawn && <p class="withdrawn">Withdrawn: {entry.withdrawal_reason}</p>}
+          {entry.supersedes_release_id && <p>Corrects release {entry.supersedes_release_id}</p>}
+        </div>
+        <time datetime={new Date(entry.published_at * 1000).toISOString()}>{new Date(entry.published_at * 1000).toLocaleDateString("en-US")}</time>
+      </li>)}</ol>
+    </> : <p role="alert">This publication archive could not be found.</p>}
+  </main>
+  {loaded && <SiteFooter place={loaded.summary.locations.map((location) => location.name.replace(/,\s*[A-Z]{2}$/, "")).join(", ")}
+    visible={[]} homeHref={links.publication} pageHref={links.publication}
+    neighborhoods={loaded.summary.locations.map((location) => ({ label: location.name.split(",")[0].trim(), href: links.location(location.id) }))}
+    more={{ heading: "Publication", links: [
+      { label: "Latest release", href: links.publication },
+      { label: "Latest release stories", href: links.section("all") },
+      { label: "Publication newsletter", href: links.newsletter },
+      { label: "Discover other publications and communities", href: links.home },
+    ] }} />}
+</EditionLayout>
+<style>
+  .archive { gap: var(--space-8); max-width: 58rem; }
+  header { display: grid; gap: var(--space-4); max-width: 48rem; }
+  header > p:not(.nb-label) { color: var(--color-ink-soft); }
+  h1 { font-size: var(--text-h1); line-height: var(--leading-h1); letter-spacing: var(--tracking-h1); }
+  ol { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  li { display: flex; justify-content: space-between; gap: var(--space-5); padding-block: var(--space-5); border-bottom: 1px solid var(--color-line); }
+  li div { display: grid; gap: var(--space-2); } h2 { font-size: var(--text-h3); } .withdrawn { color: var(--color-ink); font-weight: 600; }
+  time { flex-shrink: 0; color: var(--color-muted); font-size: var(--text-sm); }
+  @media (max-width: 32rem) {
+    li { align-items: flex-start; flex-direction: column; }
+  }
+</style>

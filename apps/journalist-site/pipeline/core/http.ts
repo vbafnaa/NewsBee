@@ -2,6 +2,7 @@
  * Swappable HTTP transport. Connectors never call fetch directly, so integration tests can
  * replay recorded source responses (see tests/support/replay.ts).
  */
+import type { FreeService } from "./run-values";
 
 export type HttpRequest = {
   url: string;
@@ -23,6 +24,13 @@ export type HttpResponse = {
 export type HttpTransport = (request: HttpRequest) => Promise<HttpResponse>;
 
 export class ResponseTooLargeError extends Error {}
+
+export class ExternalServiceDisabledError extends Error {
+  constructor(readonly service: FreeService) {
+    super(`${service} is switched off for this run`);
+    this.name = "ExternalServiceDisabledError";
+  }
+}
 
 export class HttpStatusError extends Error {
   constructor(readonly status: number, readonly url: string, readonly retryAfterSeconds?: number) {

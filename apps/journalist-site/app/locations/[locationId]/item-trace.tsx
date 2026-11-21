@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 import type { EvidencePacket } from "@/pipeline/editions/evidence";
 import type { ImageResult } from "@/pipeline/images/pipeline";
+import StoryEvidence from "@/app/components/story-evidence";
 import StoryReview, { type StoryReviewValue } from "./story-review";
 
 type Trace = {
@@ -56,24 +57,13 @@ export default function ItemTrace({ runId, itemId, onClose, onChanged, review }:
         <dt>Replication</dt><dd>{item.replication ? `${item.replication.copies} cop${item.replication.copies === 1 ? "y" : "ies"} passed the checks, from ${item.replication.sources} source${item.replication.sources === 1 ? "" : "s"} and ${item.replication.independent} independent publisher${item.replication.independent === 1 ? "" : "s"}${item.replication.publishers.length ? ` (${item.replication.publishers.join(", ")})` : ""}` : "Not counted (left out before merging, or an older run)"}</dd>
         <dt>Section and rank</dt><dd>{item.section?.replace(/_/g, " ") ?? "—"}{item.rank ? ` · #${item.rank}` : ""}{item.score !== null && item.score !== undefined ? ` · score ${item.score}` : ""}{item.why ? ` · ${item.why}` : ""}</dd>
         <dt>Pre-ranker</dt><dd>{item.pre_rank ? <>{item.pre_rank.score} of 18 (civic {item.pre_rank.civic}, appeal {item.pre_rank.appeal}, special {item.pre_rank.special}){item.pre_rank.rules.length > 0 && <ul>{item.pre_rank.rules.map((rule) => <li key={rule}><small>{rule}</small></li>)}</ul>}</> : "Not rated (outside the ranked shortlist, or an older run)"}</dd>
-        <dt>Source evidence</dt><dd>{item.evidence ? <>
-          <p>Text: {item.evidence.text_quality} · extraction: {item.evidence.extraction.replaceAll("_", " ")}. Text volume is not a factual-quality score.</p>
-          {item.evidence.extraction_error && <p className="alert">{item.evidence.extraction_error}</p>}
-          {item.evidence.missing.length > 0 && <p>Not established in structured details: {item.evidence.missing.join(", ")}.</p>}
-          {!item.evidence.sources.length && <p>No source URL available for enrichment.</p>}
-          {item.evidence.facts?.map((fact, index) => <details key={`fact:${index}`}>
-            <summary>{fact.field.replaceAll("_", " ")}: {fact.value}</summary>
-            <blockquote>{fact.quote}</blockquote>
-            <p>{fact.source_urls.length ? fact.source_urls.join(" · ") : "Supported by the collected title/description; no matching retrieved passage."}</p>
-          </details>)}
-          {item.evidence.sources.map((source, index) => <details key={`${source.url}:${index}`}>
-            <summary>{source.status}: {source.final_url ?? source.url}</summary>
-            {source.reason && <p>{source.reason}</p>}
-            {source.fetched_at && <p>Fetched: {source.fetched_at}{source.truncated ? " (text capped)" : ""}</p>}
-            {source.content_hash && <p>Content SHA-256: <code>{source.content_hash}</code></p>}
-            {source.passages.map((passage, position) => <blockquote key={position}>{passage}</blockquote>)}
-          </details>)}
-        </> : "Not enriched (older run or outside the ranked shortlist)"}</dd>
+        <dt>Source evidence</dt><dd><StoryEvidence items={[{
+          id: item._id,
+          title: item.title,
+          source_name: item.source_name,
+          url: item.url,
+          ...(item.evidence ? { evidence: item.evidence } : {}),
+        }]} direct /></dd>
         <dt>Details</dt><dd><pre>{trace.details ? show(trace.details) : "—"}</pre></dd>
         <dt>Floor</dt><dd>{trace.floor ? [trace.floor.reason ? `names withheld (${trace.floor.reason})` : null, trace.floor.blockAddresses ? "block-level places" : null, trace.floor.suicide ? "no method details, 988 line" : null].filter(Boolean).join(", ") || "No floor rule applies" : "—"}</dd>
         <dt>Writing</dt><dd>{trace.writing ? <><strong>{trace.writing.disposition}</strong> after {trace.writing.attempts} attempt(s){trace.writing.errors.length ? ` · ${trace.writing.errors.join(", ")}` : ""}{trace.writing.error ? ` · ${trace.writing.error}` : ""}

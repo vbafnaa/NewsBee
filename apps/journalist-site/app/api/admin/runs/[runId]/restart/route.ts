@@ -2,7 +2,7 @@ import { adminRoute, kickPipeline } from "@/lib/admin-api";
 import { currentAdmin } from "@/lib/admin-session";
 import { expireOverdueRuns } from "@/pipeline/orchestration/diagnostics";
 import { startMapRun, startRun } from "@/pipeline/orchestration/orchestrator";
-import { getRun, RESTARTABLE_RUN_STATUSES, RunConflict } from "@/pipeline/orchestration/runs";
+import { assertStandaloneRunControl, RESTARTABLE_RUN_STATUSES, RunConflict } from "@/pipeline/orchestration/runs";
 import { resolveRunOptions } from "@/pipeline/core/run-options";
 import type { RunOptions } from "@/pipeline/core/run-values";
 
@@ -15,8 +15,7 @@ export async function POST(request: Request, context: Context) {
   const { runId } = await context.params;
   return adminRoute(request, async (deps) => {
     await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
-    const previous = await getRun(deps.db, runId);
-    if (!previous) throw new Error(`Unknown run: ${runId}`);
+    const previous = await assertStandaloneRunControl(deps.db, runId);
     if (!RESTARTABLE_RUN_STATUSES.includes(previous.status)) {
       throw new RunConflict("Cancel the active run before restarting it");
     }

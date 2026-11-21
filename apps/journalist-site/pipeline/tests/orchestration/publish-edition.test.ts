@@ -8,6 +8,7 @@ import { finishedEditions, PublishConflict, publishEdition, publishToReader } fr
 import { outputChannels } from "../../orchestration/output-channels";
 import { sourceMap } from "../../sourcemap/store";
 import { runFunnel, stageDetail } from "../../trace/funnel";
+import { editBeeGame, previewBeeGame } from "../../games/save-the-bee";
 
 const LOCATION = "town-wa";
 let server: MongoMemoryServer, client: MongoClient, db: Db;
@@ -23,6 +24,8 @@ async function seedEdition(id: string, at: number, options: { count_history?: bo
   const published = { id, location_id: LOCATION, location_name: "Town, WA", window_start: "2026-11-01", window_end: "2026-11-08", published_at: at, headline: `Edition ${id}`, intro: "Intro", items: [item(`${id}-a`)], coverage: [], corrections: [] };
   await db.collection(COLLECTIONS.editions).insertOne({ id, run_id: id, location_id: LOCATION, location_name: "Town, WA", today: "2026-11-08", window_start: "2026-11-01", window_end: "2026-11-08", status: "built", created_at: at, built_at: at, published_at: at, published, tokens: { [`${id}-a`]: ["town", "story"] }, source_counts: { "src-1": 1 }, summary: { held: 0 } });
   await db.collection("pipeline_runs").insertOne({ _id: id, kind: "edition", location_id: LOCATION, location_name: "Town, WA", status: "built", today: "2026-11-08", window: ["2026-11-01", "2026-11-08"], trigger: { by: "editor@example.test", kind: "manual" }, sources: [], created_at: at, completed_at: at, edition_id: id, options: { count_history: options.count_history ?? true }, published: { items: 1, held: 0 } } as never);
+  const game = await previewBeeGame(db, LOCATION, id);
+  await editBeeGame(db, LOCATION, id, { revision: game.revision, action: "approve" }, "editor@example.test");
 }
 
 beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("publish-edition"); });

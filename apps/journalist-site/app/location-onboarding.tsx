@@ -3,15 +3,15 @@
 import { useEffect, useId, useState } from "react";
 import { adminApi } from "@/lib/admin-client";
 
-type Place = { id: string; name: string; branch_count: number; system_count: number; kind?: "neighborhood"; provider?: string; area?: string };
+type Place = { id: string; name: string; branch_count?: number; system_count?: number; kind?: "neighborhood"; provider?: string; area?: string };
 
-export default function LocationOnboarding({ busy, enrolled, onAdd }: {
-  busy: boolean; enrolled: string[]; onAdd: (place: Place) => Promise<void>;
+export default function LocationOnboarding({ busy, enrolled, onAdd, requested }: {
+  busy: boolean; enrolled: string[]; onAdd: (place: Place) => Promise<void>; requested?: Pick<Place, "id" | "name">;
 }) {
   const listId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(requested?.name ?? "");
   const [places, setPlaces] = useState<Place[]>([]);
-  const [selected, setSelected] = useState<Place | null>(null);
+  const [selected, setSelected] = useState<Place | null>(requested ?? null);
   const [active, setActive] = useState(-1);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -62,6 +62,7 @@ export default function LocationOnboarding({ busy, enrolled, onAdd }: {
   return <section className="panel onboarding-panel" aria-labelledby="onboarding-title">
     <div className="section-heading"><h2 id="onboarding-title">Add a location</h2></div>
     <p>Search a US community, select it, then add. It appears on the reader site after its first edition. Missing sources won&rsquo;t prevent onboarding.</p>
+    {requested && <p className="notice">Requested community: {requested.name}. The exact saved location ID is selected; adding it does not repeat geographic search.</p>}
     <form className="onboarding-form" onSubmit={(event) => { event.preventDefault(); if (selected && !added && !busy) void onAdd(selected); }}>
       <div className="town-combobox">
         <label className="field"><span>Neighborhood, town or city</span><input role="combobox" aria-autocomplete="list"

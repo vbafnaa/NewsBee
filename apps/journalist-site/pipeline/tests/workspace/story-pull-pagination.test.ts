@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import RunItems from "../../../app/locations/[locationId]/run-items";
 import { adminApi } from "../../../lib/admin-client";
 
-vi.mock("../../../lib/admin-client", () => ({ adminApi: vi.fn() }));
+vi.mock("../../../lib/admin-client", async (original) => ({ withPublication: (await original<typeof import("../../../lib/admin-client")>()).withPublication, adminApi: vi.fn() }));
 vi.mock("../../../app/locations/[locationId]/item-trace", () => ({ default: () => null }));
 vi.mock("../../../app/locations/[locationId]/story-review", () => ({ default: () => null }));
 vi.mock("../../../app/components/execution-policy", () => ({ useExecutionPolicy: () => ({ policy: null }) }));

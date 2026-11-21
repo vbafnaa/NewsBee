@@ -31,8 +31,8 @@ export default function SourceReview({ locationId, tab, runId, signedIn, showLoc
   }, [showLocationPicker]);
   return <>
     <nav className="tabs" aria-label="Source map views">
-      <Link aria-current={tab === "sources" ? "page" : undefined} href={path(locationId, "sources")}>All sources</Link>
-      <Link aria-current={tab === "runs" ? "page" : undefined} href={path(locationId, "runs")}>Collect sources</Link>
+      <Link aria-current={tab === "sources" ? "page" : undefined} href={path(locationId, "sources", runId)}>All sources (read-only)</Link>
+      <Link aria-current={tab === "runs" ? "page" : undefined} href={path(locationId, "runs", runId)}>Collection runs (read-only)</Link>
     </nav>
     {error && <p className="alert" role="alert">{error}</p>}
     {tab === "runs" ? <SourceRuns key={locationId} locationId={locationId} runId={runId} canEdit={false} locations={locations}

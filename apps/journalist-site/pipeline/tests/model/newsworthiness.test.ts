@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import * as ranking from "../../model/newsworthiness";
 import { FakeModel } from "../support/fake-model";
+import { ModelBudgetExceeded } from "../../model/budget";
+import { UsageAccountingError } from "../../model/runtime";
 
 const candidate = (id: string, extra: Partial<ranking.Candidate> = {}): ranking.Candidate => ({ id, title: id, description: "Useful local information.", occurrences: 1, venues: ["Town Hall"], first_date: "2026-11-03", ...extra });
 
 describe("newsworthiness", () => {
+  it.each([new ModelBudgetExceeded("managed_platform", 123, 2), new UsageAccountingError("accounting unavailable")])("does not retry or rule-rank an execution block: %s", async (error) => {
+    const model = new FakeModel(() => { throw error; });
+    await expect(ranking.rank(model, [candidate("a")])).rejects.toBe(error);
+    expect(model.calls).toHaveLength(1);
+  });
   it("retries only missing ratings before using deterministic fallback", async () => {
     const model = new FakeModel(({ prompt }) => {
       const data = JSON.parse(prompt.split("\nCandidates:\n")[1]) as Array<{id:string}>;

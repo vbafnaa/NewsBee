@@ -7,7 +7,7 @@ import type { Db } from "mongodb";
 import { logger } from "../core/log";
 import { COLLECTIONS } from "../storage/mongo";
 import { cancelRunJobs, MAX_ATTEMPTS, type Job } from "./jobs";
-import { PROCESSING_RUN_STATUSES, runs, type PipelineRun } from "./runs";
+import { stageKinds, PROCESSING_RUN_STATUSES, runs, type PipelineRun } from "./runs";
 import { schedulerState, type SchedulerState } from "./scheduler";
 
 export type IssueSeverity = "info" | "warning" | "failed";
@@ -56,7 +56,7 @@ export function diagnoseRun(run: PipelineRun, jobs: Job[], scheduler: SchedulerS
     issues.push({
       code: "scheduler_not_running",
       severity: waiting > 120 ? "failed" : "warning",
-      message: `No pipeline worker has run recently (${since}); ${ready.length} queued job(s) are waiting. Use Resume for this stage to re-kick /api/pipeline/advance; check the dispatch errors if it stops again.`,
+      message: `No pipeline worker has run recently (${since}); ${ready.length} queued job(s) are waiting. Use Resume for this stage to request another worker. Cloud execution requires the Vercel Queues consumer to deliver; check its configuration and the dispatch errors if work stays queued.`,
     });
   }
   for (const issue of scheduler.issues) {
@@ -132,7 +132,7 @@ export async function expireOverdueRuns(db: Db, timeoutSeconds: number | null, c
       { returnDocument: "after" },
     );
     if (!updated) continue;
-    await cancelRunJobs(db, run._id);
+    await cancelRunJobs(db, run._id, run.status === "collecting" ? stageKinds(run) : undefined);
     log.error("run_timed_out", { run_id: run._id, location_id: run.location_id, status: run.status, error });
     expired.push(updated);
   }

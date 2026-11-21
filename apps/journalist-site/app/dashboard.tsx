@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { adminApi as api } from "@/lib/admin-client";
 import LocationOnboarding from "./location-onboarding";
 import RunOptionsPanel from "./components/run-options-panel";
@@ -27,6 +28,7 @@ type LocationHealth = {
   sources: { total: number; completed: number; failed: number; pending: number };
   failed_sources: { source_id: string; name: string; error: string | null }[];
   candidate_count: number;
+  can_author_partial_collection: boolean;
   published_items: number | null;
   held: number | null;
   held_reasons: Record<string, number>;
@@ -210,7 +212,19 @@ export function JobLog({ job, run, source, initiallyOpen, retry, busy }: { job: 
 }
 
 /** `kind` limits a location's controls to one step: its source map runs, or its editions. */
-export default function Dashboard({ locationId, owner = false, kind, inspectorOnly = false }: { locationId?: string; owner?: boolean; kind?: "map" | "edition"; inspectorOnly?: boolean }) {
+type DashboardProps = { locationId?: string; owner?: boolean; kind?: "map" | "edition"; inspectorOnly?: boolean; runId?: string | null };
+export default function Dashboard(props: DashboardProps) {
+  return <RunDashboard key={JSON.stringify([props.locationId, props.kind, props.runId])} {...props} />;
+}
+
+function RunDashboard({ locationId, owner = false, kind, inspectorOnly = false, runId = null }: DashboardProps) {
+  const router = useRouter();
+  const lifetime = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
   const showMap = kind !== "edition", showEdition = kind !== "map";
   const [health, setHealth] = useState<Health | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -222,38 +236,50 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
   const [busy, setBusy] = useState(false);
   const [runOptions, setRunOptions] = useState<RunOptions | null>(null);
   const [runOptionsError, setRunOptionsError] = useState("");
-  const { policy, error: policyError, refresh: refreshPolicy } = useExecutionPolicy(runOptions);
+  const { policy, error: policyError, refresh: refreshPolicy } = useExecutionPolicy(runOptions, runId);
   const canSpend = (runId: string) => Boolean(policy?.permissions[runId]?.canSpend);
 
   const load = useCallback(async () => {
+    const signal = lifetime.current?.signal;
+    if (signal?.aborted) return;
     try {
       const [healthData, locationData, runsData] = await Promise.all([
-        api<Health>("health"),
-        api<{ locations: Location[] }>("locations"),
-        api<{ runs: Run[] }>(locationId ? `runs?location=${encodeURIComponent(locationId)}&limit=30` : "runs?limit=30"),
+        api<Health>("health", { signal }),
+        api<{ locations: Location[] }>("locations", { signal }),
+        api<{ runs: Run[] }>(locationId ? `runs?location=${encodeURIComponent(locationId)}&limit=30` : "runs?limit=30", { signal }),
       ]);
+      if (signal?.aborted) return;
       setHealth(healthData);
       setLocations(locationData.locations);
       setRecent(runsData.runs);
       setError("");
     } catch (caught) {
-      setError(message(caught));
+      if (!signal?.aborted) setError(message(caught));
     }
   }, [locationId]);
 
-  const openRun = useCallback(async (runId: string, locationId: string) => {
+  const openRun = useCallback((selectedId: string | null, selectedLocation: string) => {
+    if (lifetime.current?.signal.aborted) return;
+    router.push(`/locations/${encodeURIComponent(selectedLocation)}?${new URLSearchParams({
+      tab: kind === "map" ? "collect-sources" : "edition", ...(selectedId ? { run: selectedId } : {}),
+    })}`, { scroll: false });
+  }, [router, kind]);
+
+  const refreshRun = useCallback(async () => {
+    const signal = lifetime.current?.signal;
+    if (!runId || !locationId || signal?.aborted) return;
     try {
       const [run, withdrawn] = await Promise.all([
-        api<RunDetail>(`runs/${encodeURIComponent(runId)}`),
-        api<{ withdrawals: Withdrawal[] }>(`withdrawals?location=${encodeURIComponent(locationId)}`),
+        api<RunDetail>(`runs/${encodeURIComponent(runId)}`, { signal }),
+        api<{ withdrawals: Withdrawal[] }>(`withdrawals?location=${encodeURIComponent(locationId)}`, { signal }),
       ]);
+      if (signal?.aborted) return;
       setDetail(run);
       setWithdrawals(withdrawn.withdrawals);
-      window.history.replaceState(window.history.state, "", `/locations/${encodeURIComponent(locationId)}?tab=${kind === "map" ? "collect-sources" : "edition"}&run=${encodeURIComponent(runId)}`);
     } catch (caught) {
-      setError(message(caught));
+      if (!signal?.aborted) setError(message(caught));
     }
-  }, []);
+  }, [runId, locationId]);
 
   useEffect(() => {
     void load();
@@ -262,16 +288,14 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
   }, [load]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const runId = params.get("run");
-    if (runId && locationId) void openRun(runId, locationId);
-  }, [openRun, locationId]);
+    void refreshRun();
+  }, [refreshRun]);
 
   useEffect(() => {
     if (!locationId) return;
     const inspect = (event: Event) => {
       const runId = (event as CustomEvent<{ runId: string }>).detail.runId;
-      void openRun(runId, locationId).then(() => document.getElementById("run-inspector")?.scrollIntoView({ block: "start" }));
+      openRun(runId, locationId);
     };
     window.addEventListener("newsbee:inspect-run", inspect);
     return () => window.removeEventListener("newsbee:inspect-run", inspect);
@@ -285,9 +309,9 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
 
   useEffect(() => {
     if (!detail || !ACTIVE.includes(detail.run.status)) return;
-    const timer = window.setInterval(() => void openRun(detail.run._id, detail.run.location_id), 10000);
+    const timer = window.setInterval(() => void refreshRun(), 10000);
     return () => window.clearInterval(timer);
-  }, [detail?.run._id, detail?.run.location_id, detail?.run.status, openRun]);
+  }, [detail?.run._id, detail?.run.status, refreshRun]);
 
   async function act(label: string, action: () => Promise<unknown>) {
     setBusy(true);
@@ -295,21 +319,23 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
     setNotice("");
     try {
       await action();
+      if (lifetime.current?.signal.aborted) return;
       setNotice(label);
       await load();
+      if (lifetime.current?.signal.aborted) return;
       window.dispatchEvent(new Event("newsbee:runs-changed"));
-      if (detail) await openRun(detail.run._id, detail.run.location_id);
+      if (detail) await refreshRun();
     } catch (caught) {
-      setError(message(caught));
+      if (!lifetime.current?.signal.aborted) setError(message(caught));
     } finally {
-      setBusy(false);
+      if (!lifetime.current?.signal.aborted) setBusy(false);
     }
   }
 
-  function stageAction(runId: string, status: string, candidates: number) {
-    const action = status === "awaiting_authoring" ? "authoring" : status === "awaiting_finish" ? "finish" : PROCESSING.includes(status) ? "resume" : null;
+  function stageAction(runId: string, status: string, candidates: number, partial: boolean) {
+    const action = partial || status === "awaiting_authoring" ? "authoring" : status === "awaiting_finish" ? "finish" : PROCESSING.includes(status) ? "resume" : null;
     if (!action) return null;
-    const label = action === "authoring" ? "Start authoring" : action === "finish" ? "Write front page and email, then publish" : "Resume";
+    const label = partial ? "Start authoring with collected sources" : action === "authoring" ? "Start authoring" : action === "finish" ? "Write front page and email, then publish" : "Resume";
     return <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "spend", runId) ?? (action === "authoring" && candidates === 0 ? "No usable items collected. Review sources and retry collection." : null)}
       onClick={() => void act(`${label}: processing kicked off.`, () => api(`runs/${encodeURIComponent(runId)}/${action}`, { method: "POST" }))}>{label}</ExplainedButton>;
   }
@@ -326,14 +352,16 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
     try {
       if (retryCollection) await api(`runs/${encodeURIComponent(run._id)}/cancel`, { method: "POST" });
       const result = await api<{ run_id: string }>(`runs/${encodeURIComponent(run._id)}/restart`, { method: "POST" });
+      if (lifetime.current?.signal.aborted) return;
       setNotice(`New run started for ${run.location_name}.`);
       await load();
+      if (lifetime.current?.signal.aborted) return;
       window.dispatchEvent(new Event("newsbee:runs-changed"));
-      await openRun(result.run_id, run.location_id);
+      openRun(result.run_id, run.location_id);
     } catch (caught) {
-      setError(message(caught));
+      if (!lifetime.current?.signal.aborted) setError(message(caught));
     } finally {
-      setBusy(false);
+      if (!lifetime.current?.signal.aborted) setBusy(false);
     }
   }
 
@@ -350,7 +378,7 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
   function canRetryStep(job: Job) {
     if (!detail || !["failed", "cancelled"].includes(job.status)) return false;
     if (detail.run.kind === "map" && mapJobIsPast(job.kind, detail.jobs)) return false;
-    const stage = detail.run.kind === "map" ? "mapping" : ["discover", "agent_round", "plan_sources", "collect_source"].includes(job.kind) ? "collecting" : job.kind === "author_finish" ? "finishing" : "authoring";
+    const stage = detail.run.kind === "map" ? "mapping" : ["discover", "agent_round", "plan_sources", "collect_source", "follow_links"].includes(job.kind) ? "collecting" : job.kind === "author_finish" ? "finishing" : "authoring";
     if (detail.run.status === "failed") {
       const last = detail.run.stage_transitions?.filter((transition) => PROCESSING.includes(transition.status)).at(-1)?.status;
       return (last === "publishing" ? "finishing" : last) === stage;
@@ -378,7 +406,7 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
     const own = recent.find((run) => run.location_id === latest.location_id && (run.kind === "map") === (kind === "map"));
     if (own?._id === latest.run_id) return latest;
     return { ...latest, run_id: own?._id ?? null, stage: own?.status ?? "none", started_at: own?.created_at ?? null, level: own?.status === "failed" ? "failed" : "idle",
-      sources: { total: 0, completed: 0, failed: 0, pending: 0 }, failed_sources: [], candidate_count: 0, published_items: null, held: null, held_reasons: {}, model_errors: [], error: own?.error ?? null, diagnostics: null };
+      sources: { total: 0, completed: 0, failed: 0, pending: 0 }, failed_sources: [], candidate_count: 0, can_author_partial_collection: false, published_items: null, held: null, held_reasons: {}, model_errors: [], error: own?.error ?? null, diagnostics: null };
   }
 
   const defaultLogId = detail?.jobs.findLast((job) => !!job.log_file)?.id ?? detail?.jobs[0]?.id;
@@ -451,10 +479,10 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
                     onClick={() => void act(`Started ${row.location_name}.`, () =>
                       api(`locations/${encodeURIComponent(row.location_id)}/ingestion`, { method: "POST", body: JSON.stringify({ options: runOptions }) }))}>{running ? "Run open" : runOptions?.mode === "manual" ? "Start collection" : "Collect stories"}</ExplainedButton>}
                   {row.run_id && showEdition && <a className="button secondary" href={`/edition-map?${new URLSearchParams({ location: row.location_id, run: row.run_id })}`}>See the funnel</a>}
-                  {row.run_id && stageAction(row.run_id, row.stage, row.candidate_count)}
+                  {row.run_id && stageAction(row.run_id, row.stage, row.candidate_count, row.can_author_partial_collection)}
                    {row.run_id && (locationId
-                     ? <button className="secondary" onClick={() => { void openRun(row.run_id!, row.location_id); window.dispatchEvent(new CustomEvent("newsbee:inspect-run", { detail: { runId: row.run_id } })); }}>Inspect run</button>
-                     : <Link className="button secondary" href={`/locations/${encodeURIComponent(row.location_id)}?tab=edition&run=${encodeURIComponent(row.run_id)}`}>Inspect run</Link>)}
+                     ? <button className="secondary" onClick={() => openRun(row.run_id!, row.location_id)}>Inspect run</button>
+                     : <Link className="button secondary" href={`/locations/${encodeURIComponent(row.location_id)}?tab=${kind === "map" ? "collect-sources" : "edition"}&run=${encodeURIComponent(row.run_id)}`}>Inspect run</Link>)}
                   {row.run_id && CANCELLABLE.includes(row.stage) && <button className="secondary" disabled={busy} onClick={() => cancelSelected({ _id: row.run_id!, location_name: row.location_name })}>Cancel run</button>}
                   {row.run_id && !running && <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "restart", row.run_id)} onClick={() => void restartSelected({ _id: row.run_id!, location_id: row.location_id, location_name: row.location_name })}>Restart run</ExplainedButton>}
               </div>
@@ -472,7 +500,7 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
           <div className="section-heading">
             <h2>{detail.run.location_name} · {stageLabel(detail.run.status, detail.health.candidate_count)} · {detail.run.window.join(" to ")}</h2>
             <div className="card-actions">
-              {stageAction(detail.run._id, detail.run.status, detail.health.candidate_count)}
+              {stageAction(detail.run._id, detail.run.status, detail.health.candidate_count, detail.health.can_author_partial_collection)}
               {availableMapStages(detail.run, detail.jobs).map((stage) => <ExplainedButton key={stage} className="secondary"
                 disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "spend", detail.run._id)}
                 onClick={() => void act(stage === "review" ? "Source review started." : "Saving source addresses started.", () =>
@@ -482,7 +510,7 @@ export default function Dashboard({ locationId, owner = false, kind, inspectorOn
               {CANCELLABLE.includes(detail.run.status) && <button className="secondary" disabled={busy} onClick={() => cancelSelected(detail.run)}>Cancel run</button>}
               {detail.run.status === "built" && <Link className="button" href={`/locations/${encodeURIComponent(detail.run.location_id)}?tab=published`}>Publish</Link>}
               {["mapped", "built", "published", "failed", "cancelled"].includes(detail.run.status) && <ExplainedButton className="secondary" disabledReason={busy ? "Another action is in progress." : executionDisabledReason(policy, policyError, "restart", detail.run._id)} onClick={() => void restartSelected(detail.run)}>Restart run</ExplainedButton>}
-               <button className="secondary" onClick={() => { setDetail(null); window.history.replaceState(window.history.state, "", `/locations/${encodeURIComponent(detail.run.location_id)}?tab=collect-sources`); }}>Close</button>
+               <button className="secondary" onClick={() => openRun(null, detail.run.location_id)}>Close</button>
             </div>
           </div>
           <RunExecutionSummary run={detail.run} />

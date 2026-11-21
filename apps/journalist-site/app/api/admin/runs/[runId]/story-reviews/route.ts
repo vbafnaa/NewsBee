@@ -1,5 +1,6 @@
 import { adminRoute, jsonBody } from "@/lib/admin-api";
 import { saveStoryReview, storyReviewChange } from "@/pipeline/editions/story-reviews";
+import { assertStandaloneRunControl } from "@/pipeline/orchestration/runs";
 
 type Context = { params: Promise<{ runId: string }> };
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request, context: Context) {
   const { runId } = await context.params;
   return adminRoute(request, async ({ db, principal }) => {
+    await assertStandaloneRunControl(db, runId);
     const body = await jsonBody<{ item_id?: unknown; decision?: unknown; reason_code?: unknown; reason?: unknown; category?: unknown }>(request);
     if (typeof body.item_id !== "string" || !body.item_id) throw new Error("Invalid request: send an item_id");
     if (!principal) throw new Error("Sign in as an approved journalist.");

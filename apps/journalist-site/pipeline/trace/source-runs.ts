@@ -16,6 +16,7 @@ import { SEARCH_TOOLS, yieldCurves, type Cell, type Grid, type SearchTool } from
 import { DO_NOT_SCRAPE } from "../connectors/fetcher";
 import { TOPIC_SECTIONS } from "../discovery/topics";
 import { runs, type PipelineRun } from "../orchestration/runs";
+import { canAddAcceptedSources } from "../orchestration/map-stage-availability";
 import { searchQueries } from "../search/provider";
 import { CATEGORIES, SECTION_LABELS } from "../sourcemap/sections";
 import { hostOf, METHOD_LABELS, normaliseUrl, pageDecisions, pageKey, runSources, sourceMap, type PageDecision, type SourceRecord } from "../sourcemap/store";
@@ -467,7 +468,7 @@ export async function sourceRunDetail(db: Db, locationId: string, runId: string)
   });
   const number = list.runs.find((item) => item.run_id === run._id)?.number ?? null;
   return {
-    run: { id: run._id, number, location_id: run.location_id, location_name: run.location_name, status: run.status, created_at: run.created_at, completed_at: run.completed_at, error: run.error, by: run.trigger?.by ?? null, recorded: Boolean(run.options), playbook_version: run.playbook_version ?? null, isolated },
+    run: { id: run._id, number, location_id: run.location_id, location_name: run.location_name, status: run.status, created_at: run.created_at, completed_at: run.completed_at, error: run.error, by: run.trigger?.by ?? null, recorded: Boolean(run.options), playbook_version: run.playbook_version ?? null, isolated, can_add_accepted_sources: canAddAcceptedSources(run) },
     settings, ending: runEnding(run, settings, agent), limits, stages, categories, pages: rows,
     tools: toolCounts(rows, searches, foundBy, limits, returned, elsewhere, run.options?.search_provider === "fixture"), log: agentLog(agent), grid: searchGrid(agent, settings, run.options?.search_provider === "fixture"),
   };

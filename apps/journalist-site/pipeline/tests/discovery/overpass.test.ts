@@ -2,7 +2,14 @@ import { expect, it, vi } from "vitest";
 import { queryOverpass, QUERY_SECONDS, REQUEST_MS } from "../../connectors/overpass";
 import { osmPlaces, type DiscoveryContext } from "../../discovery/methods";
 import type { HttpRequest, HttpTransport } from "../../core/http";
+import { ExternalServiceDisabledError } from "../../core/http";
 const response = (url: string, value: unknown, status = 200, headers = {}) => ({url,status,headers,body:new TextEncoder().encode(JSON.stringify(value))});
+it("preserves typed run-policy denial without trying another mirror", async () => {
+ const denial = new ExternalServiceDisabledError("overpass");
+ const transport = vi.fn<HttpTransport>().mockRejectedValue(denial);
+ await expect(queryOverpass(transport, "query")).rejects.toBe(denial);
+ expect(transport).toHaveBeenCalledTimes(1);
+});
 it("uses bounded GET, preserves failures and fails over on HTTP-200 error remarks", async () => {
  const transport = vi.fn(async (r: HttpRequest) => response(r.url,r.url.includes('first') ? {elements:[],remark:'runtime error: timed out'} : {elements:[]}));
  const result=await queryOverpass(transport,'[out:json];node(1);out;', ['https://first.example/api','https://second.example/api']);

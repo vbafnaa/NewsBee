@@ -1,0 +1,31 @@
+---
+import StoryMedia from "../edition/StoryMedia.astro";
+import PublicationShell from "./PublicationShell.astro";
+import { publicationPageLinks, type PublicationPage } from "../../lib/publication-view";
+interface Props { page: PublicationPage }
+const { page } = Astro.props;
+const links = publicationPageLinks(page);
+---
+<PublicationShell page={page} title={`All stories | ${page.publication.displayName}`} subPage>
+  <section class="listing">
+    <a class="nb-link" href={links.page}>Back to {page.publication.displayName}</a>
+    <h1>All stories in this edition</h1>
+    <ol>{page.articles.map((article) => <li>
+      <StoryMedia photo={article.photo} illustration={article.illustration} />
+      <div>
+        <p class="nb-label">{article.category} · {article.date}{article.locationLabel ? ` · ${article.locationLabel}` : ""}</p>
+        <h2><a class="nb-card-link" href={article.href}><span class="nb-title">{article.headline}</span></a></h2>
+        <p>{article.text}</p>
+      </div>
+    </li>)}</ol>
+  </section>
+</PublicationShell>
+<style>
+  .listing { width: 100%; max-width: 52rem; margin-inline: auto; display: grid; gap: var(--space-5); }
+  h1 { font-size: var(--text-h1); } h2 { font-size: var(--text-h3); }
+  ol { margin: 0; padding: 0; list-style: none; }
+  li { display: grid; gap: var(--space-5); padding-block: var(--space-6); border-bottom: 1px solid var(--color-line); }
+  li:has(figure) { grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); }
+  li div { display: grid; gap: var(--space-3); }
+  @media (max-width: 40rem) { li:has(figure) { grid-template-columns: 1fr; } }
+</style>

@@ -29,8 +29,8 @@ export async function submitReaderStory(db: Db, location: { id: string; name: st
   await readerStories(db).insertOne(story);
   return story;
 }
-export async function listReaderStories(db: Db, status: ReaderStory["status"] | "all" = "pending", locationId?: string) {
-  return readerStories(db).find({ ...(status === "all" ? {} : { status }), ...(locationId ? { location_id: locationId } : {}) }, { projection: { "image.data": 0 } }).sort({ submitted_at: -1 }).limit(200).toArray();
+export async function listReaderStories(db: Db, status: ReaderStory["status"] | "all" = "pending", locationId?: string | string[]) {
+  return readerStories(db).find({ ...(status === "all" ? {} : { status }), ...(locationId ? { location_id: Array.isArray(locationId) ? { $in: locationId } : locationId } : {}) }, { projection: { "image.data": 0 } }).sort({ submitted_at: -1 }).limit(200).toArray();
 }
 export async function decideReaderStory(db: Db, id: string, decision: "approved" | "rejected", editor: string, reason?: string) {
   const result = await readerStories(db).findOneAndUpdate(

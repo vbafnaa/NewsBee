@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { readerData } from "../../../../reader-site/src/lib/reader-data";
 
 const location = { id: "seattle-wa", name: "Seattle, WA" };
@@ -78,6 +81,7 @@ it("preserves credited legacy photos while discarding unsafe, malformed or uncre
       { ...story, image: "https://cdn.example.com/uncredited.jpg" },
     ] });
   });
+
   const data = await readerData("image-reader-folder");
   expect(data.editions[0].items).toHaveLength(6);
   expect(data.editions[0].items[0]).toMatchObject({ image: "https://cdn.example.com/park.jpg", image_source_url: story.source_url, image_credit: "Local paper" });
@@ -87,4 +91,98 @@ it("preserves credited legacy photos while discarding unsafe, malformed or uncre
     expect(item).not.toHaveProperty("image_credit");
     expect(item.headline).toBe(story.headline);
   }
+});
+
+describe("targeted legacy edition reads", () => {
+  it("loads an exact legacy edition without probing unrelated edition bodies", async () => {
+    const reads: string[] = [];
+    fetchMock.mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/drive/v3/files") return Response.json({ files: [
+        { id: "directory", name: "locations.json" },
+        { id: "selected", name: `${edition.id}.json` },
+        { id: "unrelated", name: "unrelated.json" },
+      ] });
+      reads.push(path);
+      if (path.endsWith("/directory")) return Response.json({ locations: [location] });
+      if (path.endsWith("/selected")) return Response.json(edition);
+      throw new Error("Unrelated edition body must not be read");
+    });
+    expect((await readerData("exact-reader-folder", { locationId: location.id, editionId: edition.id })).editions)
+      .toMatchObject([{ id: edition.id }]);
+    expect(reads).toEqual(["/drive/v3/files/directory", "/drive/v3/files/selected"]);
+  });
+
+  it("uses bounded legacy headers for location selection and reads only the latest matching body", async () => {
+    const other = { ...edition, id: "other", location_id: "other-wa", location_name: "Other, WA" };
+    const older = { ...edition, id: "older", published_at: edition.published_at - 100 };
+    const values = new Map([["current", edition], ["older", older], ["other", other]]);
+    const fullReads: string[] = [];
+    const probes: string[] = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("supportsAllDrives")).toBe("true");
+      const path = url.pathname;
+      if (path === "/drive/v3/files") return Response.json({ files: [
+        { id: "directory", name: "locations.json" },
+        ...[...values.keys()].map((id) => ({ id, name: `${id}.json` })),
+      ] });
+      if (path.endsWith("/directory")) return Response.json({ locations: [location, { id: "other-wa", name: "Other, WA" }] });
+      const id = path.split("/").at(-1)!;
+      const value = values.get(id)!;
+      if (new Headers(init?.headers).has("Range")) {
+        probes.push(id);
+        // Unrelated item bodies need not even be valid JSON to read their public index.
+        return new Response(`${JSON.stringify(value).split('"items":')[0]}"items":[BROKEN UNRELATED BODY`, { status: 206 });
+      }
+      fullReads.push(id);
+      return Response.json(value);
+    });
+    const data = await readerData("location-reader-folder", { locationId: location.id });
+    expect(data.editions.map((value) => value.id)).toEqual([edition.id]);
+    expect(probes.sort()).toEqual(["current", "older", "other"]);
+    expect(fullReads).toEqual(["current"]);
+
+    fullReads.length = 0;
+    const index = await readerData("location-reader-folder", { indexOnly: true });
+    expect(index.editions).toHaveLength(3);
+    expect(index.editions.every((value) => value.items_loaded === false)).toBe(true);
+    expect(fullReads).toEqual([]);
+  });
+
+  it("preserves old noncanonical filenames and reordered legacy JSON", async () => {
+    const { items, ...rest } = edition;
+    const text = JSON.stringify({ items, ...rest });
+    fetchMock.mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/drive/v3/files") return Response.json({ files: [
+        { id: "directory", name: "locations.json" }, { id: "old-name", name: "historical.json" },
+      ] });
+      if (path.endsWith("/directory")) return Response.json({ locations: [location] });
+      return new Response(text);
+    });
+    expect((await readerData("old-reader-folder", { locationId: location.id, editionId: edition.id })).editions)
+      .toMatchObject([{ id: edition.id }]);
+  });
+
+  it("uses local header probes without parsing another location's body", async () => {
+    const root = join(process.cwd(), `.reader-index-fixture-${randomUUID()}`);
+    const folderId = "local-reader-folder";
+    const folder = join(root, folderId);
+    await mkdir(folder, { recursive: true });
+    vi.stubEnv("NEWSBEE_MODE", "local");
+    vi.stubEnv("NEWSBEE_LOCAL_DRIVE_DIR", root);
+    const other = { ...edition, id: "other", location_id: "other-wa", location_name: "Other, WA" };
+    try {
+      await Promise.all([
+        writeFile(join(folder, "locations.json"), JSON.stringify({ locations: [location, { id: "other-wa", name: "Other, WA" }] })),
+        writeFile(join(folder, "current.json"), JSON.stringify(edition)),
+        writeFile(join(folder, "other.json"), `${JSON.stringify(other).split('"items":')[0]}"items":[BROKEN UNRELATED BODY`),
+      ]);
+      expect((await readerData(folderId, { locationId: location.id })).editions).toMatchObject([{ id: edition.id }]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -103,7 +103,20 @@ it("requires authority and all requested rights, dated files and actual photogra
   }
   const raw = input();
   expect(() => validatePhotoSupply({ ...raw, photos: [raw.photos[0], raw.photos[0]] }, scope, now)).toThrow("once");
-  expect(() => publicPhotoUrl("https://photos.example/image.jpg?access_token=private")).toThrow("credentials");
+  for (const query of [
+    "access_token=private",
+    "X-Amz-Credential=AKIA%2F20261104%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Signature=abc",
+    "AWSAccessKeyId=AKIAEXAMPLE&Signature=abc&Expires=1790000000",
+    "X-Goog-Credential=service%40example.test%2F20261104%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Signature=abc",
+    "GoogleAccessId=service%40example.test&Signature=abc&Expires=1790000000",
+    "sv=2023-11-03&se=2026-11-05T00%3A00%3A00Z&sp=r&sr=b&sig=abc",
+    "Policy=encoded&Key-Pair-Id=K123&Signature=abc",
+  ]) {
+    expect(() => publicPhotoUrl(`https://photos.example/image.jpg?${query}`)).toThrow("credentials");
+  }
+  expect(publicPhotoUrl("https://photos.example/image.jpg?width=1200&version=2")).toBe(
+    "https://photos.example/image.jpg?width=1200&version=2",
+  );
 });
 it("ignores supplier-supplied roles, asset references, catalog IDs and grant text", () => {
   const raw = input();

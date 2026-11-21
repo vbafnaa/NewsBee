@@ -17,9 +17,10 @@
  */
 import type { Db } from "mongodb";
 import { FREE_SERVICES, PAID_SERVICES, LEGACY_OPTIONS, paidAllowance, currentOptions, runContext, type FreeService, type PaidService } from "../core/run-options";
-import type { HttpTransport } from "../core/http";
+import { ExternalServiceDisabledError, type HttpTransport } from "../core/http";
 import { safeError } from "../core/redaction";
 import { limit, ruleSet } from "../playbook";
+import { executionDeadline, executionWait, MIN_DISPATCH_MS, SETTLEMENT_MS } from "../core/execution-deadline";
 
 export const API_CALLS = "api_calls";
 export type ApiCall = {
@@ -69,7 +70,7 @@ const isDuplicate = (error: unknown) => (error as { code?: number }).code === 11
  * first, from `seed` (what the usage records already show for its window), and only one
  * creation can win, so two first calls can't both see an empty count.
  */
-async function take(db: Db, id: string, ceiling: number, units: number, expires: Date, seed: () => Promise<number> = async () => 0): Promise<boolean> {
+export async function reserveBudgetUnits(db: Db, id: string, ceiling: number, units: number, expires: Date, seed: () => Promise<number> = async () => 0): Promise<boolean> {
   if (units > ceiling) return false;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const taken = await budgets(db).updateOne({ _id: id, used: { $lte: ceiling - units } }, { $inc: { used: units }, $set: { expires_at: expires } });
@@ -93,16 +94,21 @@ async function usedSince(db: Db, services: string[], since: number, field: "unit
   return row?.used ?? 0;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Space calls evenly, across workers: at most `count` in any `windowMs`. Waits, never refuses. */
 async function pace(db: Db, key: string, count: number, windowMs: number) {
   if (!(count > 0)) return;
   const interval = Math.ceil(windowMs / count), now = Date.now();
+  const start = { $max: [now, { $ifNull: ["$next_at", 0] }] };
+  const advance = { $add: [start, interval] };
+  const deadline = executionDeadline();
+  const nextAt = deadline === undefined ? advance : {
+    $cond: [{ $lte: [start, deadline - SETTLEMENT_MS - MIN_DISPATCH_MS] }, advance, { $ifNull: ["$next_at", now] }],
+  };
   const before = await budgets(db).findOneAndUpdate({ _id: `pace:${key}` },
-    [{ $set: { next_at: { $add: [{ $max: [now, { $ifNull: ["$next_at", 0] }] }, interval] }, used: { $ifNull: ["$used", 0] }, expires_at: new Date(now + 3600_000) } }],
+    [{ $set: { next_at: nextAt, used: { $ifNull: ["$used", 0] }, expires_at: new Date(now + 3600_000) } }],
     { upsert: true, returnDocument: "before" }).catch(() => null);
   const wait = Math.max(0, (before?.next_at ?? 0) - now);
-  if (wait) await sleep(wait);
+  if (wait) await executionWait(wait);
 }
 
 /** Pace a free service to its hard limit, such as Jina Reader's calls a minute. Outside a run there is nothing shared to pace against. */
@@ -199,7 +205,7 @@ async function takeHardLimits(db: Db, runId: string, service: PaidService, call:
   if (hard.spend_per_month !== undefined) counts.push({ id: `spend:${pool}:${window.month}`, ceiling: hard.spend_per_month, units: hard.estimated_cost ?? 0, seed: () => usedSince(db, seedServices, window.monthStart, "cost"), expires: month, label: `$${hard.spend_per_month} a month`, stops: true });
   const taken: typeof counts = [];
   for (const count of counts) {
-    if (await take(db, count.id, count.ceiling, count.units, count.expires, count.seed)) { taken.push(count); continue; }
+    if (await reserveBudgetUnits(db, count.id, count.ceiling, count.units, count.expires, count.seed)) { taken.push(count); continue; }
     for (const done of taken) await giveBack(db, done.id, done.units);
     if (!taken.length && count.id === `${runId}:${service}`) return `${LABELS[service]} reached this run's budget of ${allowance} calls`;
     const reason = `${limitLabel(call.limits)}: ${count.label}`;
@@ -300,7 +306,7 @@ export function externalTransport(transport: HttpTransport): HttpTransport {
     if (!service) return transport(request);
     if (currentOptions().external_off.includes(service)) {
       await logApiCall(service, false, "skipped", "switched off for this run");
-      throw new Error(`${service} is switched off for this run`);
+      throw new ExternalServiceDisabledError(service);
     }
     try {
       const response = await transport(request);

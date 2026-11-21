@@ -7,6 +7,119 @@ search and reader actions use MongoDB. Drive credentials are
 never sent to the browser. The site is deployed as a Vercel server application through the
 Astro Vercel adapter; it is not a static-only build.
 
+## Public newsroom discovery
+
+The application root opens `/reader` without requiring an operator sign-in.
+Search for a community to choose among the independent newsrooms with a published
+edition covering it. The same explicit newsroom **Publish** release pointer drives
+this directory and the existing publication renderer; discovery never generates,
+approves, publishes, or creates another edition. Uncovered communities use the
+existing consented coverage-interest form; capture does not send email or initiate
+newsroom work.
+
+Opening a newsroom reads its **full combined edition**, including stories for all
+covered communities. Coverage names and story location tags remain visible. Legacy
+`?location=<id>&edition=<id>` links and immutable publication release links still
+select their original exact edition.
+
+Release article bodies preserve authored paragraphs and accept LF, CR and tabs,
+up to 20,000 characters. Other C0 controls and DEL are rejected; identity and
+headline fields stay single-line. The shared parser and canonical hash checks
+read immutable payloads as stored, without normalization, rehashing or republishing.
+The publisher validates new payloads with this parser before claiming publication.
+Latest and exact-release routes return HTTP 502 on integrity/storage failures and
+404 for a missing release or story, rather than a successful error page.
+
+Archived newsrooms remain readable and discoverable only when `archived_at` is
+numeric and finite and `archived_was_enabled === true` (or the channel is currently
+enabled). Reader destinations and valid published pointers/artifacts are still
+required. Merely disabling a newsroom, or archiving a previously disabled one,
+does not grant public access. Archival does not rewrite releases or bypass
+withdrawal: a newsroom without a current release remains unavailable at its latest
+URL; exact withdrawn releases retain their warning. Published coverage snapshots
+are searchable even if community setup records are no longer present.
+
+## Reader navigation and story conversations
+
+The landing page uses the neighborhood picker to open the existing independent-newsroom
+chooser; it never chooses a publication for the reader. The reader styling adds a
+Categories menu and a lead/illustrated-secondary/briefs layout while retaining the
+publication's profile, covered communities, events, sponsor slots and other story sections.
+Category and event links retain the selected release or private draft revision. Archive
+links use the publication archive; private previews remain inside the draft context.
+Email promotion continues to follow the shared email-availability policy.
+
+Published articles include comments and **Yes, helpful** / **Needs work** feedback.
+Comments accept an optional display name and render as text. Responses are separate from
+immutable release content and are never enabled for private draft previews or withdrawn
+releases. Legacy location/edition story links retain their own separate conversations.
+
+`/reader/api/story-conversation` validates the exact published story through the existing
+reader loaders. MongoDB stores comments in `reader_story_comments`, helpfulness in
+`reader_story_feedback`, and expiring submission limits in `reader_conversation_limits`.
+The reader database user needs read/write and index permissions for these collections.
+Same-origin submissions are bounded and rate-limited, repeated comment retries are
+deduplicated, and only comments marked `published` are returned. Mutations hold the
+existing site-writer admission for their full lifetime so restore maintenance blocks new
+writes without changing release or publishing authority.
+
+## Guide the Bee Home
+
+Each reviewed edition game is a compact bubble on its neighborhood front page, pinned by
+`?location=<id>&edition=<id>`. The brief instruction, "Guess the word, one letter at a
+time.", sits above the masked word. The local clue is available in a small **Hint**
+disclosure, collapsed by default, with no score penalty. Players type into a single labeled letter input; incorrect letters
+appear in a red, explicitly labeled miss list. There is no alphabet-button grid,
+practice mode, instruction panel or pre-game leaderboard. A small reviewed last-week
+winner line sits immediately after the bubble; a top-three result line appears only
+after finishing. Suggested words come from the neighborhood/state name or lighter
+local story topics actually present in the edition, not a flower-word bank.
+
+The public `/reader/api/save-the-bee` endpoint keeps
+answers server-side until guessed or the attempt ends. It validates each letter,
+saves guesses in MongoDB, and computes the result: six misses ends the game; a win
+scores 100 minus 10 per miss, and a loss scores zero. No speed scoring; equal scores
+share a rank. Opening the game automatically establishes the browser's saved attempt
+before revealing the masked word. There is one scored result per browser/edition.
+Archived games preserve existing results but do not start new attempts. Play ends seven days after initial
+publication, or earlier when an editor closes it or a newer edition goes live.
+
+An essential HttpOnly, SameSite save cookie lasts one year across editions. Reloading
+or returning with that cookie resumes the durable ranked attempt; concurrent tabs and
+retried guesses cannot create a second result. Clearing cookies or using another device
+loses the identity and bypasses this friendly browser rule. No email, account, device
+fingerprinting, or IP-based identity is used.
+
+Only after scoring, readers may enter a free-text name/nickname and opt into public score
+sharing, with a separate reviewed next-edition shout-out permission. Skipping remains
+private. Either permission can be withdrawn from the saved result, even after closing;
+new consent cannot be added once finalized. Nicknames are normalized and limited to
+2-24 characters; markup, controls, links/contact addresses and basic abusive terms are
+rejected. All public names use text rendering, not HTML. The API retains the top 100
+shared results, while the compact reader shows only the top three after finishing.
+Attempts/consent expire after 90 days. Both apps must use the same replica-set MongoDB
+database, and unpublished puzzles must be approved in the journalist **Publish** tab.
+See the [isolated demo and editorial flow](../journalist-site/README.md#guide-the-bee-home-review-before-publishing).
+
+## Newsroom campaign pages
+
+- `/reader/campaign/newsroom` for professional journalists, editors, and independent publishers.
+- `/reader/campaign/college-journalism` for college journalists and campus publications.
+- `/reader/campaign/high-school-journalism` for high-school programs, with signup by an adult educator or adviser.
+- `/reader/campaign/branded-news` for people and organizations who want to publish a local roundup under their own name or brand.
+
+The forms capture prelaunch interest. Review leads in the MongoDB `campaign_signups` collection. The reader site's database user needs write access to that collection. Each record holds the first signup for an email and campaign, its answers, timestamp, and any supplied UTM tags. For example, use `?utm_source=partner&utm_medium=sponsorship&utm_campaign=newsroom-pilot&utm_content=draft-to-video` on an ad link. Keep UTM values free of personal information.
+
+Reuse the Newsbee website's GA4 property and web data stream if one exists. Otherwise, create one GA4 property and web stream for the public Newsbee site in your existing Analytics account. Set `PUBLIC_GA_MEASUREMENT_ID` to the stream's `G-...` ID in the reader site's environment. In the web stream settings, turn off Enhanced Measurement's form interactions so GA4 uses the explicit signup events below.
+
+| Event | When it fires |
+| --- | --- |
+| `page_view` | A campaign page loads |
+| `campaign_signup_start` | A visitor first focuses a form control |
+| `generate_lead` | A new signup is saved |
+
+Mark `generate_lead` as a key event and register `campaign_audience` as an event-scoped custom dimension to compare pages. UTM parameters identify ad sources and variants. Form answers and email addresses stay in MongoDB. After release, check GA4 Realtime with a tagged campaign visit and a new test signup.
+
 ## Google Drive files
 
 New agent-reviewed photos use `image_asset_id` to serve archived originals' reviewed
@@ -40,7 +153,11 @@ For example:
 
 The journalist publisher writes `locations.json` for onboarded locations with a published
 edition. This powers the empty-search edition picker; MongoDB-backed community search can
-also find places without an edition and offer an interest signup:
+also find places without an edition, return the shared additive preparation state
+(`available`, `requested`, `preparing`, `ready`, or `blocked`), and offer an interest
+signup. Aggregated launch-interest demand can change `available` to `requested`, but a
+signup never implies readiness and requester emails are not returned by search or
+newsroom queue APIs:
 
 ```json
 {
@@ -55,17 +172,103 @@ also find places without an edition and offer an interest signup:
 }
 ```
 
-Edition filenames are not significant; each file's JSON `location_id` and `published_at`
-select the latest edition for a town; `?edition=<id>` selects that town's exact published
-edition. Drive data is cached in each running site instance
-for 60 seconds. Edition documents must satisfy the runtime format above, and each edition's town
+Each file's JSON `location_id` and `published_at` select the latest edition for a town;
+`?edition=<id>` selects that town's exact published edition, never a fallback to latest.
+The publisher's canonical `<edition-id>.json` filename permits a direct exact-edition
+read. Older arbitrary filenames remain supported through metadata probes.
+Unfiltered bulk catalog data retains its existing per-instance 60-second cache.
+Selected-location/edition and metadata-only requests bypass that bulk cache, resolve
+the current channel and directory, and reread the selected mutable legacy body.
+Edition documents must satisfy the runtime format above, and each edition's town
 must exist in `locations.json` to be served. Files retained for removed locations remain
 archived in the folder but are not returned.
+
+### Reader read-path bounds
+
+- Publication browse reuses the `output_channels` rows from its current list query:
+  no equivalent per-publication channel lookup follows the list. Directory requests
+  also read current enabled/pointer state rather than a 60-second availability snapshot.
+- Verified immutable manifest/release values are cached separately (at most 100 of
+  each per instance). Concurrent misses for the same database/storage/publication/
+  artifact identity share one in-flight read and validation; failed loads are removed
+  so retries still surface errors and can recover. Current channel/pointer reads are
+  never replaced by these artifact caches.
+- At most six artifact reads run concurrently per instance, shared across requests,
+  publication manifests/releases and legacy metadata/body reads. This is an I/O
+  concurrency bound, not a catalog-size or request-rate limit.
+- Latest legacy location pages probe scalar edition headers and load only the newest
+  matching edition body. Exact canonical edition routes load the directory and that
+  edition only. The edition directory API and community directory use metadata-only
+  reads. Local probes stop in 1 KiB chunks once the header is complete; Drive uses a
+  range request and cancels its response stream after the header. Both cap probes at
+  64 KiB; Mongo projects only the header from the first 65,536 Unicode characters.
+  Normal publisher payloads put identity/window fields before `items`. Unusually
+  large or reordered external payloads fall back to the original full JSON parser
+  for compatibility; avoiding unrelated bodies for those layouts requires a persisted
+  public edition index.
+- Browse applies community and exact-edition selection before loading publication
+  latest-release items or legacy community story bodies. Publication history is scoped
+  by each manifest entry's historical coverage before browse rows are materialized,
+  not by today's pointer locations. Community choices and other current-edition
+  options remain available, including options whose item bodies were not needed.
+  Older publication bodies are still loaded only by their exact release routes.
+
+**Remaining bound:** global story search/deduplication and exact result/history totals
+still inspect all manifest metadata, all legacy bodies for an unfiltered catalog, and
+one current body per matching publication. A filtered legacy community search still
+reads all that community's edition bodies to preserve story-version matching.
+Thus an unfiltered 20-story page is **not** a 20-body read limit. Strict global
+body-work/history pagination needs a maintained public search/history index; it is
+deferred rather than silently truncating results, dropping historical coverage, or
+caching stale withdrawal/availability decisions. The 1,000-publication × 52-release
+regression checks a selected community/edition: 1,000 manifest reads, one body read,
+zero channel point reads, and at most six simultaneous artifact reads.
 
 Workspace Shared-drive folders are supported for listing and reading, including
 paginated listings. For pipeline publishing with a service account, use a Shared
 drive so the organization owns new files; sharing a personal My Drive folder
 does not give a service account storage quota.
+
+## Compare local layouts with current published editions
+
+The local Drive stand-in is a separate data source from the deployed reader. Updating
+application code does not refresh old local edition JSON. Before comparing a UX change
+with production, capture the public catalog and its latest editions from the repository
+root:
+
+```sh
+node apps/reader-site/scripts/snapshot-published-editions.mjs --source https://newsbee-seven.vercel.app/reader --output .local/ux-figma-qa/published-snapshots --folder 1S2uePphOd_25yandeFtQJ6iZvSz2ydYw
+```
+
+This script makes HTTP GET requests only. It downloads the public `/api/editions`
+catalog, then requests each edition with the exact community and edition IDs from that
+catalog. Optional public community counts are included when available and valid. It
+preserves the complete edition payload and item order, including optional media fields;
+invalid contracts or mismatched pinned metadata stop the capture instead of dropping
+stories. It does not publish, change production data, read credentials, or write environment
+settings.
+
+Each run creates a new timestamped directory under `--output`, leaving previous
+fixtures intact. The printed `driveRoot` contains the `--folder` subdirectory, whose
+`locations.json` and edition JSON files are ready for the local reader. `manifest.json`
+and the source `catalog.json` sit outside that reader folder. The manifest records the
+source URLs, capture time, exact edition IDs, story counts, and SHA-256 hashes. A run
+that exits successfully and writes its manifest is a complete snapshot.
+
+Restart both local apps with `NEWSBEE_MODE=local`, `NEWSBEE_LOCAL_DRIVE_DIR` set to the
+printed `driveRoot`, and `NEWSBEE_READER_DRIVE_FOLDER_ID` matching `--folder`. Keep their
+MongoDB settings on the isolated test database. The selected `output_channels` document
+takes precedence over the fallback folder variable, including in local mode: it must
+be absent or select this same ordinary folder ID. A `mongo:` channel reads its own
+stored files instead of this filesystem snapshot. The script does not change channels
+or restart applications. Restarting also clears the reader's 60-second catalog cache.
+
+Use the captured community IDs when opening editions; old local aliases may differ
+from the deployed catalog. Compare the loaded edition ID and complete story count with
+the manifest before judging layout differences. This public snapshot contains edition
+content, not MongoDB-backed puzzles, stored photo assets, submissions, or reader data.
+See the [recorded deployment parity check](../../Docs/reader-deployment-parity.md) for
+the comparison that prompted this workflow.
 
 ## Environment
 
@@ -82,6 +285,10 @@ development when needed):
   Both reader and publisher first use this document's `drive_folder_id`. It must have a
   boolean `enabled: true` and a valid folder ID. Disabled/malformed documents, missing
   MongoDB configuration and database failures surface as errors, without fallback.
+  The discovery-only `GET /reader/api/editions` handles a valid, explicitly disabled
+  legacy channel as an absent legacy source so independent publications remain
+  discoverable. It does not enable that channel or read a fallback folder.
+  Malformed configuration and database/storage errors still log and return 503.
 - `NEWSBEE_READER_DRIVE_FOLDER_ID`: Fallback only when the selected channel document is
   absent. Defaults to `1S2uePphOd_25yandeFtQJ6iZvSz2ydYw`; match both sites' settings
   and grant the reader MongoDB identity read access to `output_channels`.
@@ -94,15 +301,19 @@ development when needed):
 - `MONGODB_URI`: private MongoDB Atlas connection string.
 - `MONGODB_DATABASE`: shared database for signups, reader submissions, engagement and
   community lookup. Use the same database as the journalist service for inbox and map aggregation.
+- `NEWSBEE_EMAIL_MANAGEMENT_SECRET`: server-only signing secret for publication email
+  preference and unsubscribe links. Configure the same value in the journalist service.
 
-There are no output channels: the reader serves every location listed in the folder's
+For legacy editions, the reader serves every location listed in the resolved folder's
 `locations.json`, which the journalist site rewrites on each publish. Share the configured Drive
 folder with the service account email as a Viewer. The service account only requests
 Drive's read-only scope. The MongoDB database user needs read/write access to
-`reader_interest_signups`, `reader_story_submissions`, `obituary_submissions`, `reader_engagement`, `source_suggestions`, `story_reports`, `geographic_places`, `geographic_search_cache`, and
+`reader_interest_signups`, the `publication_email_*` subscription/consent/suppression collections, `reader_story_submissions`, `obituary_submissions`, `reader_engagement`, `source_suggestions`, `story_reports`, `geographic_places`, `geographic_search_cache`, and
 `geographic_search_leases`, plus read access to `census_places` and
 `locations` (community search lists onboarded communities). Geographic search creates a TTL index on its shared cache. MongoDB creates a unique
 `(location_id, email)` index in the signup collection so repeat signups are idempotent.
+Published publication releases use a separate explicit publication/location consent form.
+Legacy reader interest records are not copied into or interpreted as publication email consent.
 
 ## Pages
 
@@ -239,7 +450,14 @@ Published editions include a weekly-editions signup, with required consent below
 button, and a footer link to `/reader/subscribe?location=<location_id>`.
 That dedicated page identifies the community, provides a return link to its edition,
 and asks for weekly-edition consent only, without launch-notification wording.
-All signup forms share the same submission behavior and explain that email delivery is not active yet.
+All signup forms support optional topic preferences and email confirmation. They explain
+when delivery is unavailable rather than claiming an email was sent. See
+[`Docs/newsletter-delivery.md`](../../Docs/newsletter-delivery.md) for provider setup,
+preference management, unsubscribe, delivery operations, and local test-mail transport.
+
+`/reader/browse` searches published stories across editions and provides community/topic
+filters and edition history. `/reader/contact` and `/reader/become-editor` save private
+community messages and branch-interest applications for review in the editorial Inbox.
 
 The reader and journalist apps import shared typography, spacing and color tokens from
 `shared/design-tokens.css`; see `Docs/design-style-guide.html`. The journalist workspace

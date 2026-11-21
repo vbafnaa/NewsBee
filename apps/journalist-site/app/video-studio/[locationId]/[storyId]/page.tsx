@@ -12,11 +12,12 @@ export default async function VideoStoryPage({ params, searchParams }: {
   if (!principal) redirect("/login");
   const { locationId, storyId } = await params;
   const { channel } = await searchParams;
-  const backHref = channel && /^[a-f0-9]{32}$/.test(channel)
-    ? `/publishing/${encodeURIComponent(channel)}`
+  const channelId = channel && /^[a-f0-9]{32}$/.test(channel) ? channel : undefined;
+  const backHref = channelId
+    ? `/publishing/${encodeURIComponent(channelId)}`
     : `/publishing?location=${encodeURIComponent(locationId)}`;
   return <AdminShell email={principal.email} page="output-channels" title="Story video">
     <p className="breadcrumbs"><a href={backHref}>Channel workspace</a> / Story video</p>
-    <VideoStoryManager locationId={locationId} storyId={storyId} accountEmail={principal.email} owner={principal.role === "owner"} backHref={backHref} />
+    <VideoStoryManager locationId={locationId} storyId={storyId} channelId={channelId} accountEmail={principal.email} owner={principal.role === "owner"} backHref={backHref} />
   </AdminShell>;
 }

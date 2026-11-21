@@ -1,0 +1,78 @@
+---
+import EditionLayout from "../../components/edition/EditionLayout.astro";
+import {
+  maskedEmail,
+  publicationEmailSubscriptionForToken,
+} from "../../lib/publication-email-storage";
+import { readerDatabase } from "../../lib/reader-data";
+
+export const prerender = false;
+Astro.response.headers.set("Cache-Control", "private, no-store");
+Astro.response.headers.set("Referrer-Policy", "no-referrer");
+const token = Astro.url.searchParams.get("token") ?? "";
+let error = "";
+let subscription: Awaited<ReturnType<typeof publicationEmailSubscriptionForToken>> | null = null;
+try {
+  subscription = await publicationEmailSubscriptionForToken(await readerDatabase(), token);
+} catch {
+  Astro.response.status = 400;
+  error = "This unsubscribe link is invalid or no longer available.";
+}
+const apiRoot = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<EditionLayout title="Unsubscribe | Newsbee" noindex analytics={false} skipLabel="Skip to unsubscribe settings">
+  <main id="main" class="nb-container">
+    <header class="manage-header">
+      <a class="brand" href={apiRoot || "/"}>Newsbee</a>
+      <span class="nb-pill">Publication email</span>
+    </header>
+    <article class="manage-email">
+      <h1>Unsubscribe</h1>
+      {error || !subscription ? <p role="alert">{error}</p> : <>
+        <p>Stop publication email from {subscription.publication_name} to {maskedEmail(subscription.email)}.</p>
+        <form data-unsubscribe-form data-api-root={apiRoot} data-token={token}>
+          <button type="submit">Unsubscribe from this publication</button>
+          <p data-status role="status"></p>
+        </form>
+      </>}
+    </article>
+  </main>
+</EditionLayout>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-unsubscribe-form]");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = form.querySelector<HTMLElement>("[data-status]");
+    const button = form.querySelector<HTMLButtonElement>("button");
+    if (!status || !button) return;
+    button.disabled = true;
+    status.textContent = "Saving...";
+    try {
+      const response = await fetch(`${form.dataset.apiRoot}/api/email/unsubscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: form.dataset.token }),
+      });
+      const result = await response.json().catch(() => ({})) as { detail?: string };
+      if (!response.ok) throw new Error(result.detail ?? "Unsubscribe could not be saved.");
+      status.textContent = "You are unsubscribed from this publication.";
+      button.remove();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "Unsubscribe could not be saved.";
+      button.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  main.nb-container { max-width: 46rem; gap: var(--space-6); }
+  .manage-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-line); }
+  .brand { color: var(--color-ink); font: var(--weight-heading) var(--text-2xl)/1 var(--font-display); text-decoration: none; }
+  .manage-email { display: grid; gap: var(--space-5); width: 100%; padding: var(--space-8); background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
+  h1 { font-size: var(--text-h2); }
+  form { display: grid; gap: var(--space-4); }
+  button { width: fit-content; padding: .7rem 1rem; font: inherit; font-weight: 600; background: var(--color-bee); border: 1px solid var(--color-bee-deep); border-radius: var(--radius-sm); }
+  [data-status]:not(:empty) { padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
+  @media (max-width: 40rem) { .manage-email { padding: var(--space-5); } }
+</style>

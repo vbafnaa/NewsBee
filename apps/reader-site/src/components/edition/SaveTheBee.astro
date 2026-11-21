@@ -1,0 +1,189 @@
+---
+interface Props { locationId: string; editionId: string; api?: string; preview?: boolean }
+const { locationId, editionId, api, preview = false } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+<div class="bee-break" data-bee-game data-preview={preview ? "true" : undefined}
+  data-api={api ?? `${base}/api/save-the-bee?${new URLSearchParams({ location: locationId, edition: editionId })}`}>
+  <section class="bee-bubble" aria-label="Guide the Bee Home">
+    <header><h2>Guide the Bee Home</h2>
+      <svg viewBox="0 0 112 50" width="90" height="40" aria-hidden="true">
+        <path d="M4 43q22-10 43 0t61 0" fill="none" stroke="#c7d7ac" stroke-width="4"/>
+        <g transform="translate(83 7)" stroke="#936c31" stroke-width="1.5"><path d="M0 30q-7-5-1-10q-5-7 2-10q0-9 10-8q10-2 11 8q9 5 2 11q6 8-2 10Z" fill="#edc369"/><path d="M1 12h21M0 21h24" fill="none"/><path d="M10 31v-9a4 4 0 0 1 8 0v9" fill="#6b4c29"/></g>
+        <g transform="translate(41 24)"><ellipse cx="-5" cy="-10" rx="8" ry="11" fill="#fffdf5" stroke="#7d918c"/><ellipse cx="6" cy="-10" rx="8" ry="11" fill="#fffdf5" stroke="#7d918c"/><ellipse rx="20" ry="14" fill="#f3cb62" stroke="#69532b" stroke-width="1.5"/><path d="M-7-13v26M1-14v28" stroke="#69532b" stroke-width="4"/><circle cx="12" cy="-3" r="2" fill="#403b2d"/><path d="M11 5q4 4 7 0" fill="none" stroke="#403b2d" stroke-width="1.5"/></g>
+        <path d="M10 44v-9" stroke="#718a4b" stroke-width="2"/><g fill="#e7b5a5"><circle cx="6" cy="31" r="5"/><circle cx="14" cy="31" r="5"/><circle cx="10" cy="26" r="5"/></g><circle cx="10" cy="31" r="3" fill="#e7b84e"/>
+      </svg>
+    </header>
+    <p class="bee-instructions">Guess the word, one letter at a time.</p>
+    {preview && <p>Private draft game preview. Results are not shared or carried into the published game.</p>}
+    <p data-bee-error class="bee-error" role="alert" hidden></p>
+    <button data-bee-retry type="button" hidden>Retry</button>
+    <div data-bee-play hidden>
+      <div class="bee-word" data-bee-word role="group" aria-label="Word to solve"></div>
+      <details class="bee-hint">
+        <summary>Hint</summary>
+        <p data-bee-clue></p>
+      </details>
+      <div class="bee-entry" data-bee-entry>
+        <label for={`bee-letter-${editionId}`}>Type a letter</label>
+        <input id={`bee-letter-${editionId}`} data-bee-letter type="text" maxlength="1" pattern="[A-Za-z]" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby={`bee-misses-${editionId}`} />
+        <span data-bee-remaining></span>
+      </div>
+      <p id={`bee-misses-${editionId}`} class="bee-misses" data-bee-misses hidden></p>
+    </div>
+    <p class="bee-status" data-bee-status role="status" aria-live="polite">A little local puzzle...</p>
+    <details class="bee-sharing" data-bee-sharing hidden>
+      <summary data-bee-sharing-label>Add your name</summary>
+      <form data-bee-consent>
+        <label class="bee-name">Name or nickname<input data-bee-nickname type="text" minlength="2" maxlength="24" autocomplete="off" placeholder="Your nickname" /></label>
+        <label><input data-bee-public type="checkbox" /> Share my name and score.</label>
+        <label><input data-bee-shoutout type="checkbox" /> Allow a next-week shout-out.</label>
+        <div class="bee-actions"><button type="submit">Save</button><button data-bee-private type="button">Keep private</button></div>
+        <span data-bee-consent-status role="status"></span>
+      </form>
+    </details>
+    <p class="bee-top" data-bee-leaderboard hidden></p>
+    <noscript>Enable JavaScript to play.</noscript>
+  </section>
+  <p class="bee-shoutout" data-bee-shoutouts hidden><strong>Last week's stars</strong> <span data-bee-winners></span></p>
+</div>
+
+<script>
+  import type { BeeAttemptView, beeState } from "../../../../journalist-site/pipeline/games/save-the-bee";
+  type State = Awaited<ReturnType<typeof beeState>>;
+  const root = document.querySelector<HTMLElement>("[data-bee-game]");
+  if (root) {
+    const el = <T extends HTMLElement = HTMLElement>(name: string) => root.querySelector<T>(`[data-bee-${name}]`)!;
+    const api = root.dataset.api!;
+    const letterInput = el<HTMLInputElement>("letter"), nickname = el<HTMLInputElement>("nickname");
+    const publicBox = el<HTMLInputElement>("public"), shoutBox = el<HTMLInputElement>("shoutout");
+    const error = el("error"), status = el("status");
+    let state: State | null = null, active: BeeAttemptView | null = null;
+    let busy = false, draining = false, consentDirty = false;
+    const pending: string[] = [];
+    function render() {
+      if (!state) return;
+      const finished = !!active && active.status !== "playing";
+      el("play").hidden = !active;
+      if (active) {
+        el("clue").textContent = active.clue;
+        el("word").replaceChildren(...active.letters.map(letter => {
+          const span = document.createElement("span"); span.textContent = letter ?? "_";
+          span.setAttribute("aria-label", letter ?? "blank"); return span;
+        }));
+        el("remaining").textContent = `${active.remaining} tries left`;
+        el("entry").hidden = finished || !state.rankedOpen;
+        el("misses").hidden = !active.incorrect.length;
+        el("misses").textContent = `Misses: ${active.incorrect.join(", ")}`;
+      }
+      letterInput.readOnly = !active || finished || !state.rankedOpen;
+      status.textContent = finished ? `${active!.status === "won" ? "Bee is home!" : "Thanks for playing!"} ${active!.score} points.`
+        : !state.rankedOpen ? "A new puzzle will be here soon." : busy ? "Saving..." : "";
+      el("sharing").hidden = !finished || root!.dataset.preview === "true";
+      if (finished && !consentDirty) {
+        nickname.value = active!.nickname ?? ""; publicBox.checked = active!.public; shoutBox.checked = active!.shoutout;
+      }
+      el("sharing-label").textContent = active?.public ? "Edit sharing" : "Add your name";
+      shoutBox.disabled = !publicBox.checked || busy;
+      nickname.disabled = busy; publicBox.disabled = busy;
+      root!.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.disabled = busy; });
+      el("leaderboard").hidden = !finished || !state.leaderboard.length;
+      el("leaderboard").textContent = `Top scores: ${state.leaderboard.slice(0, 3).map(row => `${row.rank}. ${row.nickname} ${row.score}`).join(" · ")}`;
+      el("shoutouts").hidden = !state.shoutouts.length;
+      el("winners").textContent = state.shoutouts.map(row => `${row.nickname} · ${row.score}`).join(" / ");
+    }
+    async function request(input?: Record<string, unknown>): Promise<boolean> {
+      if (busy) return false;
+      busy = true; error.hidden = true; render();
+      let saved = false;
+      try {
+        const fetchGame = () => fetch(api, { method: input ? "POST" : "GET", credentials: "same-origin", cache: "no-store",
+          ...(input ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) } : {}) });
+        const response = !input && navigator.locks ? await navigator.locks.request("newsbee-bee-save-cookie", fetchGame) : await fetchGame();
+        const data = await response.json() as State & { attempt?: BeeAttemptView; detail?: string };
+        if (!response.ok) throw new Error(data.detail ?? "Couldn't save. Try again.");
+        state = data; active = data.attempt ?? data.ranked;
+        saved = true; el("retry").hidden = true;
+        if (input?.action === "consent") {
+          consentDirty = false; el("consent-status").textContent = active?.public ? "Saved." : "Kept private.";
+          if (!active?.public) el<HTMLDetailsElement>("sharing").open = false;
+        }
+        if (input) channel?.postMessage("saved");
+      } catch (cause) {
+        error.textContent = cause instanceof Error ? cause.message : "Couldn't save. Try again.";
+        error.hidden = false; el("retry").hidden = false;
+      } finally {
+        busy = false; render();
+        if (saved && !draining) void drain();
+      }
+      return saved;
+    }
+    async function drain() {
+      if (draining || busy) return;
+      draining = true;
+      while (pending.length && active?.status === "playing" && state?.rankedOpen) {
+        const letter = pending[0];
+        if (!active.guesses.includes(letter) && !await request({ action: "guess", attemptId: active.id, letter })) break;
+        pending.shift();
+      }
+      if (active?.status !== "playing" || !state?.rankedOpen) pending.length = 0;
+      draining = false;
+    }
+    function typeLetter() {
+      const letter = letterInput.value.toUpperCase(); letterInput.value = "";
+      if (!letter) return;
+      if (!/^[A-Z]$/.test(letter)) { error.textContent = "Type a letter A-Z."; error.hidden = false; return; }
+      if (!active || active.status !== "playing" || !state?.rankedOpen || active.guesses.includes(letter) || pending.includes(letter)) return;
+      pending.push(letter); void drain();
+    }
+    letterInput.addEventListener("input", event => { if (!(event as InputEvent).isComposing) typeLetter(); });
+    letterInput.addEventListener("compositionend", typeLetter);
+    async function connect() {
+      if (!await request()) return;
+      if (state?.rankedOpen && !active) await request({ action: "start" });
+    }
+    const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(`bee:${api}`) : null;
+    channel?.addEventListener("message", () => { if (!busy) void connect(); });
+    window.addEventListener("focus", () => { if (!busy) void connect(); });
+    el("retry").addEventListener("click", () => void connect());
+    nickname.addEventListener("input", () => { consentDirty = true; });
+    publicBox.addEventListener("change", () => {
+      consentDirty = true; shoutBox.disabled = !publicBox.checked;
+      if (!publicBox.checked) shoutBox.checked = false;
+    });
+    shoutBox.addEventListener("change", () => { consentDirty = true; });
+    el("consent").addEventListener("submit", event => {
+      event.preventDefault();
+      void request({ action: "consent", public: publicBox.checked, shoutout: shoutBox.checked, nickname: nickname.value || null });
+    });
+    el("private").addEventListener("click", () => void request({ action: "consent", public: false, shoutout: false, nickname: null }));
+    void connect();
+  }
+</script>
+
+<style>
+  .bee-break { width: 100%; max-width: 28rem; color: #3e4937; font: .85rem/1.45 var(--font-body, sans-serif); }
+  .bee-bubble { background: #fffaf0; border: 1px solid #dfd6ba; border-radius: 20px; padding: 16px 18px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h2 { font: 700 1.5rem/1.2 var(--font-display, serif); margin: 0; } svg { flex: 0 0 90px; }
+  p { margin: 8px 0; } .bee-instructions { font-size: .8rem; color: #69715e; }
+  .bee-hint { margin: -4px 0 10px; font-size: .8rem; }
+  .bee-hint summary { padding: 2px 0; } .bee-hint p { margin: 6px 0; }
+  .bee-word { display: flex; gap: 3px; margin: 12px 0; max-width: 100%; }
+  .bee-word :global(span) { flex: 0 1 24px; min-width: 0; text-align: center; border-bottom: 2px solid #b29a5c; font-size: 1.15rem; line-height: 1.6; font-weight: 700; }
+  .bee-entry { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  input[type=text], button { font: inherit; color: inherit; background: #fffdf6; border: 1px solid #b2a57f; border-radius: 8px; min-height: 44px; padding: 8px 10px; box-sizing: border-box; }
+  [data-bee-letter] { width: 44px; text-align: center; text-transform: uppercase; }
+  [data-bee-remaining] { color: #69715e; font-size: .75rem; }
+  .bee-misses { color: #a32d29; font-size: .8rem; font-weight: 600; }
+  .bee-status:empty { display: none; } .bee-status { font-weight: 600; }
+  .bee-error { color: #9c2823; } button { cursor: pointer; } button:disabled { opacity: .5; cursor: default; }
+  input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid #657b4c; outline-offset: 3px; }
+  summary { cursor: pointer; padding: 8px 0 2px; font-size: .8rem; }
+  form { margin-top: 8px; } form label { display: flex; align-items: center; gap: 8px; margin: 9px 0; font-size: .8rem; }
+  form .bee-name { align-items: start; flex-direction: column; gap: 4px; } [data-bee-nickname] { width: 100%; }
+  input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; }
+  .bee-actions { display: flex; gap: 8px; margin: 10px 0 6px; } .bee-top { font-size: .75rem; overflow-wrap: anywhere; }
+  .bee-shoutout { margin: 8px 4px 0; font-size: .75rem; overflow-wrap: anywhere; } .bee-shoutout strong { margin-right: 5px; }
+  [hidden] { display: none !important; }
+</style>

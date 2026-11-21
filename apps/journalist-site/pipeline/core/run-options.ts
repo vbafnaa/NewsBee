@@ -11,6 +11,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Db } from "mongodb";
+import type { PublicationPreferenceSnapshot } from "../../../../shared/publication-settings";
 import {
   ACCESS_RULES, CLASSIFIER_MODES, DEFAULT_SCRAPE_DEPTH, FREE_SERVICES, GUARDRAIL_GROUPS, LEGACY_MODEL_SERVICES, PAID_SERVICE_IDS, PAID_SERVICES, PRIORITY_TOPICS, SCRAPE_DEPTHS, SEARCH_PROVIDERS,
   type AccessRule, type FreeService, type GuardrailGroup, type PaidService, type PriorityTopic, type RunOptions, type ScrapeDepth,
@@ -151,6 +152,7 @@ export type RunContext = {
   runId: string;
   locationId: string;
   options: RunOptions;
+  publicationPreferences?: PublicationPreferenceSnapshot;
   /** A source map run (Pipeline 1) or an edition; per-run hard limits apply to map runs. */
   runKind?: "map" | "edition";
   /** When the run started, in seconds, for the whole-run time limit. */
@@ -167,6 +169,7 @@ export function withRunContext<T>(value: Omit<RunContext, "overrides">, operatio
 }
 export function runContext() { return context.getStore() ?? null; }
 export function currentOptions(): RunOptions { return context.getStore()?.options ?? LEGACY_OPTIONS; }
+export function currentPublicationPreferences() { return context.getStore()?.publicationPreferences ?? null; }
 /** The run id of the test-mode map run this job belongs to, or null. */
 export function isolatedRunId() {
   const store = context.getStore();

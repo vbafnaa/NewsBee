@@ -1,4 +1,5 @@
-import { adminRoute, jsonBody } from "@/lib/admin-api";
+import { adminRoute, jsonBody, newsroomScopedRoute } from "@/lib/admin-api";
+import { assertLocationInScope } from "@/pipeline/publications/newsroom-scope";
 import { getLocation } from "@/pipeline/communities/locations";
 import { MongoLinkCache } from "@/pipeline/storage/link-cache";
 import { addSourceLink, manualLinks } from "@/pipeline/connectors/manual-links";
@@ -25,7 +26,9 @@ export async function DELETE(request: Request, context: Context) {
 
 export async function POST(request: Request, context: Context) {
   const { locationId } = await context.params;
-  return adminRoute(request, async ({ db, settings, transport }) => ({
-    link: await addSourceLink(db, settings, locationId, await jsonBody<unknown>(request), transport),
-  }));
+  // Journalists may add sources for their newsroom's communities; the source records who added it.
+  return newsroomScopedRoute(request, async ({ db, settings, transport, principal }, scope) => {
+    assertLocationInScope(scope, locationId, "Community");
+    return { link: await addSourceLink(db, settings, locationId, await jsonBody<unknown>(request), transport, "editor", principal?.email) };
+  });
 }

@@ -1,16 +1,17 @@
-import { adminRoute, jsonBody } from "@/lib/admin-api";
+import { jsonBody, publicationRoute } from "@/lib/admin-api";
+import { assertPublicationWrite, authorizedPublicationFilter } from "@/pipeline/publications/access";
 import {
   createOutputChannelEdition,
-  getOutputChannel,
   listOutputChannelEditions,
   latestChannelStoryEdition,
   outputChannels,
   publishedChannelStories,
+  resolveOutputChannelForPrincipal,
   type ChannelEditionStory,
   type ChannelReaderEdition,
 } from "@/pipeline/orchestration/output-channels";
 import { COLLECTIONS } from "@/pipeline/storage/mongo";
-import { videoStoriesForLocation } from "@/pipeline/video-production";
+import { DEFAULT_VIDEO_PROMPT_TEMPLATE, validateVideoPromptTemplate, videoStoriesForLocation } from "@/pipeline/video-production";
 
 type Context = { params: Promise<{ channelId: string }> };
 type StorySelection = { locationId: string; storyId: string; editionId?: string };
@@ -44,14 +45,20 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: Context) {
   const { channelId } = await context.params;
-  return adminRoute(request, async ({ db, principal }) => {
+  return publicationRoute(request, async ({ db, principal }) => {
     if (!principal) throw new Error("Sign in as an approved journalist.");
-    const channel = await getOutputChannel(db, principal.id, channelId);
-    if (!channel) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    const access = await resolveOutputChannelForPrincipal(
+      db,
+      principal,
+      channelId,
+      "Review publication editions in the support workspace",
+    );
+    if (!access) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    const { channel, context: publication } = access;
     const storyGroups: Awaited<ReturnType<typeof videoStoriesForLocation>>[] = [];
     for (let offset = 0; offset < channel.selectedLocationIds.length; offset += 10) {
       storyGroups.push(...await Promise.all(
-        channel.selectedLocationIds.slice(offset, offset + 10).map((locationId) => videoStoriesForLocation(db, locationId, 1)),
+        channel.selectedLocationIds.slice(offset, offset + 10).map((locationId) => videoStoriesForLocation(db, locationId, 1, channelId)),
       ));
     }
     const stories = storyGroups.flatMap(({ location, stories: locationStories }) => locationStories.map((story) => ({
@@ -60,8 +67,8 @@ export async function GET(request: Request, context: Context) {
       locationName: location.name,
     })));
     const [editions, published] = await Promise.all([
-      listOutputChannelEditions(db, principal.id, channelId),
-      publishedChannelStories(db, principal.id, channelId, stories.map((story) => story.editionId)),
+      listOutputChannelEditions(db, publication),
+      publishedChannelStories(db, publication, stories.map((story) => story.editionId)),
     ]);
     return {
       stories: stories.map((story) => ({ ...story, published: published.has(`${story.locationId}:${story.editionId}:${story.storyId}`) })),
@@ -78,13 +85,37 @@ export async function GET(request: Request, context: Context) {
       })),
       availableOutputs: channel.destinations.map((destination) => destination.type),
       enabled: channel.enabled,
+      videoPromptTemplate: channel.videoPromptTemplate ?? DEFAULT_VIDEO_PROMPT_TEMPLATE,
+      defaultVideoPromptTemplate: DEFAULT_VIDEO_PROMPT_TEMPLATE,
     };
+  });
+}
+
+export async function PATCH(request: Request, context: Context) {
+  const { channelId } = await context.params;
+  return publicationRoute(request, async ({ db, principal }) => {
+    const access = await resolveOutputChannelForPrincipal(
+      db,
+      principal!,
+      channelId,
+      "Update a publication edition from the support workspace",
+      "write",
+    );
+    if (!access) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    await assertPublicationWrite(db, access.context, "update_publication_video_prompt");
+    const { videoPromptTemplate } = await jsonBody<{ videoPromptTemplate?: unknown }>(request);
+    const template = videoPromptTemplate === null ? null : validateVideoPromptTemplate(videoPromptTemplate);
+    const result = await outputChannels(db).updateOne(authorizedPublicationFilter(access.context), template === null
+      ? { $unset: { video_prompt_template: "" } }
+      : { $set: { video_prompt_template: template } });
+    if (!result.matchedCount) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    return { videoPromptTemplate: template ?? DEFAULT_VIDEO_PROMPT_TEMPLATE };
   });
 }
 
 export async function POST(request: Request, context: Context) {
   const { channelId } = await context.params;
-  return adminRoute(request, async (deps) => {
+  return publicationRoute(request, async (deps) => {
     if (!deps.principal) throw new Error("Sign in as an approved journalist.");
     const body = await jsonBody<unknown>(request);
     if (!isRecord(body)) {
@@ -106,9 +137,15 @@ export async function POST(request: Request, context: Context) {
     const title = titleValue.trim();
     const selections = rawSelections;
 
-    const owner = deps.principal.id;
-    const channel = await outputChannels(deps.db).findOne({ _id: channelId, owner_id: owner });
-    if (!channel) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    const access = await resolveOutputChannelForPrincipal(
+      deps.db,
+      deps.principal,
+      channelId,
+      "Publish a publication edition from the support workspace",
+      "write",
+    );
+    if (!access) return Response.json({ detail: "Publishing channel was not found." }, { status: 404 });
+    const channel = access.context.publication;
     const destinations = channel.destinations?.length
       ? channel.destinations
       : [{ type: channel.destination ?? "reader", url: channel.url ?? "" }];
@@ -160,7 +197,7 @@ export async function POST(request: Request, context: Context) {
     }
     const resolvedSources = sources.filter((source): source is NonNullable<typeof source> => source !== null);
     if (selections.length === 1 && selections[0].editionId && rawOutputs.length === 1 && rawOutputs[0] === "reader") {
-      const alreadyPublished = await publishedChannelStories(deps.db, owner, channelId, [selections[0].editionId]);
+      const alreadyPublished = await publishedChannelStories(deps.db, access.context, [selections[0].editionId]);
       if (alreadyPublished.has(`${selections[0].locationId}:${selections[0].editionId}:${selections[0].storyId}`)) {
         return Response.json({ detail: "This story is already published to this channel." }, { status: 409 });
       }
@@ -176,7 +213,9 @@ export async function POST(request: Request, context: Context) {
       source_url: typeof item.source_url === "string" ? item.source_url : null,
     }));
     const perStory = selections.length === 1 && !!selections[0].editionId && rawOutputs.length === 1 && rawOutputs[0] === "reader";
-    const previous = perStory ? await latestChannelStoryEdition(deps.db, deps.store, channel, selections[0].locationId) : null;
+    const previous = perStory
+      ? await latestChannelStoryEdition(deps.db, deps.store, channel, access.context, selections[0].locationId)
+      : null;
     const now = Date.now() / 1000;
     const grouped = new Map<string, { source: PublishedSource; items: PublishedItem[] }>();
     for (const [index, resolved] of resolvedSources.entries()) {
@@ -212,7 +251,7 @@ export async function POST(request: Request, context: Context) {
       deps.db,
       deps.store,
       channel,
-      owner,
+      access.context,
       title,
       previous ? [
         ...previous.stories.filter((story) => story.story_id !== selections[0].storyId),

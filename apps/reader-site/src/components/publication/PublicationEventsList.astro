@@ -1,0 +1,41 @@
+---
+import StoryMedia from "../edition/StoryMedia.astro";
+import PublicationShell from "./PublicationShell.astro";
+import { publicationPageLinks, type PublicationPage } from "../../lib/publication-view";
+interface Props { page: PublicationPage; requested: string | null }
+const { page, requested } = Astro.props;
+const links = publicationPageLinks(page);
+const selected = page.eventDays.find((day) => day.date === requested)?.date
+  ?? page.eventDays.find((day) => day.events.length)?.date
+  ?? page.eventDays[0]?.date;
+---
+<PublicationShell page={page} title={`Events | ${page.publication.displayName}`} subPage>
+  <section class="events-page">
+    <a class="nb-link" href={`${links.page}#events`}>Back to {page.publication.displayName}</a>
+    <h1>Events in this edition</h1>
+    <nav class="picker" aria-label="Days">{page.eventDays.map((day) =>
+      <a class:list={["day", { selected: day.date === selected }]} href={links.events(day.date)}>
+        <span>{day.weekday}</span><strong>{day.dayOfMonth}</strong>
+      </a>)}</nav>
+    {page.eventDays.filter((day) => day.date === selected).map((day) => <ol>
+      {day.events.map((event) => <li>
+        <StoryMedia photo={event.photo} illustration={event.illustration} />
+        <p class="nb-label">{event.time}{event.locationLabel ? ` · ${event.locationLabel}` : ""}</p>
+        {event.href ? <a class="nb-card-link title" href={event.href}><span class="nb-title">{event.title}</span></a> : <strong>{event.title}</strong>}
+        {event.where && <p>{event.where}</p>}
+        {event.dek && <p>{event.dek}</p>}
+      </li>)}
+    </ol>)}
+  </section>
+</PublicationShell>
+<style>
+  .events-page { display: grid; gap: var(--space-6); }
+  h1 { font-size: var(--text-h1); }
+  .picker { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+  .day { display: grid; place-items: center; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-lg); text-decoration: none; }
+  .day.selected { border: 2px solid var(--color-ink); }
+  ol { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+  li { display: grid; gap: var(--space-2); padding: var(--space-6); background: var(--color-paper); border-radius: var(--radius-xl); }
+  .title { font-size: var(--text-2xl); }
+  @media (max-width: 48rem) { .picker { grid-template-columns: repeat(4, 1fr); } }
+</style>

@@ -13,21 +13,30 @@ export const dynamic = "force-dynamic";
 
 const log = logger("job-chain");
 
-/** Portal-started pipeline: one task per invocation, then start the next. No call waits here on a backoff. */
+/** Signed recovery: one task, then independent cloud delivery or a local HTTP handoff. */
 export async function POST(request: Request) {
   if (!authorizedJobChain(request)) return Response.json({ detail: "Unauthorized" }, { status: 401 });
   try {
     const deps = await pipelineDeps();
     await maintain(deps);
     const executed = await runOne(deps);
+    if (deps.settings.mode === "cloud") {
+      try {
+        await continueQueue(deps, executed, queueNextJob);
+        await recordSchedulerSafely(deps.db, "followup", null);
+      } catch (error) {
+        const detail = `Cloud pipeline continuation requires Vercel Queues delivery: ${String(error)}`;
+        log.error("followup_failed", { error: detail });
+        await recordSchedulerSafely(deps.db, "followup", detail);
+        return Response.json({ executed, detail }, { status: 503 });
+      }
+      return Response.json({ executed });
+    }
     after(async () => {
       try {
-        // An HTTP recovery must keep handing off over HTTP even when cloud queue delivery is broken.
-        // Delayed retries still use the durable queue in cloud mode; Resume can recover them again.
         await continueQueue(deps, executed, async (delaySeconds) => {
-          if (delaySeconds) {
-            if (deps.settings.mode === "cloud") await queueNextJob(delaySeconds);
-          } else await callNextJob(request.url);
+          // The local poller handles backoff without keeping an HTTP request alive.
+          if (!delaySeconds) await callNextJob(request.url);
         });
       } catch (error) {
         log.error("followup_failed", { error: String(error) });

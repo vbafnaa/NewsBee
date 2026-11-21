@@ -4,9 +4,11 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { beforeAll, beforeEach, afterAll, afterEach, expect, it, vi } from "vitest";
 import { GET as permissions, POST as reconnect } from "../../../app/api/admin/execution/route";
 import { GET as runOptions } from "../../../app/api/admin/run-options/route";
+import { GET as generations } from "../../../app/api/admin/publications/[publicationId]/generations/route";
+import { GET as generationPreflight } from "../../../app/api/admin/publications/[publicationId]/generation-preflight/route";
 import { saveCredentialProfile } from "../../accounts/credentials";
 import { principalForEmail, type Principal } from "../../accounts/identity";
-import { infrastructureSettings, prepareBinding } from "../../accounts/execution";
+import { assertGlobalAdmission, infrastructureSettings, prepareBinding } from "../../accounts/execution";
 import { NO_MODEL } from "../../accounts/runtime";
 import { resolveRunOptions } from "../../core/run-options";
 import { ensureRunIndexes, getRun, newRun, runs } from "../../orchestration/runs";
@@ -14,12 +16,25 @@ import { type OrchestratorDeps } from "../../orchestration/orchestrator";
 import { COLLECTIONS } from "../../storage/mongo";
 import type { ArtifactStore } from "../../storage/artifacts";
 import type { LocationProfile } from "../../connectors/types";
+import { createOutputChannel } from "../../orchestration/output-channels";
 
 const state = vi.hoisted(() => ({ deps: null as OrchestratorDeps | null, kick: vi.fn() }));
 vi.mock("@/lib/admin-api", () => ({
+  publicationRoute: async (_request: Request, handler: (deps: OrchestratorDeps) => Promise<unknown>) => {
+    try { const result = await handler(state.deps!); return result instanceof Response ? result : Response.json(result); }
+    catch (error) { return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 403 }); }
+  },
   adminRoute: async (_request: Request, handler: (deps: OrchestratorDeps) => Promise<unknown>) => {
     try { return Response.json(await handler(state.deps!)); }
     catch (error) { return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 403 }); }
+  },
+  // Operators as before; a journalist's scope is resolved exactly as the real wrapper does.
+  newsroomScopedRoute: async (request: Request, handler: (deps: OrchestratorDeps, scope: unknown) => Promise<unknown>) => {
+    try {
+      const { resolveLocationScope } = await import("@/pipeline/publications/newsroom-scope");
+      const scope = await resolveLocationScope(state.deps!.db, state.deps!.principal!, new URL(request.url).searchParams.get("publication"));
+      return Response.json(await handler(state.deps!, scope));
+    } catch (error) { return Response.json({ detail: error instanceof Error ? error.message : String(error) }, { status: 403 }); }
   },
   jsonBody: (request: Request) => request.json(),
   kickPipeline: state.kick,
@@ -45,6 +60,7 @@ async function seedRun() {
 beforeAll(async () => { server = await MongoMemoryServer.create(); client = await MongoClient.connect(server.getUri()); db = client.db("isolated-execution-routes"); });
 beforeEach(async () => {
   vi.stubEnv("NEWSBEE_MODE", "cloud"); vi.stubEnv("NEWSBEE_OWNER_EMAIL", "owner@example.test");
+  vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini"); vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-managed-model-key");
   vi.stubEnv("NEWSBEE_CREDENTIAL_KEYS", JSON.stringify({ fixture: randomBytes(32).toString("base64") }));
   vi.stubEnv("NEWSBEE_CREDENTIAL_ACTIVE_KEY", "fixture");
   await db.dropDatabase(); state.kick.mockClear();
@@ -54,6 +70,12 @@ beforeEach(async () => {
   await db.collection<LocationProfile & { _id: string }>(COLLECTIONS.locations).insertOne({ _id: "one", id: "one", name: "Fixture one", state: "WA", systems: [], government: null });
   await ensureRunIndexes(db);
   state.deps = { db, settings: infrastructureSettings(), store, model: NO_MODEL, principal: editor };
+  await createOutputChannel(db, owner.id, "assigned", "mongo:assigned", {
+    name: "Assigned newsroom", destinations: [{ type: "reader", url: "" }], enabled: true, selectedLocationIds: ["one"],
+  });
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, {
+    $set: { members: [{ principal_id: editor.id, role: "editor" }] },
+  });
   await save();
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -69,7 +91,55 @@ it("reports separate edition/map capabilities without requiring paid search for 
   expect(data.mapReasons.join(" ")).toContain("serpapi");
   expect(data.reasons.join(" ")).toContain("Source map:");
 });
-it("preserves owner deployment defaults but blocks profile-less editors", async () => {
+it("includes one explicitly selected old personal run before resolving legacy policy, without widening history or authority", async () => {
+  const old = await seedRun();
+  await runs(db).insertMany(Array.from({ length: 205 }, (_, index) => ({
+    ...old, _id: `newer-${index}`, created_at: old.created_at + index + 1, status: "failed" as const, execution: undefined,
+  })));
+  const url = "https://fixture.example.test/api/admin/execution";
+  const recent = await (await permissions(new Request(url))).json();
+  expect(Object.keys(recent.permissions)).toHaveLength(200);
+  expect(recent.permissions[old._id]).toBeUndefined();
+  const selected = () => permissions(new Request(`${url}?run=${old._id}`)).then((response) => response.json());
+  const current = await selected();
+  expect(Object.keys(current.permissions)).toHaveLength(201);
+  expect(current.permissions[old._id]).toMatchObject({ canSpend: true, canReconnect: false, canClaim: false });
+  await save();
+  expect((await selected()).permissions[old._id]).toMatchObject({ canSpend: false, canReconnect: true });
+  state.deps!.principal = owner;
+  expect((await selected()).permissions[old._id]).toMatchObject({ canSpend: false, canReconnect: false, canClaim: false });
+  const missing = await (await permissions(new Request(`${url}?run=missing`))).json();
+  expect(Object.keys(missing.permissions)).toHaveLength(200);
+  expect(missing.permissions.missing).toBeUndefined();
+});
+it("routes parent and child blockers to real publication context, and standalone source runs to collect-sources", async () => {
+  const url = new Request("https://fixture.example.test/api/admin/execution");
+  await db.collection(COLLECTIONS.publicationGenerations).insertOne({
+    _id: "combined", publication_id: "real-publication", publication_name: "Combined draft", status: "running", created_at: 1,
+  });
+  expect((await (await permissions(url)).json()).blocker).toMatchObject({
+    id: "combined", kind: "publication_generation", publicationGenerationId: "combined", href: "/newsroom/real-publication?generation=combined",
+  });
+  const child = await seedRun();
+  await runs(db).updateOne({ _id: child._id }, { $set: { admission: "publication", publication_generation_id: "combined" } });
+  expect((await (await permissions(url)).json()).blocker).toMatchObject({
+    id: child._id, kind: "publication_child", publicationGenerationId: "combined", href: "/newsroom/real-publication?generation=combined",
+  });
+  await expect(assertGlobalAdmission(db)).rejects.toThrow("Open /newsroom/real-publication");
+  await db.collection(COLLECTIONS.publicationGenerations).deleteOne({ _id: "combined" });
+  expect((await (await permissions(url)).json()).blocker).toMatchObject({ kind: "publication_child", href: null });
+  await expect(assertGlobalAdmission(db)).rejects.toThrow("Combined draft context is unavailable");
+  await runs(db).updateOne({ _id: child._id }, {
+    $unset: { publication_generation_id: "" }, $set: { admission: "newsroom", kind: "map" },
+  });
+  expect((await (await permissions(url)).json()).blocker).toMatchObject({
+    kind: "run", publicationGenerationId: null, href: `/locations/one?tab=collect-sources&run=${child._id}`,
+  });
+  await expect(assertGlobalAdmission(db)).rejects.toThrow(`Open /locations/one?tab=collect-sources&run=${child._id}`);
+  await runs(db).updateOne({ _id: child._id }, { $set: { kind: "edition" } });
+  expect((await (await permissions(url)).json()).blocker.href).toBe(`/locations/one?tab=edition&run=${child._id}`);
+});
+it("reports managed deployment readiness to owners and profile-less editors", async () => {
   vi.stubEnv("NEWSBEE_MODEL_PROVIDERS", "gemini");
   vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-deployment-never-live");
   state.deps!.principal = owner;
@@ -82,9 +152,42 @@ it("preserves owner deployment defaults but blocks profile-less editors", async 
   expect(await db.collection("journalist_credentials").countDocuments({ _id: owner.id })).toBe(0);
   await db.collection("journalist_admins").insertOne({ principalId: "other", email: "other@example.test", enabled: true });
   state.deps!.principal = { id: "other", email: "other@example.test", role: "editor" };
-  expect(await (await permissions(url)).json()).toMatchObject({ canStart: false, reasons: [expect.stringContaining("personal model API key")] });
+  expect(await (await permissions(url)).json()).toMatchObject({ canStart: false, reasons: [expect.stringContaining("assigned newsroom")] });
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, {
+    $push: { members: { principal_id: "other", role: "editor" } },
+  });
+  expect(await (await permissions(url)).json()).toMatchObject({ credentialSource: "platform", canStart: true, reasons: [] });
+  expect(await db.collection("journalist_credentials").countDocuments({ _id: "other" })).toBe(0);
 });
-it("never reports deployment integrations as available personal run options", async () => {
+
+it("opens provider-free newsroom inspection and writing setup with broken Admin credentials while generation remains blocked", async () => {
+  const admin: Principal = { id: "admin", email: "admin@example.test", role: "admin" };
+  await db.collection("journalist_admins").insertOne({ email: admin.email, principalId: admin.id, enabled: true, role: "admin" });
+  await db.collection("journalist_credentials").insertOne({
+    _id: admin.id as never, source: "personal", version: 1, revoked: false,
+    keyId: "unavailable", iv: "invalid", tag: "invalid", ciphertext: "invalid",
+  });
+  state.deps!.principal = admin;
+  const context = { params: Promise.resolve({ publicationId: "assigned" }) };
+  const url = "https://fixture.example.test/api/admin/publications/assigned/generations";
+  const inspected = await generations(new Request(url), context);
+  expect(inspected.status).toBe(200);
+  expect(await inspected.json()).toMatchObject({
+    publication: { canWrite: false }, execution: { funding: "personal" }, draft: null, generations: [],
+  });
+  await db.collection(COLLECTIONS.outputChannels).updateOne({ _id: "assigned" as never }, {
+    $push: { members: { principal_id: admin.id, role: "editor" } },
+  });
+  const writable = await generations(new Request(url), context);
+  expect(writable.status).toBe(200);
+  expect(await writable.json()).toMatchObject({ publication: { canWrite: true }, defaultOptions: { paid: { model: 200 } } });
+  const preflight = await generationPreflight(new Request(`${url}-preflight`), context);
+  expect(preflight.status).toBe(403);
+  expect(await db.collection("run_budgets").countDocuments()).toBe(0);
+  expect(await runs(db).countDocuments()).toBe(0);
+  expect(state.kick).not.toHaveBeenCalled();
+});
+it("reports deployment integrations as managed run options without exposing their values", async () => {
   await db.collection("journalist_credentials").deleteOne({ _id: editor.id });
   vi.stubEnv("NEWSBEE_BRIGHTDATA_API_KEY", "fixture-brightdata-key");
   vi.stubEnv("NEWSBEE_BRIGHTDATA_ZONE", "fixture-serp-zone");
@@ -92,9 +195,10 @@ it("never reports deployment integrations as available personal run options", as
   vi.stubEnv("NEWSBEE_EXA_API_KEY", "fixture-exa-key");
   vi.stubEnv("NEWSBEE_TAVILY_API_KEY", "fixture-tavily-key");
 
-  const response = await runOptions(new Request("https://fixture.example.test/api/admin/run-options"));
+  // Journalists read run options from the newsroom they work in.
+  const response = await runOptions(new Request("https://fixture.example.test/api/admin/run-options?publication=assigned"));
   const info = await response.json();
-  expect(info.configured).toMatchObject({ brightdata: false, brightdata_open: false, exa: false, tavily: false });
+  expect(info).toMatchObject({ credentialSource: "platform", configured: { brightdata: true, brightdata_open: true, exa: true, tavily: true } });
   expect(JSON.stringify(info)).not.toContain("fixture-brightdata-key");
   expect(JSON.stringify(info)).not.toContain("fixture-serp-zone");
   expect(JSON.stringify(info)).not.toContain("fixture-exa-key");
@@ -107,10 +211,10 @@ it("blocks an editor's old environment selection and reconnects only after perso
   vi.stubEnv("NEWSBEE_GEMINI_API_KEY", "fixture-server-not-live");
   const url = new Request("https://fixture.example.test/api/admin/execution");
   const data = await (await permissions(url)).json();
-  expect(data).toMatchObject({ canStart: false, editionReasons: [expect.stringContaining("revoked")] });
+  expect(data).toMatchObject({ canStart: false, editionReasons: [], blocker: { id: run._id } });
   expect(data.permissions[run._id]).toMatchObject({ canSpend: false, canReconnect: true });
-  const info = await (await runOptions(url)).json();
-  expect(info.configured).toMatchObject({ model: false, agent_model: false, serpapi: false });
+  const info = await (await runOptions(new Request("https://fixture.example.test/api/admin/run-options?publication=assigned"))).json();
+  expect(info).toMatchObject({ credentialSource: "platform", configured: { model: true, agent_model: true, serpapi: false } });
   expect(JSON.stringify(info)).not.toContain("fixture-server-not-live");
   expect((await reconnect(request("execution", { action: "reconnect", runId: run._id }))).status).toBe(403);
   expect(state.kick).not.toHaveBeenCalled();
@@ -203,6 +307,39 @@ it("explicitly reconnects the original sponsor's paused run to the current perso
   expect(current.options).not.toHaveProperty("purpose");
   expect(current.execution_blocked).toBeUndefined();
   expect(state.kick).toHaveBeenCalledOnce();
+});
+it("refuses publication-child recovery through the global execution route", async () => {
+  const run = await seedRun();
+  const generationId = "publication-generation-fixture";
+  await db.collection(COLLECTIONS.publicationGenerations).insertOne({
+    _id: generationId,
+    publication_id: "publication-fixture",
+    publication_name: "Fixture publication",
+    status: "running",
+    created_at: Date.now() / 1000,
+  });
+  await runs(db).updateOne(
+    { _id: run._id },
+    {
+      $set: {
+        admission: "publication",
+        publication_generation_id: generationId,
+        publication_id: "publication-fixture",
+        execution_blocked: { reason: "Fixture reconnect", at: 1 },
+      },
+    },
+  );
+
+  const response = await reconnect(request("execution", { action: "reconnect", runId: run._id }));
+  expect(response.status).toBe(403);
+  expect((await response.json()).detail).toContain("publication recovery controls");
+  expect(await getRun(db, run._id)).toMatchObject({
+    admission: "publication",
+    publication_generation_id: generationId,
+    publication_id: "publication-fixture",
+    execution_blocked: { reason: "Fixture reconnect" },
+  });
+  expect(state.kick).not.toHaveBeenCalled();
 });
 it("restricts legacy claims to the owner and never infers funding from trigger text", async () => {
   const run = newRun({ id: "one", name: "Fixture one" }, { kind: "manual", by: "admin" }, "2099-01-01", ["2099-01-01", "2099-01-08"], []);

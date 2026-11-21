@@ -7,15 +7,28 @@ import SiteHeader from "./SiteHeader.astro";
 import SiteFooter from "./SiteFooter.astro";
 import SourceNotes from "./SourceNotes.astro";
 import { neighborhoodLinks, pacificDate, type EditionPage } from "../../lib/edition-view";
+import { TOPICS } from "../../../../../shared/topics";
+import { emailAvailable } from "../../../../../shared/email-availability";
 
 interface Props { page: EditionPage; title: string; subPage?: boolean; articleStoryId?: string | null }
 const { page, title, subPage = false, articleStoryId } = Astro.props;
 const links = neighborhoodLinks(page);
-const pageHref = subPage ? links.page : "";
+const pageHref = links.page;
+const publication = `${page.town} Newsroom`;
+const isArticle = articleStoryId !== undefined;
+const categoryLabels: Record<string, string> = { policy: "Policy", schools: "School", sports: "Sports", housing: "Real Estate" };
+const categoryLinks = page.allSections.map((section) => ({
+  label: categoryLabels[section.id] ?? TOPICS.find((topic) => topic.id === section.id)?.short ?? section.label,
+  href: links.section(section.id),
+}));
 const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
 ---
 <EditionLayout title={title}>
-  <SiteHeader town={page.town} today={page.today} visible={page.visible} homeHref={links.home} pageHref={pageHref} />
+  <SiteHeader town={publication} today={page.today} visible={page.visible} homeHref={links.page} pageHref={pageHref}
+    locationId={page.location.id} subscribeHref={emailAvailable() ? links.subscribe : links.section("all")}
+    subscribeLabel={emailAvailable() ? "Subscribe" : "All stories"} eventsHref={links.events()}
+    archiveHref={`${links.browse}#editions`} categoryLinks={categoryLinks}
+    allStoriesHref={isArticle ? links.section("all") : undefined} />
   <slot name="welcome" />
   <main id="main" class="nb-container" data-api-url={links.home} data-location-id={page.location.id}
     data-edition-id={page.edition.id} data-track-view={String(!subPage)} data-article-story-id={articleStoryId ?? undefined}>
@@ -28,20 +41,27 @@ const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
       </div>
     )}
     <slot />
-    {!articleStoryId && <SourceNotes page={page} />}
+    {isArticle ? <div class="article-notes"><SourceNotes page={page} /></div> : <SourceNotes page={page} />}
   </main>
-  <SiteFooter place={page.location.name.replace(/,\s*[A-Z]{2}$/, "")} visible={page.visible} homeHref={links.home} pageHref={pageHref}
+  <SiteFooter place={page.location.name.replace(/,\s*[A-Z]{2}$/, "")} visible={page.visible} homeHref={links.page} pageHref={pageHref}
+    sectionLinks={[
+      { label: "Home", href: links.page },
+      ...(page.topStories.length ? [{ label: "Top News", href: `${links.page}#top-news` }] : []),
+      ...(page.visible.includes("events") ? [{ label: "Events", href: links.events() }] : []),
+    ]}
     neighborhoods={page.neighborhoods.map((neighborhood) => ({
       label: neighborhood.name.split(",")[0].trim(),
       href: neighborhood.id === page.location.id ? (subPage ? links.page : "#top") : `${links.home}?location=${encodeURIComponent(neighborhood.id)}`,
     }))}
     more={{
-      heading: "Get involved",
+      heading: "Publication",
       links: [
-        { label: "Sign up for weekly editions", href: links.subscribe },
-        { label: "Share your story", href: links.share },
-        { label: "Share a remembrance", href: links.remember },
-        { label: "Find another neighborhood", href: links.home },
+        { label: "Release archive", href: `${links.browse}#editions` },
+        { label: "All stories in this release", href: links.section("all") },
+        { label: "Share a community story", href: links.share },
+        { label: "Suggest a source", href: links.suggest },
+        { label: "Discover other publications and communities", href: links.home },
+        { label: "Browse stories across Newsbee", href: `${links.home}/browse` },
       ],
     }} />
 </EditionLayout>
@@ -65,4 +85,5 @@ const past = page.edition.windowEnd.slice(0, 10) < pacificDate(new Date());
 
 <style>
   .notices { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); background: var(--color-cream); border-radius: var(--radius-lg); font-size: var(--text-sm); }
+  .article-notes { width: 100%; max-width: 46rem; margin-inline: auto; }
 </style>

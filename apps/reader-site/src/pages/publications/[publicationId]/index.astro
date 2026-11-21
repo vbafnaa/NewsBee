@@ -1,0 +1,9 @@
+---
+import PublicationReleasePage from "../../../components/publication/PublicationReleasePage.astro";
+import { loadPublicationRoute } from "../../../lib/publication-view";
+export const prerender = false;
+const { publicationId } = Astro.params;
+const result = await loadPublicationRoute(publicationId!, null, Astro.url.searchParams.get("story"));
+Astro.response.status = result.status;
+---
+<PublicationReleasePage publicationId={publicationId!} page={result.page} error={result.error} />

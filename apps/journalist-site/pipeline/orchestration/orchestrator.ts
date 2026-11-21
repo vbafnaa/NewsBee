@@ -42,6 +42,7 @@ import { logger, withLogSink, type LogRecord, type Logger } from "../core/log";
 import { currentOptions, resolveRunOptions, runContext, sourceRunsIsolated, withRunContext, LEGACY_OPTIONS } from "../core/run-options";
 import { ingestWindow, localToday, lookupRanges } from "../core/time";
 import { agentJob } from "../agent/map-sources";
+import { ExecutionDeadline, withExecutionDeadline } from "../core/execution-deadline";
 import { publicOnlyTransport, publicSourceTransport } from "../connectors/public-http";
 import { logSourceCollected, logSourceMap } from "./source-log";
 import { sweepTasks } from "../connectors/sweep";
@@ -61,24 +62,31 @@ import { processEditedImage } from "../images/editor";
 import { processIllustrationStory } from "../images/illustrations";
 import { stockTopic } from "../images/stock";
 import { collectedItems, ensureItemIndexes, type CollectedItem } from "../editions/assemble";
+import { collectedItemExpiration } from "../editions/retention";
+import { saveEmailOutput, type EmailOutput } from "../email/output";
 import { writeEditionMap } from "../editions/edition-map";
 import { categoryCoverage, collectableSources, hostOf, recordSourceRun, sourceMap, reviewedLocationSources, taskFor } from "../sourcemap/store";
 import { applyReviewedContentPolicy, reviewAllowsCollection, reviewedSourceTransport } from "../sourcemap/source-review";
 import { dueMethods, runMethod } from "../discovery/run";
+import { discoveryOutcome } from "../discovery/status";
 import { finalReview } from "../discovery/final-review";
 import { METHODS } from "../discovery/methods";
 import type { ModelRuntime } from "../model/runtime";
 import { ModelRateLimitError, withModelUsageContext } from "../model/runtime";
 import { runFolder, type ArtifactStore } from "../storage/artifacts";
+import { DriveArtifacts } from "../storage/drive";
+import { editorDriveAccess } from "../storage/drive-consent";
 import { MongoLinkCache } from "../storage/link-cache";
 import { COLLECTIONS } from "../storage/mongo";
-import { acquireRunLease, acquireSlot, appendJobLog, cancelClaimedJob, cancelPending, cancelRunJobs, claim, complete, enqueue, enqueueMany, fail, isParallelKind, LostLeaseError, markLogsArchived, MONGO_LOG, recoverExpired, releaseLease, renewJob, runJobs, setJobLog, unarchivedLogs, type Job, type JobKind, type Lease } from "./jobs";
+import { acquireAdmissionLease, acquireRunLease, acquireSlot, appendJobLog, cancelClaimedJob, cancelPending, cancelRunJobs, claim, complete, enqueue, enqueueMany, fail, isParallelKind, LostLeaseError, markLogsArchived, MONGO_LOG, recoverExpired, releaseLease, renewJob, runJobs, setJobLog, unarchivedLogs, withJobExecution, type Job, type JobKind, type Lease } from "./jobs";
 import { expireOverdueRuns } from "./diagnostics";
-import { ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, collectionCandidateCount, RunConflict, failRun, getRun, markNotReached, newRun, lastEditionDay, planRun, runs, setRun, stageKinds, awaitAuthoringWhenReady, updateSource, workableRuns, type PipelineRun } from "./runs";
+import { ACTIVE_RUN_STATUSES, PROCESSING_RUN_STATUSES, collectionCandidateCount, RunConflict, failRun, getRun, markNotReached, newRun, lastEditionDay, partialCollectionSources, planRun, runs, setRun, stageKinds, awaitAuthoringWhenReady, updateSource, workableRuns, type PipelineRun } from "./runs";
 import type { Principal } from "../accounts/identity";
-import { assertGlobalAdmission, assertSponsor, authorizePaidAction, blockExecution, prepareBinding } from "../accounts/execution";
+import { assertGlobalAdmission, assertSponsor, authorizePaidAction, blockExecution, prepareBinding, prepareManagedBinding } from "../accounts/execution";
+import { withSiteWriter } from "../../../../shared/restore-maintenance";
 import { ExecutionBlocked } from "../core/execution-errors";
 import { safeError } from "../core/redaction";
+import type { PublicationPreferenceSnapshot } from "../../../../shared/publication-settings";
 
 export type OrchestratorDeps = {
   principal?: Principal;
@@ -101,6 +109,15 @@ export type OrchestratorDeps = {
   log?: Logger;
 };
 
+export type PublicationRunContext = {
+  publicationGenerationId: string;
+  publicationId: string;
+  today: string;
+  window: [string, string];
+  preferenceSnapshot: PublicationPreferenceSnapshot;
+  admissionLeaseHeld?: boolean;
+};
+
 /** A job error that retrying cannot fix. */
 export class PermanentJobError extends Error {}
 
@@ -121,7 +138,17 @@ function connectorsOf(deps: OrchestratorDeps) {
 }
 
 /** Start an edition for one location: today and the window come from the location's own timezone. */
-export async function startRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"], choices?: unknown) {
+export function startRun(...args: Parameters<typeof startRunAdmitted>) {
+  return withSiteWriter(args[0].db, () => startRunAdmitted(...args));
+}
+
+async function startRunAdmitted(
+  deps: OrchestratorDeps,
+  locationId: string,
+  trigger: PipelineRun["trigger"],
+  choices?: unknown,
+  publication?: PublicationRunContext,
+) {
   const location = await getLocation(deps.db, locationId);
   const options = resolveRunOptions(choices);
   await expireOverdueRuns(deps.db, deps.settings.runTimeoutSeconds);
@@ -134,13 +161,20 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
   if (!await sourceMap(deps.db).countDocuments({ location_id: location.id, status: { $ne: "rejected" } }, { limit: 1 })) {
     throw new RunConflict("Build the source map first: this location has no sources to read.");
   }
-  const today = localToday(location.state);
-  const window = ingestWindow(today);
+  const today = publication?.today ?? localToday(location.state);
+  const window = publication?.window ?? ingestWindow(today);
   await migrateManualLinks(deps.db, location.id);
   const run = newRun(location, trigger, today, window, [], await lastEditionDay(deps.db, location.id, today), [], options);
-  if (deps.principal) run.execution = await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "edition", choices);
+  if (deps.principal) run.execution = trigger.kind === "manual"
+    ? await prepareManagedBinding(deps.db, deps.settings, deps.principal, locationId, "edition", choices, publication?.publicationId)
+    : await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "edition", choices);
   run.map_version = location.source_map_version ?? null;
-  const inserted = await insertRun(deps, run, locationId);
+  if (publication) {
+    run.publication_generation_id = publication.publicationGenerationId;
+    run.publication_id = publication.publicationId;
+    run.publication_preference_snapshot = publication.preferenceSnapshot;
+  }
+  const inserted = await insertRun(deps, run, locationId, publication);
   if (inserted) return { run: inserted, started: false };
   await enqueue(deps.db, { kind: "plan_sources", run_id: run._id, location_id: run.location_id, dedupe_key: `plan:${run._id}` });
   log.info("run_started", { run_id: run._id, location_id: location.id, kind: "edition", trigger: trigger.kind, by: trigger.by, status: "collecting", today });
@@ -148,7 +182,12 @@ export async function startRun(deps: OrchestratorDeps, locationId: string, trigg
 }
 
 /** Refresh a location's source map: the methods that are due, or all of them on a rebuild. Never starts an edition. */
-export async function startMapRun(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"], choices?: unknown, rebuild = false) {
+export function startMapRun(...args: Parameters<typeof startMapRunAdmitted>) {
+  return withSiteWriter(args[0].db, () => startMapRunAdmitted(...args));
+}
+
+/** `publicationId` is the newsroom a journalist started the run from; its managed allowance pays for the run. */
+async function startMapRunAdmitted(deps: OrchestratorDeps, locationId: string, trigger: PipelineRun["trigger"], choices?: unknown, rebuild = false, publicationId?: string) {
   const location = await getLocation(deps.db, locationId);
   const mapChoices = { ...(choices && typeof choices === "object" ? choices : {}), rebuild };
   const chosen = resolveRunOptions(mapChoices);
@@ -165,7 +204,9 @@ export async function startMapRun(deps: OrchestratorDeps, locationId: string, tr
   // Operator search is one of the agent's tools, not a method of its own.
   const methods = rebuild || isolated ? METHODS.map((definition) => definition.method) : await dueMethods(deps.db, location.id);
   const run: PipelineRun = { ...newRun(location, trigger, today, ingestWindow(today), [], null, methods, options), kind: "map", status: "mapping", ...(isolated ? { isolated: true } : {}) };
-  if (deps.principal) run.execution = await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "map", mapChoices);
+  if (deps.principal) run.execution = trigger.kind === "manual"
+    ? await prepareManagedBinding(deps.db, deps.settings, deps.principal, locationId, "map", mapChoices, publicationId)
+    : await prepareBinding(deps.db, deps.settings, deps.principal, locationId, "map", mapChoices);
   run.stage_transitions = [{ status: "mapping", by: trigger.by, at: run.created_at }];
   const inserted = await insertRun(deps, run, locationId);
   if (inserted) return { run: inserted, started: false };
@@ -175,25 +216,31 @@ export async function startMapRun(deps: OrchestratorDeps, locationId: string, tr
 }
 
 /** Save a new run; returns the run already open for the location, if one got there first. */
-async function insertRun(deps: OrchestratorDeps, run: PipelineRun, locationId: string) {
-  await assertGlobalAdmission(deps.db);
-  run.admission = "newsroom";
+async function insertRun(deps: OrchestratorDeps, run: PipelineRun, locationId: string, publication?: PublicationRunContext) {
+  const lease = publication?.admissionLeaseHeld ? null : await acquireAdmissionLease(deps.db);
+  if (!publication?.admissionLeaseHeld && !lease) throw new RunConflict("Another run is being admitted. Retry in a moment.");
   try {
-    await runs(deps.db).insertOne(run);
-  } catch (error) {
-    if ((error as { code?: number }).code === 11000) {
-      throw new RunConflict("Another unfinished run was admitted first. Reload the newsroom and wait for its completion.");
+    await assertGlobalAdmission(deps.db, undefined, publication?.publicationGenerationId);
+    run.admission = publication ? "publication" : "newsroom";
+    try {
+      await runs(deps.db).insertOne(run);
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) {
+        throw new RunConflict("Another unfinished run was admitted first. Reload the newsroom and wait for its completion.");
+      }
+      throw error;
     }
-    throw error;
+    try {
+      // Removal may have started while this request was preparing the run.
+      await getLocation(deps.db, locationId);
+    } catch (error) {
+      await runs(deps.db).deleteOne({ _id: run._id, status: run.status });
+      throw error;
+    }
+    return null;
+  } finally {
+    if (lease) await releaseLease(deps.db, lease);
   }
-  try {
-    // Removal may have started while this request was preparing the run.
-    await getLocation(deps.db, locationId);
-  } catch (error) {
-    await runs(deps.db).deleteOne({ _id: run._id, status: run.status });
-    throw error;
-  }
-  return null;
 }
 
 /** Discovery jobs for the methods chosen, or straight on when there are none. */
@@ -265,18 +312,31 @@ export async function triggerStage(deps: OrchestratorDeps, runId: string, stage:
   const existing = await getRun(deps.db, runId);
   if (!existing) throw new Error(`Unknown run: ${runId}`);
   await getLocation(deps.db, existing.location_id);
-  if (stage === "authoring" && existing.status === "awaiting_authoring" && await collectionCandidateCount(deps.db, runId) === 0) {
+  const partialSources = stage === "authoring" ? partialCollectionSources(existing) : undefined;
+  if (stage === "authoring" && (existing.status === "awaiting_authoring" || partialSources) && await collectionCandidateCount(deps.db, runId, partialSources) === 0) {
     throw new RunConflict("Cannot start authoring: no usable items were collected. Review sources and retry collection.");
   }
   const waiting = stage === "authoring" ? "awaiting_authoring" : "awaiting_finish";
   const status = stage === "authoring" ? "authoring" : "finishing";
   const at = now();
+  const interruption = existing.error ?? "Source collection was interrupted";
+  const partial = partialSources ? {
+    partial_collection_source_ids: partialSources,
+    sources: existing.sources.map((source) => source.status === "pending"
+      ? { ...source, status: "failed" as const, result_status: "failed", detail: interruption, error: interruption }
+      : source),
+    error: null,
+    completed_at: null,
+  } : {};
   const changed = await runs(deps.db).findOneAndUpdate(
-    { _id: runId, status: waiting },
-    { $set: { status, updated_at: at, stage_started_at: at, ...(stage === "authoring" ? { authoring_started_at: at } : {}) },
+    partialSources ? { _id: runId, status: "failed", updated_at: existing.updated_at } : { _id: runId, status: waiting },
+    { $set: { status, updated_at: at, stage_started_at: at, ...(stage === "authoring" ? { authoring_started_at: at } : {}), ...partial },
       $push: { stage_transitions: { status, by, at } } },
     { returnDocument: "after" },
-  );
+  ).catch((error: unknown) => {
+    if (partialSources && (error as { code?: number }).code === 11000) throw new RunConflict("Another run is already active for this location");
+    throw error;
+  });
   const run = changed ?? await getRun(deps.db, runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   if (run.status !== status && !(stage === "finish" && run.status === "publishing")) {
@@ -324,6 +384,7 @@ export async function resumeRun(deps: OrchestratorDeps, runId: string, by: strin
       await advanceToAuthoring(deps, runId, run.location_id);
     }
   } else if (run.status === "authoring") {
+    if (run.partial_collection_source_ids) await cancelRunJobs(deps.db, runId, stageKinds({ status: "collecting" }));
     await queue("author_start");
     const start = jobs.find((job) => job.kind === "author_start" && job.status === "completed");
     const draft = run.draft_id ? await deps.db.collection(COLLECTIONS.editions).findOne({ id: run.draft_id }) as { status: string; pool_sections?: Array<{ id: string }>; section_rankings?: Record<string, unknown> } | null : null;
@@ -455,8 +516,9 @@ async function discoverJob(deps: OrchestratorDeps, job: Job) {
     db: deps.db, settings: deps.settings, transport, fetcher: new Fetcher(transport), location, today: run.today,
     log: logger(`discovery.${method}`, { run_id: run._id, location_id: run.location_id }), model: deps.discoveryModel ?? deps.lightModel ?? null,
   }, method);
-  await recordDecision({ stage: "source", actor: "rule", subject: `method:${method}`, decision: state.ok ? "ran" : "failed", reason: state.detail, evidence: { found: state.found, added: state.added, by_category: state.by_category ?? {} } });
-  return { method, ok: state.ok, found: state.found, added: state.added, detail: state.detail };
+  const outcome = discoveryOutcome(state);
+  await recordDecision({ stage: "source", actor: "rule", subject: `method:${method}`, decision: outcome === "disabled" ? "skipped" : outcome === "succeeded" ? "ran" : "failed", reason: state.detail, evidence: { outcome, reason: state.reason, found: state.found, added: state.added, by_category: state.by_category ?? {} } });
+  return { method, ok: state.ok, outcome, reason: state.reason, found: state.found, added: state.added, detail: state.detail };
 }
 
 /** After the last discovery job has ended, move on. Methods overlap, so this runs once each has completed. */
@@ -609,10 +671,12 @@ async function withinSourceBudget(task: SourceTask, context: ConnectorContext, r
   finally { clearTimeout(timer); }
 }
 
-async function collectSource(deps: OrchestratorDeps, job: Job) {
-  const task = job.payload.task as SourceTask;
-  const run = await getRun(deps.db, job.run_id);
-  if (!run || run.status !== "collecting") return { skipped: true };
+/**
+ * What reading a source needs, the same for the whole source and for the links on one of its pages:
+ * the source's access review (rechecked, since a queued task may predate it), its reader, the run's
+ * transport and agent, and the source's time budget.
+ */
+async function collectionContext(deps: OrchestratorDeps, run: PipelineRun, task: SourceTask) {
   // Recheck persisted decisions: a queued task may predate a source's review.
   const reviewed = (await reviewedLocationSources(deps.db, run.location_id)).find((source) => source.source_id === task.source_id);
   const review = reviewed?.access_review;
@@ -643,6 +707,35 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
     agentModel: currentOptions().flow === "agentic" ? deps.agentLightModel ?? deps.agentModel ?? deps.lightModel ?? null : null,
     log: sourceLog,
   };
+  return { task, review, connector, location, context };
+}
+
+/** What a reader returned, as the run keeps it: kept items with their facts, left-out ones with why. */
+function collectedDocs(run: PipelineRun, task: SourceTask, collected: CollectedSource, created: number, extra: Pick<CollectedItem, "followed_from" | "followed_by"> = {}): CollectedItem[] {
+  const base = { run_id: run._id, location_id: run.location_id, source_id: task.source_id, source_name: task.name, created_at: created, retention_expires_at: collectedItemExpiration(created), ...extra };
+  const skipped = [...(runContext()?.overrides ?? [])];
+  const tier = task.params?.source_tier;
+  const docs: CollectedItem[] = [
+    ...collected.events.map((facts) => ({ ...base, _id: `${run._id}:${task.source_id}:${facts.source_event_id}`, title: facts.title, url: facts.source_url ?? null, event_date: facts.event_date ?? null,
+      status: "collected" as const, reason: null, step: "reader", ...(skipped.length ? { access_overrides: skipped } : {}),
+      facts: { ...facts, source_name: (facts.source_name as string | undefined) ?? task.name, ...(tier && !facts.source_tier ? { source_tier: tier } : {}) } })),
+    ...(collected.dropped ?? []).map((item) => ({ ...base, _id: `${run._id}:${task.source_id}:x:${item.source_event_id}`, title: item.title, url: item.url, event_date: item.event_date ?? null,
+      status: "dropped" as const, reason: item.reason.replace(/_/g, " "), step: "reader", facts: null,
+      ...(item.crawl_depth || item.found_on || item.found_via ? { found: { ...(item.crawl_depth ? { crawl_depth: item.crawl_depth } : {}), ...(item.found_on ? { found_on: item.found_on } : {}), ...(item.found_via ? { found_via: item.found_via } : {}), ...(item.section_hint ? { section_hint: item.section_hint } : {}) } } : {}) })),
+  ];
+  // Readers that only count what they skip (older connectors) appear as counts.
+  for (const [reason, count] of Object.entries(collected.result.skipped_unusable ?? {})) {
+    if (count > 0 && !(collected.dropped ?? []).length) docs.push({ ...base, _id: `${run._id}:${task.source_id}:skip:${reason}`, title: `${count} item${count === 1 ? "" : "s"}`, url: null, event_date: null, status: "dropped", reason: reason.replace(/_/g, " "), step: "reader", facts: null });
+  }
+  return docs;
+}
+
+const ignoreDuplicates = (error: { code?: number }) => { if (error.code !== 11000) throw error; };
+
+async function collectSource(deps: OrchestratorDeps, job: Job) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "collecting") return { skipped: true };
+  const { task, review, connector, location, context } = await collectionContext(deps, run, job.payload.task as SourceTask);
   const startedAt = Date.now();
   const manualId = task.params?.manual_link_id;
   const manual = typeof manualId === "string" ? await manualLinks(deps.db).findOne({ _id: manualId, location_id: location.id }) : null;
@@ -657,22 +750,10 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
     await sourceMap(deps.db).updateOne({ location_id: run.location_id, source_id: task.source_id }, { $set: learned });
   }
   const created = now();
-  const base = { run_id: run._id, location_id: run.location_id, source_id: task.source_id, source_name: task.name, created_at: created };
-  const skipped = [...(runContext()?.overrides ?? [])];
-  const tier = task.params?.source_tier;
-  const docs: CollectedItem[] = [
-    ...collected.events.map((facts) => ({ ...base, _id: `${run._id}:${task.source_id}:${facts.source_event_id}`, title: facts.title, url: facts.source_url ?? null, event_date: facts.event_date ?? null,
-      status: "collected" as const, reason: null, step: "reader", ...(skipped.length ? { access_overrides: skipped } : {}),
-      facts: { ...facts, source_name: (facts.source_name as string | undefined) ?? task.name, ...(tier && !facts.source_tier ? { source_tier: tier } : {}) } })),
-    ...(collected.dropped ?? []).map((item) => ({ ...base, _id: `${run._id}:${task.source_id}:x:${item.source_event_id}`, title: item.title, url: item.url, event_date: item.event_date ?? null,
-      status: "dropped" as const, reason: item.reason.replace(/_/g, " "), step: "reader", facts: null })),
-  ];
-  // Readers that only count what they skip (older connectors) appear as counts.
-  for (const [reason, count] of Object.entries(collected.result.skipped_unusable ?? {})) {
-    if (count > 0 && !(collected.dropped ?? []).length) docs.push({ ...base, _id: `${run._id}:${task.source_id}:skip:${reason}`, title: `${count} item${count === 1 ? "" : "s"}`, url: null, event_date: null, status: "dropped", reason: reason.replace(/_/g, " "), step: "reader", facts: null });
-  }
-  await collectedItems(deps.db).deleteMany({ run_id: run._id, source_id: task.source_id });
-  if (docs.length) await collectedItems(deps.db).insertMany(docs, { ordered: false }).catch((error: { code?: number }) => { if (error.code !== 11000) throw error; });
+  const docs = collectedDocs(run, task, collected, created);
+  // What an editor found by following a page's links stays when the source is collected again.
+  await collectedItems(deps.db).deleteMany({ run_id: run._id, source_id: task.source_id, followed_from: { $exists: false } });
+  if (docs.length) await collectedItems(deps.db).insertMany(docs, { ordered: false }).catch(ignoreDuplicates);
   const id = `${run._id}:${task.source_id}`;
   await deps.db.collection(COLLECTIONS.sourceResults).replaceOne({ _id: id as never }, { run_id: run._id, location_id: run.location_id, source_id: task.source_id, type: task.type, created_at: created, result: collected.result, event_count: collected.events.length }, { upsert: true });
   const health = await recordSourceHealth(deps.db, run.location_id, task.source_id, collected.result.status, collected.events.length, run.today, (Date.now() - startedAt) / 1000);
@@ -692,6 +773,37 @@ async function collectSource(deps: OrchestratorDeps, job: Job) {
   return { status: collected.result.status, events: collected.events.length, dropped: collected.dropped?.length ?? 0 };
 }
 
+export type FollowPayload = { task: SourceTask; item_id: string; page: string; depth: number; section: string | null; title: string; site_name: string | null; by: string; source_status: string };
+
+/**
+ * Read the links on one page an editor accepted, one level deeper than it was found, and add what they
+ * lead to. The source's access review, publisher controls and time budget apply as when collecting it.
+ * Nothing the run has is replaced: each new item records the page and the editor (`followed_from`).
+ */
+async function followLinks(deps: OrchestratorDeps, job: Job) {
+  const run = await getRun(deps.db, job.run_id);
+  if (!run || run.status !== "collecting") return { skipped: true };
+  const payload = job.payload as FollowPayload;
+  const prepared = await collectionContext(deps, run, { ...payload.task, params: { ...payload.task.params } });
+  // Links are the website reader's; a source its access review sends to another reader isn't followed.
+  if (prepared.task.type !== "web") throw new PermanentJobError(`This source is read as ${prepared.task.type}, so its pages' links aren't followed`);
+  const task: SourceTask = { ...prepared.task, params: { ...prepared.task.params, follow_page: payload.page, follow_depth: payload.depth, follow_section: payload.section, follow_title: payload.title, follow_site_name: payload.site_name } };
+  const collected = await withinSourceBudget(task, prepared.context, () => prepared.connector.collect(task, prepared.context));
+  applyReviewedContentPolicy(collected.events, prepared.review);
+  const docs = collectedDocs(run, task, collected, now(), { followed_from: payload.item_id, followed_by: payload.by });
+  // An item the run already has keeps its record; only new ones are added.
+  if (docs.length) await collectedItems(deps.db).insertMany(docs, { ordered: false }).catch(ignoreDuplicates);
+  await finishFollow(deps, job);
+  return { status: collected.result.status, detail: collected.result.detail ?? null, events: collected.events.length, dropped: collected.dropped?.length ?? 0 };
+}
+
+/** The followed page's source goes back to how it was, and the run back to waiting for authoring once nothing else is being collected. */
+async function finishFollow(deps: OrchestratorDeps, job: Job) {
+  const payload = job.payload as FollowPayload;
+  await updateSource(deps.db, job.run_id, payload.task.source_id, { status: payload.source_status as never });
+  await advanceToAuthoring(deps, job.run_id, job.location_id);
+}
+
 function authoringDeps(deps: OrchestratorDeps) {
   return { db: deps.db, model: deps.model, rankingModel: deps.rankingModel, lightModel: deps.lightModel, settings: deps.settings, log: deps.log ?? logger("authoring"), transport: deps.transport };
 }
@@ -699,13 +811,16 @@ function authoringDeps(deps: OrchestratorDeps) {
 async function authorStart(deps: OrchestratorDeps, job: Job) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || run.status !== "authoring") return { skipped: true };
-  const results = await deps.db.collection(COLLECTIONS.sourceResults).find({ run_id: run._id }).sort({ _id: 1 }).toArray();
+  const sourceIds = run.partial_collection_source_ids;
+  if (sourceIds) await cancelRunJobs(deps.db, run._id, stageKinds({ status: "collecting" }));
+  const results = await deps.db.collection(COLLECTIONS.sourceResults)
+    .find({ run_id: run._id, ...(sourceIds ? { source_id: { $in: sourceIds } } : {}) }).sort({ _id: 1 }).toArray();
   const resultsById = new Map(results.map((doc) => [doc.source_id, doc.result]));
   const sourceResults = run.sources.map((source) => resultsById.get(source.source_id) ?? {
     source_id: source.source_id, name: source.name, status: source.result_status ?? "failed", detail: source.detail ?? source.error ?? "Source was not collected", events: 0,
   });
   const location = await getLocation(deps.db, run.location_id);
-  const started = await startAuthoring(authoringDeps(deps), { location, runId: run._id, today: run.today, window: run.window, sourceResults, overrides: run.overrides });
+  const started = await startAuthoring(authoringDeps(deps), { location, runId: run._id, today: run.today, window: run.window, sourceResults, sourceIds, overrides: run.overrides });
   if (!run.draft_id) await setRun(deps.db, run._id, { draft_id: started.id });
   if ((await getRun(deps.db, run._id))?.status !== "authoring") return { cancelled: true };
   if (started.sections.length) {
@@ -760,17 +875,17 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
     throw error;
   });
   if (!("edition" in finished) || !finished.edition) throw new Error("Authoring has unwritten stories");
-  const { edition, emailPreview, summary } = finished as { edition: { id: string; location_id: string; items: unknown[] }; emailPreview: { subject: string; text: string; html: string }; summary: Record<string, unknown> };
+  const { edition, emailOutput, summary } = finished as { edition: { id: string; location_id: string; items: unknown[] }; emailOutput: EmailOutput; summary: Record<string, unknown> };
   // Built, not published: nothing reaches the reader, the no-repeat ledger or source counts until a
   // person publishes it (orchestration/publish.ts).
-  const previews = await runFolder(deps.store, "email-previews", run.location_id);
-  const editions = await runFolder(deps.store, "editions", run.location_id);
-  const sources = await runFolder(deps.store, "sources", run.location_id);
+  const editor = run.stage_transitions?.findLast((transition) => transition.status === "finishing")?.by ?? run.trigger.by;
+  const store = deps.store instanceof DriveArtifacts ? new DriveArtifacts(() => editorDriveAccess(deps.db, editor)) : deps.store;
+  const editions = await runFolder(store, "editions", run.location_id);
+  const sources = await runFolder(store, "sources", run.location_id);
   const artifacts = {
-    email_html: await deps.store.saveText(previews, `${edition.id}.html`, emailPreview.html, "text/html"),
-    email_text: await deps.store.saveText(previews, `${edition.id}.txt`, `Subject: ${emailPreview.subject}\n\n${emailPreview.text}`, "text/plain"),
-    edition: await deps.store.saveJson(editions, `${edition.id}.json`, { edition, summary }),
-    sources: await deps.store.saveJson(sources, `${run._id}.json`, { run_id: run._id, sources: run.sources }),
+    ...await saveEmailOutput(store, () => runFolder(store, "email-previews", run.location_id), edition.id, emailOutput),
+    edition: await store.saveJson(editions, `${edition.id}.json`, { edition, summary }),
+    sources: await store.saveJson(sources, `${run._id}.json`, { run_id: run._id, sources: run.sources }),
   };
   const held = Number(summary.held ?? 0);
   await setRun(deps.db, run._id, {
@@ -792,10 +907,21 @@ async function authorFinish(deps: OrchestratorDeps, job: Job) {
 }
 
 export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
+  return withExecutionDeadline(Date.now() + 285_000, () =>
+    withSiteWriter(deps.db, () => withJobExecution(deps.db, job, () => executeJobAdmitted(deps, job))));
+}
+
+async function executeJobAdmitted(deps: OrchestratorDeps, job: Job): Promise<Record<string, unknown>> {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !stageKinds(run).includes(job.kind)) return { skipped: true };
+  if (run.publication_generation_id) {
+    const parent = await deps.db.collection(COLLECTIONS.publicationGenerations).findOne({
+      _id: run.publication_generation_id as never, status: { $in: ["starting", "running", "combining"] },
+    });
+    if (!parent) throw new ExecutionBlocked("The combined publication generation is blocked, cancelling or finished.");
+  }
   if (deps.runtimeForRun) deps = await deps.runtimeForRun(run);
-  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, sponsorId: run.execution?.sponsorId, credentialVersion: run.execution?.credentialVersion, options: run.options ?? LEGACY_OPTIONS, runKind: run.kind ?? "edition", startedAt: run.created_at, isolated: run.isolated === true }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion }, () => {
+  return withRunContext({ db: deps.db, runId: run._id, locationId: run.location_id, sponsorId: run.execution?.sponsorId, credentialVersion: run.execution?.credentialVersion, options: run.options ?? LEGACY_OPTIONS, publicationPreferences: run.publication_preference_snapshot, runKind: run.kind ?? "edition", startedAt: run.created_at, isolated: run.isolated === true }, () => withModelUsageContext({ location_id: run.location_id, run_id: run._id, sponsor_id: run.execution?.sponsorId, credential_version: run.execution?.credentialVersion }, () => {
     switch (job.kind) {
       case "discover": return discoverJob(deps, job);
       case "agent_round": return agentRoundJob(deps, job);
@@ -803,6 +929,7 @@ export async function executeJob(deps: OrchestratorDeps, job: Job): Promise<Reco
       case "finish_map": return finishMap(deps, job);
       case "plan_sources": return planSources(deps, job);
       case "collect_source": return collectSource(deps, job);
+      case "follow_links": return followLinks(deps, job);
       case "author_start": return authorStart(deps, job);
       case "author_rank": return authorRank(deps, job);
       case "author_story": return authorStory(deps, job);
@@ -817,6 +944,8 @@ async function finalFailure(deps: OrchestratorDeps, job: Job, error: string) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !stageKinds(run).includes(job.kind)) return;
   if (job.kind === "collect_source") await sourceFailed(deps, job, error);
+  // A page whose links couldn't be read leaves the run as it was; the job keeps the error.
+  else if (job.kind === "follow_links") await finishFollow(deps, job);
   // A failed discovery method keeps the sources it found before; planning goes ahead.
   else if (job.kind === "discover") await planWhenDiscovered(deps, job);
   // A failed agent round keeps what it found; the run goes ahead.
@@ -867,6 +996,10 @@ async function claimNext(deps: OrchestratorDeps, options: { jobId?: string; kind
 
 /** Take a worker slot, then claim and run one job; returns false when there's nothing to do or no free slot. */
 export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; kinds?: readonly JobKind[] } = {}): Promise<boolean> {
+  return withSiteWriter(deps.db, () => runOneAdmitted(deps, options));
+}
+
+async function runOneAdmitted(deps: OrchestratorDeps, options: { jobId?: string; kinds?: readonly JobKind[] }): Promise<boolean> {
   const slot = await acquireSlot(deps.db, deps.settings.collectConcurrency);
   if (!slot) return false;
   try {
@@ -898,10 +1031,23 @@ export async function runOne(deps: OrchestratorDeps, options: { jobId?: string; 
 async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () => void) {
   const run = await getRun(deps.db, job.run_id);
   if (!run || !ACTIVE_RUN_STATUSES.includes(run.status)) {
-    await cancelRunJobs(deps.db, job.run_id);
+    await cancelRunJobs(deps.db, job.run_id, run?.status === "failed" ? [job.kind] : undefined);
     await cancelClaimedJob(deps.db, job);
     return true;
   }
+  const reconcilePublicationParent = async (terminalRun: PipelineRun | null) => {
+    if (!terminalRun?.publication_generation_id) return;
+    try {
+      await (await import("../publications/generation"))
+        .reconcilePublicationGeneration(deps.db, terminalRun.publication_generation_id);
+    } catch (error) {
+      log.error("publication_generation_reconcile_failed", {
+        generation_id: terminalRun.publication_generation_id,
+        run_id: terminalRun._id,
+        error: safeError(error),
+      });
+    }
+  };
   const started = Date.now();
   const records: LogRecord[] = [];
   let writing: Promise<void> | null = null;
@@ -936,6 +1082,7 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
         await complete(deps.db, job, result);
         log.info("job_completed", { kind: job.kind, job_id: job._id, run_id: job.run_id, duration_ms: Date.now() - started });
         if (job.kind === "discover") await planWhenDiscovered(deps, job);
+        await reconcilePublicationParent(await getRun(deps.db, job.run_id));
       } catch (error) {
         if (error instanceof LostLeaseError) {
           log.warn("job_lease_lost", { kind: job.kind, job_id: job._id });
@@ -947,13 +1094,22 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
           logger("job").info("job_cancelled", { kind: job.kind, job_id: job._id, run_id: job.run_id });
           return;
         }
-        if (error instanceof ExecutionBlocked) {
-          await blockExecution(deps.db, job.run_id, safeError(error));
+        if (error instanceof ExecutionDeadline) {
           await deps.db.collection<Job>(COLLECTIONS.jobs).updateOne(
-            { _id: job._id, claim_token: job.claim_token },
+            { _id: job._id, status: "running", claim_token: job.claim_token },
+            { $set: { status: "pending", lease_until: null, claim_token: null, available_at: Math.max(now() + 1, (error.retryAt ?? 0) / 1000), error: safeError(error) }, $inc: { attempts: -1 } },
+          );
+          log.info("job_deadline_yielded", { kind: job.kind, job_id: job._id, duration_ms: Date.now() - started });
+          return;
+        }
+        if (error instanceof ExecutionBlocked) {
+          await blockExecution(deps.db, job.run_id, error);
+          await deps.db.collection<Job>(COLLECTIONS.jobs).updateOne(
+            { _id: job._id, status: "running", claim_token: job.claim_token },
             { $set: { status: "pending", lease_until: null, claim_token: null, error: safeError(error) }, $inc: { attempts: -1 } },
           );
           log.warn("run_credentials_paused", { run_id: job.run_id, reason: safeError(error) });
+          await reconcilePublicationParent(await getRun(deps.db, job.run_id));
           return;
         }
         const detail = safeError(error);
@@ -962,7 +1118,10 @@ async function runClaimedJob(deps: OrchestratorDeps, job: Job, checkLease: () =>
         if ((await getRun(deps.db, job.run_id))?.status === "cancelled") {
           await cancelRunJobs(deps.db, job.run_id);
         }
-        if (outcome === "failed") await finalFailure(deps, job, safeError(error));
+        if (outcome === "failed") {
+          await finalFailure(deps, job, safeError(error));
+          await reconcilePublicationParent(await getRun(deps.db, job.run_id));
+        }
       }
     });
   } catch (error) {
